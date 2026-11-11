@@ -12,8 +12,8 @@ import {
   handleCaptureEntriesRequest,
   handleCaptureHarRequest,
   handleNetworkCaptureRequest,
-} from "../../middleware";
-import { inProcessServeSimState } from "../../state";
+} from "../../../middleware";
+import { inProcessServeSimState } from "../../../state";
 
 /**
  * Unit tests for the `/network-capture` routes, driven with a fake req/res and a runtime whose proxy,

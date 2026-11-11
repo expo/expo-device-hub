@@ -26,7 +26,7 @@ import { freePortAsync, killHelpersForDevice } from "./helpers";
  * publish-serve-sim CI job boots one explicitly, the test runs there.
  */
 
-const CLI_PATH = join(import.meta.dir, "../../src/index.ts");
+const CLI_PATH = join(import.meta.dir, "../index.ts");
 // CI macOS simulators are markedly slower than dev laptops at producing the
 // first framebuffer snapshot, so budgets here are sized for the slow runner —
 // the regression we're guarding against (silenced stream → blank img tags) is

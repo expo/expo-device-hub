@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { CAPTURE_FIELDS } from "./capture/fields";
-import { parseCaptureProxy } from "./capture/upstream";
+import { CAPTURE_FIELDS } from "./capabilities/network-capture";
+import { parseCaptureProxy } from "./capabilities/network-capture";
 import { frameAncestorsPolicy } from "./middleware-utils";
 import { MAX_MJPEG_STREAM_FPS, MAX_VIDEO_STREAM_FPS } from "./stream-settings";
 

@@ -1,8 +1,8 @@
 import { expect, mock, spyOn, test } from "bun:test";
 
-import * as capture from "../../capture";
-import { capabilityHarness } from "../../capture/__tests__/capability-harness";
-import type { CaptureUpstream } from "../../capture/upstream";
+import * as capture from "../../capabilities/network-capture";
+import { capabilityHarness } from "../../capabilities/network-capture/__tests__/capability-harness";
+import type { CaptureUpstream } from "../../capabilities/network-capture/upstream";
 
 const UDID = "ABCD1234-0000-0000-0000-0000000000EF";
 const PROXY_START = "host-policy fixture reached proxy start";
@@ -19,7 +19,7 @@ const captureRuntime = capture.createCaptureRuntime({
   writeDiskArtifacts: false,
 });
 // This child process confines the singleton replacement to the host-policy fixture.
-mock.module("../../capture", () => ({ ...capture, captureRuntime }));
+mock.module("../../capabilities/network-capture", () => ({ ...capture, captureRuntime }));
 const { simMiddleware } = await import("../../middleware");
 
 async function enableError(): Promise<string> {

@@ -7,7 +7,7 @@ import { appendFileNoFollow, appendFileNoFollowSync, replaceFilesNoFollow } from
 import { MAX_HAR_ENTRIES, toHarEntry, type HarEntry } from "./har";
 import { compactNdjsonAndStreamHar, emptyHarText, removeLeftoverTemps } from "./har-stream";
 import type { CapturedBody, CapturedRequest, CaptureEvent, CaptureStore } from "./store";
-import { stateDir } from "../state";
+import { stateDir } from "../../state";
 
 export { CAPTURE_OWNER_FILENAME, sweepAbandonedCaptureDirs } from "./artifact-owner";
 

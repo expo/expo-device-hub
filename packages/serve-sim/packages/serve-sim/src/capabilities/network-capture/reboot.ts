@@ -1,9 +1,9 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { bootDevice, shutdownDevice } from "../device";
-import { devicesArmedHere, rearmCapabilityLoader } from "../capabilities/runtime/manager";
-import { stateDir } from "../state";
+import { bootDevice, shutdownDevice } from "../../device";
+import { devicesArmedHere, rearmCapabilityLoader } from "../runtime/manager";
+import { stateDir } from "../../state";
 import { CaptureEnableError, captureRuntime, type CaptureRuntime } from "./runtime";
 import { type CaptureField } from "./fields";
 import { type CaptureMeta } from "./store";
@@ -101,10 +101,12 @@ export async function rebootWithCapture(
   // loads the native capture and HID code.
   const closeSession =
     deps.closeSession ??
-    (async (id: string) => (await import("../device-session")).suspendDeviceSessionForReboot(id));
+    (async (id: string) =>
+      (await import("../../device-session")).suspendDeviceSessionForReboot(id));
   const resumeSession =
     deps.resumeSession ??
-    (async (id: string) => (await import("../device-session")).resumeDeviceSessionAfterReboot(id));
+    (async (id: string) =>
+      (await import("../../device-session")).resumeDeviceSessionAfterReboot(id));
   const shutdown = deps.shutdown ?? shutdownDevice;
   const boot = deps.boot ?? bootDevice;
   const rearm = deps.rearm ?? rearmCapabilities;

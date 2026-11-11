@@ -42,7 +42,7 @@ class Capture {
 mock.module("../../native", () => ({ ...native, NativeHid: Hid, NativeCapture: Capture }));
 mock.module("../../ui-settings", () => ({ ...ui, refreshDeviceOptionState: async () => {} }));
 const { getDeviceSession, closeDeviceSession } = await import("../../device-session");
-const { rebootWithCapture } = await import("../../capture/reboot");
+const { rebootWithCapture } = await import("../../capabilities/network-capture/reboot");
 class Socket extends EventEmitter {
   code?: number;
   send() {}

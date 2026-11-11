@@ -17,7 +17,8 @@ import {
   type CaptureMeta,
 } from "../hooks/use-capture-stream";
 import { chooseCaptureFields, useChosenCaptureFields } from "../hooks/use-capture-field-choices";
-import { CAPTURE_FIELDS, isCaptureField, type CaptureField } from "../../capture/fields";
+import { CAPTURE_FIELDS, isCaptureField } from "../../capabilities/network-capture/fields";
+import type { CaptureField } from "../../capabilities/network-capture";
 import { runHostAction } from "../../socket/client-control";
 import { downloadHar } from "../utils/har-download";
 import { simAuthHeaders, simEndpoint } from "../utils/sim-endpoint";

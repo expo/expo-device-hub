@@ -4,7 +4,7 @@ import { join } from "path";
 import { inProcessServeSimState, writeServeSimState } from "../state";
 import { freePortAsync, installShims, useTempStateDir } from "./helpers";
 
-const CLI_PATH = join(import.meta.dir, "../../src/index.ts");
+const CLI_PATH = join(import.meta.dir, "../index.ts");
 const device = `00000000-0000-0000-0000-${String(process.pid).padStart(12, "0")}`;
 
 let tempState: ReturnType<typeof useTempStateDir>;

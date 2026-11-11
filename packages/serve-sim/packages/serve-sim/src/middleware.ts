@@ -15,7 +15,7 @@ import {
 import { createReadinessReporter } from "./startup-timing";
 import { fileURLToPath } from "node:url";
 import { openSseStream } from "./sse-stream";
-import { parseCaptureProxy } from "./capture/upstream";
+import { parseCaptureProxy } from "./capabilities/network-capture";
 import { execFile, execSync } from "child_process";
 import { validatedAdditionalDylibs } from "./capabilities/runtime/additional-dylibs";
 import {
@@ -50,7 +50,7 @@ import {
   rebootedWithCaptureSince,
   startCaptureForDevice,
   type CaptureRuntime,
-} from "./capture";
+} from "./capabilities/network-capture";
 import {
   createMetricsSamplerCache,
   MetricsSampler,

@@ -1,7 +1,7 @@
-import { isDeviceNotBooted } from "../device";
+import { isDeviceNotBooted } from "../../device";
 import { locateProxyDylib, trustCaInSimulator, isDeviceInjected } from "./device";
-import { configureCapability } from "../capabilities/runtime/manager";
-import type { CapabilityDefinition, PreparedCapability } from "../capabilities";
+import { configureCapability } from "../runtime/manager";
+import type { CapabilityDefinition, PreparedCapability } from "../runtime/capability";
 import { CaptureDiskAccumulator, captureArtifactPaths, sweepAbandonedCaptureDirs } from "./disk";
 import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "./fields";
 import { CAPTURE_SCHEMA_VERSION, CaptureStore, type CaptureEvent, type CaptureMeta } from "./store";

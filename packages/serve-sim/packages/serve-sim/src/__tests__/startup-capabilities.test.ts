@@ -1,4 +1,4 @@
-import { createCaptureRuntime } from "../capture/runtime";
+import { createCaptureRuntime } from "../capabilities/network-capture/runtime";
 import { registerCapability, clearRegisteredCapabilities } from "../capabilities";
 import {
   applyDefaultCapabilities,

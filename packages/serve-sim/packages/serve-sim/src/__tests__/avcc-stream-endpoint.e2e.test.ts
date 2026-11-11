@@ -14,7 +14,7 @@ import { parseDetachState } from "./detach-state";
  * decodable H.264 stream rather than the endpoint silently emitting nothing.
  */
 
-const CLI_PATH = join(import.meta.dir, "../../src/index.ts");
+const CLI_PATH = join(import.meta.dir, "../index.ts");
 const STREAM_BUDGET_MS = process.env.CI ? 30_000 : 12_000;
 
 // Envelope tags — kept in sync with Swift AVCCEnvelope / TS avcc-codec.

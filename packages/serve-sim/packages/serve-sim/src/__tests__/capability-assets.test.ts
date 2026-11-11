@@ -1,6 +1,14 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -8,6 +16,10 @@ const fixture = join(import.meta.dir, "fixtures/capability-assets.child.ts");
 const loader = "libServeSimCapabilityLoader.dylib";
 const tool = "serve-sim-pasteboard";
 const reader = "libSimPasteboardReader.dylib";
+const proxy = "libSimNetProxy.dylib";
+const addon = "servesim_capture.py";
+const source = resolve(import.meta.dir, "..");
+const version = JSON.parse(readFileSync(resolve(source, "../package.json"), "utf8")).version;
 
 test("capability assets resolve in source, relocated ESM/CJS and a compiled executable", async () => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "capability-assets-")));
@@ -15,10 +27,15 @@ test("capability assets resolve in source, relocated ESM/CJS and a compiled exec
   const work = join(directory, "unrelated-working-directory");
   mkdirSync(join(dist, "capability-loader"), { recursive: true });
   mkdirSync(join(dist, "simpb"));
+  mkdirSync(join(dist, "simnet"));
+  mkdirSync(join(dist, "capture", "mitm-addon"), { recursive: true });
   mkdirSync(work);
   writeFileSync(join(dist, "capability-loader", loader), "probe asset");
   writeFileSync(join(dist, "simpb", tool), "probe tool");
   writeFileSync(join(dist, "simpb", reader), "probe reader");
+  writeFileSync(join(dist, "simnet", proxy), "probe proxy");
+  writeFileSync(join(dist, "capture", "mitm-addon", addon), "probe addon");
+  writeFileSync(resolve(dist, "../package.json"), JSON.stringify({ version }));
   const run = (command: string, args: string[], base: string, override?: string) => {
     const child = spawnSync(command, args, {
       cwd: work,
@@ -34,6 +51,12 @@ test("capability assets resolve in source, relocated ESM/CJS and a compiled exec
       exists: true,
       pasteboardTool: join(override ?? resolve(base, "..", "dist", "simpb"), tool),
       pasteboardReader: join(override ?? resolve(base, "..", "dist", "simpb"), reader),
+      networkDylib: resolve(base, "..", "dist", "simnet", proxy),
+      networkAddon:
+        base === source
+          ? join(base, "capabilities", "network-capture", "mitm-addon", addon)
+          : join(base, "capture", "mitm-addon", addon),
+      version,
     });
   };
   try {

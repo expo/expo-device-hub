@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import WebSocket from "ws";
 
-import { freePortAsync, UDID, useTempStateDir } from "../../__tests__/helpers";
-import { simMiddleware } from "../../middleware";
-import { servePreview, type PreviewServer } from "../../runtime";
+import { freePortAsync, UDID, useTempStateDir } from "../../../__tests__/helpers";
+import { simMiddleware } from "../../../middleware";
+import { servePreview, type PreviewServer } from "../../../runtime";
 
 const TOKEN = "capture-exec-origin-token";
 

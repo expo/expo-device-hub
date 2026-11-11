@@ -1,13 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { isCapabilityArmed } from "../capabilities/runtime/manager";
-import { dirnameOf } from "../runtime";
-import { simctl } from "../simctl";
+import { isCapabilityArmed } from "../runtime/manager";
+import { simctl } from "../../simctl";
 
-const __dirname = dirnameOf(import.meta.url);
-const DYLIB_NAME = "libSimNetProxy.dylib";
+export { locateProxyDylib, proxyDylibCandidates } from "./assets";
 
 export async function trustCaInSimulator(udid: string, caPem: string): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), "serve-sim-ca-"));
@@ -18,18 +16,6 @@ export async function trustCaInSimulator(udid: string, caPem: string): Promise<v
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-}
-
-export function proxyDylibCandidates(): string[] {
-  return [
-    join(__dirname, "simnet", DYLIB_NAME),
-    join(__dirname, "..", "dist", "simnet", DYLIB_NAME),
-    join(__dirname, "..", "..", "dist", "simnet", DYLIB_NAME),
-  ];
-}
-
-export function locateProxyDylib(): string | null {
-  return proxyDylibCandidates().find((candidate) => existsSync(candidate)) ?? null;
 }
 
 export async function isDeviceInjected(

@@ -27,7 +27,11 @@ import {
   formatMs,
   groupByDomain,
 } from "../client/components/network-capture-tool";
-import { CAPTURE_SCHEMA_VERSION, type CaptureMeta, type CapturedRequest } from "../capture/store";
+import {
+  CAPTURE_SCHEMA_VERSION,
+  type CaptureMeta,
+  type CapturedRequest,
+} from "../capabilities/network-capture/store";
 
 function request(overrides: Partial<CapturedRequest> = {}): CapturedRequest {
   return {

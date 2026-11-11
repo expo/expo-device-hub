@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 
-import { freePortAsync, installShims, UDID, useTempStateDir } from "../../__tests__/helpers";
+import { freePortAsync, installShims, UDID, useTempStateDir } from "../../../__tests__/helpers";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { simMiddleware, retryPendingCaptureCleanup } from "../../middleware";
-import { servePreview, type PreviewServer } from "../../runtime";
+import { simMiddleware, retryPendingCaptureCleanup } from "../../../middleware";
+import { servePreview, type PreviewServer } from "../../../runtime";
 import { captureRuntime } from "../runtime";
 
 let port: number;
@@ -15,7 +15,7 @@ let stateDir: ReturnType<typeof useTempStateDir>;
 beforeAll(async () => {
   shims = installShims({
     xcrun: readFileSync(
-      join(import.meta.dir, "../../__tests__/fixtures/grid-shutdown-xcrun.cjs"),
+      join(import.meta.dir, "../../../__tests__/fixtures/grid-shutdown-xcrun.cjs"),
       "utf8",
     ),
   });

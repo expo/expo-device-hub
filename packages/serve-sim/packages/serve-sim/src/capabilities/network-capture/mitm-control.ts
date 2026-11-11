@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 
 import { applyCaptureFields, captureFieldSet, type CaptureField } from "./fields";
 import { redactHeaders } from "./redact";
-import { safeEqualString } from "../session-auth";
+import { safeEqualString } from "../../session-auth";
 import { clampBody, type CaptureStore } from "./store";
 
 const PENDING_LIMIT = 1000;

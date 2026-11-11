@@ -26,7 +26,7 @@ Importing the module does not import concrete capabilities, install process hand
 arm a device, start a server or build native assets. The CLI still explicitly registers
 `clipboardCapability` and `captureRuntime.capability`; their IDs, defaults and override
 selection are unchanged [observed: `src/index.ts`, `src/capabilities/runtime/registry.ts`,
-`src/capabilities/clipboard/definition.ts`, `src/capture/runtime.ts`].
+`src/capabilities/clipboard/definition.ts`, `src/capabilities/network-capture/runtime.ts`].
 
 ### Dependency direction
 
@@ -71,7 +71,7 @@ next layer until the current head has been reviewed and its relevant CI is clear
 1. **Module foundation:** extract the unchanged types, registry/selection, capability
    manager and its preparation, config, ownership and lock helpers. Expose the module
    entry point and retarget all callers/tests before removing the old root modules. This is the
-   implemented boundary; Clipboard below is implemented and the later consumers are planned
+   implemented boundary; Clipboard and Network Capture below are implemented
    [observed: `src/capabilities/`].
 2. **Clipboard:** `capabilities/clipboard/index.ts` exposes its definition, session,
    read/write, Copy/Paste and shortcut APIs. `runtime/session.ts` owns the shared
@@ -85,22 +85,23 @@ next layer until the current head has been reviewed and its relevant CI is clear
    `sim-pasteboard*` and `sim-command-shortcut.ts` root files are removed. Actual
    HID dispatch, input turns and HTTP/UI adaptation remain with the host
    [observed: `src/capabilities/clipboard/`, `src/device-session.ts`].
-3. **Network Capture:** move the full existing `src/capture/` module into
+3. **Network Capture:** the full existing implementation lives in
    `capabilities/network-capture/`. Its `index.ts` explicitly exports the existing
    runtime/factory, errors, types and host-facing helpers. Keep implementation in
-   sibling leaves, including the engine and store, and remove the old public barrel.
-   Reuse the runtime definition/preparation API while preserving Capture's public
+   sibling leaves, including the engine and store. The old public barrel is removed.
+   It reuses the runtime definition/preparation API while preserving Capture's public
    cancellation queue and resource lifecycle; preserve
    [host resource lifecycle](#host-resource-lifecycle) and the policy in
    [LLP 0005](0005-serve-sim-network-capture.explainer.md).
-   Keep one canonical `captureRuntime` instance. Native/Python asset sources and
-   output paths must still resolve after the physical move; this does not change
-   the native build/output layout
+   There is one canonical `captureRuntime` instance. Native/Python lookup uses the
+   source/bundle/executable anchor; the Python copy source moves, while native
+   `Sources/` trees and all build/output paths stay in place. Browser values use
+   the pure `fields.ts`/`store.ts` leaves; other host-facing imports use `index.ts`
    [confirmed: Gabe Debes, 2026-11-10].
 
 Here `capabilities/network-capture` means network capture. Native screen/video capture,
 streaming and recording are separate subsystems and stay outside this module
-[confirmed: Gabe Debes, 2026-11-10; observed: `src/capture/runtime.ts`, `src/native.ts`].
+[confirmed: Gabe Debes, 2026-11-10; observed: `src/capabilities/network-capture/runtime.ts`, `src/native.ts`].
 
 Camera can become a later sibling after these consumers establish the boundary.
 Keychain stays outside this foundation. Do not add runtime controls or lifecycle

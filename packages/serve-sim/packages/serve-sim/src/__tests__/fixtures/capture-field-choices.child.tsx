@@ -3,7 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import * as realClientControl from "../../socket/client-control";
 import * as realCaptureStream from "../../client/hooks/use-capture-stream";
-import type { CaptureMeta } from "../../capture/store";
+import type { CaptureMeta } from "../../capabilities/network-capture/store";
 
 // Drive the real panel with its two I/O edges replaced: the capture stream reports what the panel
 // last heard about each device, and host actions answer from what the server actually runs.

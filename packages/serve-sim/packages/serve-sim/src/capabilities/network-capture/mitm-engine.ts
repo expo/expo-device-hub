@@ -20,9 +20,9 @@ import { basename, join } from "node:path";
 
 import type { CaptureStore } from "./store";
 import { assertNotOwnProxy, OwnProxyPortError, type CaptureUpstream } from "./upstream";
-import { dirnameOf } from "../runtime";
-import { isRunningOnEAS } from "../environment";
-import { withStateLockSync } from "../state-lock";
+import { isRunningOnEAS } from "../../environment";
+import { withStateLockSync } from "../../state-lock";
+import { locateAddon } from "./assets";
 import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "./fields";
 import {
   DEFAULT_MAX_CONTROL_BODY_BYTES,
@@ -41,9 +41,6 @@ export {
   formatOversizedControlBodyWarning,
   maxControlBodyBytes,
 };
-
-// Bun inlines bare `__dirname` as the build machine's path; resolve from import.meta instead.
-const __dirname = dirnameOf(import.meta.url);
 
 const STARTUP_TIMEOUT_MS = 30_000;
 const STARTUP_POLL_MS = 200;
@@ -186,21 +183,6 @@ export function mitmdumpMissingMessage(override?: string): string {
     return "This session does not have network capture configured. Please restart the EAS session with --network-capture.";
   }
   return "mitmproxy is not installed. Install it via Homebrew: brew install mitmproxy.";
-}
-
-function locateAddon(): string {
-  const candidates = [
-    join(__dirname, "mitm-addon", "servesim_capture.py"),
-    join(__dirname, "..", "dist", "capture", "mitm-addon", "servesim_capture.py"),
-    join(__dirname, "..", "src", "capture", "mitm-addon", "servesim_capture.py"),
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  throw new Error(
-    "Could not find servesim_capture.py, the addon that reports captured traffic. This build of serve-sim " +
-      "is missing dist/capture/mitm-addon; reinstall from a recent release.",
-  );
 }
 
 function isRunnable(path: string): boolean {

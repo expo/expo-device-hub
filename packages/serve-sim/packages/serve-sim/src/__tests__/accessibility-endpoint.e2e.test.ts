@@ -13,7 +13,7 @@ import { parseDetachState } from "./detach-state";
  * compile-only changes.
  */
 
-const CLI_PATH = join(import.meta.dir, "../../src/index.ts");
+const CLI_PATH = join(import.meta.dir, "../index.ts");
 const AX_RESPONSE_BUDGET_MS = process.env.CI ? 10_000 : 5_000;
 // The Swift helper returns 503 while the simulator's AX framework is still
 // warming up after boot. A cold CI runner can take well past a minute on its

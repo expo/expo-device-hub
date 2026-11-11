@@ -14,7 +14,7 @@ import { parseDetachState } from "./detach-state";
  * is unit-tested against a fake req/res in metrics-route.test.ts.
  */
 
-const CLI_PATH = join(import.meta.dir, "../../src/index.ts");
+const CLI_PATH = join(import.meta.dir, "../index.ts");
 
 const bootedUdid = e2eDevice();
 const describeOrSkip = bootedUdid ? describe : describe.skip;
