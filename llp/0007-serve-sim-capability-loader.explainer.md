@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (added startup installation to the detached-mode restrictions and linked the startup explainer); 2026-11-10 (documented the internal module and capability migration order)
+**Revised:** 2026-10-06 (added startup installation to the detached-mode restrictions and linked the startup explainer); 2026-11-10 (internal manager module and capability migration order)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -38,11 +38,23 @@ Capability types belong with the runtime implementation and may be imported with
 CLI, HTTP, WebSocket, security and UI adapters stay with the host
 [confirmed: Gabe Debes, 2026-11-10].
 
-App launch, config publication, loader insertion, PID ownership and cross-process
-locking remain in `src/launch-manager.ts` and its helpers initially. A lifecycle
-manager receives the operations it needs from that host boundary; it must not split
-preparation from locked publication or introduce another state/lock namespace
-[confirmed: Gabe Debes, 2026-11-10; observed: `src/launch-manager.ts`].
+The foundation includes the capability manager, not only its types and registry.
+`runtime/manager.ts` owns preparation/publication/rollback transactions, loader
+insertion and session ownership. `runtime/resources.ts`, `config.ts`, `state.ts`
+and `lock.ts` own their existing helpers. The old root modules explicitly re-export
+the same functions and error classes; the registry, armed-device set, pending-update
+set, state filenames and lock namespace each have one implementation
+[confirmed: Gabe Debes, 2026-11-10; observed: `src/capabilities/runtime/`].
+
+App launching stays in the host. `src/launch-manager.ts` keeps its launch, stop and
+URL entry points; `src/app-launch-host.ts` supplies the existing native app operations.
+The internal `withAppLaunchState` transaction publishes before the host launch callback,
+rolls back publication or launch failures, then calls the URL continuation outside
+that rollback catch but under the same device lock. Capability-triggered relaunch and
+device shutdown also keep their existing position inside the ownership transaction;
+their native calls remain in the host helpers. Do not split these into separately
+locked preparation and launch operations
+[observed: `runtime/manager.ts`, `src/launch-manager.ts`, `src/app-launch-host.ts`].
 
 ### Migration order
 
@@ -50,13 +62,14 @@ Move the existing code in serial, independently reviewable layers. Do not begin 
 next layer until the current head has been reviewed and its relevant CI is clear
 [confirmed: Gabe Debes, 2026-11-10].
 
-1. **Module foundation:** extract the unchanged types and registry/selection,
-   expose the module entry point, and preserve the old exports. This is the
+1. **Module foundation:** extract the unchanged types, registry/selection, capability
+   manager and its preparation, config, ownership and lock helpers. Expose the module
+   entry point and preserve the old exports. This is the
    implemented boundary; the consumer moves below are still planned
    [observed: `src/capabilities/`].
 2. **Clipboard:** add `capabilities/clipboard/index.ts`, move its implementation
    behind that entry point, and derive reusable setup/recheck/retry/disposal policy
-   from `src/clipboard-session.ts`. Keep host input arbitration and process-handler
+   from `src/clipboard-session.ts` into `runtime/session.ts`. Keep host input arbitration and process-handler
    ownership outside the generic manager. Preserve setup coalescing, reboot repair,
    disabled versus unmanaged behavior, foreign setup and owned cleanup; see
    [LLP 0010](0010-serve-sim-clipboard.explainer.md#set-up-at-session-start-re-checked-every-30-s).
@@ -89,7 +102,9 @@ semantics, stop that extraction and identify the concrete behavior change first
 Source ownership does not require changing native build or output directories.
 Keep the existing `Sources/` trees, dylib/helper names and `dist/` paths during the
 first moves. Moving a TypeScript file must not silently change asset resolution;
-keep the locator at a stable host boundary or pass it explicitly. In particular,
+keep the locator at a stable host boundary or pass it explicitly. The loader locator
+stays at the source-root anchor in `src/capability-assets.ts`, re-exported by config;
+Clipboard's locator stays in `src/sim-pasteboard.ts`. In particular,
 do not import the host's HTTP/WebSocket `src/runtime.ts` just to obtain a path helper
 [confirmed: Gabe Debes, 2026-11-10; observed: `src/capability-config.ts`, `src/runtime.ts`].
 
