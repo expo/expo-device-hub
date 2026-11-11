@@ -850,8 +850,10 @@ test("a foldable's gRPC capture records on the fold canvas and reports that it f
   try {
     expect(recording?.canvas).toEqual({ width: 926, height: 960 });
     expect(recorder.followsFold).toBe(true);
+    // A fold canvas frame's PTS is the host monotonic time of its capture.
+    const pts = BigInt(Math.round(performance.now() * 1000));
     recording!.accept(
-      { type: "frame", data: FOLD_KEYFRAME, pts: 0n, isConfig: false, isKey: true },
+      { type: "frame", data: FOLD_KEYFRAME, pts, isConfig: false, isKey: true },
       {
         width: 2076,
         height: 2152,

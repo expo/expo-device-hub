@@ -21,7 +21,7 @@ Before this change, the recording took the encoded packets of the live stream [o
 
 ## Fold canvas
 
-When the router starts a recording with gRPC capture, it reads the emulator's two displays from the `hardware-qemu.ini` that the emulator writes at launch: `hw.lcd` is the `inner` display, and display region `hw.displayRegion.0.1` is the `outer` display that the closed device shows. A device needs `hw.sensor.hinge` and both sizes [observed: `readFoldableDisplays` in `src/fold.ts`]. The Pixel 9 Pro Fold has a 2076×2152 inner display and a 1080×2424 outer display.
+When the router starts a recording with gRPC capture, it reads the emulator's two displays from the `hardware-qemu.ini` that the emulator writes at launch: `hw.lcd` is the `inner` display, and display region `hw.displayRegion.0.1` is the `outer` display that the closed device shows. A device needs `hw.sensor.hinge`, both sizes, and `hw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1`, the emulator's closed posture [observed: `readFoldableDisplays` in `src/fold.ts`; the Pixel 9 Pro Fold AVD]. A fold-out profile shows its region at another posture, so it keeps the old recording, and HubClient keeps its fold lock; HubClient does not offer fold-out controls either ([LLP 0016](0016-hub-client-foldable-devices.spec.md#android-emulators)). The Pixel 9 Pro Fold has a 2076×2152 inner display and a 1080×2424 outer display.
 
 The canvas is the bounding box of the two displays as the gRPC capture gives them: each display larger than the square capture box is fitted into it, a smaller one keeps its size, and serve-emu crops odd sizes to even [observed: `captureSize`; a 3000 px box gave a 2076×2152 stream on the local Pixel 9 Pro Fold]. The box is `maxSize`. At native size (`maxSize` 0), RGB888 and PNG capture each display at its own size, but MMAP capture sizes its shared memory once from the startup image, so its box is the startup display's longest side; the router names the startup display from the hinge reading, and counts an unknown one as native size [observed: `captureBox` in `src/recording-canvas.ts`; `createGrpcImageCaptureTransport` in `src/grpc-session.ts`]. At `--max-dimension 960`, the Pixel 9 Pro Fold's inner display is captured at 926×960 and its outer display at 426×960, so the canvas is 926×960 [observed: `recordingCanvas` in `src/recording-canvas.ts`; the local recording]. The first canvas wins, so a capture that restarts keeps the recording's frame size [observed: `ScreenRecording.foldCanvas`].
 
@@ -41,7 +41,7 @@ The second encoder costs a libx264 encode at the capture size for as long as a f
 
 ## Device-state timeline
 
-Each recorded frame carries its geometry from the recording encoder and the last hinge reading. The manifest's `deviceStates` lists the full state at each change, in the format of [LLP 0001](0001-serve-sim-video-pipeline.explainer.md#device-state-metadata):
+Each recorded frame carries its geometry from the recording encoder and the last hinge reading from before its capture. A fold canvas frame's PTS is the host monotonic time at which serve-emu submitted its image, and readings keep the time they arrived on the same clock, so a reading that arrives while ffmpeg still holds the frame does not reach it [observed: `#poseAt` in `src/screen-recording.ts`]. The manifest's `deviceStates` lists the full state at each change, in the format of [LLP 0001](0001-serve-sim-video-pipeline.explainer.md#device-state-metadata):
 
 ```json
 {
@@ -78,7 +78,7 @@ The top-level `width` and `height` are the canvas. In an entry, `width` and `hei
 
 The screen comes from the captured image: the display whose proportions are closest [observed: `screenForImage`]. The hinge is read when the recording starts, every second while it runs, after each `/api/fold` command, and at once when the recorded display changes, because a fold through adb or another tool does not pass through serve-emu [observed: `pollFold` and `readFoldNow` in `src/middleware.ts`]. A reading that contradicts the shown display, such as `opened` on the outer display, is older than the fold, so that frame leaves `hingeAngle` and `posture` out until the next reading [observed: `poseForGeometry`].
 
-As in serve-sim, a state enters the timeline only after its frame is written, the first entry has `timeMs: 0`, unchanged states are left out, a geometry change keeps the time of its first written frame, a pose-only change waits 250 ms after the previous entry, and the final written state stays [observed: `#recordState` in `src/screen-recording.ts`]. While the recording runs, `session.json` is rewritten at each entry, so a killed process leaves the timeline so far next to its partial file. A recording without the fold canvas has no `deviceStates`.
+As in serve-sim, a state enters the timeline only after the muxer accepts its frame, the first entry has `timeMs: 0`, unchanged states are left out, a geometry change keeps the time of its first accepted frame, a pose-only change waits 250 ms after the previous entry, and the final state stays [observed: `#recordState` in `src/screen-recording.ts`]. The fragmented MP4 writes a fragment only when the next one starts, at a keyframe at least one second later, so an accepted frame can still be missing from the file. While the recording runs, `session.json` is therefore rewritten whenever a finished fragment brings more entries into the file, and it lists only those; a killed process leaves the timeline of the frames in its partial file. The complete manifest lists every entry [observed: `persistedUntil` from mediabunny's `onMoof` in `createMp4Writer`, `#statesInFile` and `#publishStates`]. A recording without the fold canvas has no `deviceStates`.
 
 ## Fold during a recording
 
@@ -90,4 +90,5 @@ serve-emu also answers `POST /api/fold` with 409 while a recording runs that tak
 
 - Rotation still ends a recording that takes the stream's packets, and HubClient still locks it. A turned foldable on the fold canvas is scaled down to fit, but its timeline has no orientation.
 - `posture` and `hingeAngle` lag a fold through adb by up to the time of one reading. The display switch itself is exact, because it comes from the frames.
+- In Android's rear display mode, an open device shows its outer display. Its posture then contradicts the shown display, so those entries leave the pose unknown.
 - The timeline does not name the device model. `deviceName` is the AVD name.

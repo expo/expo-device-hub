@@ -157,6 +157,9 @@ export function parseFoldableDisplays(config: string): FoldableDisplays | null {
       : null;
   };
   if (!/^(?:true|yes)$/i.test(value("hw.sensor.hinge") ?? "")) return null;
+  // @ref LLP 0018#fold-canvas — only a device that shows region 0.1 while closed, as the Pixel folds do
+  // Posture 1 is the emulator's closed posture. A fold-out profile shows its region at another one.
+  if (value("hw.sensor.hinge.fold_to_displayRegion.0.1_at_posture") !== "1") return null;
   const inner = size("hw.lcd");
   // The emulator shows display region 0.1 of the panel while the device is folded.
   const outer = size("hw.displayRegion.0.1");

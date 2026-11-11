@@ -26,6 +26,7 @@ hw.displayRegion.0.1.height = 2424
 hw.displayRegion.0.2.width = 0
 hw.sensor.hinge = true
 hw.sensor.hinge.ranges = 0-180
+hw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1
 `;
 const DISPLAYS = { inner: { width: 2076, height: 2152 }, outer: { width: 1080, height: 2424 } };
 const LAYOUT = recordingCanvas(DISPLAYS, 960);
@@ -49,6 +50,16 @@ test("reads a foldable's two displays from the emulator's hardware config", () =
   expect(parseFoldableDisplays(PIXEL_9_PRO_FOLD.replace("0.1.width = 1080", "0.1.width = 0"))).toBe(
     null,
   );
+  // A fold-out profile shows its region at another posture than closed (1), or the config does
+  // not say; neither gets the fold canvas.
+  expect(
+    parseFoldableDisplays(PIXEL_9_PRO_FOLD.replace("_at_posture = 1", "_at_posture = 4")),
+  ).toBe(null);
+  expect(
+    parseFoldableDisplays(
+      PIXEL_9_PRO_FOLD.replace("hw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1\n", ""),
+    ),
+  ).toBe(null);
 });
 
 test("sizes the canvas to both displays' captures in the gRPC box", () => {
@@ -151,23 +162,54 @@ const frame = (pts: bigint, data = key, isKey = true): VideoFrame => ({
   isConfig: false,
 });
 
-async function recorder() {
+async function recorder(options: { realWriter?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "recording-fold-test-"));
   roots.push(root);
+  let nowUs = 0n;
+  let persistedUntil: number | undefined;
   const recording = await ScreenRecording.create({
     directory: join(root, "session"),
     udid: "emulator-5554",
     deviceName: "Pixel_9_Pro_Fold",
     runtimeDisplayName: "Android 16",
-    clock: { monotonicUs: () => 0n, epochMs: () => 1_800_000_000_000 },
-    createWriter: async ({ path }) => {
-      await writeFile(path, "test-writer");
-      return { add: async () => {}, finish: async () => {}, cancel: async () => {} };
-    },
+    clock: { monotonicUs: () => nowUs, epochMs: () => 1_800_000_000_000 },
+    ...(options.realWriter
+      ? {}
+      : {
+          createWriter: async ({ path }) => {
+            await writeFile(path, "test-writer");
+            return {
+              add: async () => {},
+              finish: async () => {},
+              cancel: async () => {},
+              persistedUntil: () => persistedUntil ?? Number.POSITIVE_INFINITY,
+            };
+          },
+        }),
   });
-  const manifest = async () =>
-    JSON.parse(await readFile(join(root, "session", "session.json"), "utf8"));
-  return { recording, manifest };
+  const path = join(root, "session", "session.json");
+  const manifest = async () => JSON.parse(await readFile(path, "utf8"));
+  /** The manifest once `check` accepts it; manifests are written in the background. */
+  const manifestWhen = async (check: (value: Record<string, unknown>) => boolean) => {
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const value = await manifest().catch(() => null);
+      if (value && check(value)) return value;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    return manifest();
+  };
+  return {
+    recording,
+    manifest,
+    manifestWhen,
+    root,
+    setTime: (value: bigint) => {
+      nowUs = value;
+    },
+    setPersistedUntil: (seconds: number) => {
+      persistedUntil = seconds;
+    },
+  };
 }
 
 test("keeps one track through a fold and writes the display timeline", async () => {
@@ -220,6 +262,70 @@ test("keeps one track through a fold and writes the display timeline", async () 
     width: 426,
     height: 960,
   });
+});
+
+test("a frame shows the hinge reading from before it was captured", async () => {
+  const { recording, manifest, setTime } = await recorder();
+  setTime(900_000n);
+  recording.observePose({ hingeAngle: 180, posture: "opened" });
+  recording.accept(frame(1_000_000n), LAYOUT.canvas, "grpc-screenshot", INNER);
+  await recording.ready;
+  // A reading after the next frame's capture, but before ffmpeg returns that frame.
+  setTime(1_200_000n);
+  recording.observePose({ hingeAngle: 90, posture: "half_opened" });
+  recording.accept(frame(1_100_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", INNER);
+  recording.accept(frame(1_500_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", INNER);
+  setTime(2_000_000n);
+  await recording.finish();
+  const states = (await manifest()).deviceStates;
+  expect(
+    states.map((entry: { timeMs: number; state: { hingeAngle: number } }) => [
+      entry.timeMs,
+      entry.state.hingeAngle,
+    ]),
+  ).toEqual([
+    [0, 180],
+    [500, 90],
+  ]);
+});
+
+test("a partial manifest lists only the timeline of the frames in finished fragments", async () => {
+  const { recording, manifestWhen, setPersistedUntil } = await recorder();
+  setPersistedUntil(0);
+  recording.accept(frame(1_000_000n), LAYOUT.canvas, "grpc-screenshot", INNER);
+  await recording.ready;
+  recording.accept(frame(3_000_000n), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  recording.accept(frame(5_000_000n), LAYOUT.canvas, "grpc-screenshot", INNER);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(
+    (await manifestWhen((value) => value.status === "recording")).deviceStates,
+  ).toBeUndefined();
+  // The fragment before the 2 s frame finished: only its entry is in the file.
+  setPersistedUntil(2);
+  recording.accept(frame(5_100_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", INNER);
+  const partial = await manifestWhen((value) => Array.isArray(value.deviceStates));
+  expect(partial.deviceStates.map((entry: { timeMs: number }) => entry.timeMs)).toEqual([0]);
+  await recording.finish();
+  const complete = await manifestWhen((value) => value.status === "complete");
+  expect(complete.deviceStates.map((entry: { timeMs: number }) => entry.timeMs)).toEqual([
+    0, 2000, 4000,
+  ]);
+});
+
+test("the MP4 writer reports the frames in its finished fragments", async () => {
+  const { recording, root, manifestWhen } = await recorder({ realWriter: true });
+  recording.accept(frame(1_000_000n), LAYOUT.canvas, "grpc-screenshot", INNER);
+  await recording.ready;
+  recording.accept(frame(1_500_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", INNER);
+  // A keyframe after mediabunny's 1 s minimum fragment finishes the first fragment.
+  recording.accept(frame(2_500_000n), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  recording.accept(frame(2_600_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  const partial = await manifestWhen((value) => Array.isArray(value.deviceStates));
+  expect(partial.status).toBe("recording");
+  expect(partial.deviceStates.map((entry: { timeMs: number }) => entry.timeMs)).toEqual([0]);
+  const file = await readFile(join(root, "session", "recording.mp4.partial"));
+  expect(file.length).toBeGreaterThan(28);
+  await recording.finish();
 });
 
 test("a recording without fold geometry writes no timeline", async () => {

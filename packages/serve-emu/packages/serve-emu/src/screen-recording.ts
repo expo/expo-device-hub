@@ -49,6 +49,9 @@ export type RecordedDeviceState = { timeMs: number; state: RecordingDeviceState 
 /** A pose-only change waits this long after the previous entry, as in serve-sim's recordings. */
 const POSE_COALESCE_MS = 250;
 
+/** Hinge readings kept for frames still in the encoder, a few seconds at one reading per second. */
+const MAX_POSE_HISTORY = 64;
+
 const sameGeometry = (a: RecordingDeviceState, b: RecordingDeviceState) =>
   a.width === b.width &&
   a.height === b.height &&
@@ -65,6 +68,11 @@ export type RecordingWriter = {
   add(sample: { data: Buffer; isKey: boolean; timestamp: number; duration: number }): Promise<void>;
   finish(): Promise<void>;
   cancel(): Promise<void>;
+  /**
+   * Every sample before this time, in seconds, is in a finished fragment of the file. A writer
+   * without it counts every added sample as in the file.
+   */
+  persistedUntil?(): number;
 };
 
 export const DEFAULT_RECORDING_LIMITS = {
@@ -97,9 +105,18 @@ export type RecordingOptions = RecordingMetadata & {
 
 async function createMp4Writer(options: WriterOptions): Promise<RecordingWriter> {
   const file = await createRecordingFileTarget(options);
+  // The sample that the muxer works on. A fragment finishes when the next one starts, so every
+  // sample before the one that finished it is in the file.
+  let addingTimestamp = 0;
+  let persistedUntil = 0;
   const output = new Output({
     // Each closed fragment plays on its own, so a crash keeps everything before the open one.
-    format: new Mp4OutputFormat({ fastStart: "fragmented" }),
+    format: new Mp4OutputFormat({
+      fastStart: "fragmented",
+      onMoof: () => {
+        persistedUntil = Math.max(persistedUntil, addingTimestamp);
+      },
+    }),
     target: file.target,
   });
   const source = new EncodedVideoPacketSource("avc");
@@ -112,8 +129,10 @@ async function createMp4Writer(options: WriterOptions): Promise<RecordingWriter>
   }
   let sequence = 0;
   return {
+    persistedUntil: () => persistedUntil,
     async add(sample) {
       const first = sequence === 0;
+      addingTimestamp = sample.timestamp;
       await source.add(
         new EncodedPacket(
           sample.data,
@@ -202,7 +221,10 @@ export class ScreenRecording {
   readonly ready: Promise<void>;
   #foldCanvas: RecordingCanvas | null = null;
   #followsFold = false;
-  #pose: RecordingPose = {};
+  /** Hinge readings by the monotonic time they arrived, oldest first. */
+  #poses: { atUs: bigint; pose: RecordingPose }[] = [];
+  /** How many timeline entries the last partial manifest published. */
+  #publishedStates = 0;
   readonly #deviceStates: RecordedDeviceState[] = [];
   /** A written frame's pose-only change that waits for the coalescing interval. */
   #heldState: RecordedDeviceState | null = null;
@@ -290,10 +312,32 @@ export class ScreenRecording {
 
   /** How the hinge stands from now on. The next recorded frame shows it. */
   observePose(pose: RecordingPose): void {
-    this.#pose = {
-      ...(pose.hingeAngle !== undefined ? { hingeAngle: pose.hingeAngle } : {}),
-      ...(pose.posture !== undefined ? { posture: pose.posture } : {}),
-    };
+    this.#poses.push({
+      atUs: this.#clock.monotonicUs(),
+      pose: {
+        ...(pose.hingeAngle !== undefined ? { hingeAngle: pose.hingeAngle } : {}),
+        ...(pose.posture !== undefined ? { posture: pose.posture } : {}),
+      },
+    });
+    if (this.#poses.length > MAX_POSE_HISTORY) this.#poses.shift();
+  }
+
+  /**
+   * The last hinge reading before a frame was captured. A fold canvas frame's PTS is the host
+   * monotonic time at which serve-emu submitted its image, on the same clock as the readings.
+   */
+  #poseAt(ptsUs: bigint): RecordingPose {
+    let index = -1;
+    for (let i = this.#poses.length - 1; i >= 0; i--) {
+      if (this.#poses[i]!.atUs <= ptsUs) {
+        index = i;
+        break;
+      }
+    }
+    if (index < 0) return {};
+    // Later frames are not older, so earlier readings are no longer needed.
+    if (index > 0) this.#poses.splice(0, index);
+    return this.#poses[0]!.pose;
   }
 
   accept(
@@ -304,13 +348,14 @@ export class ScreenRecording {
   ): void {
     if (!this.active) return;
     // Frames with a geometry come from the fold canvas and enter the `deviceStates` timeline.
-    const state = geometry
-      ? {
-          ...geometry,
-          contentRect: { ...geometry.contentRect },
-          ...poseForGeometry(geometry, this.#pose),
-        }
-      : undefined;
+    const state =
+      geometry && packet.type === "frame"
+        ? {
+            ...geometry,
+            contentRect: { ...geometry.contentRect },
+            ...poseForGeometry(geometry, this.#poseAt(packet.pts)),
+          }
+        : undefined;
     try {
       if (packet.type === "session") {
         if (
@@ -446,18 +491,38 @@ export class ScreenRecording {
     ]).then(() => {});
   }
 
-  /** Where the frames are and how to place them, once the first keyframe arrived. */
-  #fileFields(): Record<string, unknown> {
+  /**
+   * Where the frames are and how to place them, once the first keyframe arrived. A partial file
+   * lists only the timeline of the frames that it holds; a complete one lists all of it.
+   */
+  #fileFields(timeline: "in-file" | "all" = "in-file"): Record<string, unknown> {
     if (!this.#first) return {};
+    const states = timeline === "all" ? this.#deviceStates : this.#statesInFile();
     return {
       recording: this.#outputName,
       firstFrameWallClock: { iso8601: new Date(this.#first.epochMs).toISOString() },
       width: this.#first.width,
       height: this.#first.height,
-      ...(this.#deviceStates.length
-        ? { deviceStates: this.#deviceStates.map((entry) => structuredClone(entry)) }
-        : {}),
+      ...(states.length ? { deviceStates: states.map((entry) => structuredClone(entry)) } : {}),
     };
+  }
+
+  /** The timeline entries whose first frame is in a finished fragment of the file. */
+  #statesInFile(): RecordedDeviceState[] {
+    const persistedUntil = this.#writer?.persistedUntil?.() ?? Number.POSITIVE_INFINITY;
+    return this.#deviceStates.filter((entry) => entry.timeMs < persistedUntil * 1000);
+  }
+
+  /** Rewrites the partial manifest when more of the timeline reached the file. */
+  #publishStates(): void {
+    if (this.#status.status !== "recording") return;
+    const count = this.#statesInFile().length;
+    if (count <= this.#publishedStates) return;
+    this.#publishedStates = count;
+    // A killed process leaves the timeline of the frames in the partial file.
+    void this.#manifest({ status: "recording", ...this.#fileFields() }).catch((error) =>
+      this.fail(error),
+    );
   }
 
   // @ref LLP 0018#device-state-timeline — the timeline follows serve-sim's recording manifest
@@ -483,11 +548,6 @@ export class ScreenRecording {
   #commitState(entry: RecordedDeviceState): void {
     this.#heldState = null;
     this.#deviceStates.push(entry);
-    if (this.#status.status !== "recording") return;
-    // A killed process leaves the timeline so far next to the partial file.
-    void this.#manifest({ status: "recording", ...this.#fileFields() }).catch((error) =>
-      this.fail(error),
-    );
   }
 
   finish(): Promise<ScreenRecordingResult> {
@@ -568,7 +628,7 @@ export class ScreenRecording {
     const result = { udid, deviceName, runtimeDisplayName, directory };
     await this.#manifest({
       status: "complete",
-      ...this.#fileFields(),
+      ...this.#fileFields("all"),
       durationSeconds: Number(durationUs) / 1e6,
       stopReason: this.#stopReason,
       frames: this.#frames,
@@ -606,6 +666,7 @@ export class ScreenRecording {
         if (sample.state && !this.#hasFailed()) {
           this.#recordState(sample.timeUs, sample.state);
         }
+        if (this.#deviceStates.length) this.#publishStates();
         this.#readyResolve();
       })
       .catch((error) => this.fail(error))
