@@ -5,12 +5,22 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-19
+**Revised:** 2026-10-19; 2026-11-10 (internal Clipboard module and shared session policy)
 **Related:** LLP 0003, LLP 0007
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
 ## Summary
+
+The Clipboard implementation lives in `src/capabilities/clipboard/`, exposed through
+its `index.ts`. Definition and reader code share the same objects/functions with the
+legacy `src/sim-pasteboard-reader.ts` exports; `src/clipboard-session.ts` re-exports
+the session factory. The generic `src/capabilities/runtime/session.ts` owns setup,
+retry and disposal policy, while `clipboard/session.ts` supplies host operations and
+registers exit cleanup only after setup ownership is acquired. Importing or
+constructing a session does not install process handlers. Native artifact lookup
+and build paths remain in `src/sim-pasteboard.ts`
+[observed: those modules and `src/__tests__/clipboard-module.test.ts`].
 
 serve-sim moves text between the browser clipboard and the simulator pasteboard. This document explains how serve-sim reads and writes the simulator pasteboard, including on headless workers, how the preview's Paste and Copy use it, how a framed preview asks its page for clipboard access, and why it works that way.
 

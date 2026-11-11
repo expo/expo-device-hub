@@ -125,7 +125,7 @@ import {
   writeSimPasteboard,
 } from "./sim-pasteboard";
 import { PasteboardUnavailableError, readSimPasteboardResult } from "./sim-pasteboard-reader";
-import { createClipboardSession } from "./clipboard-session";
+import { createClipboardSession } from "./capabilities/clipboard";
 import { PasteboardCopyTimeoutError, cleanupWarningOf } from "./sim-pasteboard-copy";
 
 /** Captured traffic is decrypted credentials and clipboard text is user data; `no-cache` would still let a cache keep a copy. */
