@@ -48,6 +48,7 @@ export const TEXT_SIZE_CATEGORIES = [
 ] as const;
 
 const TEXT_SIZE_DEBOUNCE_MS = 250;
+const CLOCK_REFRESH_MS = 30_000;
 /** `getUiStatus` reports an option it could not read as this. */
 const UNREADABLE = "unsupported";
 /** `pending` while SpringBoard restarts; not an option name. */
@@ -187,7 +188,7 @@ const wallTime = (value: string) => value.slice(0, 16);
 
 /** Advance a reported instant, keeping UTC fallbacks in UTC when they are edited too. */
 function tickingWallTime(value: string, elapsed: number, zone: string): string {
-  const suffix = /(Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
+  const suffix = /(Z|[+-]\d{2}:\d{2})$/.exec(value);
   if (!suffix) return wallTime(value); // An optimistic local pick awaits the server's readback.
   const at = Date.parse(value) + elapsed;
   if (suffix[1] === "Z") return wallTime(new Date(at).toISOString());
@@ -195,11 +196,23 @@ function tickingWallTime(value: string, elapsed: number, zone: string): string {
     try {
       return wallTime(zoneWallTime(zone, at));
     } catch {
-      // A browser can lack a zone known by the host; retain the reported numeric offset.
+      // A browser can lack a zone known by the host; show the instant in UTC instead.
     }
   }
-  const offset = (Number(suffix[3]) * 60 + Number(suffix[4])) * 60_000;
-  return wallTime(new Date(at + (suffix[2] === "-" ? -offset : offset)).toISOString());
+  return wallTime(new Date(at).toISOString());
+}
+
+/** When the page cannot format a zone, show and edit an explicit UTC instant. */
+function clockUsesUtc(value: string, zone: string): boolean {
+  if (value === HOST_CLOCK || !/^\d{4}-/.test(value)) return false;
+  if (value.endsWith("Z")) return true;
+  if (zone !== HOST_TIME_ZONE) {
+    try {
+      zoneWallTime(zone, Date.now());
+      return false;
+    } catch {}
+  }
+  return true;
 }
 
 /**
@@ -234,7 +247,7 @@ export function ClockControl({
   const input = useRef<HTMLInputElement>(null);
   const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editing = useRef(false);
-  const pickerUtc = useRef(value.endsWith("Z"));
+  const pickerUtc = useRef(clockUsesUtc(value, zone));
   const sampledAt = useRef(0);
   const [tick, setTick] = useState({ value, elapsed: 0 });
   const readable = value === HOST_CLOCK || /^\d{4}-/.test(value);
@@ -280,7 +293,7 @@ export function ClockControl({
     picker.value = set
       ? tickingWallTime(value, Math.max(0, performance.now() - sampledAt.current), zone)
       : pickerStart(zone);
-    pickerUtc.current = value.endsWith("Z");
+    pickerUtc.current = clockUsesUtc(value, zone);
     editing.current = true;
     if (typeof picker.showPicker === "function") picker.showPicker();
     else picker.focus();
@@ -298,7 +311,7 @@ export function ClockControl({
           {!readable
             ? "Unavailable"
             : set
-              ? `${start.replace("T", " ")}${value.endsWith("Z") ? " UTC" : ""}`
+              ? `${start.replace("T", " ")}${clockUsesUtc(value, zone) ? " UTC" : ""}`
               : "Host default"}
         </button>
         <input
@@ -943,6 +956,12 @@ export function SimulatorSettingsTool({
   const [staleClockUdid, setStaleClockUdid] = useState<string | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const readRevision = useRef(0);
+  const activeReads = useRef(0);
+  const activeMutations = useRef(0);
+  const invalidateReads = useCallback(() => {
+    readRevision.current++;
+  }, []);
   const supported = isIosRuntime(runtime);
 
   useEffect(() => {
@@ -954,15 +973,22 @@ export function SimulatorSettingsTool({
   // Retry, never an eternal disabled section.
   const refresh = useCallback(
     async (clearError = true) => {
+      const revision = ++readRevision.current;
+      activeReads.current++;
       if (clearError) setError(null);
       try {
         const status = await hostUiRequest(
           { device: udid },
           { signal: AbortSignal.timeout(15_000) },
         );
-        if (status) setState(status);
-        else setError("Unexpected simulator-settings reply");
+        if (revision !== readRevision.current) return;
+        if (status) {
+          setState(status);
+          return true;
+        }
+        setError("Unexpected simulator-settings reply");
       } catch (e) {
+        if (revision !== readRevision.current) return;
         setError(
           e instanceof DOMException && e.name === "TimeoutError"
             ? "Timed out reading simulator settings"
@@ -970,7 +996,10 @@ export function SimulatorSettingsTool({
               ? e.message
               : "Could not reach the preview server — reload the page if this persists",
         );
+      } finally {
+        activeReads.current--;
       }
+      return false;
     },
     [udid],
   );
@@ -981,10 +1010,32 @@ export function SimulatorSettingsTool({
     // (it would spawn an iOS binary inside e.g. a watchOS sim and abort).
     if (!supported) return;
     void refresh();
-  }, [refresh, supported]);
+    return invalidateReads;
+  }, [refresh, supported, invalidateReads]);
+
+  const clock = state?.clock;
+  useEffect(() => {
+    if (!open || !supported || !clock || clock === HOST_CLOCK || clock === UNREADABLE) return;
+    let stopped = false;
+    // Pick up resets and clock changes made by another client while this panel stays open.
+    const timer = setInterval(() => {
+      if (activeReads.current || activeMutations.current) return;
+      void refresh(false).then((ok) => {
+        if (ok === false && !stopped) {
+          setState((s) => (s ? { ...s, clock: UNREADABLE } : s));
+        }
+      });
+    }, CLOCK_REFRESH_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [open, supported, clock, refresh]);
 
   const apply = useCallback(
     async (option: string, value: string) => {
+      activeMutations.current++;
+      readRevision.current++;
       setPending(option);
       setError(null);
       const previous = stateRef.current?.[option];
@@ -994,7 +1045,10 @@ export function SimulatorSettingsTool({
           { device: udid, option, value },
           { signal: AbortSignal.timeout(15_000) },
         );
-        if (option === "clock") await refresh();
+        if (option === "clock" && (await refresh()) === false) {
+          // The set succeeded, but its local input has no canonical offset to tick from.
+          setState((s) => (s ? { ...s, clock: UNREADABLE } : s));
+        }
         if (option === "time-zone" && value !== previous) {
           setStaleClockUdid(udid);
           // A set clock keeps its instant, so its wall time moves with the zone.
@@ -1007,6 +1061,7 @@ export function SimulatorSettingsTool({
         // successful sets and would yank the control backwards.
         void refresh(false);
       } finally {
+        activeMutations.current--;
         setPending(null);
       }
     },
@@ -1014,6 +1069,8 @@ export function SimulatorSettingsTool({
   );
 
   const restartSpringBoard = useCallback(async () => {
+    activeMutations.current++;
+    readRevision.current++;
     setPending(SPRINGBOARD);
     setError(null);
     try {
@@ -1028,6 +1085,7 @@ export function SimulatorSettingsTool({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to restart SpringBoard");
     } finally {
+      activeMutations.current--;
       setPending(null);
     }
   }, [udid]);
@@ -1149,7 +1207,9 @@ export function SimulatorSettingsTool({
             <SettingRow icon={I.clock} label="Date & Time">
               <ClockControl
                 value={shown.clock ?? HOST_CLOCK}
-                zone={timeZone}
+                zone={
+                  timeZone === HOST_TIME_ZONE ? (shown["host-time-zone"] ?? timeZone) : timeZone
+                }
                 disabled={!ready || pending === "clock"}
                 onChange={applyClock}
               />
