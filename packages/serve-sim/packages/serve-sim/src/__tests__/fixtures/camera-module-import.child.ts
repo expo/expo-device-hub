@@ -14,6 +14,7 @@ const camera = await import("../../capabilities/camera");
 const helper = await import("../../capabilities/camera/helper");
 const assets = await import("../../capabilities/camera/assets");
 const source = await import("../../capabilities/camera/source");
+const service = await import("../../capabilities/camera/service");
 const capabilities = await import("../../capabilities");
 
 assert.equal(camera.readCameraStatus, helper.readCameraStatus);
@@ -23,6 +24,8 @@ assert.equal(camera.locateCameraDylib, assets.locateCameraDylib);
 assert.equal(camera.buildCameraHelper, assets.buildCameraHelper);
 assert.equal(camera.detectMediaKind, source.detectMediaKind);
 assert.equal(camera.resolveSourceArg, source.resolveSourceArg);
+assert.equal(camera.ensureHelperWithSource, service.ensureHelperWithSource);
+assert.equal(camera.recordInjectedBundle, service.recordInjectedBundle);
 assert.deepEqual(capabilities.registeredCapabilities(), []);
 assert.deepEqual(
   events.map((event) => process.rawListeners(event)),
