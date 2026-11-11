@@ -345,6 +345,75 @@ describe("writeClock", () => {
     expect(steps).toEqual(["offset 0", "capability off"]);
   });
 
+  test("a failed host reset preserves the shifted time reported to callers", async () => {
+    const failure = new Error("capability configuration could not be withdrawn");
+    const { deps, steps } = clockDeps("Asia/Tokyo", failure);
+    let offset = 60_000;
+    deps.readOffset = () => offset;
+    deps.writeOffset = (_udid, value) => {
+      offset = value;
+      steps.push(`offset ${value}`);
+    };
+    deps.clockEnabled = () => true;
+    const before = await readClock(UDID, deps);
+
+    await expect(writeClock(UDID, HOST_CLOCK, deps)).rejects.toBe(failure);
+
+    expect(await readClock(UDID, deps)).toBe(before);
+    expect(steps).toEqual(["offset 0", "capability off", "offset 60000"]);
+  });
+
+  test("host can still be reset when the simulator's zone cannot be read", async () => {
+    const { deps, steps } = clockDeps();
+    deps.readZone = async () => {
+      throw new Error("simctl timed out");
+    };
+    await writeClock(UDID, HOST_CLOCK, deps);
+    expect(steps).toEqual(["offset 0", "capability off"]);
+  });
+
+  test("leaves the capability enabled if the host offset cannot be written", async () => {
+    const { deps, steps } = clockDeps();
+    const failure = new Error("offset file cannot be replaced");
+    deps.writeOffset = () => {
+      throw failure;
+    };
+    await expect(writeClock(UDID, HOST_CLOCK, deps)).rejects.toBe(failure);
+    expect(steps).toEqual([]);
+  });
+
+  test("preserves the capability failure if restoring the offset also fails", async () => {
+    const failure = new Error("capability configuration could not be withdrawn");
+    const { deps, steps } = clockDeps(HOST_TIME_ZONE, failure);
+    deps.writeOffset = (_udid, offset) => {
+      if (offset !== 0) throw new Error("offset file cannot be restored");
+      steps.push(`offset ${offset}`);
+    };
+    await expect(writeClock(UDID, HOST_CLOCK, deps)).rejects.toBe(failure);
+    expect(steps).toEqual(["offset 0", "capability off"]);
+  });
+
+  test("serializes a reset after an in-flight set, leaving the clock at host time", async () => {
+    const { deps, steps } = clockDeps();
+    let started!: () => void;
+    let finish!: () => void;
+    const entered = new Promise<void>((resolve) => (started = resolve));
+    const pending = new Promise<void>((resolve) => (finish = resolve));
+    deps.setCapability = async (_udid, enabled) => {
+      steps.push(`capability ${enabled ? "on" : "off"}`);
+      if (enabled) {
+        started();
+        await pending;
+      }
+    };
+    const set = writeClock(UDID, "2026-11-04T00:00:00Z", deps);
+    await entered;
+    const reset = writeClock(UDID, HOST_CLOCK, deps);
+    finish();
+    await Promise.all([set, reset]);
+    expect(steps).toEqual(["offset 86400000", "capability on", "offset 0", "capability off"]);
+  });
+
   test("puts the previous offset back when no session owns the device", async () => {
     const { deps, steps } = clockDeps(HOST_TIME_ZONE, new Error("needs a serve-sim session"));
     await expect(writeClock(UDID, "2026-11-04T00:00:00Z", deps)).rejects.toThrow(/session/);

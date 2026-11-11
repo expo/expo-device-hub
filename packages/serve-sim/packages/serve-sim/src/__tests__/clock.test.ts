@@ -65,6 +65,27 @@ describe("clockTarget", () => {
     );
   });
 
+  test("handles half-hour transitions and a skipped calendar day", () => {
+    // Lord Howe changes by 30 minutes, rather than one hour.
+    expect(clockTarget("2030-10-06T02:15:00", "Australia/Lord_Howe")).toBeNull();
+    expect(clockTarget("2030-04-07T01:45:00", "Australia/Lord_Howe")).toBe(
+      Date.UTC(2030, 3, 6, 14, 45),
+    );
+    // Samoa moved across the date line, skipping all of December 30.
+    expect(clockTarget("2011-12-30T12:00:00", "Pacific/Apia")).toBeNull();
+    expect(clockTarget("2011-12-31T12:00:00", "Pacific/Apia")).toBe(Date.UTC(2011, 11, 30, 22));
+  });
+
+  test("keeps quarter-hour and historical second offsets when reading local time", () => {
+    expect(clockTarget("2030-01-01T09:00:00", "Asia/Kathmandu")).toBe(Date.UTC(2030, 0, 1, 3, 15));
+    expect(clockTarget("2030-01-01T09:00:00", "Pacific/Chatham")).toBe(
+      Date.UTC(2029, 11, 31, 19, 15),
+    );
+    expect(clockTarget("1971-01-01T00:00:00", "Africa/Monrovia")).toBe(
+      Date.UTC(1971, 0, 1, 0, 44, 30),
+    );
+  });
+
   test("ignores the zone for a UTC value", () => {
     expect(clockTarget("2030-01-01T00:00:00Z", "Asia/Tokyo")).toBe(Date.UTC(2030, 0, 1));
   });
@@ -92,6 +113,32 @@ describe("clockValue", () => {
     const now = Date.UTC(2026, 10, 3, 5, 0, 0);
     const value = clockValue(86_400_000, now, "Asia/Kolkata");
     expect(Date.parse(normalizeClock(value)!)).toBe(now + 86_400_000);
+  });
+
+  test("round trips across epoch, leap day, DST boundaries, and unusual offsets", () => {
+    const dates = [
+      Date.UTC(1970, 0, 1),
+      Date.UTC(1971, 0, 1),
+      Date.UTC(2000, 1, 29, 23, 59, 59),
+      Date.UTC(2030, 2, 10, 6, 59, 59),
+      Date.UTC(2030, 2, 10, 7),
+      Date.UTC(2030, 10, 3, 5, 30),
+      Date.UTC(2030, 10, 3, 6, 30),
+    ];
+    for (const zone of [
+      "UTC",
+      "America/New_York",
+      "Africa/Monrovia",
+      "Asia/Kathmandu",
+      "Pacific/Chatham",
+      "Pacific/Kiritimati",
+      "Australia/Lord_Howe",
+    ]) {
+      for (const at of dates) {
+        const reported = clockValue(1000, at - 1000, zone);
+        expect(clockTarget(normalizeClock(reported)!, zone)).toBe(at);
+      }
+    }
   });
 });
 
