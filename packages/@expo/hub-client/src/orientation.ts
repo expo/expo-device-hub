@@ -65,9 +65,9 @@ export function isDeviceOrientation(value: unknown): value is DeviceOrientation 
 
 /**
  * The four poses, in the order Rotate steps through them on Android and on an
- * ordinary iPhone without a known observed physical pose. An iPhone Duo with a known
- * observed pose also uses this order: its names are then physical poses, and
- * this order turns them clockwise.
+ * ordinary iPhone without native pose controls (a known observed pose and the
+ * matching capability). An iPhone Duo with native pose controls also uses this
+ * order: its names are then physical poses, and this order turns them clockwise.
  */
 export const DEVICE_ORIENTATIONS = [
   "portrait",
