@@ -582,7 +582,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             applyRotation:
               dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
             // Replay shakes through the runner too, so a request joins them and stop settles them.
-            shake: (serial, durationMs) => shakeRunner.replay(serial, durationMs),
+            shake: (serial, durationMs, signal) => shakeRunner.replay(serial, durationMs, signal),
           }),
     });
     context.registerCleanup(() =>

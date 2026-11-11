@@ -215,3 +215,52 @@ test("a device that cannot shake does not hold", async () => {
   expect(harness.bodies).toEqual([]);
   expect(harness.intervals).toHaveLength(intervals);
 });
+
+test("a new press waits for the previous release, so an old release cannot end the new hold", async () => {
+  const answers: Array<() => void> = [];
+  const harness = await mount({ shake: true }, (body) =>
+    body === '{"hold":true}' && answers.length === 0
+      ? new Promise<Response>((resolve) => {
+          answers.push(() => resolve(Response.json({ ok: true })));
+        })
+      : Promise.resolve(Response.json({ ok: true })),
+  );
+
+  // Press A's answer is late; A is released and B is pressed before it comes.
+  await act(async () => harness.client().startShake());
+  await act(async () => harness.client().stopShake());
+  await act(async () => harness.client().startShake());
+  await harness.settle();
+  expect(harness.bodies).toEqual(['{"hold":true}']);
+
+  answers[0]!();
+  await harness.settle();
+  await harness.settle();
+  await harness.settle();
+  expect(harness.bodies).toEqual(['{"hold":true}', '{"hold":false}', '{"hold":true}']);
+});
+
+test("a hold stops renewing after 20 s, so a lost release does not shake forever", async () => {
+  const realNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const harness = await mount({ shake: true });
+    await act(async () => harness.client().startShake());
+    await harness.settle();
+    const renew = harness.intervals.at(-1)!;
+
+    now += 19_500;
+    await act(async () => renew());
+    await harness.settle();
+    now += 500;
+    await act(async () => renew());
+    await harness.settle();
+    await act(async () => renew());
+    await harness.settle();
+
+    expect(harness.bodies).toEqual(['{"hold":true}', '{"hold":true}']);
+  } finally {
+    Date.now = realNow;
+  }
+});

@@ -512,7 +512,7 @@ describe("startServer shake", () => {
       shaken.push(serial);
       const start = Date.now();
       control.started?.();
-      while (control.keepShaking()) await Bun.sleep(2);
+      while (control.keepShaking(Date.now() - start)) await Bun.sleep(2);
       return Date.now() - start;
     };
   }

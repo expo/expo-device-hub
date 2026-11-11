@@ -420,7 +420,7 @@ A click opens or closes the dev menu in Expo Go and in apps with `expo-dev-menu`
 Their detector toggles the menu after 3 changes of direction, then ignores the
 accelerometer for 600 ms. React Native's own detector needs 16 changes of
 direction, so a React Native app without `expo-dev-menu` needs a held shake of
-more than 2 s, as a real phone needs a longer shake.
+about 3 s, as a real phone needs a longer shake.
 
 ### Inspection
 

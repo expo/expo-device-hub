@@ -64,8 +64,11 @@ export type ShakeRecorder = {
 
 /** How a running shake learns when to stop, and tells when it started. */
 export type ShakeControl = {
-  /** Whether to swing again once the minimum swings are done. */
-  keepShaking(): boolean;
+  /**
+   * Whether to swing again once the minimum swings are done. `elapsedMs` counts from the first
+   * swing, the same origin as the duration a shake resolves with.
+   */
+  keepShaking(elapsedMs: number): boolean;
   /** Called once, after the first swing reached the emulator. */
   started?(): void;
 };
@@ -73,28 +76,49 @@ export type ShakeControl = {
 /** Shake `serial`; resolves with the time it swung, in ms. */
 export type ShakeMotion = (serial: string, control: ShakeControl) => Promise<number>;
 
-type Burst = { done: Promise<void>; started: Promise<void>; holdUntil: number };
+/**
+ * A running shake. It keeps swinging while `now()` is before `holdUntil`, the end of a hold's
+ * lease, or while it has swung for less than `durationMs`, a replay's recorded duration.
+ */
+type Burst = { done: Promise<void>; started: Promise<void>; holdUntil: number; durationMs: number };
 
 /**
  * One shake per device at a time for one server: clicks, holds and session replay. A click or a
  * replay during a running shake joins it. A hold starts a shake, or keeps the running one swinging
  * for another lease; a release lets it finish. The shake records only before its first swing, so
  * input that arrives during the shake replays after it, and it gets its duration when it ends. A
- * failed shake removes its event, as a failed tap is never recorded. `serials()` names the devices
- * this server shakes now, replays included, so its stop settles only those.
+ * failed shake removes its event, as a failed tap is never recorded. A held shake that fails while
+ * it is held keeps its error for the next renewal or the release of that hold, for one lease, so
+ * the client sees it instead of a renewal starting a new shake. `serials()` names the devices this
+ * server shakes now, replays included, so its stop settles only those.
  */
 export function createShakeRunner(shake: ShakeMotion, now: () => number = Date.now) {
   const running = new Map<string, Burst>();
+  const failures = new Map<string, { error: unknown; at: number }>();
+  const takeFailure = (serial: string): { error: unknown } | null => {
+    const failure = failures.get(serial);
+    failures.delete(serial);
+    return failure && now() - failure.at < SHAKE_HOLD_LEASE_MS ? failure : null;
+  };
 
-  const begin = (serial: string, holdUntil: number, recorder?: ShakeRecorder): Burst => {
+  const begin = (
+    serial: string,
+    keep: { holdUntil?: number; durationMs?: number },
+    recorder?: ShakeRecorder,
+  ): Burst => {
     let markStarted!: () => void;
     const started = new Promise<void>((resolve) => {
       markStarted = resolve;
     });
-    const burst: Burst = { done: Promise.resolve(), started, holdUntil };
+    const burst: Burst = {
+      done: Promise.resolve(),
+      started,
+      holdUntil: keep.holdUntil ?? 0,
+      durationMs: keep.durationMs ?? 0,
+    };
     const eventId = recorder ? recorder.recordShake("rest:shake") : null;
     burst.done = shake(serial, {
-      keepShaking: () => now() < burst.holdUntil,
+      keepShaking: (elapsedMs) => elapsedMs < burst.durationMs || now() < burst.holdUntil,
       started: markStarted,
     })
       .then(
@@ -103,6 +127,7 @@ export function createShakeRunner(shake: ShakeMotion, now: () => number = Date.n
         },
         (error: unknown) => {
           if (recorder && eventId !== null) recorder.discard(eventId);
+          if (now() < burst.holdUntil) failures.set(serial, { error, at: now() });
           throw error;
         },
       )
@@ -119,7 +144,7 @@ export function createShakeRunner(shake: ShakeMotion, now: () => number = Date.n
     /** A click: the shortest shake. */
     run(serial: string, recorder?: ShakeRecorder): Promise<void> {
       if (!isEmulatorSerial(serial)) return Promise.reject(new ShakeUnsupportedError());
-      return (running.get(serial) ?? begin(serial, 0, recorder)).done;
+      return (running.get(serial) ?? begin(serial, {}, recorder)).done;
     },
     /**
      * Start a held shake, or keep the running shake swinging for another lease. A new shake
@@ -134,20 +159,42 @@ export function createShakeRunner(shake: ShakeMotion, now: () => number = Date.n
         current.holdUntil = Math.max(current.holdUntil, leaseEnd);
         return Promise.resolve();
       }
-      const burst = begin(serial, leaseEnd, recorder);
+      const failure = takeFailure(serial);
+      if (failure) return Promise.reject(failure.error);
+      const burst = begin(serial, { holdUntil: leaseEnd }, recorder);
       return Promise.race([burst.started, burst.done]);
     },
-    /** End the hold: the shake finishes its minimum swings, then stops. Resolves when it ends. */
+    /**
+     * End the hold: the shake finishes its minimum swings, then stops. Resolves when it ends, and
+     * rejects with the error of a held shake that failed and that no renewal reported yet.
+     */
     release(serial: string): Promise<void> {
       const current = running.get(serial);
-      if (!current) return Promise.resolve();
+      if (!current) {
+        const failure = takeFailure(serial);
+        return failure ? Promise.reject(failure.error) : Promise.resolve();
+      }
       current.holdUntil = 0;
       return current.done;
     },
-    /** Replay a recorded shake for its recorded duration; a shake without one is a click. */
-    replay(serial: string, durationMs?: number): Promise<void> {
+    /**
+     * Replay a recorded shake for its recorded duration; a shake without one is a click. When
+     * `signal` aborts, a shake this replay started stops after its current swing and minimum
+     * swings, and the promise resolves once the device is back.
+     */
+    replay(serial: string, durationMs?: number, signal?: AbortSignal): Promise<void> {
       if (!isEmulatorSerial(serial)) return Promise.reject(new ShakeUnsupportedError());
-      return (running.get(serial) ?? begin(serial, now() + (durationMs ?? 0))).done;
+      const current = running.get(serial);
+      if (current) return current.done;
+      const burst = begin(serial, { durationMs: signal?.aborted ? 0 : durationMs });
+      signal?.addEventListener(
+        "abort",
+        () => {
+          burst.durationMs = 0;
+        },
+        { once: true },
+      );
+      return burst.done;
     },
     serials(): string[] {
       return [...running.keys()];
@@ -231,7 +278,7 @@ async function connectPhysicalModel(serial: string): Promise<PhysicalModelClient
   return new EmulatorGrpcClient(await ensureEmulatorGrpcEndpoint(serial));
 }
 
-type RunningShake = { done: Promise<number>; stop(): void };
+type RunningShake = { done: Promise<number>; stop(): void; join(control: ShakeControl): void };
 
 const running = new Map<string, RunningShake>();
 
@@ -239,8 +286,9 @@ const running = new Map<string, RunningShake>();
  * Shake an emulator: read the device position, swing it back and forth on z, then move it back
  * and wait until it rests, also after a failed swing. It swings `SHAKE_MIN_SWINGS` times, then
  * as long as `keepShaking` says so, up to `SHAKE_MAX_MS`. A call that arrives while a shake runs
- * on the same device gets that shake's promise, so the read never sees a moving device. Resolves
- * with the time it swung, in ms.
+ * on the same device, such as one from another server in this process, joins it and gets its
+ * promise, so the read never sees a moving device. The joined shake swings while any of its
+ * controls says so, and tells each one when it started. Resolves with the time it swung, in ms.
  */
 export function shakeEmulator(
   serial: string,
@@ -249,9 +297,21 @@ export function shakeEmulator(
 ): Promise<number> {
   if (!isEmulatorSerial(serial)) return Promise.reject(new ShakeUnsupportedError());
   const current = running.get(serial);
-  if (current) return current.done;
+  if (current) {
+    current.join(control);
+    return current.done;
+  }
+  const controls = [control];
+  let begun = false;
   let stopped = false;
-  const done = runShake(serial, control, dependencies, () => stopped).finally(() => {
+  const combined: ShakeControl = {
+    keepShaking: (elapsedMs) => controls.some((each) => each.keepShaking(elapsedMs)),
+    started: () => {
+      begun = true;
+      for (const each of controls) each.started?.();
+    },
+  };
+  const done = runShake(serial, combined, dependencies, () => stopped).finally(() => {
     if (running.get(serial)?.done === done) running.delete(serial);
   });
   running.set(serial, {
@@ -259,14 +319,26 @@ export function shakeEmulator(
     stop: () => {
       stopped = true;
     },
+    join: (joining) => {
+      controls.push(joining);
+      if (begun) joining.started?.();
+    },
   });
   return done;
 }
 
-/** Shake `serial` for about `durationMs`, as a session replay does. */
-export function shakeEmulatorFor(serial: string, durationMs?: number): Promise<number> {
-  const end = Date.now() + (durationMs ?? 0);
-  return shakeEmulator(serial, { keepShaking: () => Date.now() < end });
+/**
+ * Shake `serial` for `durationMs` of swinging, as a session replay does. When `signal` aborts,
+ * it stops after its current swing and minimum swings.
+ */
+export function shakeEmulatorFor(
+  serial: string,
+  durationMs?: number,
+  signal?: AbortSignal,
+): Promise<number> {
+  return shakeEmulator(serial, {
+    keepShaking: (elapsedMs) => !signal?.aborted && elapsedMs < (durationMs ?? 0),
+  });
 }
 
 /**
@@ -309,7 +381,7 @@ async function runShake(
       while (!stopped()) {
         const elapsed = now() - start;
         if (elapsed >= SHAKE_MAX_MS) break;
-        if (swings >= SHAKE_MIN_SWINGS && !control.keepShaking()) break;
+        if (swings >= SHAKE_MIN_SWINGS && !control.keepShaking(elapsed)) break;
         const position = [...rest];
         position[SHAKE_AXIS]! += swings % 2 === 0 ? SHAKE_DISTANCE_M : -SHAKE_DISTANCE_M;
         await client.setPhysicalModel(PHYSICAL_MODEL_POSITION, position);

@@ -212,6 +212,29 @@ describe("shakeEmulator", () => {
     expect(emulator.connects).toBe(2);
   });
 
+  test("a call that joins a running shake keeps it swinging while either control asks, and learns that it started", async () => {
+    const emulator = fakeEmulator();
+    const open = emulator.holdFirstWait();
+    let holds = 2;
+    let joinedStarted = 0;
+
+    const first = shakeEmulator("emulator-5576", click, emulator.dependencies);
+    while (emulator.positions.length === 0) await Bun.sleep(1);
+    const joined = shakeEmulator(
+      "emulator-5576",
+      { keepShaking: () => holds-- > 0, started: () => joinedStarted++ },
+      emulator.dependencies,
+    );
+    expect(joined).toBe(first);
+    expect(joinedStarted).toBe(1);
+    open();
+    await first;
+
+    expect(emulator.connects).toBe(1);
+    // 3 minimum swings, 2 more for the joined hold, then the move back.
+    expect(emulator.positions).toHaveLength(SHAKE_MIN_SWINGS + 2 + 1);
+  });
+
   test("settling stops a running shake after its current swing and waits for the move back", async () => {
     const emulator = fakeEmulator();
     const open = emulator.holdFirstWait();
@@ -335,7 +358,7 @@ describe("createShakeRunner", () => {
     const runner = createShakeRunner(shake, () => 0);
 
     const done = runner.run("emulator-5626");
-    expect(state.control!.keepShaking()).toBe(false);
+    expect(state.control!.keepShaking(0)).toBe(false);
     state.end(0);
     await done;
   });
@@ -347,18 +370,18 @@ describe("createShakeRunner", () => {
     const sessions = recorder();
 
     await runner.hold("emulator-5628", sessions);
-    expect(state.control!.keepShaking()).toBe(true);
+    expect(state.control!.keepShaking(0)).toBe(true);
     now += SHAKE_HOLD_LEASE_MS - 1;
-    expect(state.control!.keepShaking()).toBe(true);
+    expect(state.control!.keepShaking(0)).toBe(true);
     await runner.hold("emulator-5628", sessions);
     now += SHAKE_HOLD_LEASE_MS - 1;
-    expect(state.control!.keepShaking()).toBe(true);
+    expect(state.control!.keepShaking(0)).toBe(true);
 
     let ended = false;
     const release = runner.release("emulator-5628").then(() => {
       ended = true;
     });
-    expect(state.control!.keepShaking()).toBe(false);
+    expect(state.control!.keepShaking(0)).toBe(false);
     await Bun.sleep(1);
     expect(ended).toBe(false);
     state.end(3_200);
@@ -375,7 +398,7 @@ describe("createShakeRunner", () => {
 
     await runner.hold("emulator-5630");
     now = SHAKE_HOLD_LEASE_MS;
-    expect(state.control!.keepShaking()).toBe(false);
+    expect(state.control!.keepShaking(0)).toBe(false);
     state.end(0);
   });
 
@@ -384,9 +407,9 @@ describe("createShakeRunner", () => {
     const runner = createShakeRunner(shake, () => 0);
 
     const clickDone = runner.run("emulator-5632");
-    expect(state.control!.keepShaking()).toBe(false);
+    expect(state.control!.keepShaking(0)).toBe(false);
     await runner.hold("emulator-5632");
-    expect(state.control!.keepShaking()).toBe(true);
+    expect(state.control!.keepShaking(0)).toBe(true);
     expect(state.shakes).toBe(1);
     const released = runner.release("emulator-5632");
     state.end(0);
@@ -402,28 +425,93 @@ describe("createShakeRunner", () => {
     expect(runner.serials()).toEqual([]);
   });
 
+  test("a held shake that fails while held reports its error to the next renewal, not a new shake", async () => {
+    let now = 0;
+    const { state, shake } = controlledShake();
+    const runner = createShakeRunner(shake, () => now);
+
+    await runner.hold("emulator-5642");
+    state.fail(new Error("Emulator shake failed: setPhysicalModel: grpc-status 14"));
+    await Bun.sleep(1);
+    now = 400;
+    await expect(runner.hold("emulator-5642")).rejects.toThrow("grpc-status 14");
+    expect(state.shakes).toBe(1);
+    // The error is reported once; the next press starts a new shake.
+    const next = runner.hold("emulator-5642");
+    expect(state.shakes).toBe(2);
+    state.end(0);
+    await next;
+  });
+
+  test("a release reports a held shake's failure that no renewal reported, within one lease", async () => {
+    let now = 0;
+    const { state, shake } = controlledShake();
+    const runner = createShakeRunner(shake, () => now);
+
+    await runner.hold("emulator-5644");
+    state.fail(new Error("Emulator position restore failed: grpc-status 14"));
+    await Bun.sleep(1);
+    await expect(runner.release("emulator-5644")).rejects.toThrow("restore failed");
+    await runner.release("emulator-5644");
+
+    await runner.hold("emulator-5644");
+    state.fail(new Error("Emulator shake failed: setPhysicalModel: grpc-status 14"));
+    await Bun.sleep(1);
+    now = SHAKE_HOLD_LEASE_MS;
+    // A client that stayed away longer than a lease gets no stale error.
+    await runner.release("emulator-5644");
+  });
+
+  test("a click's failure goes to the click, and a release afterwards resolves", async () => {
+    const { state, shake } = controlledShake();
+    const runner = createShakeRunner(shake, () => 0);
+
+    const clicked = runner.run("emulator-5646");
+    state.fail(new Error("Emulator shake failed: setPhysicalModel: grpc-status 14"));
+    await expect(clicked).rejects.toThrow("grpc-status 14");
+    await runner.release("emulator-5646");
+  });
+
   test("a release with nothing running resolves", async () => {
     const runner = createShakeRunner(async () => 0);
     await runner.release("emulator-5636");
   });
 
-  test("a replay keeps shaking for the recorded duration; one without a duration is a click", async () => {
+  test("a replay swings for its recorded duration from the first swing, whatever the setup took", async () => {
     let now = 0;
     const { state, shake } = controlledShake();
     const runner = createShakeRunner(shake, () => now);
 
     const held = runner.replay("emulator-5638", 900);
-    now = 899;
-    expect(state.control!.keepShaking()).toBe(true);
-    now = 900;
-    expect(state.control!.keepShaking()).toBe(false);
+    // Connecting and reading the position took 2 s; only the swinging time counts.
+    now = 2_000;
+    expect(state.control!.keepShaking(899)).toBe(true);
+    expect(state.control!.keepShaking(900)).toBe(false);
     state.end(900);
     await held;
 
     const clicked = runner.replay("emulator-5638");
-    expect(state.control!.keepShaking()).toBe(false);
+    expect(state.control!.keepShaking(0)).toBe(false);
     state.end(0);
     await clicked;
+  });
+
+  test("an aborted replay stops swinging, and the promise waits until the device is back", async () => {
+    const { state, shake } = controlledShake();
+    const runner = createShakeRunner(shake, () => 0);
+    const replay = new AbortController();
+
+    let ended = false;
+    const done = runner.replay("emulator-5640", 20_000, replay.signal).then(() => {
+      ended = true;
+    });
+    expect(state.control!.keepShaking(100)).toBe(true);
+    replay.abort();
+    expect(state.control!.keepShaking(100)).toBe(false);
+    await Bun.sleep(1);
+    expect(ended).toBe(false);
+    state.end(500);
+    await done;
   });
 
   test("refuses a physical device without shaking or recording", async () => {
