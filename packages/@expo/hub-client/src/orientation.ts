@@ -65,7 +65,7 @@ export function isDeviceOrientation(value: unknown): value is DeviceOrientation 
 
 /**
  * The four poses, in the order Rotate steps through them on Android and on an
- * iPhone without a known observed physical pose. An iPhone Duo with a known
+ * ordinary iPhone without a known observed physical pose. An iPhone Duo with a known
  * observed pose also uses this order: its names are then physical poses, and
  * this order turns them clockwise.
  */
@@ -189,7 +189,8 @@ export function legacyOrientationForDeviceChoice(pose: DeviceOrientation): Devic
 /**
  * The interface orientation of an observed config. When it is unknown, the raw
  * frame shape decides, as in the legacy rule of {@link streamGeometry}:
- * landscape pixels already face the framing, and portrait pixels are not turned.
+ * landscape pixels already face the framing, and portrait pixels are taken as
+ * unturned content and turned to the framing.
  */
 function interfaceOrientation(config: ScreenSize): DeviceOrientation | undefined {
   if (config.screenOrientation) return config.screenOrientation;

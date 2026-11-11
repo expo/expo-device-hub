@@ -1157,9 +1157,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     key("up", HID_USAGE_R);
   }, [sendWs]);
 
-  // Only a known pose drives the controls. While the native pose observer has no
-  // sample (null), the controls use the legacy readback, order and commands, so
-  // Rotate still advances.
+  // Only a known pose drives the controls. While the pose is unknown (null: no
+  // sample yet, or a pose the observer cannot name), the controls use the legacy
+  // readback, order and commands, so Rotate still advances.
   const observedDevicePose = screen?.deviceOrientation ?? null;
   const usesNativeDevicePose =
     observedDevicePose !== null &&
