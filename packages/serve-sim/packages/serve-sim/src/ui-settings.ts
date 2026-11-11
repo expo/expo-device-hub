@@ -483,8 +483,8 @@ export async function readClock(
 
 /**
  * The offset goes first, so a dylib that loads when the capability turns on finds its directory;
- * with no session the previous offset goes back. `host` writes no offset before it disables the
- * capability, because a loaded dylib stays loaded.
+ * a failed capability change restores the previous offset. `host` writes no offset before it
+ * disables the capability, because a loaded dylib stays loaded.
  */
 export async function writeClock(
   udid: string,
@@ -500,8 +500,16 @@ export async function writeClock(
 ): Promise<void> {
   await withClockLock(udid, async () => {
     if (value === HOST_CLOCK) {
+      const previous = readOffset(udid);
       writeOffset(udid, 0);
-      await setCapability(udid, false);
+      try {
+        await setCapability(udid, false);
+      } catch (e) {
+        try {
+          writeOffset(udid, previous);
+        } catch {}
+        throw e;
+      }
       return;
     }
     const setting = clockNeedsZone(value) ? await readZone(udid) : "UTC";
