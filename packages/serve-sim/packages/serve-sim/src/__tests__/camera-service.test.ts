@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
@@ -12,7 +12,12 @@ import {
   readInjectedCameraBundles,
   recordInjectedBundle,
 } from "../capabilities/camera";
+import { useTempStateDir } from "./helpers";
 
+let state: ReturnType<typeof useTempStateDir>;
+beforeAll(() => {
+  state = useTempStateDir();
+});
 const devices: string[] = [];
 function ownDevice(): string {
   const udid = randomUUID();
@@ -21,16 +26,20 @@ function ownDevice(): string {
   return udid;
 }
 afterAll(() => {
-  for (const udid of devices) {
-    for (const path of [
-      cameraHelperPidFile(udid),
-      cameraHelperBundlesFile(udid),
-      cameraHelperSocketFile(udid),
-    ]) {
-      try {
-        unlinkSync(path);
-      } catch {}
+  try {
+    for (const udid of devices) {
+      for (const path of [
+        cameraHelperPidFile(udid),
+        cameraHelperBundlesFile(udid),
+        cameraHelperSocketFile(udid),
+      ]) {
+        try {
+          unlinkSync(path);
+        } catch {}
+      }
     }
+  } finally {
+    state.restore();
   }
 });
 
