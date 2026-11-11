@@ -44,7 +44,7 @@ import {
   type ScreenshotOutcome,
 } from "./screenshot-artifacts";
 import { createAxStreamerCache } from "./ax";
-import { readCameraStatus } from "./camera-helper";
+import { readCameraStatus } from "./capabilities/camera";
 import {
   captureRuntime,
   rebootedWithCaptureSince,

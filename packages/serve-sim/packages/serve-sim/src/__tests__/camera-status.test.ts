@@ -9,7 +9,7 @@ import {
   cameraHelperSocketFile,
   isCameraHelperAlive,
   readCameraStatus,
-} from "../camera-helper";
+} from "../capabilities/camera";
 import { simMiddleware } from "../middleware";
 
 const udid = randomUUID().toUpperCase();

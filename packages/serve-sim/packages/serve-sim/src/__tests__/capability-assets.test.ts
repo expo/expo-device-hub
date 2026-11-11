@@ -18,6 +18,8 @@ const tool = "serve-sim-pasteboard";
 const reader = "libSimPasteboardReader.dylib";
 const proxy = "libSimNetProxy.dylib";
 const addon = "servesim_capture.py";
+const cameraDylib = "libSimCameraInjector.dylib";
+const cameraHelper = "serve-sim-camera-helper";
 const source = resolve(import.meta.dir, "..");
 const version = JSON.parse(readFileSync(resolve(source, "../package.json"), "utf8")).version;
 
@@ -28,12 +30,15 @@ test("capability assets resolve in source, relocated ESM/CJS and a compiled exec
   mkdirSync(join(dist, "capability-loader"), { recursive: true });
   mkdirSync(join(dist, "simpb"));
   mkdirSync(join(dist, "simnet"));
+  mkdirSync(join(dist, "simcam"));
   mkdirSync(join(dist, "capture", "mitm-addon"), { recursive: true });
   mkdirSync(work);
   writeFileSync(join(dist, "capability-loader", loader), "probe asset");
   writeFileSync(join(dist, "simpb", tool), "probe tool");
   writeFileSync(join(dist, "simpb", reader), "probe reader");
   writeFileSync(join(dist, "simnet", proxy), "probe proxy");
+  writeFileSync(join(dist, "simcam", cameraDylib), "probe camera dylib");
+  writeFileSync(join(dist, "simcam", cameraHelper), "probe camera helper");
   writeFileSync(join(dist, "capture", "mitm-addon", addon), "probe addon");
   writeFileSync(resolve(dist, "../package.json"), JSON.stringify({ version }));
   const run = (command: string, args: string[], base: string, override?: string) => {
@@ -56,6 +61,8 @@ test("capability assets resolve in source, relocated ESM/CJS and a compiled exec
         base === source
           ? join(base, "capabilities", "network-capture", "mitm-addon", addon)
           : join(base, "capture", "mitm-addon", addon),
+      cameraDylib: resolve(base, "..", "dist", "simcam", cameraDylib),
+      cameraHelper: resolve(base, "..", "dist", "simcam", cameraHelper),
       version,
     });
   };

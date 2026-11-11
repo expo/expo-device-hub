@@ -89,6 +89,10 @@ import { debugCli, debugHelper, debugState } from "./debug";
 import type { EventLogEntry } from "./event-log";
 import { formatEventLogLine } from "./event-log-format";
 import {
+  locateCameraDylib,
+  buildCameraDylib,
+  locateCameraHelper,
+  buildCameraHelper,
   cameraStateDir as simcamStateDir,
   cameraHelperBundlesFile as helperBundlesFile,
   cameraHelperPidFile as helperPidFile,
@@ -98,7 +102,7 @@ import {
   stopCameraHelper,
   readInjectedCameraBundles as readInjectedBundles,
   sendCameraHelperCommand as sendHelperCommand,
-} from "./camera-helper";
+} from "./capabilities/camera";
 import { parseIceUrlList, streamHelperArgs, streamSettingsEqual } from "./stream-runtime-args";
 import {
   MAX_MJPEG_STREAM_FPS,
@@ -1188,62 +1192,6 @@ async function softwareKeyboard(deviceArg?: string) {
 }
 
 // ─── Camera injection ───
-
-/**
- * Resolve the path to the SimCameraInjector dylib. The dev/source layout
- * places it under packages/serve-sim/dist/simcam/; the published npm tarball
- * ships the same file at <package>/dist/simcam/.
- */
-function locateCameraDylib(): string | null {
-  const candidates = [
-    join(__dirname, "..", "dist", "simcam", "libSimCameraInjector.dylib"),
-    join(__dirname, "simcam", "libSimCameraInjector.dylib"),
-    join(__dirname, "..", "Sources", "SimCameraInjector", "build", "libSimCameraInjector.dylib"),
-  ];
-  for (const p of candidates) {
-    if (existsSync(p)) return resolve(p);
-  }
-  return null;
-}
-
-function buildCameraDylib(): string {
-  const buildScript = join(__dirname, "..", "Sources", "SimCameraInjector", "build.sh");
-  if (!existsSync(buildScript)) {
-    throw new Error(
-      "SimCameraInjector source not found — this build of serve-sim does not " +
-        "include camera support sources. Reinstall from a recent release.",
-    );
-  }
-  console.error("[serve-sim] building libSimCameraInjector.dylib (one-time)…");
-  execSync(`bash "${buildScript}"`, { stdio: "inherit" });
-  const out = locateCameraDylib();
-  if (!out) throw new Error("Build succeeded but dylib not found.");
-  return out;
-}
-
-function locateCameraHelper(): string | null {
-  const candidates = [
-    join(__dirname, "..", "dist", "simcam", "serve-sim-camera-helper"),
-    join(__dirname, "simcam", "serve-sim-camera-helper"),
-  ];
-  for (const p of candidates) if (existsSync(p)) return resolve(p);
-  return null;
-}
-
-function buildCameraHelper(): string {
-  const buildScript = join(__dirname, "..", "Sources", "SimCameraHelper", "build.sh");
-  if (!existsSync(buildScript)) {
-    throw new Error(
-      "SimCameraHelper source not found — webcam support requires building " +
-        "from a checkout that includes Sources/SimCameraHelper.",
-    );
-  }
-  console.error("[serve-sim] building serve-sim-camera-helper (one-time)…");
-  execSync(`bash "${buildScript}"`, { stdio: "inherit" });
-  const out = locateCameraHelper();
-  if (!out) throw new Error("Build succeeded but helper binary not found.");
-  return out;
-}
 
 function shmNameForUdid(udid: string): string {
   // POSIX shm names on macOS have a 31-char limit. Hash the UDID short.

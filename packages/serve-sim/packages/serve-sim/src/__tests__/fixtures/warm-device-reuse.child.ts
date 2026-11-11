@@ -30,7 +30,7 @@ mock.module("../../capabilities/runtime/manager", () => ({
     calls.push(`shutdown ${udid}`);
   },
 }));
-mock.module("../../camera-helper", () => ({ stopCameraHelper: () => {} }));
+mock.module("../../capabilities/camera", () => ({ stopCameraHelper: () => {} }));
 mock.module("../../state", () => ({
   clearServeSimState: (udid: string) => calls.push(`unpublish ${udid}`),
   gridDeviceState: () => ({}),
