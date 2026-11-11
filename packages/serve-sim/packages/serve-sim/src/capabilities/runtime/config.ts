@@ -4,7 +4,7 @@ import type { CapabilityScope } from "./capability";
 import type { LaunchState, RecordedCapability } from "./state";
 import { stateDir } from "../../state";
 
-export { capabilityLoaderDir, capabilityLoaderPath } from "../../capability-assets";
+export { capabilityLoaderDir, capabilityLoaderPath } from "./assets";
 
 // Same value as MAX_CONFIG_BYTES in Sources/ServeSimCapabilityLoader/serve-sim-capability-loader.c.
 export const MAX_CONFIG_BYTES = 64 * 1024;

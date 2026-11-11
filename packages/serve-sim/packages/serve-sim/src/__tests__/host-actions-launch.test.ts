@@ -3,9 +3,9 @@ import { readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
 
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
-import { capabilityConfigPath } from "../capability-config";
+import { capabilityConfigPath } from "../capabilities/runtime/config";
 import { UDID, installShims, useTempStateDir } from "./helpers";
-import { readLaunchState, writeLaunchState } from "../launch-state";
+import { readLaunchState, writeLaunchState } from "../capabilities/runtime/state";
 
 describe("app.launch", () => {
   test.each([UDID, UDID.toLowerCase()])(

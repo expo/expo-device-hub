@@ -1,6 +1,6 @@
 import { execSync } from "child_process";
 
-import { validatedAdditionalDylibs } from "./additional-dylibs";
+import { validatedAdditionalDylibs } from "./capabilities/runtime/additional-dylibs";
 import { timeStartup } from "./startup-timing";
 import { simctl } from "./simctl";
 

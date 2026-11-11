@@ -7,7 +7,7 @@ import {
   capabilityConfigPath,
   capabilityLoaderPath,
   clearLaunchState,
-} from "../launch-manager";
+} from "../capabilities/runtime/manager";
 import { stateDir } from "../state";
 import { useTempStateDir, withShimsAsync } from "./helpers";
 import { requireE2E } from "./e2e-preconditions";

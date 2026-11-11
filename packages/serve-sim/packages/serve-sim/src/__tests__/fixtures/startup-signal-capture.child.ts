@@ -40,8 +40,8 @@ mock.module("../../simctl", () => ({
 }));
 const simulatorHost = await import("../../simulator-host");
 mock.module("../../simulator-host", () => ({ ...simulatorHost, openSimulatorHost: () => {} }));
-const launchManager = await import("../../launch-manager");
-mock.module("../../launch-manager", () => ({
+const launchManager = await import("../../capabilities/runtime/manager");
+mock.module("../../capabilities/runtime/manager", () => ({
   ...launchManager,
   applyDefaultCapabilities: async () => {},
   disarmStaleCapabilityLoader: async () => {},

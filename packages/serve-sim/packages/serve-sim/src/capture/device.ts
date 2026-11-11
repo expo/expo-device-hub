@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { isCapabilityArmed } from "../launch-manager";
+import { isCapabilityArmed } from "../capabilities/runtime/manager";
 import { dirnameOf } from "../runtime";
 import { simctl } from "../simctl";
 

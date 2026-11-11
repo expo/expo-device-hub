@@ -20,10 +20,9 @@ import {
   applyDefaultCapabilities,
   capabilityConfigPath,
   renderCapabilityConfig,
-  launchApp,
-} from "../launch-manager";
+} from "../capabilities/runtime/manager";
 import { registerCapability, clearRegisteredCapabilities } from "../capabilities";
-import { launchAppAsync } from "../launch-app";
+import { launchApp, launchAppAsync } from "../launch-app";
 import { stateDir } from "../state";
 import { useTempStateDir, withShimsAsync } from "./helpers";
 
@@ -482,7 +481,7 @@ describe("graceful launch shutdown", () => {
 
   test("--kill waits for owner cleanup and preserves another live session", async () => {
     const marker = join(stateDir(), "owner-cleaned");
-    const manager = join(import.meta.dir, "../launch-manager.ts");
+    const manager = join(import.meta.dir, "../capabilities/runtime/manager.ts");
     const child = spawn(
       process.execPath,
       [

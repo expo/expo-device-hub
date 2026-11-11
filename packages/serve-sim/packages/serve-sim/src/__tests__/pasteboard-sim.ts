@@ -10,7 +10,7 @@ import {
   enableCapabilities,
   removeCapabilityLoader,
   removeCapabilityLoaderSync,
-} from "../launch-manager";
+} from "../capabilities/runtime/manager";
 import {
   locateSimpbArtifact,
   locatePasteboardTool,

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { foregroundTracker } from "../foreground-tracker";
-import { clearLaunchState, removeCapabilityLoaderSync } from "../launch-manager";
+import { clearLaunchState, removeCapabilityLoaderSync } from "../capabilities/runtime/manager";
 import { simctlSync } from "../simctl";
 import { readSimPasteboardResult } from "../sim-pasteboard-reader";
 import {

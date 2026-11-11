@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (added startup installation to the detached-mode restrictions and linked the startup explainer); 2026-11-10 (internal manager module and capability migration order)
+**Revised:** 2026-10-06 (added startup installation to the detached-mode restrictions and linked the startup explainer); 2026-11-10 (internal manager, direct module imports and capability migration order)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -16,9 +16,9 @@ system daemons free of framework dependencies.
 
 `src/capabilities/` is an internal module inside serve-sim. It adds no workspace,
 npm package, import alias or release boundary. Its public entry point is
-`src/capabilities/index.ts`; the existing `src/capabilities.ts` explicitly re-exports
-that API so callers can migrate without a mass import rewrite. Both paths reach
-one registry in `runtime/registry.ts`. Definition and preparation types live beside
+`src/capabilities/index.ts`, reached by `./capabilities` imports. There is no root
+forwarding file. The module has one registry in `runtime/registry.ts`.
+Definition and preparation types live beside
 the runtime code in `runtime/capability.ts`, without a separate contracts file
 [observed: those modules].
 
@@ -32,21 +32,27 @@ selection are unchanged [observed: `src/index.ts`, `src/capabilities/runtime/reg
 
 The host composes the generic runtime and concrete capabilities. Each migrated
 capability gets one entry point, such as `./capabilities/clipboard` or
-`./capabilities/capture`. Generic runtime code must not import those implementations.
+`./capabilities/network-capture`. Generic runtime code must not import those implementations.
 Capability types belong with the runtime implementation and may be imported with
 `import type`; there is no second registry or cache of shared enabled state.
+Each capability's `index.ts` explicitly exports its host-facing API. Its implementation
+files import sibling leaves directly, avoiding cycles through the public entry point.
+Capability-owned code and its callers move together; old root forwarding files and
+the old `src/capture/` public barrel are removed. The network capture folder is named
+`network-capture`; its registered capability ID remains `networkCapture`.
 CLI, HTTP, WebSocket, security and UI adapters stay with the host
 [confirmed: Gabe Debes, 2026-11-10].
 
 The foundation includes the capability manager, not only its types and registry.
 `runtime/manager.ts` owns preparation/publication/rollback transactions, loader
 insertion and session ownership. `runtime/resources.ts`, `config.ts`, `state.ts`
-and `lock.ts` own their existing helpers. The old root modules explicitly re-export
-the same functions and error classes; the registry, armed-device set, pending-update
+and `lock.ts` own their existing helpers. `runtime/additional-dylibs.ts` retains the
+concrete Simulator boot-inheritance policy. Callers import these modules directly;
+the registry, armed-device set, pending-update
 set, state filenames and lock namespace each have one implementation
 [confirmed: Gabe Debes, 2026-11-10; observed: `src/capabilities/runtime/`].
 
-App launching stays in the host. `src/launch-manager.ts` keeps its launch, stop and
+App launching stays in the host. `src/launch-app.ts` owns its launch, stop and
 URL entry points; `src/app-launch-host.ts` supplies the existing native app operations.
 The internal `withAppLaunchState` transaction publishes before the host launch callback,
 rolls back publication or launch failures, then calls the URL continuation outside
@@ -54,7 +60,7 @@ that rollback catch but under the same device lock. Capability-triggered relaunc
 device shutdown also keep their existing position inside the ownership transaction;
 their native calls remain in the host helpers. Do not split these into separately
 locked preparation and launch operations
-[observed: `runtime/manager.ts`, `src/launch-manager.ts`, `src/app-launch-host.ts`].
+[observed: `src/capabilities/runtime/manager.ts`, `src/launch-app.ts`, `src/app-launch-host.ts`].
 
 ### Migration order
 
@@ -64,7 +70,7 @@ next layer until the current head has been reviewed and its relevant CI is clear
 
 1. **Module foundation:** extract the unchanged types, registry/selection, capability
    manager and its preparation, config, ownership and lock helpers. Expose the module
-   entry point and preserve the old exports. This is the
+   entry point and retarget all callers/tests before removing the old root modules. This is the
    implemented boundary; the consumer moves below are still planned
    [observed: `src/capabilities/`].
 2. **Clipboard:** add `capabilities/clipboard/index.ts`, move its implementation
@@ -73,21 +79,24 @@ next layer until the current head has been reviewed and its relevant CI is clear
    ownership outside the generic manager. Preserve setup coalescing, reboot repair,
    disabled versus unmanaged behavior, foreign setup and owned cleanup; see
    [LLP 0010](0010-serve-sim-clipboard.explainer.md#set-up-at-session-start-re-checked-every-30-s).
-   Start with the definition, reader and session wrapper; keep the path-sensitive
-   native locator in `src/sim-pasteboard.ts` stable. The old reader/session modules
-   can re-export the moved code while callers migrate.
-3. **Network Capture:** add `capabilities/capture/index.ts` around the existing
-   engine boundary. Reuse the same runtime definition/preparation API while keeping
-   Capture's resource implementation, public cancellation queue and engine together.
-   Move pure preparation helpers into the runtime only as needed; preserve
+   Move the reader, session, pasteboard I/O, native artifact lookup/build helper,
+   Copy, Paste and shortcut policy into that folder. Remove the old reader/session
+   and `sim-pasteboard*` root files. Actual HID dispatch, input turns and HTTP/UI
+   adaptation remain with the host.
+3. **Network Capture:** move the full existing `src/capture/` module into
+   `capabilities/network-capture/`. Its `index.ts` explicitly exports the existing
+   runtime/factory, errors, types and host-facing helpers. Keep implementation in
+   sibling leaves, including the engine and store, and remove the old public barrel.
+   Reuse the runtime definition/preparation API while preserving Capture's public
+   cancellation queue and resource lifecycle; preserve
    [host resource lifecycle](#host-resource-lifecycle) and the policy in
    [LLP 0005](0005-serve-sim-network-capture.explainer.md).
-   Move `src/capture/runtime.ts` behind the new entry point with a compatibility
-   re-export at the old path and one canonical `captureRuntime` instance. Keep its
-   engine, store and path-sensitive helpers at their existing paths initially;
-   import those leaf modules rather than the old Capture barrel to avoid a cycle.
+   Keep one canonical `captureRuntime` instance. Native/Python asset sources and
+   output paths must still resolve after the physical move; this does not change
+   the native build/output layout
+   [confirmed: Gabe Debes, 2026-11-10].
 
-Here `capabilities/capture` means network capture. Native screen/video capture,
+Here `capabilities/network-capture` means network capture. Native screen/video capture,
 streaming and recording are separate subsystems and stay outside this module
 [confirmed: Gabe Debes, 2026-11-10; observed: `src/capture/runtime.ts`, `src/native.ts`].
 
@@ -102,13 +111,19 @@ semantics, stop that extraction and identify the concrete behavior change first
 Source ownership does not require changing native build or output directories.
 Keep the existing `Sources/` trees, dylib/helper names and `dist/` paths during the
 first moves. Moving a TypeScript file must not silently change asset resolution;
-keep the locator at a stable host boundary or pass it explicitly. The loader locator
-stays at the source-root anchor in `src/capability-assets.ts`, re-exported by config;
-Clipboard's locator stays in `src/sim-pasteboard.ts`. In particular,
+use the capability-local `runtime/assets.ts` anchor: the former `src/` base for source,
+the output directory for flattened ESM/CJS bundles, and the real executable directory
+for Bun-compiled programs. Compiled modules otherwise resolve beneath `/$bunfs/`,
+where the native files are absent. A baseline probe reproduced that existing loader
+lookup failure; using the executable directory fixes it while retaining `dist/`
+and the shipped `Sources/` layout. The asset test exercises source, relocated
+ESM/CJS and two-stage compiled output from an unrelated working directory
+[observed: `src/capabilities/runtime/assets.ts`, `src/__tests__/capability-assets.test.ts`].
+In particular,
 do not import the host's HTTP/WebSocket `src/runtime.ts` just to obtain a path helper
-[confirmed: Gabe Debes, 2026-11-10; observed: `src/capability-config.ts`, `src/runtime.ts`].
+[confirmed: Gabe Debes, 2026-11-10; observed: `src/capabilities/runtime/config.ts`, `src/runtime.ts`].
 
-Each layer checks old and new entry points against one registry, then runs the
+Each layer checks its public entry point against the canonical implementation, then runs the
 existing capability, Clipboard and Capture ownership/rollback tests as applicable.
 Validate source typechecking, lint and LLP references, plus the Node ESM/CJS
 middleware, CLI, compiled executable and packed/vendored native asset paths.
@@ -318,7 +333,7 @@ clears those values, so the next update writes them again.
 the loader and startup capability images. Cleanup by a process with that variable set
 preserves its explicitly requested paths, even when an enabled capability also records
 one as a managed image. Caller paths are excluded from stale-loader detection
-[observed: `src/launch-manager.ts` `armInsert`, `withoutOurs`,
+[observed: `src/capabilities/runtime/manager.ts` `armInsert`, `withoutOurs`,
 `removeReleasedStartupSync`, `disarmStaleCapabilityLoader`].
 
 Capture's startup image resolves existing Objective-C runtime functions and enumerates

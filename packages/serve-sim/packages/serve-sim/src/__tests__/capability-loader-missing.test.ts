@@ -7,8 +7,8 @@ import {
   capabilityLoaderPath,
   configureCapability,
   rearmCapabilityLoader,
-} from "../launch-manager";
-import { readLaunchState } from "../launch-state";
+} from "../capabilities/runtime/manager";
+import { readLaunchState } from "../capabilities/runtime/state";
 import { installShims, useTempStateDir } from "./helpers";
 
 let state: ReturnType<typeof useTempStateDir>;

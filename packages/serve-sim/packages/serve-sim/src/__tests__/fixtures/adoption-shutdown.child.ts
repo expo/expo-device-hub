@@ -29,7 +29,7 @@ mock.module("../../simctl", () => ({
     throw new Error(`Unexpected native command: ${args.join(" ")}`);
   },
 }));
-const { releaseSession, reserveDeviceSession } = await import("../../launch-manager");
+const { releaseSession, reserveDeviceSession } = await import("../../capabilities/runtime/manager");
 
 async function fixture(run: (dir: string) => Promise<void>) {
   const state = useTempStateDir();

@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { openSseStream } from "./sse-stream";
 import { parseCaptureProxy } from "./capture/upstream";
 import { execFile, execSync } from "child_process";
-import { validatedAdditionalDylibs } from "./additional-dylibs";
+import { validatedAdditionalDylibs } from "./capabilities/runtime/additional-dylibs";
 import {
   createReadStream,
   readdirSync,

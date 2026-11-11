@@ -10,7 +10,7 @@ import {
 } from "../capabilities";
 import type { CapabilityDefinition } from "../capabilities";
 import * as runtime from "../capabilities/index";
-import { applyDefaultCapabilities } from "../launch-manager";
+import { applyDefaultCapabilities } from "../capabilities/runtime/manager";
 
 function register(name: string, defaultEnabled: boolean): void {
   registerCapability({

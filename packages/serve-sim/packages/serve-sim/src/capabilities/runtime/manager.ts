@@ -35,7 +35,7 @@ import {
 import { isDeviceNotBooted, shutdownDevice, getDeviceState } from "../../device";
 import { simctl, simctlSync } from "../../simctl";
 import { timeStartup } from "../../startup-timing";
-import { additionalDylibs } from "../../additional-dylibs";
+import { additionalDylibs } from "./additional-dylibs";
 import { relaunchTarget } from "../../app-launch-host";
 
 export {
