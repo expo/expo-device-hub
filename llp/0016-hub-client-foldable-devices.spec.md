@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-11-04 (Android fold adapter, Codex gpt-6.1-sol); 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command); 2026-11-09 (ordinary-device screen/physical observations, Codex directed by Gabe Debes)
+**Revised:** 2026-11-04 (Android fold adapter, Codex gpt-6.1-sol); 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command); 2026-11-09 (ordinary-device screen/physical observations, Codex directed by Gabe Debes); 2026-11-10 (unknown interface orientation follows the raw frame shape; Claude Code, directed by Gabe Debes)
 **Related:** LLP 0000, LLP 0004, LLP 0013
 
 ## Summary
@@ -85,6 +85,9 @@ observation contract. In this mode, `screen.orientation` follows the native
 interface and becomes undefined when that observation is unknown. It never
 falls back to the last rotation command. `displayScreen` supplies physical
 framing, and `streamGeometry` maps interface pixels/input to that framing.
+When the interface orientation is unknown, the raw frame shape decides, as in
+the legacy rule: landscape pixels already face the framing, and portrait pixels
+are not turned. `homeIndicatorEdge` uses the same interface orientation.
 Duo retains its existing projected screen contract; these ordinary-device
 fields do not alter its geometry
 [observed: `simScreenSize` in `screen-config.ts`, `orientation.ts`].

@@ -186,4 +186,29 @@ describe("observed physical framing", () => {
     expect(geometry.display).toMatchObject({ width: 1206, height: 2622, orientation: "portrait" });
     expect(geometry.rotationDegrees).toBe(0);
   });
+  test("an unknown interface takes landscape pixels as already facing a landscape frame", () => {
+    const config = {
+      width: 2622,
+      height: 1206,
+      screenOrientation: null,
+      deviceOrientation: "landscape-left" as const,
+    };
+    const geometry = streamGeometry(config);
+    expect(geometry.display).toMatchObject({ width: 2622, height: 1206 });
+    expect(geometry.rotationDegrees).toBe(0);
+    expect(geometry.needsRotation).toBe(false);
+    expect(geometry.inputOrientation).toBeUndefined();
+    expect(homeIndicatorEdge({ x: 0.5, y: 0.99 }, config)).toBe(3);
+    expect(homeIndicatorEdge({ x: 0.99, y: 0.5 }, config)).toBeUndefined();
+  });
+  test("an unknown interface still turns portrait pixels into a landscape frame", () => {
+    const config = {
+      width: 1206,
+      height: 2622,
+      screenOrientation: null,
+      deviceOrientation: "landscape-left" as const,
+    };
+    expect(streamGeometry(config).rotationDegrees).toBe(-90);
+    expect(homeIndicatorEdge({ x: 0.99, y: 0.5 }, config)).toBe(4);
+  });
 });

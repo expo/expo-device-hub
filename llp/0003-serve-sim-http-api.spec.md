@@ -469,7 +469,9 @@ physical pose stay unchanged. This adds no per-screenshot pose query.
 HubClient opts confirmed ordinary devices into those observations. The controls
 follow physical pose, while video and input use the interface-to-physical
 rotation. Frame dimensions follow physical pose even for portrait-only apps;
-unknown observations do not reuse the legacy requested pose. Home gestures
+unknown observations do not reuse the legacy requested pose for framing. While
+the physical pose is unknown (null), the controls use the legacy `orientation`
+readback, Rotate order and commands, so Rotate still advances. Home gestures
 follow the interface edge and retain that edge through release. Duo and older
 helpers keep their existing geometry.
 [observed: `packages/@expo/hub-client/src/orientation.ts`, `screen-config.ts`,
