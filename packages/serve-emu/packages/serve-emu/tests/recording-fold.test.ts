@@ -312,6 +312,24 @@ test("a partial manifest lists only the timeline of the frames in finished fragm
   ]);
 });
 
+test("a fold keyframe just after a fragment boundary stays out of the partial timeline", async () => {
+  const { recording, manifestWhen, setPersistedUntil } = await recorder();
+  setPersistedUntil(0);
+  recording.accept(frame(1_000_000n), LAYOUT.canvas, "grpc-screenshot", INNER);
+  await recording.ready;
+  // The fold starts a fragment at 2.0004 s; its entry's rounded `timeMs` is 2000.
+  recording.accept(frame(3_000_400n), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  recording.accept(frame(3_100_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  setPersistedUntil(Number(2_000_400n) / 1e6);
+  recording.accept(frame(3_200_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  const partial = await manifestWhen((value) => Array.isArray(value.deviceStates));
+  expect(partial.deviceStates.map((entry: { timeMs: number }) => entry.timeMs)).toEqual([0]);
+  await recording.finish();
+  const complete = await manifestWhen((value) => value.status === "complete");
+  expect(complete.deviceStates.map((entry: { timeMs: number }) => entry.timeMs)).toEqual([0, 2000]);
+  expect(complete.deviceStates[1]).not.toHaveProperty("atSeconds");
+});
+
 test("the MP4 writer reports the frames in its finished fragments", async () => {
   const { recording, root, manifestWhen } = await recorder({ realWriter: true });
   recording.accept(frame(1_000_000n), LAYOUT.canvas, "grpc-screenshot", INNER);

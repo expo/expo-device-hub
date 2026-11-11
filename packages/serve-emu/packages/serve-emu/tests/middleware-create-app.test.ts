@@ -922,3 +922,36 @@ test("refuses a fold while the recording takes the viewers' packets", async () =
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a native-size MMAP fold recording sizes its canvas from the shown display", async () => {
+  const root = await mkdtemp(join(tmpdir(), "create-app-fold-mmap-"));
+  const recorder = await foldRecorder(root);
+  const { session } = fakeScrcpySession(1);
+  let canvas: { width: number; height: number } | undefined;
+  // Rear display mode: the hinge says open, but the outer display is shown.
+  const app = await createApp(
+    {
+      serial: session.serial,
+      streamMode: "grpc-screenshot",
+      grpcImageMode: "mmap",
+      maxSize: 0,
+      screenRecording: recorder,
+    },
+    {
+      readOrientation: readNoOrientation,
+      readFoldableDisplays: async () => FOLD_DISPLAYS,
+      readFoldState: async () => ({ supported: true, posture: "opened", hingeAngle: 180 }),
+      readDisplaySize: async () => ({ width: 1080, height: 2424 }),
+      startSession: async (options) => {
+        canvas = options.recording?.canvas;
+        return { ...adaptScrcpySession(session), mode: "grpc-screenshot", feedsRecording: true };
+      },
+    },
+  );
+  try {
+    expect(canvas).toEqual({ width: 2076, height: 2424 });
+  } finally {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+});

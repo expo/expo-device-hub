@@ -24,6 +24,7 @@ import {
   setReduceMotion,
   setSoftwareKeyboard,
   getDisplayOrientation,
+  getDeviceSize,
   setUserRotation,
   type NightModeStatus,
 } from "./adb.ts";
@@ -41,6 +42,7 @@ import type { GrpcRecordingOutput } from "./grpc-recording-encoder.ts";
 import {
   captureBox,
   recordingCanvas,
+  screenForImage,
   type RecordingPose,
   type RecordingScreen,
 } from "./recording-canvas.ts";
@@ -377,6 +379,8 @@ export type CreateAppDependencies = {
   readFoldableDisplays?: typeof readFoldableDisplays;
   /** Read the hinge while a foldable records; adb by default. */
   readFoldState?: typeof readFoldState;
+  /** Read the shown display's size for a native-size MMAP fold recording; adb by default. */
+  readDisplaySize?: typeof getDeviceSize;
 };
 
 /** How often a foldable's recording reads the hinge, which a fold from outside serve-emu also moves. */
@@ -443,6 +447,12 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     if (displays) {
       const pose = await readFold(opts.serial).catch(() => null);
       if (pose) recorder.observePose(recordingPose(pose));
+      // Native-size MMAP capture sizes its box from the startup display. The shown size names it
+      // even in rear display mode, where an open device shows its outer display.
+      const nativeMmap = streamEncoderSettings.maxDimension === 0 && grpcImageMode === "mmap";
+      const shown = nativeMmap
+        ? await (dependencies.readDisplaySize ?? getDeviceSize)(opts.serial).catch(() => null)
+        : null;
       const layout = recorder.foldCanvas(
         recordingCanvas(
           displays,
@@ -450,8 +460,14 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
             maxSize: streamEncoderSettings.maxDimension,
             imageMode: grpcImageMode,
             displays,
-            // The closed device shows its outer display.
-            startup: pose?.posture ? (pose.posture === "closed" ? "outer" : "inner") : null,
+            startup: shown
+              ? screenForImage(shown, displays)
+              : pose?.posture
+                ? // The closed device shows its outer display.
+                  pose.posture === "closed"
+                  ? "outer"
+                  : "inner"
+                : null,
           }),
         ),
       );

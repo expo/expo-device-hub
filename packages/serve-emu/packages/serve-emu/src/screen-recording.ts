@@ -46,6 +46,12 @@ type Sample = {
 /** One entry of the manifest's `deviceStates` timeline. */
 export type RecordedDeviceState = { timeMs: number; state: RecordingDeviceState };
 
+/**
+ * A timeline entry with its frame's exact time in seconds, computed as the writer's sample
+ * timestamp is, so it compares exactly with a fragment boundary.
+ */
+type TimelineEntry = RecordedDeviceState & { atSeconds: number };
+
 /** A pose-only change waits this long after the previous entry, as in serve-sim's recordings. */
 const POSE_COALESCE_MS = 250;
 
@@ -225,9 +231,9 @@ export class ScreenRecording {
   #poses: { atUs: bigint; pose: RecordingPose }[] = [];
   /** How many timeline entries the last partial manifest published. */
   #publishedStates = 0;
-  readonly #deviceStates: RecordedDeviceState[] = [];
+  readonly #deviceStates: TimelineEntry[] = [];
   /** A written frame's pose-only change that waits for the coalescing interval. */
-  #heldState: RecordedDeviceState | null = null;
+  #heldState: TimelineEntry | null = null;
 
   private constructor(options: RecordingOptions) {
     this.#options = options;
@@ -503,14 +509,24 @@ export class ScreenRecording {
       firstFrameWallClock: { iso8601: new Date(this.#first.epochMs).toISOString() },
       width: this.#first.width,
       height: this.#first.height,
-      ...(states.length ? { deviceStates: states.map((entry) => structuredClone(entry)) } : {}),
+      ...(states.length
+        ? {
+            deviceStates: states.map(
+              ({ timeMs, state }): RecordedDeviceState => ({
+                timeMs,
+                state: structuredClone(state),
+              }),
+            ),
+          }
+        : {}),
     };
   }
 
   /** The timeline entries whose first frame is in a finished fragment of the file. */
-  #statesInFile(): RecordedDeviceState[] {
+  #statesInFile(): TimelineEntry[] {
     const persistedUntil = this.#writer?.persistedUntil?.() ?? Number.POSITIVE_INFINITY;
-    return this.#deviceStates.filter((entry) => entry.timeMs < persistedUntil * 1000);
+    // `timeMs` is rounded and can fall below the boundary of the fragment that holds its frame.
+    return this.#deviceStates.filter((entry) => entry.atSeconds < persistedUntil);
   }
 
   /** Rewrites the partial manifest when more of the timeline reached the file. */
@@ -528,10 +544,14 @@ export class ScreenRecording {
   // @ref LLP 0018#device-state-timeline — the timeline follows serve-sim's recording manifest
   /** Adds a written frame's state to the timeline: geometry at once, a pose-only change coalesced. */
   #recordState(timeUs: bigint, state: RecordingDeviceState): void {
-    const written = { timeMs: Math.round(Number(timeUs) / 1000), state };
+    const written = {
+      timeMs: Math.round(Number(timeUs) / 1000),
+      atSeconds: Number(timeUs) / 1e6,
+      state,
+    };
     const last = this.#deviceStates.at(-1);
     if (!last) {
-      this.#commitState({ timeMs: 0, state });
+      this.#commitState({ ...written, timeMs: 0 });
       return;
     }
     if (sameState(last.state, state)) {
@@ -545,7 +565,7 @@ export class ScreenRecording {
     this.#commitState(written);
   }
 
-  #commitState(entry: RecordedDeviceState): void {
+  #commitState(entry: TimelineEntry): void {
     this.#heldState = null;
     this.#deviceStates.push(entry);
   }
