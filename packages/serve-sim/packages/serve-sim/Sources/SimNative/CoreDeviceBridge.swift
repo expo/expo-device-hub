@@ -276,7 +276,6 @@ actor CoreDeviceBridge {
         guard let observation = deviceStateObservations[udid], observation.token == token,
               observation.connection == connection, observation.registering == token else { return }
         observation.registering = nil
-        observation.backoff = ReconnectBackoff()
     }
 
     private func clearObservedDeviceState(udid: String) {

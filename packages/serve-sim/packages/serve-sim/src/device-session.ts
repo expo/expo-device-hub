@@ -2137,8 +2137,9 @@ export class DeviceSession {
     const saved = this.hingeRotated ? null : readSavedHingeState(this.udid, state.hingeAngle);
     this.hingeAngle = state.hingeAngle;
     this.tableMode = this.hingeRotated ? false : (state.tableMode ?? saved?.tableMode);
+    // A rotation already set the physical orientation: a physical one to its pose, a legacy one to unknown.
     this.hingePhysicalOrientation = this.hingeRotated
-      ? undefined
+      ? this.hingePhysicalOrientation
       : (state.physicalOrientation ?? saved?.physicalOrientation);
     this.hingePose = this.hingeRotated ? null : (saved?.hingePose ?? null);
     if (this.hingeRotated) this.saveHingeState();
