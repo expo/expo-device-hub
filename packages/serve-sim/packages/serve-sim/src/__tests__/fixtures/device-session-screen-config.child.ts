@@ -3240,6 +3240,31 @@ describe("native active screen config", () => {
     expect(session!.screenConfig().tableModeAvailable).toBe(false);
   });
 
+  test("a hinge command after a physical rotation keeps the pose when no angle was read", async () => {
+    const { configs, controlResults } = await start(
+      { width: 1398, height: 2034, screenId: 1 },
+      /* supportsHingeAngle */ true,
+    );
+    await waitUntil(() => configs.at(-1)?.supportsPhysicalOrientation === true);
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x07]),
+        Buffer.from(
+          JSON.stringify({ orientation: "portrait", deviceOrientation: "landscape-left" }),
+        ),
+      ]),
+    );
+    await waitUntil(() => session!.screenConfig().physicalOrientation === "landscape-left");
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x10]),
+        Buffer.from(JSON.stringify({ requestId: 1, command: { control: "angle", value: 0 } })),
+      ]),
+    );
+    await waitUntil(() => controlResults.length === 1);
+    expect(session!.screenConfig().physicalOrientation).toBe("landscape-left");
+  });
+
   for (const supported of [true, false]) {
     test(`physical rotation refuses ${supported ? "invalid values" : "unsupported controls"} without legacy fallback`, async () => {
       const { configs, controlResults } = await start(
