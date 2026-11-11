@@ -103,7 +103,7 @@ Here `capabilities/network-capture` means network capture. Native screen/video c
 streaming and recording are separate subsystems and stay outside this module
 [confirmed: Gabe Debes, 2026-11-10; observed: `src/capabilities/network-capture/runtime.ts`, `src/native.ts`].
 
-4. **Camera, helper and source slices:** `capabilities/camera/index.ts` explicitly exports the
+4. **Camera:** `capabilities/camera/index.ts` explicitly exports the
    existing helper status/control/state API and native asset lookup/build helpers.
    The old root `camera-helper.ts` is removed. The `simcam` state directory, PID
    and bundle records, socket name and protocol, native `Sources/` trees and
@@ -111,7 +111,7 @@ streaming and recording are separate subsystems and stay outside this module
    primitive without importing the host HTTP/WebSocket runtime. `source.ts` owns
    the existing media detection and source resolution, including extension priority,
    magic-byte fallback, relative file resolution, webcam/default choices and errors.
-   Helper startup still lives in the CLI until the next reviewed slice. CLI parsing,
+   `service.ts` owns helper startup/reuse and injected-bundle bookkeeping. CLI parsing,
    device selection and direct app launching remain host adapters; Camera is not a
    registered capability and gains no new controls
    [observed: `src/capabilities/camera/`, `src/index.ts`].
@@ -120,6 +120,18 @@ Keychain stays outside this foundation. Do not add runtime controls or lifecycle
 features solely for a future consumer. If either existing consumer needs new lifecycle
 semantics, stop that extraction and identify the concrete behavior change first
 [confirmed: Gabe Debes, 2026-11-10].
+
+### Camera helper startup
+
+The service reuses a live helper by switching its source, including when `forceBuild`
+is requested. Fresh startup stops stale helper state, locates/builds the binary,
+spawns detached, writes its PID, then clears the previous bundle list. It polls
+process liveness and socket existence for up to three seconds and retains the
+existing return of the PID after that deadline even if no socket appeared.
+The host records an injected bundle only after a successful app launch; records
+remain associated with the helper PID. This extraction preserves the existing
+PID-file trust and cleanup policy [observed: `src/capabilities/camera/service.ts`,
+`src/capabilities/camera/helper.ts`, `src/index.ts`].
 
 ### Native paths and validation
 

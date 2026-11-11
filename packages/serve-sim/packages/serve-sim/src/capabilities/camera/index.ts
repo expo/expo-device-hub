@@ -18,3 +18,4 @@ export {
 } from "./assets";
 export { detectMediaKind, resolveSourceArg } from "./source";
 export type { CamSourceKind, ResolvedSource } from "./source";
+export { ensureHelperWithSource, recordInjectedBundle } from "./service";
