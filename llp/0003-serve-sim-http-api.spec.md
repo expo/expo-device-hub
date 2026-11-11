@@ -2,7 +2,7 @@
 
 **Type:** Spec
 **Status:** Active
-**Systems:** ServeSim, HubClient
+**Systems:** ServeSim, ServeEmu, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
 **Revised:** 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video)
@@ -817,10 +817,29 @@ CoreDevice reads, PNG parsing, or file readback. [observed: `Sources/SimNative/F
 
 HTTP `/api/screenshot` retains its PNG body and returns the same metadata in
 `X-Expo-Screenshot-Metadata`, exposed to allowed CORS callers. Binary exec-ws
-framing remains unchanged. The contract adds no PNG parsing, file readback,
-sidecars, device queries, or opt-in environment variable. ServeEmu and client
-integration are separate changes. [observed: `src/host-actions.ts`,
+framing remains unchanged. serve-sim adds no PNG parsing, file readback,
+sidecars, device queries, or opt-in environment variable for metadata.
+[observed: `src/host-actions.ts`,
 `src/middleware.ts`]
+
+ServeEmu returns the same object in PNG headers and its existing base64 JSON
+response. Both standalone and Hub-mounted routes use the same capture helper.
+Like serve-sim, the rotation describes the captured frame. One display-rotation
+read finishes before `adb screencap` starts and one starts after it ends.
+`displayRotation` is filled only when both readings agree, match the PNG's
+shape, and have no Hub rotation command between them, so a single turn around
+the capture, including a 180-degree turn, leaves it null. A Hub rotation command
+marks the reader before it turns the display; readings that overlap the command
+are dropped, so a commanded pose is never reported as observed, and a failed
+command leaves the cached reading stale. Two outside turns (for example from adb
+or a test tool) that return to the starting pose between the readings are not
+detected.
+Each read is about 90 ms on an emulator. A newer reading also refreshes the
+device-owned cache that `/api` uses.
+Width and height come from the PNG's IHDR, because `screencap` returns the
+display at native size; panel identity remains unknown and `screen` is omitted.
+[confirmed: Gabe Debes, 2026-11-11; observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
+`display-orientation.ts`, `middleware.ts`, and `server.ts`]
 
 The optional `automation` flag defaults to `false`. Setting it to `true`
 suppresses the screenshot activity event on both success and failure, so periodic

@@ -1,3 +1,4 @@
+import type { ScreenshotMetadata } from "../screenshot-metadata.ts";
 import { parseGesture, type Gesture } from "./control-contracts.ts";
 import {
   MAX_H264_BITRATE,
@@ -520,6 +521,8 @@ export type ScreenshotBase64Response = ApiSuccess<{
   data: string;
   /** Absent from servers older than the artifact persistence feature. */
   artifact?: ScreenshotArtifactReport;
+  /** Absent on older servers; zero/null fields are unknown. */
+  metadata?: ScreenshotMetadata;
 }>;
 
 export type LogcatEventMap = {
@@ -1711,12 +1714,40 @@ export function parseFileImportResponse(value: unknown): FileImportResponse {
   };
 }
 
+function parseScreenshotMetadata(value: unknown): ScreenshotMetadata {
+  const item = record(value, "screenshot metadata");
+  const dimensions = {
+    width: number(item.width, "metadata.width"),
+    height: number(item.height, "metadata.height"),
+  };
+  if (Object.values(dimensions).some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    fail("screenshot metadata numbers must be nonnegative integers");
+  }
+  const displayRotation =
+    item.displayRotation === null
+      ? null
+      : oneOf(
+          item.displayRotation,
+          ["portrait", "portrait-upside-down", "landscape-left", "landscape-right"] as const,
+          "metadata.displayRotation",
+        );
+  return {
+    ...dimensions,
+    displayRotation,
+    ...(item.screen === undefined
+      ? {}
+      : { screen: oneOf(item.screen, ["inner", "outer"] as const, "metadata.screen") }),
+  };
+}
+
 export function parseScreenshotBase64Response(value: unknown): ScreenshotBase64Response {
   const root = record(value, "screenshot response");
   if (root.ok !== true) fail("screenshot response.ok must be true");
   if (root.mimeType !== "image/png") fail("screenshot response.mimeType must be image/png");
   const data = string(root.data, "screenshot response.data");
-  if (root.artifact === undefined) return { ok: true, mimeType: "image/png", data };
+  const metadata =
+    root.metadata === undefined ? {} : { metadata: parseScreenshotMetadata(root.metadata) };
+  if (root.artifact === undefined) return { ok: true, mimeType: "image/png", data, ...metadata };
   const artifact = record(root.artifact, "screenshot response.artifact");
   const status = oneOf(
     artifact.status,
@@ -1727,6 +1758,7 @@ export function parseScreenshotBase64Response(value: unknown): ScreenshotBase64R
     ok: true,
     mimeType: "image/png",
     data,
+    ...metadata,
     artifact:
       status === "failed"
         ? { status, error: string(artifact.error, "screenshot response.artifact.error") }
