@@ -26,11 +26,13 @@ const conversions: number[][] = [];
 const nativeWidths: number[] = [];
 let rejectJpeg = false;
 const captures: Array<{ udid: string; settings: StreamEncoderSettings }> = [];
+const nativeMetadata = { width: 100, height: 200, displayRotation: "portrait" as const };
+const unknownMetadata = { width: 0, height: 0, displayRotation: null };
 class Capture {
   async screenshotWithMetadata(display: number, maxWidth = 0) {
     return {
       data: await this.screenshot(display, maxWidth),
-      metadata: { width: 0, height: 0, displayRotation: null },
+      metadata: nativeMetadata,
     };
   }
   async screenshot(display: number, maxWidth = 0) {
@@ -193,6 +195,9 @@ async function shot(extra = "", device = UDID) {
     }),
   ))!;
 }
+function metadataOf(response: Response) {
+  return JSON.parse(response.headers.get("x-expo-screenshot-metadata")!);
+}
 afterEach(async () => {
   await Promise.all([UDID, single, integrated, tvOut].map(retireDeviceSession));
   writeFileSync(integratedProfileFile, JSON.stringify(integratedProfile));
@@ -239,6 +244,7 @@ test("HTTP reuses a warm native session without probing simctl", async () => {
     const response = await shot("", single);
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("native --display=7");
+    expect(metadataOf(response)).toEqual(nativeMetadata);
     expect(readFileSync(process.env.SERVE_SIM_HTTP_PROBES!, "utf8")).toBe("");
   }
   expect(captures).toHaveLength(1);
@@ -344,6 +350,7 @@ test("HTTP captures a verified sole screen without starting native video", async
   const response = await shot("", single);
   expect(response.status).toBe(200);
   expect(await response.text()).toContain("--display=7");
+  expect(metadataOf(response)).toEqual(unknownMetadata);
   expect(captures).toHaveLength(0);
 });
 
@@ -404,6 +411,7 @@ test.each(["startup", "readback"])(
     const png = await res.text();
     expect(png).toContain(`simctl io ${single} screenshot`);
     expect(png).toContain("--display=7");
+    expect(metadataOf(res)).toEqual(unknownMetadata);
     expect((await shot()).status).toBe(500);
     expect((await shot("", unknown)).status).toBe(500);
   },

@@ -808,9 +808,11 @@ orientation and optional panel name come from FrameCapture's maintained
 surface/profile state. The panel name uses the same native resolver as recordings. Width and height come from ScreenshotEncoder's final
 CGImage after its existing rotation. The snapshot travels with the PNG through
 the native bridge and the existing serialized screenshot lifetime. Active-panel
-retry replaces both pixels and metadata together. Older native helpers and the
-simctl fallback retain unknown defaults. Metadata adds no CoreDevice reads, PNG
-parsing, or file readback. [observed: `Sources/SimNative/FrameCapture.swift`,
+retry replaces both pixels and metadata together. Older native helpers and
+every simctl capture (explicit display, verified cold session, fallback) return
+unknown defaults. Frame and pose state exist only while a device session runs,
+so a cold capture has none to read without starting video. Metadata adds no
+CoreDevice reads, PNG parsing, or file readback. [observed: `Sources/SimNative/FrameCapture.swift`,
 `ScreenshotEncoder.swift`, `CaptureEngine.swift`; `src/device-session.ts`]
 
 HTTP `/api/screenshot` retains its PNG body and returns the same metadata in
