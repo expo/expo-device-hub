@@ -791,17 +791,29 @@ bodies return 413. Binary exec-ws delegates through this same HTTP contract.
 [observed: `src/middleware.ts`, screenshot route and binary adapter]
 
 Successful path-mode `screenshot.capture` replies add a `metadata` object beside
-the existing `stdout` path, `stderr`, and `exitCode`. The contract is
+the existing `stdout` path, `stderr`, and `exitCode`. The object is
+`{width, height, displayRotation}` and defaults to
 `{width: 0, height: 0, displayRotation: null}`. Optional `screen` identifies a
 two-panel device as `"inner"` or `"outer"`, matching recording metadata. It is
 omitted on single-display devices and when unknown; numeric display IDs remain
 internal to capture and input routing. [confirmed: Hirbod, ENG-28925, 2026-11-10]
-The response contract is available through:
-zero numeric fields and null rotation mean unknown, not a zero-sized image.
+Zero dimensions and null rotation mean unknown, not a zero-sized image.
 Rotation names are `portrait`, `portrait-upside-down`, `landscape-left`, and
-`landscape-right`. This initial contract layer returns defaults; the owning
-capture source will supply known values from its maintained local state.
+`landscape-right`. Unknown values retain these defaults; each capture source fills
+known values together with its frame, as described below.
 [confirmed: Gabe Debes, 2026-11-08; observed: `src/screenshot-metadata.ts`]
+
+Native screenshot metadata is captured with the selected IOSurface: screen
+orientation and optional panel name come from FrameCapture's maintained
+surface/profile state. The panel name uses the same native resolver as recordings. Width and height come from ScreenshotEncoder's final
+CGImage after its existing rotation. The snapshot travels with the PNG through
+the native bridge and the existing serialized screenshot lifetime. Active-panel
+retry replaces both pixels and metadata together. Older native helpers and
+every simctl capture (explicit display, verified cold session, fallback) return
+unknown defaults. Frame and pose state exist only while a device session runs,
+so a cold capture has none to read without starting video. Metadata adds no
+CoreDevice reads, PNG parsing, or file readback. [observed: `Sources/SimNative/FrameCapture.swift`,
+`ScreenshotEncoder.swift`, `CaptureEngine.swift`; `src/device-session.ts`]
 
 HTTP `/api/screenshot` retains its PNG body and returns the same metadata in
 `X-Expo-Screenshot-Metadata`, exposed to allowed CORS callers. Binary exec-ws

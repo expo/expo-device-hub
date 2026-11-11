@@ -2885,7 +2885,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       udid = udid.toUpperCase();
       try {
         const captureStarted = performance.now();
-        const { png, nativeMs } = await captureScreenshotPngAsync({
+        const { png, nativeMs, metadata } = await captureScreenshotPngAsync({
           udid,
           display: display?.data,
           maxWidth,
@@ -2913,7 +2913,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, ${SCREENSHOT_METADATA_HEADER}, Server-Timing`,
           "Server-Timing": serverTiming,
           ...screenshotArtifactHeaders(artifact),
-          ...screenshotMetadataHeaders(),
+          ...screenshotMetadataHeaders(metadata),
         });
         res.end(image);
       } catch (err) {

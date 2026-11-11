@@ -242,13 +242,20 @@ actor CaptureEngine {
     }
 
     func screenshot(_ screenID: UInt32, maxWidth: Int = 0) async throws -> Data {
+        try await screenshotWithMetadata(screenID, maxWidth: maxWidth).data
+    }
+
+    func screenshotWithMetadata(_ screenID: UInt32, maxWidth: Int = 0) async throws -> NativeScreenshot {
         guard phase == .running, !rebootSuspended else { throw CancellationError() }
         let generation = captureGeneration
         let frame = try await frameCapture.screenshotPixels(screenID: screenID)
         guard phase == .running, generation == captureGeneration, !rebootSuspended else { throw CancellationError() }
-        let png = try await screenshotEncoder.encode(frame.pixels, orientation: frame.orientation, maxWidth: maxWidth)
+        let encoded = try await screenshotEncoder.encodeWithMetadata(frame.pixels, orientation: frame.orientation, maxWidth: maxWidth)
         guard phase == .running, generation == captureGeneration, !rebootSuspended else { throw CancellationError() }
-        return png
+        return NativeScreenshot(data: encoded.data, metadata: NativeScreenshotMetadata(
+            width: encoded.width, height: encoded.height,
+            displayRotation: NativeScreenshotMetadata.rotation(frame.orientation),
+            screen: frame.screen))
     }
 
     private func handleFrame(_ frame: Frame) async {

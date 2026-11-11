@@ -45,6 +45,20 @@ mock.module("../../device-session", () => ({
   ) =>
     await capture({
       activeScreenId: async () => displays.shift() ?? 3,
+      async screenshotWithMetadata(
+        this: { screenshot(display: number): Promise<Uint8Array> },
+        display: number,
+      ) {
+        return {
+          data: await this.screenshot(display),
+          metadata: {
+            width: 120,
+            height: 120,
+            displayRotation: "portrait",
+            screen: display === 3 ? "inner" : "outer",
+          },
+        };
+      },
       screenshot: async (display: number) => {
         capturedDisplays.push(display);
         if (fail) throw new Error("capture failed");
@@ -88,9 +102,10 @@ test("only manual captures make a Desktop copy", async () => {
     );
     expect(readFileSync(result.stdout)).toEqual(png);
     expect(result.metadata).toEqual({
-      width: 0,
-      height: 0,
-      displayRotation: null,
+      width: 120,
+      height: 120,
+      displayRotation: "portrait",
+      screen: "inner",
     });
   }
 });
@@ -104,9 +119,10 @@ test("automated captures preserve active-panel selection and staged PNG", async 
   expect(calls.map((call) => call.file)).toEqual([]);
   expect(capturedDisplays).toEqual([1, 3]);
   expect(result.metadata).toEqual({
-    width: 0,
-    height: 0,
-    displayRotation: null,
+    width: 120,
+    height: 120,
+    displayRotation: "portrait",
+    screen: "inner",
   });
 });
 
@@ -163,6 +179,11 @@ test("authenticated exec-ws path replies carry dimensions beside the unchanged p
     stdout: join(SCREENSHOT_DIR, fileName),
     stderr: "",
     exitCode: 0,
-    metadata: { width: 0, height: 0, displayRotation: null },
+    metadata: {
+      width: 120,
+      height: 120,
+      displayRotation: "portrait",
+      screen: "inner",
+    },
   });
 });

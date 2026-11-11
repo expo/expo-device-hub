@@ -11,6 +11,7 @@ import { createRequire } from "module";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
+import { screenshotMetadata, type ScreenshotMetadata } from "./screenshot-metadata";
 import { DEFAULT_STREAM_ENCODER_SETTINGS, type StreamEncoderSettings } from "./stream-settings";
 import { readSenderStats, type SenderStats } from "./webrtc-sender-stats";
 import type { HingePhysicalOrientation } from "./hinge-control";
@@ -62,6 +63,10 @@ interface SimHIDHandle {
 
 interface SimCaptureHandle {
   screenshot(screenID: number, maxWidth: number): Promise<Uint8Array>;
+  screenshotWithMetadata?(
+    screenID: number,
+    maxWidth: number,
+  ): Promise<{ data: Uint8Array; metadata: string }>;
   start(): Promise<void>;
   suspendForReboot(): Promise<void>;
   resumeAfterReboot(): Promise<void>;
@@ -147,6 +152,8 @@ export type NativeDeviceStateSnapshot = {
   revision: number;
   state: NativeHingeState;
 };
+
+export type NativeScreenshot = { data: Uint8Array; metadata: ScreenshotMetadata };
 
 export type NativeScreenInfo = {
   width: number;
@@ -398,6 +405,17 @@ export class NativeHid {
 export class NativeCapture {
   screenshot(screenID: number, maxWidth = 0): Promise<Uint8Array> {
     return this.handle.screenshot(screenID, maxWidth);
+  }
+
+  async screenshotWithMetadata(screenID: number, maxWidth = 0): Promise<NativeScreenshot> {
+    if (!this.handle.screenshotWithMetadata) {
+      return {
+        data: await this.handle.screenshot(screenID, maxWidth),
+        metadata: screenshotMetadata(),
+      };
+    }
+    const result = await this.handle.screenshotWithMetadata(screenID, maxWidth);
+    return { data: result.data, metadata: JSON.parse(result.metadata) as ScreenshotMetadata };
   }
 
   private readonly handle: SimCaptureHandle;

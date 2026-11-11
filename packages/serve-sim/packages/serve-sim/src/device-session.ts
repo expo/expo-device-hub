@@ -32,6 +32,7 @@ import {
   type NativeHingeState,
   type NativeDeviceStateSnapshot,
   type NativeScreenInfo,
+  type NativeScreenshot,
   type NativeUnsubscribe,
 } from "./native";
 import { isSoftwareKeyboardVisible } from "./ax";
@@ -411,7 +412,15 @@ export class DeviceSession {
 
   private readonly queueScreenshot = createSerialQueue();
 
-  screenshot(screenID: number, timeoutMs?: number, maxWidth = 0): Promise<Uint8Array> {
+  async screenshot(screenID: number, timeoutMs?: number, maxWidth = 0): Promise<Uint8Array> {
+    return (await this.screenshotWithMetadata(screenID, timeoutMs, maxWidth)).data;
+  }
+
+  screenshotWithMetadata(
+    screenID: number,
+    timeoutMs?: number,
+    maxWidth = 0,
+  ): Promise<NativeScreenshot> {
     let expired = false;
     const work = withDeviceSessionTask(this, () =>
       this.queueScreenshot(async () => {
@@ -419,9 +428,9 @@ export class DeviceSession {
         await this.start();
         await this.waitForCapture();
         if (expired) throw new Error("Screenshot request expired before capture started");
-        const png = await this.capture.screenshot(screenID, maxWidth);
+        const result = await this.capture.screenshotWithMetadata(screenID, maxWidth);
         await this.waitForCapture();
-        return png;
+        return result;
       }),
     );
     // Only the caller times out. Retain the capture lease and serial queue until native work
