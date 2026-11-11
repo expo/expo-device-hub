@@ -42,7 +42,9 @@ export async function listDevices(): Promise<AndroidUtilsResult<AndroidDevice[]>
     const avdBlocks = avdList.value ? parseAvdList(avdList.value) : [];
     const connected = await inspectConnectedDevices(adb, adbList.value);
     const devices = await buildDevices(avdBlocks, connected.value);
-    return connected.error ? result(devices.value, connected.error) : devices;
+    // An empty list with an error means buildDevices failed; report that cause.
+    if (devices.error && devices.value.length === 0) return devices;
+    return result(devices.value, connected.error ?? devices.error);
   } catch (error) {
     return result([], reportError("[android-utils] Failed to list devices:", error));
   }
