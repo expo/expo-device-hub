@@ -24,6 +24,7 @@ https://github.com/user-attachments/assets/fbf890f4-c8c7-4684-82be-d677b8a188f8
   `?logs=1` to the preview URL.
 - Recent simulator actions are available in the browser tools panel and `serve-sim event-log`.
 - Drag and drop videos and images to add them to the simulator device.
+- Drop a Simulator `.app` folder or a `.tar.gz`/`.tgz` archive to install it. Chrome leaves symlinks out of folder drops, so use an archive for apps that contain them.
 - Keyboard commands and hot keys are forwarded to the simulator, including CMD+SHIFT+H to go home.
 - Apple Watch, iPad, and iOS support.
 - Network capture: decrypt and inspect a simulator's HTTPS traffic (see [Network capture](#network-capture)).
@@ -598,7 +599,7 @@ npx --yes eas-cli@latest simulator:start --platform ios --type web-preview-only 
   --expo-go
 ```
 
-EAS installs and launches the app before serve-sim starts. After the preview is up, drop an `.ipa` on the page to install another app. The page takes an `.ipa` or media, not an `.app` bundle or a build archive, so pass `--build-id` or `--application-archive-url` for those. Stop with `npx --yes eas-cli@latest simulator:stop`.
+EAS installs and launches the app before serve-sim starts. After the preview is up, drop a Simulator `.app` folder or a `.tar.gz`/`.tgz` archive on the page to install another app. The page does not take device builds (`.ipa`) or `.zip` archives. Stop with `npx --yes eas-cli@latest simulator:stop`.
 
 ## Origin and attribution
 
