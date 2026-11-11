@@ -185,4 +185,25 @@ describe("latestWins", () => {
     await Bun.sleep(0);
     expect(ran).toEqual(["a", "c"]);
   });
+
+  test("continues to the queued device-bound task after a failed request", async () => {
+    const ran: string[] = [];
+    let reject = (_error: Error) => {};
+    const enqueue = latestWins();
+    enqueue(() => new Promise<void>((_resolve, failed) => (reject = failed)));
+    enqueue(async () => void ran.push("first-device"));
+    reject(new Error("server restarted"));
+    await Bun.sleep(0);
+    await Bun.sleep(0);
+    enqueue(async () => void ran.push("second-device"));
+    await Bun.sleep(0);
+    expect(ran).toEqual(["first-device", "second-device"]);
+  });
 });
+
+test("clock controls keep ticking, preserve edits, and report failures", async () => {
+  const { runChildSuite } = await import("./fixtures/run-child-suite");
+  const { exitCode, output } = await runChildSuite("simulator-clock-control.child.tsx");
+  expect(output).toContain("10 pass");
+  expect(exitCode).toBe(0);
+}, 15_000);

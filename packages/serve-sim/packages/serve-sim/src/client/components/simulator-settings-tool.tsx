@@ -185,9 +185,22 @@ const CLOCK_WARNING =
 /** The local time to show and pick: `clock.get` reports it first, then its offset. */
 const wallTime = (value: string) => value.slice(0, 16);
 
-/** A value in UTC (a zone whose offset has seconds) says so. */
-const clockLabel = (value: string) =>
-  `${wallTime(value).replace("T", " ")}${value.endsWith("Z") ? " UTC" : ""}`;
+/** Advance a reported instant, keeping UTC fallbacks in UTC when they are edited too. */
+function tickingWallTime(value: string, elapsed: number, zone: string): string {
+  const suffix = /(Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
+  if (!suffix) return wallTime(value); // An optimistic local pick awaits the server's readback.
+  const at = Date.parse(value) + elapsed;
+  if (suffix[1] === "Z") return wallTime(new Date(at).toISOString());
+  if (zone !== HOST_TIME_ZONE) {
+    try {
+      return wallTime(zoneWallTime(zone, at));
+    } catch {
+      // A browser can lack a zone known by the host; retain the reported numeric offset.
+    }
+  }
+  const offset = (Number(suffix[3]) * 60 + Number(suffix[4])) * 60_000;
+  return wallTime(new Date(at + (suffix[2] === "-" ? -offset : offset)).toISOString());
+}
 
 /**
  * Where the picker opens: now on the simulator's clock. Empty when the page cannot know it (the
@@ -220,15 +233,31 @@ export function ClockControl({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editing = useRef(false);
+  const pickerUtc = useRef(value.endsWith("Z"));
+  const sampledAt = useRef(0);
+  const [tick, setTick] = useState({ value, elapsed: 0 });
+  const readable = value === HOST_CLOCK || /^\d{4}-/.test(value);
+  const set = readable && value !== HOST_CLOCK;
+  useEffect(() => {
+    sampledAt.current = performance.now();
+    if (!set) return;
+    const timer = setInterval(
+      () => setTick({ value, elapsed: performance.now() - sampledAt.current }),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [set, value]);
   useEffect(() => () => clearTimeout(settle.current ?? undefined), []);
   // The picker changes the date and the time one field at a time: send the pick once it settles.
   const pick = (next: string) => {
     clearTimeout(settle.current ?? undefined);
     settle.current = null;
     if (!next) return;
+    const picked = `${next}${pickerUtc.current ? "Z" : ""}`;
     settle.current = setTimeout(() => {
       settle.current = null;
-      onChange(next);
+      onChange(picked);
     }, PICK_SETTLE_MS);
   };
   const reset = () => {
@@ -237,17 +266,22 @@ export function ClockControl({
     onChange(HOST_CLOCK);
   };
   // `clock.get` reports host or a date; anything else is a read that failed.
-  const readable = value === HOST_CLOCK || /^\d{4}-/.test(value);
-  const set = readable && value !== HOST_CLOCK;
-  const start = set ? wallTime(value) : pickerStart(zone);
+  const start = set
+    ? tickingWallTime(value, tick.value === value ? tick.elapsed : 0, zone)
+    : pickerStart(zone);
   // Uncontrolled, so a reply cannot undo a field the user just picked, and a new value does not
   // close an open picker. A value from the simulator still shows when no pick is pending.
   useEffect(() => {
-    if (input.current && settle.current === null) input.current.value = start;
+    if (input.current && !editing.current && settle.current === null) input.current.value = start;
   }, [start]);
   const open = () => {
     const picker = input.current;
     if (!picker) return;
+    picker.value = set
+      ? tickingWallTime(value, Math.max(0, performance.now() - sampledAt.current), zone)
+      : pickerStart(zone);
+    pickerUtc.current = value.endsWith("Z");
+    editing.current = true;
     if (typeof picker.showPicker === "function") picker.showPicker();
     else picker.focus();
   };
@@ -261,7 +295,11 @@ export function ClockControl({
           onClick={open}
           className="min-w-0 cursor-pointer truncate rounded-md border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[11px] tabular-nums text-white/90 disabled:cursor-default disabled:text-white/40"
         >
-          {!readable ? "Unavailable" : set ? clockLabel(value) : "Host default"}
+          {!readable
+            ? "Unavailable"
+            : set
+              ? `${start.replace("T", " ")}${value.endsWith("Z") ? " UTC" : ""}`
+              : "Host default"}
         </button>
         <input
           ref={input}
@@ -270,6 +308,7 @@ export function ClockControl({
           aria-hidden="true"
           defaultValue={start}
           onChange={(event) => pick(event.target.value)}
+          onBlur={() => (editing.current = false)}
           className="pointer-events-none absolute inset-0 opacity-0"
         />
       </span>
@@ -294,7 +333,7 @@ export function ClockControl({
             aria-label="Back to the host time"
             onClick={reset}
             disabled={disabled}
-            className="flex h-6 w-5 cursor-pointer items-center justify-center rounded text-white/60 outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-white/40 disabled:cursor-default disabled:opacity-50"
+            className="flex h-6 w-5 cursor-pointer items-center justify-center rounded text-white outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-white/40 disabled:cursor-default disabled:opacity-50"
           >
             <RotateCcw aria-hidden="true" size={14} strokeWidth={1.75} />
           </button>
@@ -913,22 +952,28 @@ export function SimulatorSettingsTool({
   // Hydration can fail outright (server restarted under the tab, control
   // socket unreachable) or stall — both must land in the error state with a
   // Retry, never an eternal disabled section.
-  const refresh = useCallback(async () => {
-    setError(null);
-    try {
-      const status = await hostUiRequest({ device: udid }, { signal: AbortSignal.timeout(15_000) });
-      if (status) setState(status);
-      else setError("Unexpected simulator-settings reply");
-    } catch (e) {
-      setError(
-        e instanceof DOMException && e.name === "TimeoutError"
-          ? "Timed out reading simulator settings"
-          : e instanceof Error && e.message !== "Failed to fetch"
-            ? e.message
-            : "Could not reach the preview server — reload the page if this persists",
-      );
-    }
-  }, [udid]);
+  const refresh = useCallback(
+    async (clearError = true) => {
+      if (clearError) setError(null);
+      try {
+        const status = await hostUiRequest(
+          { device: udid },
+          { signal: AbortSignal.timeout(15_000) },
+        );
+        if (status) setState(status);
+        else setError("Unexpected simulator-settings reply");
+      } catch (e) {
+        setError(
+          e instanceof DOMException && e.name === "TimeoutError"
+            ? "Timed out reading simulator settings"
+            : e instanceof Error && e.message !== "Failed to fetch"
+              ? e.message
+              : "Could not reach the preview server — reload the page if this persists",
+        );
+      }
+    },
+    [udid],
+  );
 
   useEffect(() => {
     setState(null);
@@ -949,6 +994,7 @@ export function SimulatorSettingsTool({
           { device: udid, option, value },
           { signal: AbortSignal.timeout(15_000) },
         );
+        if (option === "clock") await refresh();
         if (option === "time-zone" && value !== previous) {
           setStaleClockUdid(udid);
           // A set clock keeps its instant, so its wall time moves with the zone.
@@ -959,7 +1005,7 @@ export function SimulatorSettingsTool({
         // Re-sync from the simulator rather than restoring a snapshot — with
         // rapid queued updates (slider drags) a snapshot can predate several
         // successful sets and would yank the control backwards.
-        void refresh();
+        void refresh(false);
       } finally {
         setPending(null);
       }
