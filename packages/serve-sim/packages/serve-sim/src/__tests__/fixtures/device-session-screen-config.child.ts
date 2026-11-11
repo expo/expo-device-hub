@@ -3209,6 +3209,37 @@ describe("native active screen config", () => {
     expect(inputCalls).not.toContain("orientation");
   });
 
+  test("a physical rotation keeps its pose for Table Mode eligibility; a legacy one clears it", async () => {
+    const { configs, controlResults } = await start(
+      { width: 1398, height: 2034, screenId: 1 },
+      /* supportsHingeAngle */ true,
+    );
+    await waitUntil(() => configs.at(-1)?.supportsPhysicalOrientation === true);
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x10]),
+        Buffer.from(
+          JSON.stringify({ requestId: 1, command: { control: "pose", value: "closed" } }),
+        ),
+      ]),
+    );
+    await waitUntil(() => controlResults.length === 1);
+    const rotate = (body: object) =>
+      ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify(body))]));
+    rotate({ orientation: "portrait", deviceOrientation: "landscape-left" });
+    await waitUntil(() => session!.screenConfig().physicalOrientation === "landscape-left");
+    expect(session!.screenConfig()).toMatchObject({
+      hingeAngle: 0,
+      hingePose: null,
+      tableMode: false,
+      tableModeAvailable: true,
+    });
+    rotate({ orientation: "landscape_left" });
+    await waitUntil(() => inputCalls.includes("orientation"));
+    await waitUntil(() => session!.screenConfig().physicalOrientation === undefined);
+    expect(session!.screenConfig().tableModeAvailable).toBe(false);
+  });
+
   for (const supported of [true, false]) {
     test(`physical rotation refuses ${supported ? "invalid values" : "unsupported controls"} without legacy fallback`, async () => {
       const { configs, controlResults } = await start(
