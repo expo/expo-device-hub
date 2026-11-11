@@ -71,6 +71,14 @@ or unknown pose clears the observation. This adds no screenshot-time query or
 orientation polling [observed: `CoreDeviceDisplayState.swift`, `CoreDeviceBridge.swift`;
 local iPhone 17 Pro, iOS 27.0, Xcode 27.1 diagnostic run, 2026-11-10].
 
+Cold CoreDevice manager creation runs in one shared task so an unresponsive
+service cannot block the bridge actor's listener removal. An ordinary-device registration RPC can ignore cancellation while CoreDevice is
+unresponsive. Removing its last listener cancels delivery immediately and leaves
+the registration task owning its native state until it returns. A replacement
+waits for that task to drain. Once a stream is registered, unsubscribe awaits its
+teardown [observed: `removeDeviceStateListener`, `deviceStateRegistered` in
+`CoreDeviceBridge.swift`; owned-VM service-pause regression, 2026-11-10].
+
 Local controls preview their requested pose while pending. After acknowledgement,
 the preview stays until native state matches or 500 ms elapses. Native display ID
 owns panel and input routing as soon as the command queue drains. Late native

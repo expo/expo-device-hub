@@ -13,6 +13,7 @@ struct DisplayDeviceState: Decodable {
 
 extension CoreDeviceBridge {
     func consumeDisplayStateUpdates(udid: String,
+                                   onRegistered: @escaping @Sendable () async -> Void,
                                    onUpdate: @escaping @Sendable (DeviceStateUpdate) async -> Void) async throws -> Bool {
         guard SSCoreDeviceDisplayAvailable(), SSCoreDeviceDisplayStateAvailable(),
               let metadata = SSCoreDeviceDisplayInfoMetadata(),
@@ -30,6 +31,7 @@ extension CoreDeviceBridge {
             try await start(result, capability.storage.load(fromByteOffset: 24, as: UnsafeRawPointer.self),
                             capability.storage.load(fromByteOffset: 32, as: UnsafeRawPointer.self), capability.storage)
             let stream = result.move()
+            await onRegistered()
             for try await value in stream {
                 try Task.checkCancellation()
                 // DisplayInfo has no source timestamp. Fence its receipt with the existing
