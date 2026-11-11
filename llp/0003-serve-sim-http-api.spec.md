@@ -850,8 +850,9 @@ Duplicate selection fields reject the shortcut. Legacy direct capture accepts
 the same known class-1 ports and TVOut/CarPlay
 connected screens as the legacy fallback above, while requiring exactly one
 integrated panel and an IOSurface with matching dimensions. Cold-session
-verification bounds profile listing and runtime enumeration to two seconds;
-failed or timed-out verification retains the native path. Host-action display
+verification gives profile listing, profile conversion, and runtime enumeration
+separate two-second limits; this is not a shared verification deadline. Failed
+or timed-out verification retains the native path. Host-action display
 validation and native-failure fallback retain the simctl default timeout. Existing
 sessions skip verification and reuse native capture. Sessions created during
 verification also reuse native capture. Explicit display requests keep their

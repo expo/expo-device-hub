@@ -8,6 +8,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  existsSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -115,7 +116,7 @@ const shims = installShims({
     probeScript +
     'fi\nif [ "$4" = enumerate ]; then probe=enumerate; ' +
     probeScript +
-    'fi\nif [ "$2" = list ]; then printf \'%s\' "$SERVE_SIM_HTTP_DEVICES"; exit 0; fi\nif [ "$4" = enumerate ]; then printf \'%s\' "$SERVE_SIM_HTTP_ENUMERATE"; exit 0; fi\nfor last; do :; done\nprintf \'%s\\n\' "$*" >> "$SERVE_SIM_HTTP_SHOTS"\nprintf \'\\211PNG\\r\\n\\032\\n%s\' "$*" > "$last"\n',
+    'fi\nif [ "$2" = list ]; then printf \'%s\' "$SERVE_SIM_HTTP_DEVICES"; exit 0; fi\nif [ "$4" = enumerate ]; then printf \'%s\' "$SERVE_SIM_HTTP_ENUMERATE"; exit 0; fi\nfor last; do :; done\nprintf \'%s\\n\' "$*" >> "$SERVE_SIM_HTTP_SHOTS"\nprintf \'\\211PNG\\r\\n\\032\\n%s\' "$*" > "$last"\nif [ -n "$SERVE_SIM_HTTP_CAPTURE_FAILURE" ]; then printf \'%s\' "$last" > "$SERVE_SIM_HTTP_CAPTURE_FAILURE"; printf \'capture failed: %s\\n\' "$last" >&2; exit 1; fi\n',
   cp: "#!/bin/sh\nexit 0\n",
   plutil: "#!/bin/sh\nprobe=plutil\n" + probeScript + 'exec cat "$5"\n',
 });
@@ -338,6 +339,34 @@ test("HTTP captures a verified sole screen without starting native video", async
   expect(response.status).toBe(200);
   expect(await response.text()).toContain("--display=7");
   expect(captures).toHaveLength(0);
+});
+
+test("a failed verified cold capture removes partial pixels without native retry or artifact", async () => {
+  process.env.SERVE_SIM_HTTP_ENUMERATE = runtimeDisplays([7]);
+  const directory = mkdtempSync(join(tmpdir(), "failed-cold-screenshot-"));
+  const previous = process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+  process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = directory;
+  const failedPath = join(shims.dir, "failed-capture-path");
+  process.env.SERVE_SIM_HTTP_CAPTURE_FAILURE = failedPath;
+  writeFileSync(process.env.SERVE_SIM_HTTP_SHOTS!, "");
+  try {
+    const response = await shot("", single);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ ok: false, error: "Simulator screenshot failed" });
+    expect(readFileSync(process.env.SERVE_SIM_HTTP_SHOTS!, "utf8").trim().split("\n")).toHaveLength(
+      1,
+    );
+    expect(captures).toHaveLength(0);
+    const partial = readFileSync(failedPath, "utf8");
+    expect(partial).toContain("serve-sim-screenshot-");
+    expect(existsSync(partial)).toBe(false);
+    expect(readdirSync(directory)).toEqual([]);
+  } finally {
+    delete process.env.SERVE_SIM_HTTP_CAPTURE_FAILURE;
+    if (previous === undefined) delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+    else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previous;
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test.each([{ ids: [9] }, { ids: [7, 9] }])(
