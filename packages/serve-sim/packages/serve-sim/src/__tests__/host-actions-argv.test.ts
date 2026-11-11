@@ -528,6 +528,7 @@ describe("serve-sim-backed actions", () => {
       "-d",
       UDID,
     ]);
+    expect(await argv("shake", { udid: UDID })).toEqual(["serve-sim", "shake", "-d", UDID]);
     expect(
       await argv("caDebug.set", { udid: UDID, option: "slow-animations", value: "on" }),
     ).toEqual(["serve-sim", "ca-debug", "slow-animations", "on", "-d", UDID]);

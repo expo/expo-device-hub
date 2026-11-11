@@ -4,6 +4,13 @@ import { startServer } from "../src/server.ts";
 import type { EmulatorLaunch } from "../src/emulator.ts";
 import type { GeoFix } from "../src/location.ts";
 import type { ScrcpySession, VideoPacket } from "../src/scrcpy.ts";
+import {
+  SHAKE_DISTANCE_M,
+  SHAKE_MIN_SWINGS,
+  shakeEmulator,
+  type PhysicalModelClient,
+  type ShakeMotion,
+} from "../src/shake.ts";
 import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type Deferred<T> = {
@@ -460,6 +467,233 @@ describe("startServer device session lifecycle", () => {
       const after = await invokeFetch(captured, "/api");
       expect(await after.json()).toMatchObject({ pose: "landscape_right" });
       expect(calls).toEqual(["read A", "lock A landscape_right"]);
+    } finally {
+      await started.stop();
+    }
+  });
+});
+
+describe("startServer shake", () => {
+  // No test here reaches an emulator: the emulator serial uses an injected shake, and the
+  // default shake refuses a physical serial before it connects.
+  async function startShakeServer(serial: string, shake?: ShakeMotion) {
+    const captured: CapturedServer = { options: null, stopCalls: 0 };
+    const started = await startServer(
+      { serial, port: 3300 },
+      {
+        readOrientation: readNoOrientation,
+        openScrcpy: async (target) => fakeScrcpy(target).session,
+        listDevices: async () => [{ serial, state: "device" }],
+        listRunningAvds: async () => [],
+        listAvds: async () => [],
+        ...(shake ? { shake } : {}),
+        serve: capturingServe(captured),
+      },
+    );
+    return { captured, started };
+  }
+
+  /** An emulator physical model that records each position and rests at 0,0,0. */
+  function fakePhysicalModel() {
+    const positions: number[][] = [];
+    const client: PhysicalModelClient = {
+      getPhysicalModel: async () => [0, 0, 0],
+      setPhysicalModel: async (_target, data) => {
+        positions.push([...data]);
+      },
+      close() {},
+    };
+    return { positions, connect: async () => client };
+  }
+
+  /** A shake that starts at once, swings while it is held, and reports how long it swung. */
+  function holdingShake(shaken: string[]): ShakeMotion {
+    return async (serial, control) => {
+      shaken.push(serial);
+      const start = Date.now();
+      control.started?.();
+      while (control.keepShaking(Date.now() - start)) await Bun.sleep(2);
+      return Date.now() - start;
+    };
+  }
+
+  const post = (captured: CapturedServer, body: unknown) =>
+    invokeFetch(captured, "/api/shake", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  test("advertises shake for an emulator and shakes the current device", async () => {
+    const shaken: string[] = [];
+    const { captured, started } = await startShakeServer("emulator-5598", holdingShake(shaken));
+    try {
+      const info = await invokeFetch(captured, "/api");
+      expect(((await info.json()) as { shake?: unknown }).shake).toBe(true);
+
+      const response = await invokeFetch(captured, "/api/shake", { method: "POST" });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+      expect(shaken).toEqual(["emulator-5598"]);
+
+      const wrongMethod = await invokeFetch(captured, "/api/shake");
+      expect(wrongMethod.status).toBe(405);
+      expect(shaken).toHaveLength(1);
+    } finally {
+      await started.stop();
+    }
+  });
+
+  test("a held shake swings until it is released and records its duration", async () => {
+    const shaken: string[] = [];
+    const { captured, started } = await startShakeServer("emulator-5608", holdingShake(shaken));
+    try {
+      expect((await post(captured, { hold: true })).status).toBe(200);
+      await Bun.sleep(40);
+      expect((await post(captured, { hold: false })).status).toBe(200);
+      expect(shaken).toEqual(["emulator-5608"]);
+
+      const session = (await (await invokeFetch(captured, "/api/session")).json()) as {
+        events: Array<{ kind: string; durationMs?: number }>;
+      };
+      expect(session.events).toHaveLength(1);
+      expect(session.events[0]!.durationMs!).toBeGreaterThanOrEqual(35);
+    } finally {
+      await started.stop();
+    }
+  });
+
+  test("stopping one server does not cut another server's shake short", async () => {
+    const { positions, connect } = fakePhysicalModel();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstWait = true;
+    // Another server's shake on another emulator, in the same process.
+    const other = shakeEmulator(
+      "emulator-5614",
+      { keepShaking: () => false },
+      {
+        connect,
+        wait: async () => {
+          if (firstWait) {
+            firstWait = false;
+            await gate;
+          }
+        },
+      },
+    );
+    while (positions.length === 0) await Bun.sleep(1);
+
+    const { started } = await startShakeServer("emulator-5612", async () => 0);
+    await started.stop();
+    release();
+    await other;
+    expect(positions).toHaveLength(SHAKE_MIN_SWINGS + 1);
+  });
+
+  test("stop also settles a shake that a session replay started", async () => {
+    const { positions, connect } = fakePhysicalModel();
+    let armed = false;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { captured, started } = await startShakeServer("emulator-5618", (serial, control) =>
+      shakeEmulator(serial, control, {
+        connect,
+        wait: async () => {
+          if (armed) await gate;
+        },
+      }),
+    );
+    expect((await post(captured, {})).status).toBe(200);
+    positions.length = 0;
+    armed = true;
+    expect(
+      (
+        await invokeFetch(captured, "/api/session/replay", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        })
+      ).status,
+    ).toBe(200);
+    while (positions.length === 0) await Bun.sleep(1);
+
+    let stopped = false;
+    const stopping = started.stop().then(() => {
+      stopped = true;
+    });
+    await Bun.sleep(5);
+    expect(stopped).toBe(false);
+    release();
+    await stopping;
+    expect(positions).toEqual([
+      [0, 0, SHAKE_DISTANCE_M],
+      [0, 0, 0],
+    ]);
+  });
+
+  test("records a shake unless asked not to", async () => {
+    const shaken: string[] = [];
+    const { captured, started } = await startShakeServer("emulator-5606", holdingShake(shaken));
+    try {
+      expect((await post(captured, {})).status).toBe(200);
+      expect((await post(captured, { record: false })).status).toBe(200);
+      expect((await post(captured, { record: "no" })).status).toBe(400);
+      expect(shaken).toHaveLength(2);
+
+      const session = (await (await invokeFetch(captured, "/api/session")).json()) as {
+        events: unknown[];
+      };
+      expect(session.events).toMatchObject([{ kind: "shake", source: "rest:shake" }]);
+    } finally {
+      await started.stop();
+    }
+  });
+
+  test("stop waits until a running shake moves the device back", async () => {
+    const { positions, connect } = fakePhysicalModel();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { captured, started } = await startShakeServer("emulator-5602", (serial, control) =>
+      shakeEmulator(serial, control, { connect, wait: () => gate }),
+    );
+    const response = invokeFetch(captured, "/api/shake", { method: "POST" });
+    while (positions.length === 0) await Bun.sleep(1);
+
+    let stopped = false;
+    const stopping = started.stop().then(() => {
+      stopped = true;
+    });
+    await Bun.sleep(5);
+    expect(stopped).toBe(false);
+
+    release();
+    await stopping;
+    expect(positions).toEqual([
+      [0, 0, SHAKE_DISTANCE_M],
+      [0, 0, 0],
+    ]);
+    await response;
+  });
+
+  test("does not advertise or shake a physical device", async () => {
+    const { captured, started } = await startShakeServer("A");
+    try {
+      const info = await invokeFetch(captured, "/api");
+      expect(((await info.json()) as { shake?: unknown }).shake).toBe(false);
+
+      const response = await invokeFetch(captured, "/api/shake", { method: "POST" });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        ok: false,
+        error: "Shake is available only on Android Emulator devices",
+      });
     } finally {
       await started.stop();
     }

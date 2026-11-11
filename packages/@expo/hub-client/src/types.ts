@@ -619,6 +619,8 @@ export interface DeviceCapabilities {
   orientation: DeviceOrientationCapabilities;
   /** The fold commands that `DeviceClient.fold` accepts. */
   fold: DeviceFoldCapabilities;
+  /** Whether {@link DeviceClient.shake} can shake the device. */
+  shake: boolean;
 }
 
 /** How the device answers one permission of the foreground app. */
@@ -1136,6 +1138,29 @@ export interface DeviceClient {
    * A no-op if nothing is connected; harmless if the foreground app isn't RN.
    */
   reload: () => void;
+  /**
+   * Shake the device once, like Simulator.app's Device → Shake. serve-sim sends it over the
+   * helper's input channel, and UIKit gives the foreground app a shake motion event. serve-emu
+   * swings the emulator's virtual device 3 times (`POST /api/shake`), which opens the Expo Go
+   * and expo-dev-menu dev menu. A no-op while `capabilities.shake` is false.
+   */
+  shake: () => void;
+  /**
+   * Start a shake that lasts until {@link stopShake}, as a person keeps shaking a phone until
+   * the dev menu appears. On Android, serve-emu keeps the emulator swinging while this client
+   * renews the hold, and swings at least as long as {@link shake}; React Native's own detector
+   * needs a hold of about 3 s. iOS has a real shake event, so this sends one shake there. A
+   * no-op while `capabilities.shake` is false or while a shake is held.
+   */
+  startShake: () => void;
+  /** End the shake that {@link startShake} started. A no-op when none is held. */
+  stopShake: () => void;
+  /**
+   * Why the last {@link shake} failed, or null. Cleared when the next shake starts and when
+   * another device is selected. Android reports the server's error or an unreachable server;
+   * iOS reports a shake that the input socket could not take.
+   */
+  shakeError: string | null;
   /**
    * Rotate the device to the next pose in `DEVICE_ORIENTATIONS` order, or clockwise on an
    * iPhone Duo, as Xcode's Device Hub turns it. serve-sim sends it

@@ -8,6 +8,7 @@ import type { GeoFix } from "./location.ts";
 import { LogcatHub } from "./logcat.ts";
 import { MetricsSampler } from "./metrics.ts";
 import { RoutePlayback, type RoutePlaybackClock } from "./route-playback.ts";
+import { shakeEmulatorFor } from "./shake.ts";
 import type { OrientationMode, ScreenOrientation } from "./shared/api-contracts.ts";
 import {
   SessionRecorder,
@@ -29,6 +30,11 @@ type DeviceSessionStateOptions = {
   readOrientation(serial: string): Promise<ScreenOrientation>;
   /** Lock or free the rotation. */
   applyRotation(serial: string, mode: OrientationMode): Promise<OrientationStatus>;
+  /**
+   * Shake the device for a recorded shake's duration when a replay reaches it; the emulator's
+   * physical model by default.
+   */
+  shake?(serial: string, durationMs: number | undefined, signal: AbortSignal): Promise<void>;
   recorder?: SessionRecorder;
   logcat?: LogcatHub;
   routeClock?: RoutePlaybackClock;
@@ -61,6 +67,7 @@ export class DeviceSessionState {
   readonly orientation: DisplayOrientationReader;
 
   readonly #applyLocation: DeviceSessionStateOptions["applyLocation"];
+  readonly #shake: NonNullable<DeviceSessionStateOptions["shake"]>;
   readonly #applyRotation: DeviceSessionStateOptions["applyRotation"];
   readonly #recordLock: (pose: ScreenOrientation | null) => void;
   readonly #now: () => number;
@@ -72,6 +79,11 @@ export class DeviceSessionState {
   constructor(options: DeviceSessionStateOptions) {
     this.serial = options.serial;
     this.#applyLocation = options.applyLocation;
+    this.#shake =
+      options.shake ??
+      (async (serial, durationMs, signal) => {
+        await shakeEmulatorFor(serial, durationMs, signal);
+      });
     this.#applyRotation = options.applyRotation;
     const display = createDisplayOrientationReader({
       read: () => options.readOrientation(options.serial),
@@ -114,6 +126,10 @@ export class DeviceSessionState {
       setLocation: async (fix, signal) => {
         this.route.stop();
         await this.#setLocation(fix, signal, true);
+      },
+      shake: async (signal, durationMs) => {
+        if (signal.aborted) throw abortReason(signal, "session replay cancelled");
+        await this.#shake(this.serial, durationMs, signal);
       },
     };
   }

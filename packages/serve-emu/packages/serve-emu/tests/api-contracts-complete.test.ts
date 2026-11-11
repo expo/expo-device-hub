@@ -485,6 +485,24 @@ describe("complete API success contracts", () => {
     );
   });
 
+  test("parses a recorded shake", () => {
+    const shake = {
+      id: 9,
+      at: timestamp,
+      delayMs: 40,
+      source: "rest:shake",
+      kind: "shake" as const,
+    };
+    const parsed = parseSessionSnapshot({ ...sessionSnapshot, events: [shake] });
+    expect(parsed.events).toEqual([shake]);
+
+    const held = { ...shake, durationMs: 1_900 };
+    expect(parseSessionSnapshot({ ...sessionSnapshot, events: [held] }).events).toEqual([held]);
+    expect(() =>
+      parseSessionSnapshot({ ...sessionSnapshot, events: [{ ...shake, durationMs: "long" }] }),
+    ).toThrow("durationMs");
+  });
+
   test("parses simple action, import, screenshot, and logcat payloads", () => {
     expect(parseEmptyResponse({ ok: true })).toEqual({ ok: true });
     expect(parseAppActionResponse({ ok: true, output: "started" })).toEqual({
@@ -695,6 +713,15 @@ describe("orientation in API info and health", () => {
     expect("pose" in parseApiInfoResponse(info)).toBe(false);
     expect(() => parseApiInfoResponse({ ...info, pose: "landscape" })).toThrow(
       "API info response.pose is invalid",
+    );
+  });
+
+  test("keeps the shake support flag, and leaves it out for older servers", () => {
+    expect(parseApiInfoResponse({ ...info, shake: true }).shake).toBe(true);
+    expect(parseApiInfoResponse({ ...info, shake: false }).shake).toBe(false);
+    expect("shake" in parseApiInfoResponse(info)).toBe(false);
+    expect(() => parseApiInfoResponse({ ...info, shake: "yes" })).toThrow(
+      "API info response.shake",
     );
   });
 });

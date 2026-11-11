@@ -71,6 +71,7 @@ export {
   type LogSidebarProps,
 } from "./dashboard/LogSidebar";
 export { StreamPanel } from "./dashboard/StreamPanel";
+export { SHAKE_WOBBLE_MS } from "./dashboard/shakeWobble";
 export {
   ScreenshotToast,
   ScreenshotToaster,

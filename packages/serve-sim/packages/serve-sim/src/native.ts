@@ -56,6 +56,7 @@ interface SimHIDHandle {
   digitalCrown(delta: number): Promise<void>;
   orientation(orientation: number): Promise<boolean>;
   memoryWarning(): Promise<void>;
+  shake(): Promise<void>;
   softwareKeyboard(): Promise<void>;
   caDebug(name: string, enabled: boolean): Promise<boolean>;
 }
@@ -378,6 +379,10 @@ export class NativeHid {
 
   memoryWarning(): Promise<void> {
     return this.guard("memoryWarning", () => this.handle.memoryWarning(), undefined);
+  }
+
+  shake(): Promise<void> {
+    return this.guard("shake", () => this.handle.shake(), undefined);
   }
 
   softwareKeyboard(): Promise<void> {

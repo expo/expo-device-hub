@@ -356,3 +356,101 @@ describe("SessionRecorder configuration", () => {
     expect(() => new SessionRecorder({ maxBytes: 1 })).toThrow("maxBytes");
   });
 });
+
+describe("shake events", () => {
+  test("records a shake, exports it, and replays it through the shake handler", async () => {
+    const recorder = new SessionRecorder({ now: clock(0, 10) });
+    recorder.recordShake("rest:shake");
+
+    expect(recorder.snapshot().events).toMatchObject([
+      { kind: "shake", source: "rest:shake", delayMs: 0 },
+    ]);
+    expect(recorder.export().events).toEqual(recorder.snapshot().events);
+
+    const shakes: AbortSignal[] = [];
+    const run = recorder.startReplay({
+      dispatchGesture: () => {},
+      setLocation: () => {},
+      shake: (signal) => {
+        shakes.push(signal);
+      },
+    });
+    const finished = await run.completion;
+    expect(shakes).toHaveLength(1);
+    expect(finished.replayStatus).toBe("completed");
+  });
+
+  test("a shake gets its duration when it ends, keeps the byte count, and replays with it", async () => {
+    const recorder = new SessionRecorder({ now: clock(0, 10) });
+    const shake = recorder.recordShake("rest:shake")!;
+    recorder.setShakeDuration(shake, 1_912.4);
+    recorder.setShakeDuration(999, 50);
+
+    const events = recorder.snapshot().events;
+    expect(events).toMatchObject([{ kind: "shake", durationMs: 1_912 }]);
+    expect(recorder.summary().retainedBytes).toBe(
+      Buffer.byteLength(JSON.stringify(events), "utf8"),
+    );
+
+    const durations: Array<number | undefined> = [];
+    const run = recorder.startReplay({
+      dispatchGesture: () => {},
+      setLocation: () => {},
+      shake: (_signal, durationMs) => {
+        durations.push(durationMs);
+      },
+    });
+    await run.completion;
+    expect(durations).toEqual([1_912]);
+  });
+
+  test("a duration that does not fit the byte limit drops the oldest events", () => {
+    const recorder = new SessionRecorder({ now: clock(0, 10), maxBytes: 210 });
+    recorder.recordGesture({ type: "home" }, "test");
+    const shake = recorder.recordShake("rest:shake")!;
+    const before = recorder.summary().droppedEvents;
+
+    recorder.setShakeDuration(shake, 2_000);
+
+    expect(recorder.summary().retainedBytes).toBeLessThanOrEqual(210);
+    expect(recorder.summary().droppedEvents).toBe(before + 1);
+    expect(recorder.snapshot().events).toMatchObject([{ kind: "shake", durationMs: 2_000 }]);
+  });
+});
+
+describe("discarding a failed action", () => {
+  test("removes the event, gives its time gap to the next one, and keeps the byte count", () => {
+    let now = 0;
+    const recorder = new SessionRecorder({ now: () => now });
+    recorder.recordGesture({ type: "home" }, "test");
+    now = 100;
+    const shake = recorder.recordShake("rest:shake");
+    now = 250;
+    recorder.recordGesture({ type: "back" }, "test");
+    expect(shake).not.toBeNull();
+
+    recorder.discard(shake!);
+
+    const events = recorder.snapshot().events;
+    expect(events.map((event) => [event.kind, event.delayMs])).toEqual([
+      ["gesture", 0],
+      ["gesture", 250],
+    ]);
+    expect(recorder.summary().retainedBytes).toBe(
+      Buffer.byteLength(JSON.stringify(events), "utf8"),
+    );
+  });
+
+  test("discarding the newest event times the next event from the one before", () => {
+    let now = 0;
+    const recorder = new SessionRecorder({ now: () => now });
+    recorder.recordGesture({ type: "home" }, "test");
+    now = 100;
+    const shake = recorder.recordShake("rest:shake");
+    recorder.discard(shake!);
+    now = 400;
+    recorder.recordGesture({ type: "back" }, "test");
+
+    expect(recorder.snapshot().events.map((event) => event.delayMs)).toEqual([0, 400]);
+  });
+});

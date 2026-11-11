@@ -248,6 +248,10 @@ const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
 // Connect/disconnect the guest's hardware keyboard; serve-sim's own touch
 // client sends this too so the on-screen keyboard shows.
 const WS_MSG_HARDWARE_KEYBOARD = 0x0e;
+// Shake the device, like Simulator.app's Device → Shake. Only helpers advertising `inputShake` take it.
+const WS_MSG_SHAKE = 0x14;
+const SHAKE_NOT_SENT_MESSAGE =
+  "The shake was not sent because simulator input is not connected. Try again.";
 export { WS_MSG_CONFIG as WS_TAG_SCREEN_CONFIG } from "./input-protocol";
 // iPhone Duo hinge commands carry a requestId that the helper acknowledges with 0x90.
 const WS_MSG_HINGE_CONTROL = 0x10;
@@ -374,6 +378,8 @@ interface ResolvedConfig {
   inputPaste: boolean;
   /** The helper answers `WS_MSG_INPUT_BARRIER` by request ID; an older one only without one. */
   inputCopy: boolean;
+  /** The helper shakes the device on `WS_MSG_SHAKE`; an older one drops it. */
+  inputShake: boolean;
   device: string | null;
   pid: number | null;
   /** Middleware exec-ws URL used for logs, events, metrics, and UI requests. */
@@ -413,6 +419,7 @@ interface PreviewApi {
   inputAdmission?: boolean;
   inputPaste?: boolean;
   inputCopy?: boolean;
+  inputShake?: boolean;
   device?: string;
   pid?: number;
   basePath?: string;
@@ -1144,6 +1151,41 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     [sendWs],
   );
 
+  const shakeSupported = config?.inputShake ?? false;
+  const [shakeError, setShakeError] = useState<string | null>(null);
+  // Counts shakes and device changes, so only the latest shake can show an error.
+  const shakeRequest = useRef(0);
+  const shakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    shakeRequest.current++;
+    setShakeError(null);
+  }, [baseUrl, targetDevice]);
+  useEffect(
+    () => () => {
+      if (shakeTimer.current) clearTimeout(shakeTimer.current);
+    },
+    [],
+  );
+  const shake = useCallback(() => {
+    if (!shakeSupported) return;
+    const request = ++shakeRequest.current;
+    const fail = () => {
+      if (shakeRequest.current === request) setShakeError(SHAKE_NOT_SENT_MESSAGE);
+    };
+    setShakeError(null);
+    if (shakeTimer.current) clearTimeout(shakeTimer.current);
+    // A queued shake counts as accepted, but the queue drops it after its age limit if the input
+    // socket does not send it by then, as for an orientation choice.
+    const timer = setTimeout(fail, WS_QUEUE_MAX_AGE_MS);
+    shakeTimer.current = timer;
+    if (!sendWs(WS_MSG_SHAKE, {}, () => clearTimeout(timer))) {
+      clearTimeout(timer);
+      fail();
+    }
+  }, [sendWs, shakeSupported]);
+  // UIKit's shake is one motion event, so holding the button sends one shake.
+  const stopShake = useCallback(() => {}, []);
+
   // Reload the RN/Expo bundle by injecting ⌘R over the helper's key channel
   // (tag 0x06 → HID keystroke) — RN registers ⌘R as its reload shortcut. Mirrors
   // the serve-sim web client's sequence exactly: ⌘ down, R down, R up, ⌘ up, with
@@ -1472,6 +1514,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         inputAdmission: c.inputAdmission === true,
         inputPaste: c.inputPaste === true,
         inputCopy: c.inputCopy === true,
+        inputShake: c.inputShake === true,
         device: c.device ?? null,
         pid: c.pid ?? null,
         configEventsPath: `${basePath}/api/events${targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ""}`,
@@ -2962,6 +3005,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         clipboardPaste || clipboardCopy ? { paste: clipboardPaste, copy: clipboardCopy } : false,
       orientation: orientationCapabilities,
       fold: foldCapabilities,
+      shake: shakeSupported,
     }),
     [
       deviceSettingsAvailable,
@@ -2974,6 +3018,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       clipboardCopy,
       orientationCapabilities,
       foldCapabilities,
+      shakeSupported,
     ],
   );
 
@@ -3080,6 +3125,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     sendScroll,
     pressButton,
     reload,
+    shake,
+    startShake: shake,
+    stopShake,
+    shakeError,
     rotate,
     orientation,
     orientationPending,

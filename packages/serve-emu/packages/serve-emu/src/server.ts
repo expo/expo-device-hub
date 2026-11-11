@@ -83,6 +83,14 @@ import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { ControlInputError, ControlInputQueue } from "./control-input-queue.ts";
 import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
+import {
+  createShakeRunner,
+  readShakeRequest,
+  runShakeRequest,
+  settleShakes,
+  shakeEmulator,
+  type ShakeMotion,
+} from "./shake.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
 import { parseSessionReplayMultiplier, SessionReplayConflictError } from "./session-recorder.ts";
 import {
@@ -330,6 +338,8 @@ export type ServerDependencies = {
   readOrientation?: DeviceSessionStateOptions["readOrientation"];
   /** Lock or free the rotation for each device's state; adb by default. */
   applyRotation?: DeviceSessionStateOptions["applyRotation"];
+  /** Shake the device for `POST /api/shake`; the emulator's physical model by default. */
+  shake?: ShakeMotion;
   createInputQueue?: (session: ScrcpySession) => ControlInputQueue;
   recoveryClock?: RecoveryWatchdogClock;
   createUploadManager?: (options: UploadManagerOptions) => UploadManager;
@@ -391,6 +401,9 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     dependencies.setLocation ??
     ((serial: string, fix: GeoFix, signal: AbortSignal) =>
       setEmulatorLocationAsync(serial, fix, signal));
+  const shakeDevice: ShakeMotion =
+    dependencies.shake ?? ((serial, control) => shakeEmulator(serial, control));
+  const shakeRunner = createShakeRunner(shakeDevice);
   const createInputQueue =
     dependencies.createInputQueue ??
     ((session: ScrcpySession) => new ControlInputQueue({ socket: session.controlSocket }));
@@ -568,6 +581,8 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
             applyRotation:
               dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
+            // Replay shakes through the runner too, so a request joins them and stop settles them.
+            shake: (serial, durationMs, signal) => shakeRunner.replay(serial, durationMs, signal),
           }),
     });
     context.registerCleanup(() =>
@@ -1847,6 +1862,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               height: requestContext.screen.height,
             },
             pose: await requestContext.deviceState.orientation.fresh(),
+            shake: isEmulatorSerial(requestContext.serial),
             status: requestContext.status,
             clients: requestContext.clients.size,
             stream: streamSettings,
@@ -2213,6 +2229,19 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           }
         }
         return new Response("method not allowed", { status: 405 });
+      }
+
+      if (url.pathname === "/api/shake") {
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        try {
+          const request = await readShakeRequest(req);
+          await runForContext(requestContext, (context) =>
+            runShakeRequest(shakeRunner, context.serial, request, context.recorder),
+          );
+          return Response.json({ ok: true });
+        } catch (err) {
+          return errorResponse(err);
+        }
       }
 
       if (url.pathname === "/api/night-mode") {
@@ -3001,9 +3030,12 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       serial: context.serial,
       generation: context.generation,
     });
-    stopTask = Promise.all([sessions.close("server stopping"), uploads.close(error)]).then(
-      () => {},
-    );
+    stopTask = Promise.all([
+      sessions.close("server stopping"),
+      uploads.close(error),
+      // Exit only after this server's running shakes have put the resting acceleration back.
+      settleShakes(shakeRunner.serials()),
+    ]).then(() => {});
     return stopTask;
   };
 

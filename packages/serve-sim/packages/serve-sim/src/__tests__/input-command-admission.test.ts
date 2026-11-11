@@ -16,6 +16,7 @@ const commands = [
   { args: ["ca-debug", "blended", "on"], messages: [0x08] },
   { args: ["memory-warning"], messages: [0x09] },
   { args: ["software-keyboard"], messages: [0x0c] },
+  { args: ["shake"], messages: [0x14] },
 ];
 
 type InputTarget = {
@@ -24,7 +25,13 @@ type InputTarget = {
   liveDevices: string[];
 };
 
-async function runInput(args: string[], admit: boolean, legacy = false, target?: InputTarget) {
+async function runInput(
+  args: string[],
+  admit: boolean,
+  legacy = false,
+  target?: InputTarget,
+  { inputShake = !legacy }: { inputShake?: boolean } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), "serve-sim-cli-admission-"));
   const shim = join(dir, "bin");
   mkdirSync(shim);
@@ -91,6 +98,7 @@ esac
         port: server.port,
         wsUrl: `ws://127.0.0.1:${server.port}/legacy/${device}/ws`,
         ...(legacy ? {} : { inputAdmission: true }),
+        ...(inputShake ? { inputShake: true } : {}),
       }),
     );
   }
@@ -207,11 +215,27 @@ for (const { args, messages } of commands) {
     expect(result.messages).toEqual(messages);
   });
 
-  test(`CLI ${args[0]} can still use a legacy helper without an admission frame`, async () => {
-    const result = await runInput(args, /* admit */ true, /* legacy */ true);
-    expect(result.exitCode).toBe(0);
-    expect(result.sentBeforeAdmission).toBe(true);
-    expect(result.messages).toEqual(messages);
+  // A legacy helper predates shake; the test below covers it.
+  if (args[0] !== "shake") {
+    test(`CLI ${args[0]} can still use a legacy helper without an admission frame`, async () => {
+      const result = await runInput(args, /* admit */ true, /* legacy */ true);
+      expect(result.exitCode).toBe(0);
+      expect(result.sentBeforeAdmission).toBe(true);
+      expect(result.messages).toEqual(messages);
+    });
+  }
+}
+
+for (const legacy of [false, true]) {
+  test(`CLI shake refuses a helper that does not advertise shake, before connecting (${legacy ? "legacy" : "admitted"})`, async () => {
+    const result = await runInput(["shake"], /* admit */ true, legacy, undefined, {
+      inputShake: false,
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("cannot shake");
+    expect(result.stderr).toContain("Restart serve-sim");
+    expect(result.connections).toEqual([]);
+    expect(result.messages).toEqual([]);
   });
 }
 

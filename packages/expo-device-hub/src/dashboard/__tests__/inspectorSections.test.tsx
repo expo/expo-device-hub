@@ -153,6 +153,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
         : { maxDimension: true, h264Fps: true, h264Bitrate: true },
       location: false,
       fold: false,
+      shake: false,
     },
     foregroundApp: null,
     videoKind: "img",
@@ -160,6 +161,10 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     sendTouch: () => {},
     sendKey: () => false,
     pressButton: () => {},
+    shake: () => {},
+    startShake: () => {},
+    stopShake: () => {},
+    shakeError: null,
     reload: () => {},
     rotate: () => {},
     orientation: null,
@@ -1460,6 +1465,21 @@ test("moves device actions into Device options and hides Remove for physical dev
   const ios = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
   for (const label of ["Back button", "Recents button", "Shut down device", "Remove device"]) {
     expect(ios).not.toContain(`>${label}</span>`);
+  }
+});
+
+test("offers Shake in Device options on both platforms when the device can shake", () => {
+  for (const platform of ["ios", "android"] as const) {
+    const client = inspectorClient(platform);
+    const shakeable = renderToStaticMarkup(
+      <LogSidebar client={{ ...client, capabilities: { ...client.capabilities, shake: true } }} />,
+    );
+    const section = sectionMarkup(shakeable, "Device options");
+    expect(section).toContain(">Shake device</span>");
+    expect(section).toContain(">Shake<");
+
+    const unsupported = renderToStaticMarkup(<LogSidebar client={client} />);
+    expect(sectionMarkup(unsupported, "Device options")).not.toContain(">Shake device</span>");
   }
 });
 

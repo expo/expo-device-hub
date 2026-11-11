@@ -356,6 +356,16 @@ describe("eventLogEventForHidMessage", () => {
     ).toBeNull();
   });
 
+  test("maps the shake HID message", () => {
+    expect(eventLogEventForHidMessage("UDID", 0x14, {})).toMatchObject({
+      device: "UDID",
+      source: "hid",
+      kind: "shake",
+      action: "trigger",
+      summary: "Shake",
+    });
+  });
+
   test("maps button HID payloads", () => {
     expect(
       eventLogEventForHidMessage("UDID", 0x04, {

@@ -57,7 +57,7 @@ function ControlGroup({ children }: { children: ReactNode }) {
  * with Save · Home · Reload, a pill with the Clipboard menu for a device with
  * clipboard support (Copy then Paste, as in serve-sim) and, on a phone, the
  * Keyboard toggle, plus a separate Rotate button. Each button shows its label
- * as a tooltip on hover. Device-level actions (Android Back and Recents keys,
+ * as a tooltip on hover. Device-level actions (Shake, Android Back and Recents keys,
  * shutting down or removing the device) and the device's appearance live in the
  * inspector's Device options section.
  *

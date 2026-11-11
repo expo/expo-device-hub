@@ -17,6 +17,15 @@ export type RecordedEvent =
       source: string;
       kind: "location";
       location: GeoFix;
+    }
+  | {
+      id: number;
+      at: string;
+      delayMs: number;
+      source: string;
+      kind: "shake";
+      /** How long the shake swung, in ms. A replay swings as long; without it, a click. */
+      durationMs?: number;
     };
 
 export type SessionSnapshot = {
@@ -69,6 +78,7 @@ export type ReplayHandlers = {
   finish?: (signal: AbortSignal) => Promise<void> | void;
   dispatchGesture: (gesture: Gesture, signal: AbortSignal) => Promise<void> | void;
   setLocation: (fix: GeoFix, signal: AbortSignal) => Promise<void> | void;
+  shake: (signal: AbortSignal, durationMs?: number) => Promise<void> | void;
 };
 
 export type SessionReplayClock = {
@@ -122,6 +132,10 @@ type ActiveReplay = {
 
 const EMPTY_ARRAY_BYTES = 2;
 
+function eventBytes(event: RecordedEvent): number {
+  return Buffer.byteLength(JSON.stringify(event), "utf8");
+}
+
 function cloneGesture(gesture: Gesture): Gesture {
   return gesture.type === "text"
     ? { type: "text", text: normalizeTextForControl(gesture.text) }
@@ -129,9 +143,9 @@ function cloneGesture(gesture: Gesture): Gesture {
 }
 
 function cloneEvent(event: RecordedEvent): RecordedEvent {
-  return event.kind === "gesture"
-    ? { ...event, gesture: cloneGesture(event.gesture) }
-    : { ...event, location: { ...event.location } };
+  if (event.kind === "gesture") return { ...event, gesture: cloneGesture(event.gesture) };
+  if (event.kind === "location") return { ...event, location: { ...event.location } };
+  return { ...event };
 }
 
 function abortReason(signal: AbortSignal): Error {
@@ -231,6 +245,41 @@ export class SessionRecorder {
 
   recordLocation(location: GeoFix, source: string): void {
     this.#record({ kind: "location", location, source });
+  }
+
+  /** Record a shake when its burst starts. Returns the event ID, or null when nothing was recorded. */
+  recordShake(source: string): number | null {
+    return this.#record({ kind: "shake", source });
+  }
+
+  /** Give a recorded shake the time it swung, once it ends. */
+  setShakeDuration(id: number, durationMs: number): void {
+    const event = this.#events.find((candidate) => candidate.id === id);
+    if (event?.kind !== "shake" || !Number.isFinite(durationMs)) return;
+    const before = eventBytes(event);
+    event.durationMs = Math.max(0, Math.round(durationMs));
+    this.#retainedBytes += eventBytes(event) - before;
+    this.#trim();
+  }
+
+  /**
+   * Remove an event whose action failed after it was recorded. The next event takes its time gap,
+   * so replay keeps the timing of the events around it.
+   */
+  discard(id: number): void {
+    const index = this.#events.findIndex((event) => event.id === id);
+    if (index === -1) return;
+    const removed = this.#events.splice(index, 1)[0]!;
+    this.#retainedBytes -= eventBytes(removed) + (this.#events.length > 0 ? 1 : 0);
+    const next = this.#events[index];
+    if (next) {
+      const before = eventBytes(next);
+      next.delayMs += removed.delayMs;
+      this.#retainedBytes += eventBytes(next) - before;
+    } else {
+      const previous = this.#events[index - 1];
+      this.#lastEventMs = previous ? Date.parse(previous.at) : null;
+    }
   }
 
   clear(): SessionSummary {
@@ -337,6 +386,7 @@ export class SessionRecorder {
     handlers: {
       dispatchGesture: (gesture: Gesture) => Promise<void> | void;
       setLocation: (fix: GeoFix) => Promise<void> | void;
+      shake?: (durationMs?: number) => Promise<void> | void;
     },
     multiplier = 1,
   ): Promise<SessionSummary> {
@@ -362,8 +412,10 @@ export class SessionRecorder {
         if (this.#legacyStopReplay) break;
         if (event.kind === "gesture") {
           await handlers.dispatchGesture(cloneGesture(event.gesture));
-        } else {
+        } else if (event.kind === "location") {
           await handlers.setLocation({ ...event.location });
+        } else {
+          await handlers.shake?.(event.durationMs);
         }
       }
       this.#replayCompletedAt = new Date(this.#clock.now()).toISOString();
@@ -429,8 +481,10 @@ export class SessionRecorder {
         this.#assertReplayActive(replay);
         if (event.kind === "gesture") {
           await handlers.dispatchGesture(event.gesture, replay.controller.signal);
-        } else {
+        } else if (event.kind === "location") {
           await handlers.setLocation(event.location, replay.controller.signal);
+        } else {
+          await handlers.shake(replay.controller.signal, event.durationMs);
         }
         this.#assertReplayActive(replay);
       }
@@ -474,9 +528,10 @@ export class SessionRecorder {
   #record(
     event:
       | { kind: "gesture"; gesture: Gesture; source: string }
-      | { kind: "location"; location: GeoFix; source: string },
-  ): void {
-    if (this.#closed || !this.#recording || this.#replaying) return;
+      | { kind: "location"; location: GeoFix; source: string }
+      | { kind: "shake"; source: string },
+  ): number | null {
+    if (this.#closed || !this.#recording || this.#replaying) return null;
     const now = this.#clock.now();
     const delayMs = this.#lastEventMs !== null ? Math.max(0, now - this.#lastEventMs) : 0;
     this.#lastEventMs = now;
@@ -489,18 +544,25 @@ export class SessionRecorder {
     const recorded: RecordedEvent =
       event.kind === "gesture"
         ? { ...base, kind: "gesture", gesture: cloneGesture(event.gesture) }
-        : { ...base, kind: "location", location: { ...event.location } };
-    const bytes = Buffer.byteLength(JSON.stringify(recorded), "utf8");
+        : event.kind === "location"
+          ? { ...base, kind: "location", location: { ...event.location } }
+          : { ...base, kind: "shake" };
+    const bytes = eventBytes(recorded);
     if (EMPTY_ARRAY_BYTES + bytes > this.#maxBytes) {
       this.#droppedEvents++;
-      return;
+      return null;
     }
     this.#events.push(recorded);
     this.#retainedBytes += bytes + (this.#events.length > 1 ? 1 : 0);
+    this.#trim();
+    return recorded.id;
+  }
+
+  /** Drop the oldest events until the session fits its limits. */
+  #trim(): void {
     while (this.#events.length > this.#maxEvents || this.#retainedBytes > this.#maxBytes) {
       const removed = this.#events.shift()!;
-      this.#retainedBytes -=
-        Buffer.byteLength(JSON.stringify(removed), "utf8") + (this.#events.length > 0 ? 1 : 0);
+      this.#retainedBytes -= eventBytes(removed) + (this.#events.length > 0 ? 1 : 0);
       this.#droppedEvents++;
     }
   }

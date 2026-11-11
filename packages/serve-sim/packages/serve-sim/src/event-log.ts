@@ -289,6 +289,14 @@ export function eventLogEventForHidMessage(
         action: "trigger",
         summary: "Memory warning",
       };
+    case 0x14:
+      return {
+        device,
+        source: "hid",
+        kind: "shake",
+        action: "trigger",
+        summary: "Shake",
+      };
     case 0x0a: {
       const delta = numberValue(details.delta);
       if (delta == null) return null;
