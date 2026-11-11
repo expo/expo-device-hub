@@ -422,7 +422,10 @@ The helper HID socket accepts a `0x07` frame carrying `{ orientation }`.
 New observed-pose helpers also accept an optional cardinal `deviceOrientation`
 (`portrait`, `pud`, `landscape-left`, `landscape-right`) on that frame. On a Duo
 advertising `supportsPhysicalOrientation: true`, this uses native physical control,
-independent of the active panel's mounting. Invalid or unsupported physical values
+independent of the active panel's mounting, and records that pose as the
+config's `physicalOrientation`, so Table Mode eligibility stays known. A rotation
+clears the named pose and Table Mode either way; a legacy panel-relative rotation
+leaves `physicalOrientation` unknown. Invalid or unsupported physical values
 are refused without running the legacy alternative. The command shares the existing
 hinge/input serial queue and send-as-answer behavior. Older packets retain their
 panel-relative semantics [observed: `src/device-session.ts` case `0x07`].

@@ -1769,10 +1769,10 @@ export class DeviceSession {
           if (!this.canRunInputControl(generation)) return;
           this.recordHidEvent(tag, m);
           if (supportsHingeAngle) {
-            // Rotation is panel-relative; only a named pose establishes the
-            // physical orientation needed to determine Table Mode eligibility.
+            // A legacy rotation is panel-relative and leaves the physical orientation
+            // unknown. A physical rotation sets it, which Table Mode eligibility needs.
             this.hingePose = null;
-            this.hingePhysicalOrientation = undefined;
+            this.hingePhysicalOrientation = physical;
             this.tableMode = false;
             this.saveHingeState();
             // Apps may lock their interface. Keep native readback authoritative.
