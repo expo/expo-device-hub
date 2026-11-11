@@ -498,6 +498,77 @@ test("ordinary-device controls follow observed pose independently of a portrait-
   expect(client().orientation).toBeNull();
 });
 
+test("Duo Rotate advances from observed pose when Home stays portrait", async () => {
+  const { client, helper } = await mount();
+  await act(async () =>
+    helper().screen("portrait", {
+      supportsHingeAngle: true,
+      supportsPhysicalOrientation: true,
+      screenOrientation: "portrait",
+      deviceOrientation: "landscape-left",
+      observedDeviceState: { hingeAngle: 0, physicalOrientation: "landscape-left" },
+    }),
+  );
+  expect(client().orientation).toBe("landscape_left");
+  const turns: number[] = [];
+  const stop = client().fold?.observe?.((event) => {
+    if (event.type === "rotated") turns.push(event.quarterTurns);
+  });
+  await act(async () => client().rotate());
+  expect(helper().rotations().at(-1)).toBe("portrait_upside_down");
+  expect(turns).toEqual([1]);
+  stop?.();
+});
+
+test("observed Duo keeps its clockwise physical turn from portrait", async () => {
+  const { client, helper } = await mount();
+  await act(async () =>
+    helper().screen("portrait", {
+      supportsHingeAngle: true,
+      supportsPhysicalOrientation: true,
+      screenOrientation: "portrait",
+      deviceOrientation: "portrait",
+    }),
+  );
+  const turns: number[] = [];
+  const stop = client().fold?.observe?.((event) => {
+    if (event.type === "rotated") turns.push(event.quarterTurns);
+  });
+  await act(async () => client().rotate());
+  expect(client().orientation).toBe("landscape_left");
+  expect(turns).toEqual([1]);
+  stop?.();
+});
+
+test("observed Duo choices target physical poses on both panels", async () => {
+  const { client, helper } = await mount();
+  for (const screenId of [1, 3]) {
+    await act(async () =>
+      helper().screen("portrait", {
+        screenId,
+        supportsHingeAngle: true,
+        supportsPhysicalOrientation: true,
+        screenOrientation: "portrait",
+        deviceOrientation: "portrait",
+      }),
+    );
+    for (const [choice, physical] of [
+      ["portrait", "portrait"],
+      ["portrait_upside_down", "pud"],
+      ["landscape_left", "landscape-left"],
+      ["landscape_right", "landscape-right"],
+    ] as const) {
+      await act(async () => client().setOrientation(choice));
+      const frame = helper()
+        .sent.filter((data) => new Uint8Array(data)[0] === 0x07)
+        .at(-1)!;
+      expect(
+        JSON.parse(new TextDecoder().decode(new Uint8Array(frame).subarray(1))).deviceOrientation,
+      ).toBe(physical);
+    }
+  }
+});
+
 test("portrait-locked landscape home swipes retain the interface edge through release", async () => {
   const { client, helper } = await mount();
   await act(async () =>
