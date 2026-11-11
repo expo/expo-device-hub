@@ -1160,6 +1160,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Only a known pose drives the controls. While the pose is unknown (null: no
   // sample yet, or a pose the observer cannot name), the controls use the legacy
   // readback, order and commands, so Rotate still advances.
+  // @ref LLP 0013#orientation — an unknown physical pose keeps the legacy orientation controls
   const observedDevicePose = screen?.deviceOrientation ?? null;
   const usesNativeDevicePose =
     observedDevicePose !== null &&

@@ -192,6 +192,7 @@ export function legacyOrientationForDeviceChoice(pose: DeviceOrientation): Devic
  * landscape pixels already face the framing, and portrait pixels are taken as
  * unturned content and turned to the framing.
  */
+// @ref LLP 0016#screen — an unknown interface orientation maps pixels by the raw frame shape
 function interfaceOrientation(config: ScreenSize): DeviceOrientation | undefined {
   if (config.screenOrientation) return config.screenOrientation;
   return config.width > config.height ? framingOrientation(config) : undefined;
