@@ -189,6 +189,31 @@ final class DeviceStateSubscriptionTests: XCTestCase {
         await unsubscribe()
     }
 
+    func testOrdinaryListenerDetachesWhileRegistrationDrainsBeforeItsReplacement() async {
+        let registering = expectation(description: "registration pending")
+        let detached = expectation(description: "listener detached")
+        let replacementStarted = expectation(description: "replacement registered")
+        let source = PendingDeviceStateRegistration {
+            ($0 == 0 ? registering : replacementStarted).fulfill()
+        }
+        let bridge = CoreDeviceBridge(deviceStateConsumer: { _, receive in await source.consume(receive) }, hingeClock: { 10 })
+        let first = await bridge.subscribeDeviceState(udid: udid, isFoldable: false) { _ in }
+        await fulfillment(of: [registering], timeout: 2)
+        let closing = Task { await first(); detached.fulfill() }
+        await fulfillment(of: [detached], timeout: 0.2)
+        let replacement = Task { await bridge.subscribeDeviceState(udid: self.udid, isFoldable: false) { _ in } }
+        try? await Task.sleep(for: .milliseconds(25))
+        let countBeforeDrain = await source.count
+        XCTAssertEqual(countBeforeDrain, 1)
+        await source.release()
+        await closing.value
+        let second = await replacement.value
+        await fulfillment(of: [replacementStarted], timeout: 2)
+        let state = await bridge.observedDeviceState(udid: udid)
+        XCTAssertNil(state.state.orientation)
+        await second()
+    }
+
     func testEligibilityGetterDoesNotStartObservationOrChangeItsSnapshot() async {
         let bridge = CoreDeviceBridge(deviceStateConsumer: { _, _ in
             XCTFail("Eligibility lookup must not open a monitor")
@@ -381,3 +406,23 @@ private actor DeviceStateProducerProbe {
 }
 
 private enum ProducerError: Error { case disconnected }
+
+private actor PendingDeviceStateRegistration {
+    private var pending: CheckedContinuation<Void, Never>?
+    private(set) var count = 0
+    private let started: @Sendable (Int) -> Void
+    init(started: @escaping @Sendable (Int) -> Void) { self.started = started }
+
+    func consume(_ receive: @escaping DeviceStateProducerProbe.Receiver) async -> Bool {
+        let index = count
+        count += 1
+        started(index)
+        if index == 0 {
+            await withCheckedContinuation { pending = $0 }
+            // Model an uncooperative native registration returning a stale result.
+            await receive(.orientation(.init(orientation: "landscape-left", timestamp: 11)))
+        }
+        return false
+    }
+    func release() { pending?.resume(); pending = nil }
+}

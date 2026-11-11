@@ -10,7 +10,7 @@ actor CoreDeviceBridge {
 
     enum BridgeError: Error { case unavailable, deviceUnavailable, initializationTimedOut, resetDuringLookup, observationEnded }
 
-    private var manager: CoreDeviceManagerObject?
+    private var managerTask: Task<CoreDeviceManagerObject?, Never>?
     private let managerReadiness = SharedReadiness()
     private var capabilities = BootBoundCache<String, String, CoreDeviceCapabilityObject>()
     private var hingeSupport: [String: Bool] = [:]
@@ -32,6 +32,7 @@ actor CoreDeviceBridge {
     }
     private final class DeviceStateObservation {
         let isFoldable: Bool
+        var registering: DeviceStateToken?
         var token: DeviceStateToken?
         var connection: UUID?
         var task: Task<Void, Never>?
@@ -153,8 +154,16 @@ actor CoreDeviceBridge {
         previous?.cancel()
         let token = DeviceStateToken(generation: hingeResetGenerations[udid, default: 0])
         observation.token = token
+        observation.registering = observation.isFoldable ? nil : token
         observation.connection = nil
         observation.task = Task {
+            defer {
+                if observation.registering == token { observation.registering = nil }
+                if observation.listeners.isEmpty, observation.registering == nil,
+                   deviceStateObservations[udid] === observation {
+                    deviceStateObservations.removeValue(forKey: udid)
+                }
+            }
             await previous?.value
             guard !Task.isCancelled else { return }
             await self.runDeviceStateObservation(udid: udid, token: token)
@@ -168,6 +177,9 @@ actor CoreDeviceBridge {
         observation.connection = nil
         observation.task?.cancel()
         clearObservedDeviceState(udid: udid)
+        // A native registration RPC may ignore cancellation. Its task keeps ownership
+        // until it returns; a replacement still waits for that task above.
+        if observation.registering != nil { return }
         await observation.task?.value
         if deviceStateObservations[udid] === observation { deviceStateObservations.removeValue(forKey: udid) }
     }
@@ -179,6 +191,9 @@ actor CoreDeviceBridge {
             let startedAt = hingeClock()
             let connection = UUID()
             deviceStateObservations[udid]?.connection = connection
+            if let observation = deviceStateObservations[udid], !observation.isFoldable {
+                observation.registering = token
+            }
             do {
                 let receive: @Sendable (DeviceStateUpdate) async -> Void = { update in
                     await self.applyObservedDeviceState(udid: udid, update: update, token: token,
@@ -188,7 +203,9 @@ actor CoreDeviceBridge {
                 if let deviceStateConsumer { supported = try await deviceStateConsumer(udid, receive) }
                 // @ref LLP 0004#live-pose-observation — ordinary devices have no motion-state stream
                 else if deviceStateObservations[udid]?.isFoldable == false {
-                    supported = try await consumeDisplayStateUpdates(udid: udid, onUpdate: receive)
+                    supported = try await consumeDisplayStateUpdates(udid: udid, onRegistered: {
+                        await self.deviceStateRegistered(udid: udid, token: token, connection: connection)
+                    }, onUpdate: receive)
                 } else { supported = try await consumeDeviceStateUpdates(udid: udid, onUpdate: receive) }
                 guard supported else { return }
                 throw BridgeError.observationEnded
@@ -224,6 +241,12 @@ actor CoreDeviceBridge {
         if observedDeviceStates[udid]?.revision != oldRevision { publishObservedDeviceState(udid: udid) }
     }
 
+    private func deviceStateRegistered(udid: String, token: DeviceStateToken, connection: UUID) {
+        guard let observation = deviceStateObservations[udid], observation.token == token,
+              observation.connection == connection, observation.registering == token else { return }
+        observation.registering = nil
+    }
+
     private func clearObservedDeviceState(udid: String) {
         hingeControlEligibility.removeValue(forKey: udid)
         if observedDeviceStates[udid]?.clear() == true { publishObservedDeviceState(udid: udid) }
@@ -238,27 +261,13 @@ actor CoreDeviceBridge {
     func remoteDevice(udid: String) async throws -> CoreDeviceRemoteDevice {
         guard SSCoreDeviceInitialize() else { throw BridgeError.unavailable }
         let lookup = capabilities.beginLookup(scope: udid)
-        if manager == nil {
-            // Initializes resilient class metadata and field offsets before
-            // using the class metadata's allocating initializer.
-            _ = coreDeviceSharedManager()
-            guard let managerMetadata = SSCoreDeviceSymbol("$s10CoreDevice0B7ManagerCN"),
-                  let visibilityMetadata = SSCoreDeviceSymbol("$s10CoreDevice0B15VisibilityClassON"),
-                  let visibilityType = unsafeBitCast(visibilityMetadata, to: Any.Type.self) as? any Hashable.Type
-            else { throw BridgeError.unavailable }
-            let managerType = unsafeBitCast(managerMetadata, to: CoreDeviceManagerObject.Type.self)
-            let visibilitySet = Self.makeVisibilitySet(visibilityType)
-            manager = withExtendedLifetime(visibilitySet) {
-                let rawSet = withUnsafePointer(to: visibilitySet) {
-                    UnsafeRawPointer($0).load(as: UnsafeMutableRawPointer.self)
-                }
-                // The private initializer consumes the Set. Keep the original
-                // Any-owned value alive until initialization has completed.
-                SSCoreDeviceRetainBridgeObject(rawSet)
-                return managerType.create(connection: coreDeviceServiceConnection(), allowed: rawSet)
-            }
+        if managerTask == nil {
+            // Creating the manager can synchronously wait for CoreDeviceService.
+            // Keep one owned task without blocking listener removal on this actor.
+            managerTask = Task.detached { Self.createManager() }
         }
-        guard let manager else { throw BridgeError.unavailable }
+        guard let manager = await managerTask?.value else { throw BridgeError.unavailable }
+        try Task.checkCancellation()
         do {
             try await managerReadiness.waitUntilReady {
                 await self.managerIsInitialized()
@@ -266,14 +275,36 @@ actor CoreDeviceBridge {
         } catch SharedReadiness.Failure.timedOut {
             throw BridgeError.initializationTimedOut
         }
+        try Task.checkCancellation()
         guard capabilities.isCurrent(lookup) else { throw BridgeError.resetDuringLookup }
         guard let device = manager.allDevices().first(where: { $0.identifier().uuidString.caseInsensitiveCompare(udid) == .orderedSame })
         else { throw BridgeError.deviceUnavailable }
         return device
     }
 
-    private func managerIsInitialized() -> Bool {
-        manager?.initialized() == true
+    nonisolated private static func createManager() -> CoreDeviceManagerObject? {
+        // Initializes resilient class metadata and field offsets before
+        // using the class metadata's allocating initializer.
+        _ = coreDeviceSharedManager()
+        guard let managerMetadata = SSCoreDeviceSymbol("$s10CoreDevice0B7ManagerCN"),
+              let visibilityMetadata = SSCoreDeviceSymbol("$s10CoreDevice0B15VisibilityClassON"),
+              let visibilityType = unsafeBitCast(visibilityMetadata, to: Any.Type.self) as? any Hashable.Type
+        else { return nil }
+        let managerType = unsafeBitCast(managerMetadata, to: CoreDeviceManagerObject.Type.self)
+        let visibilitySet = Self.makeVisibilitySet(visibilityType)
+        return withExtendedLifetime(visibilitySet) {
+            let rawSet = withUnsafePointer(to: visibilitySet) {
+                UnsafeRawPointer($0).load(as: UnsafeMutableRawPointer.self)
+            }
+            // The private initializer consumes the Set. Keep the original
+            // Any-owned value alive until initialization has completed.
+            SSCoreDeviceRetainBridgeObject(rawSet)
+            return managerType.create(connection: coreDeviceServiceConnection(), allowed: rawSet)
+        }
+    }
+
+    private func managerIsInitialized() async -> Bool {
+        await managerTask?.value?.initialized() == true
     }
 
     private static func makeVisibilitySet<T: Hashable>(_: T.Type) -> Any {
