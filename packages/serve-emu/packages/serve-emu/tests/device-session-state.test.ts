@@ -173,6 +173,51 @@ describe("DeviceSessionState orientation", () => {
   });
 });
 
+describe("DeviceSessionState orientation commands and readings", () => {
+  test("a reading during a lock command is dropped, and a failed command leaves it stale", async () => {
+    const turned = deferred<void>();
+    let pose: "portrait" | "landscape_left" = "portrait";
+    let fail = false;
+    let reads = 0;
+    const state = new DeviceSessionState({
+      serial: "emulator-5554",
+      applyLocation: async () => {},
+      readOrientation: async () => (reads++, pose),
+      applyRotation: async () => {
+        pose = "landscape_left";
+        await turned.promise;
+        if (fail) throw new Error("lock failed");
+        return {
+          mode: "lock",
+          rotation: 3,
+          orientation: "landscape",
+          pose: "landscape_left",
+          raw: "lock 3",
+        };
+      },
+    });
+    const command = state.setOrientation("landscape_left");
+    // The display has turned, but the command has not reported its pose yet.
+    await expect(state.orientation.observe()).resolves.toBeNull();
+    turned.resolve();
+    await command;
+    await expect(state.orientation.observe()).resolves.toMatchObject({
+      orientation: "landscape_left",
+    });
+
+    fail = true;
+    const again = deferred<void>();
+    turned.promise = again.promise;
+    const failing = state.setOrientation("portrait");
+    again.resolve();
+    await expect(failing).rejects.toThrow("lock failed");
+    // The failed command made the cached reading stale, so /api reads the display again.
+    const before = reads;
+    await expect(state.orientation.fresh()).resolves.toBe("landscape_left");
+    expect(reads).toBe(before + 1);
+  });
+});
+
 test("a context that creates its device state needs every device dependency", () => {
   const partial = {
     serial: "device-a",
