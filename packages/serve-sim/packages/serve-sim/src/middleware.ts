@@ -2817,6 +2817,29 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         res.end("method not allowed");
         return;
       }
+      let automated = false;
+      try {
+        const body = await readRequestBodyAsync(req, 1024);
+        const parsed = ScreenshotParams.pick({ automation: true })
+          .strict()
+          .safeParse(body?.length ? JSON.parse(body.toString("utf-8")) : {});
+        if (!parsed.success) throw new Error("Invalid screenshot request");
+        automated = parsed.data.automation;
+      } catch (error) {
+        const tooLarge = error instanceof RequestBodyTooLargeError;
+        res.writeHead(tooLarge ? 413 : 400, {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+        });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: tooLarge ? "Screenshot request is too large" : "Invalid screenshot request",
+          }),
+        );
+        return;
+      }
+      if (automated && !assertBearerAccess(req, res, execToken)) return;
       let udid = selectedDevice;
       if (udid && !isSimulatorUdid(udid)) {
         res.writeHead(400, {
@@ -2873,8 +2896,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         const image = format === "jpeg" ? await convertScreenshot(png, 0, quality ?? 80) : png;
         const encodeDuration = performance.now() - encodeStarted;
         const artifactStarted = performance.now();
-        const artifact = await saveScreenshotArtifact(png);
-        recordScreenshotEvent(udid, artifact);
+        const artifact = automated
+          ? { status: "disabled" as const }
+          : await saveScreenshotArtifact(png);
+        if (!automated) recordScreenshotEvent(udid, artifact);
         const artifactDuration = performance.now() - artifactStarted;
         // Capture includes native queueing/PNG encoding; simctl also uses temporary-file I/O.
         // Total stops before response delivery; durations overlap, so do not add them.
@@ -2896,10 +2921,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           (err instanceof Error ? err.message : String(err));
         // The event log is browser-readable; simctl's stderr can name host paths, so it stays here.
         console.error(`Simulator screenshot failed for ${udid}:`, message);
-        recordScreenshotEvent(udid, {
-          status: "capture-failed",
-          error: "simctl screenshot failed",
-        });
+        if (!automated) {
+          recordScreenshotEvent(udid, {
+            status: "capture-failed",
+            error: "simctl screenshot failed",
+          });
+        }
         res.writeHead(500, {
           "Cache-Control": "no-store",
           "Content-Type": "application/json",
@@ -3482,10 +3509,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         const value = parsed.data[key];
         if (value !== undefined) url.searchParams.set(key, String(value));
       }
-      return (await fetchMiddleware(
+      return (await connectToFetch(
+        connectMiddleware,
         new Request(url, {
           method: "POST",
-          headers: { authorization: `Bearer ${execToken}` },
+          headers: { authorization: `Bearer ${execToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ automation: parsed.data.automation }),
         }),
       ))!;
     },

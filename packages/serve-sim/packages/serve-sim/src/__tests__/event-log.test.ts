@@ -37,6 +37,27 @@ describe("eventLogEventForAction", () => {
     }
   });
 
+  test("automated screenshots do not count as activity, including failures", () => {
+    for (const exitCode of [0, 1]) {
+      expect(
+        eventLogEventForAction(
+          "screenshot.capture",
+          { udid: "DEVICE-A", automation: true },
+          { exitCode },
+        ),
+      ).toBeNull();
+      for (const params of [{ udid: "DEVICE-A" }, { udid: "DEVICE-A", automation: false }]) {
+        expect(eventLogEventForAction("screenshot.capture", params, { exitCode })).toMatchObject({
+          kind: "screenshot",
+          status: exitCode === 0 ? "ok" : "error",
+        });
+      }
+      expect(
+        eventLogEventForAction("app.install", { udid: "DEVICE-A", automation: true }, { exitCode }),
+      ).not.toBeNull();
+    }
+  });
+
   test("records an install", () => {
     expect(
       eventLogEventForAction("app.install", { udid: "DEVICE-A" }, { exitCode: 0 }),
