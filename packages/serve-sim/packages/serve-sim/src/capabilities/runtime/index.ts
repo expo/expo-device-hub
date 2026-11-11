@@ -52,3 +52,5 @@ export {
   disableCapability,
   isCapabilityArmed,
 } from "./manager";
+
+export { createCapabilitySession, type CapabilitySessionBackend } from "./session";

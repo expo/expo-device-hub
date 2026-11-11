@@ -2,7 +2,7 @@ import {
   INPUT_PASTEBOARD_LOCK_TIMEOUT_MS,
   withSimPasteboardLock,
   writeSimPasteboardUnlocked,
-} from "./sim-pasteboard";
+} from "./pasteboard";
 
 export function pasteTextIntoSim<T>(
   udid: string,

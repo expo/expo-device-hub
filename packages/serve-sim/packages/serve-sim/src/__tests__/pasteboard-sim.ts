@@ -15,12 +15,12 @@ import {
   locateSimpbArtifact,
   locatePasteboardTool,
   readPasteboardViaSimctl,
-} from "../sim-pasteboard";
+} from "../capabilities/clipboard";
 import {
   CLIPBOARD_CAPABILITY,
   locatePasteboardReaderDylib,
   requestInjectedPasteboard,
-} from "../sim-pasteboard-reader";
+} from "../capabilities/clipboard";
 
 export const SAFARI_BUNDLE = "com.apple.mobilesafari";
 export const FIXTURE_BUNDLE = "dev.expo.serve-sim.pasteboard-fixture";

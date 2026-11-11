@@ -1,7 +1,7 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { setTimeout as sleep } from "timers/promises";
-import { simctl } from "./simctl";
+import { simctl } from "../../simctl";
 import {
   INPUT_PASTEBOARD_LOCK_TIMEOUT_MS,
   buildSimpbArtifact,
@@ -10,7 +10,7 @@ import {
   readPasteboardText,
   withSimPasteboardLock,
   type PasteboardReadResult,
-} from "./sim-pasteboard";
+} from "./pasteboard";
 
 const COPY_CHANGE_TIMEOUT_MS = 5_000;
 const COPY_CHANGE_POLL_MS = 75;

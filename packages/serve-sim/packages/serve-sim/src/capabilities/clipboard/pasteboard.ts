@@ -3,11 +3,11 @@ import { existsSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { promisify } from "util";
-import { dirnameOf } from "./runtime";
-import { simctlRaw, type SimctlOptions } from "./simctl";
-import { withStateLock } from "./state-lock";
+import { simctlRaw, type SimctlOptions } from "../../simctl";
+import { withStateLock } from "../../state-lock";
+import { capabilityAssetBaseDir } from "../runtime/assets";
 
-const __dirname = dirnameOf(import.meta.url);
+const __dirname = capabilityAssetBaseDir();
 const execFileAsync = promisify(execFile);
 const PASTEBOARD_LOCK_TIMEOUT_MS = 90_000;
 export const INPUT_PASTEBOARD_LOCK_TIMEOUT_MS = 1_000;

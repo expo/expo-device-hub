@@ -82,7 +82,7 @@ import { openSimulatorHost } from "./simulator-host";
 import { installAppInvocation, redactHostPaths, runInvocation } from "./host-actions-utils";
 import { prepareAppInstall } from "./app-install-worker";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
-import { clipboardCapability } from "./sim-pasteboard-reader";
+import { clipboardCapability } from "./capabilities/clipboard";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
 import { debugCli, debugHelper, debugState } from "./debug";

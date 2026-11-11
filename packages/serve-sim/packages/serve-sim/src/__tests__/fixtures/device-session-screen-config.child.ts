@@ -381,8 +381,11 @@ mock.module("../../ui-settings", () => ({
   },
 }));
 
+const clipboardModule = await import("../../capabilities/clipboard");
+
 // Serialized like the real per-device pasteboard lock.
-mock.module("../../sim-pasteboard-paste", () => ({
+mock.module("../../capabilities/clipboard", () => ({
+  ...clipboardModule,
   pasteTextIntoSim: (_udid: string, text: string, sendPasteShortcut: () => Promise<unknown>) => {
     const paste = pasteboardLock.then(async () => {
       pasteWrites.push(text);

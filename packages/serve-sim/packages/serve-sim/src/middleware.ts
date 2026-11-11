@@ -121,12 +121,14 @@ import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
 import {
   MAX_PASTEBOARD_TEXT_BYTES,
   PasteboardBusyError,
+  PasteboardCopyTimeoutError,
   PasteboardTooLargeError,
+  PasteboardUnavailableError,
+  cleanupWarningOf,
+  createClipboardSession,
+  readSimPasteboardResult,
   writeSimPasteboard,
-} from "./sim-pasteboard";
-import { PasteboardUnavailableError, readSimPasteboardResult } from "./sim-pasteboard-reader";
-import { createClipboardSession } from "./clipboard-session";
-import { PasteboardCopyTimeoutError, cleanupWarningOf } from "./sim-pasteboard-copy";
+} from "./capabilities/clipboard";
 
 /** Captured traffic is decrypted credentials and clipboard text is user data; `no-cache` would still let a cache keep a copy. */
 const NO_STORE = { "Cache-Control": "no-store, private", Pragma: "no-cache" } as const;

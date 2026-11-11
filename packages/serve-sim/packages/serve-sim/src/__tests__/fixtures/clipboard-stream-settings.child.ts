@@ -2,7 +2,6 @@ import { expect, mock, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import * as native from "../../native";
 import * as ui from "../../ui-settings";
-import * as copy from "../../sim-pasteboard-copy";
 import type { StreamEncoderSettings, StreamSettings } from "../../stream-settings";
 import { UDID } from "../helpers";
 
@@ -41,7 +40,8 @@ class Hid {
 }
 mock.module("../../native", () => ({ ...native, NativeCapture: Capture, NativeHid: Hid }));
 mock.module("../../ui-settings", () => ({ ...ui, refreshDeviceOptionState: async () => {} }));
-mock.module("../../sim-pasteboard-copy", () => ({
+const copy = await import("../../capabilities/clipboard");
+mock.module("../../capabilities/clipboard", () => ({
   ...copy,
   copyFromSim: async (
     _udid: string,

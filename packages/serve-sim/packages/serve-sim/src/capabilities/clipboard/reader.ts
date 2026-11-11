@@ -2,23 +2,19 @@ import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import { join } from "path";
 import { setTimeout as sleep } from "timers/promises";
-import type { CapabilityDefinition } from "./capabilities";
-import { debugPasteboard } from "./debug";
-import { frontmostAppOf } from "./foreground-tracker";
-import { isCapabilityEnabled } from "./capabilities/runtime/manager";
-import { readLaunchState } from "./capabilities/runtime/state";
-import { simctl } from "./simctl";
-import { withStateLock } from "./state-lock";
+import { debugPasteboard } from "../../debug";
+import { frontmostAppOf } from "../../foreground-tracker";
+import { isCapabilityEnabled } from "../runtime/manager";
+import { readLaunchState } from "../runtime/state";
+import { simctl } from "../../simctl";
+import { withStateLock } from "../../state-lock";
 import {
-  buildSimpbArtifact,
-  locateSimpbArtifact,
   MAX_PASTEBOARD_TEXT_BYTES,
   PasteboardTooLargeError,
   readPasteboardViaSimctl,
   type PasteboardReadResult,
-} from "./sim-pasteboard";
-
-export const CLIPBOARD_CAPABILITY = "clipboard";
+} from "./pasteboard";
+import { CLIPBOARD_CAPABILITY } from "./definition";
 
 const SPRINGBOARD_BUNDLE = "com.apple.springboard";
 // @ref LLP 0010#reading-when-simctl-pbpaste-fails — iOS 27 apps answer about 2 s after launch
@@ -26,28 +22,6 @@ const INJECTED_TIMEOUT_MS = 3000;
 const INJECTED_POLL_MS = 25;
 
 export class PasteboardUnavailableError extends Error {}
-
-export function locatePasteboardReaderDylib(): string | null {
-  return locateSimpbArtifact("libSimPasteboardReader.dylib");
-}
-
-function buildPasteboardReaderDylib(): Promise<string> {
-  return buildSimpbArtifact("SimPasteboardReader", "libSimPasteboardReader.dylib");
-}
-
-export const clipboardCapability: CapabilityDefinition = {
-  name: CLIPBOARD_CAPABILITY,
-  defaultEnabled: true,
-  scope: "allApps",
-  loadDelayMs: 0,
-  prebuiltDylib: locatePasteboardReaderDylib,
-  async setEnabled({ enabled }) {
-    if (!enabled) return null;
-    return {
-      dylib: locatePasteboardReaderDylib() ?? (await buildPasteboardReaderDylib()),
-    };
-  },
-};
 
 const readsInFlight = new Map<string, Promise<PasteboardReadResult>>();
 

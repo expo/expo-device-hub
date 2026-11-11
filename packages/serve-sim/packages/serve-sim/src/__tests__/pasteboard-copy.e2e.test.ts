@@ -4,11 +4,11 @@ import { join } from "path";
 import { simMiddleware } from "../middleware";
 import { closeDeviceSession, getDeviceSession, peekDeviceSession } from "../device-session";
 import { locateNativeAddon } from "../native";
-import { locateSimpbArtifact } from "../sim-pasteboard";
+import { locateSimpbArtifact } from "../capabilities/clipboard";
 import {
   PasteboardCopyTimeoutError,
   copyFromSim as performCopyFromSim,
-} from "../sim-pasteboard-copy";
+} from "../capabilities/clipboard";
 import {
   COPY_FIXTURE_TEXT,
   ensureFixtureInstalled,

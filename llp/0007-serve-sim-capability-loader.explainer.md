@@ -26,7 +26,7 @@ Importing the module does not import concrete capabilities, install process hand
 arm a device, start a server or build native assets. The CLI still explicitly registers
 `clipboardCapability` and `captureRuntime.capability`; their IDs, defaults and override
 selection are unchanged [observed: `src/index.ts`, `src/capabilities/runtime/registry.ts`,
-`src/sim-pasteboard-reader.ts`, `src/capture/runtime.ts`].
+`src/capabilities/clipboard/definition.ts`, `src/capture/runtime.ts`].
 
 ### Dependency direction
 
@@ -71,18 +71,20 @@ next layer until the current head has been reviewed and its relevant CI is clear
 1. **Module foundation:** extract the unchanged types, registry/selection, capability
    manager and its preparation, config, ownership and lock helpers. Expose the module
    entry point and retarget all callers/tests before removing the old root modules. This is the
-   implemented boundary; the consumer moves below are still planned
+   implemented boundary; Clipboard below is implemented and the later consumers are planned
    [observed: `src/capabilities/`].
-2. **Clipboard:** add `capabilities/clipboard/index.ts`, move its implementation
-   behind that entry point, and derive reusable setup/recheck/retry/disposal policy
-   from `src/clipboard-session.ts` into `runtime/session.ts`. Keep host input arbitration and process-handler
-   ownership outside the generic manager. Preserve setup coalescing, reboot repair,
+2. **Clipboard:** `capabilities/clipboard/index.ts` exposes its definition, session,
+   read/write, Copy/Paste and shortcut APIs. `runtime/session.ts` owns the shared
+   setup/recheck/retry/disposal policy derived from the original Clipboard session.
+   Host input arbitration and process-handler ownership stay outside the generic
+   manager. The module preserves setup coalescing, reboot repair,
    disabled versus unmanaged behavior, foreign setup and owned cleanup; see
    [LLP 0010](0010-serve-sim-clipboard.explainer.md#set-up-at-session-start-re-checked-every-30-s).
-   Move the reader, session, pasteboard I/O, native artifact lookup/build helper,
-   Copy, Paste and shortcut policy into that folder. Remove the old reader/session
-   and `sim-pasteboard*` root files. Actual HID dispatch, input turns and HTTP/UI
-   adaptation remain with the host.
+   The reader, session, pasteboard I/O, native artifact lookup/build helper,
+   Copy, Paste and shortcut policy live in that folder. The old reader/session,
+   `sim-pasteboard*` and `sim-command-shortcut.ts` root files are removed. Actual
+   HID dispatch, input turns and HTTP/UI adaptation remain with the host
+   [observed: `src/capabilities/clipboard/`, `src/device-session.ts`].
 3. **Network Capture:** move the full existing `src/capture/` module into
    `capabilities/network-capture/`. Its `index.ts` explicitly exports the existing
    runtime/factory, errors, types and host-facing helpers. Keep implementation in

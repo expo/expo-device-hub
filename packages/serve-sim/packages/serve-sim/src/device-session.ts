@@ -37,19 +37,18 @@ import {
 import { isSoftwareKeyboardVisible } from "./ax";
 import {
   INPUT_PASTEBOARD_LOCK_TIMEOUT_MS,
-  MAX_PASTEBOARD_TEXT_BYTES,
-  PasteboardBusyError,
-  type PasteboardReadResult,
-  withSimPasteboardLock,
-} from "./sim-pasteboard";
-import {
-  isLiftedModifier,
   KEY_C,
   KEY_V,
+  MAX_PASTEBOARD_TEXT_BYTES,
+  PasteboardBusyError,
+  copyFromSim,
+  isLiftedModifier,
+  pasteTextIntoSim,
   simCommandShortcutHidEvents,
-} from "./sim-command-shortcut";
-import { pasteTextIntoSim } from "./sim-pasteboard-paste";
-import { copyFromSim, withCleanupWarning } from "./sim-pasteboard-copy";
+  type PasteboardReadResult,
+  withCleanupWarning,
+  withSimPasteboardLock,
+} from "./capabilities/clipboard";
 import { EXEC_WS_MAX_MESSAGE_BYTES } from "./socket/control-utils";
 import { debugKeyboard } from "./debug";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";

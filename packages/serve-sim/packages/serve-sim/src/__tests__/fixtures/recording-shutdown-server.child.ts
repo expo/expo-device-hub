@@ -67,7 +67,7 @@ mock.module("../../simctl", () => ({
     throw new Error(`Unexpected host command: ${args.join(" ")}`);
   },
 }));
-mock.module("../../clipboard-session", () => ({
+mock.module("../../capabilities/clipboard/session", () => ({
   createClipboardSession: () => ({
     initialize: async () => {},
     dispose: async () => {

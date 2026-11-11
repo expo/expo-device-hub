@@ -3,7 +3,6 @@ import { EventEmitter } from "node:events";
 import * as native from "../../native";
 import * as ui from "../../ui-settings";
 import * as ax from "../../ax";
-import * as copy from "../../sim-pasteboard-copy";
 import { readSavedHingeState, writeSavedHingeState } from "../../hinge-saved-state";
 
 const handles: Hid[] = [];
@@ -143,7 +142,8 @@ mock.module("../../ax", () => ({
     return keyboardVisible;
   },
 }));
-mock.module("../../sim-pasteboard-copy", () => ({
+const copy = await import("../../capabilities/clipboard");
+mock.module("../../capabilities/clipboard", () => ({
   ...copy,
   copyFromSim: async (
     _udid: string,
