@@ -9,7 +9,7 @@ export function usePrefersReducedMotion(): boolean {
   );
 
   useEffect(() => {
-    const media = window.matchMedia?.(QUERY);
+    const media = typeof window === "undefined" ? undefined : window.matchMedia?.(QUERY);
     if (!media) return;
     const update = () => setReducedMotion(media.matches);
     media.addEventListener("change", update);

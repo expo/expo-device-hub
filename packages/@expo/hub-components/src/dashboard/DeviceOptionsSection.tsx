@@ -97,8 +97,7 @@ export const DEVICE_SHAPE_2D_ONLY_DESCRIPTION = "Applies to the 2D view only.";
 export const NO_HARDWARE_KEYBOARD_DESCRIPTION =
   "This device has no hardware keyboard, so the on-screen keyboard always shows.";
 
-export const SHAKE_HOLD_DESCRIPTION =
-  "Hold to shake longer. React Native's own dev menu needs about 3 seconds.";
+export const SHAKE_HOLD_DESCRIPTION = "Hold for a longer shake.";
 
 export const ONSCREEN_KEYBOARD_DESCRIPTION =
   "Keeps the on-screen keyboard visible while a hardware keyboard is attached. A device with no hardware keyboard always shows it.";
