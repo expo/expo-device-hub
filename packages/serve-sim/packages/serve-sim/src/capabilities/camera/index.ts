@@ -16,3 +16,5 @@ export {
   locateCameraHelper,
   buildCameraHelper,
 } from "./assets";
+export { detectMediaKind, resolveSourceArg } from "./source";
+export type { CamSourceKind, ResolvedSource } from "./source";

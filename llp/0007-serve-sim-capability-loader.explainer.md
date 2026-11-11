@@ -103,14 +103,17 @@ Here `capabilities/network-capture` means network capture. Native screen/video c
 streaming and recording are separate subsystems and stay outside this module
 [confirmed: Gabe Debes, 2026-11-10; observed: `src/capabilities/network-capture/runtime.ts`, `src/native.ts`].
 
-4. **Camera, first slice:** `capabilities/camera/index.ts` explicitly exports the
+4. **Camera, helper and source slices:** `capabilities/camera/index.ts` explicitly exports the
    existing helper status/control/state API and native asset lookup/build helpers.
    The old root `camera-helper.ts` is removed. The `simcam` state directory, PID
    and bundle records, socket name and protocol, native `Sources/` trees and
    `dist/simcam/` paths stay unchanged. The helper uses the same blocking wait
-   primitive without importing the host HTTP/WebSocket runtime. Source selection,
-   helper launch and direct per-app injection still live in the CLI until the next
-   reviewed slice; Camera is not a registered capability and gains no new controls
+   primitive without importing the host HTTP/WebSocket runtime. `source.ts` owns
+   the existing media detection and source resolution, including extension priority,
+   magic-byte fallback, relative file resolution, webcam/default choices and errors.
+   Helper startup still lives in the CLI until the next reviewed slice. CLI parsing,
+   device selection and direct app launching remain host adapters; Camera is not a
+   registered capability and gains no new controls
    [observed: `src/capabilities/camera/`, `src/index.ts`].
 
 Keychain stays outside this foundation. Do not add runtime controls or lifecycle
