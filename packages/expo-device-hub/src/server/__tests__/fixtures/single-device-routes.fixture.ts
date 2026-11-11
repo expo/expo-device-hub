@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { expect, mock, test } from "bun:test";
 
 const platform = process.env.HUB_TEST_PLATFORM as "ios" | "android";
@@ -7,13 +9,35 @@ const backendRequests: Request[] = [];
 const actions: string[] = [];
 let simOptions: Record<string, unknown> = {};
 
+const png = readFileSync(
+  resolve(
+    import.meta.dir,
+    "../../../../../serve-sim/packages/serve-sim/Sources/SimPasteboard/Icons/AppIcon60x60@2x.png",
+  ),
+);
+const metadata = {
+  width: 120,
+  height: 120,
+  displayRotation: "portrait",
+};
+function backendResponse(request: Request, fallback: string) {
+  if (!new URL(request.url).pathname.endsWith("/api/screenshot")) return new Response(fallback);
+  return new Response(png, {
+    headers: {
+      "Content-Type": "image/png",
+      "X-Expo-Screenshot-Metadata": JSON.stringify(metadata),
+      "Access-Control-Expose-Headers": "X-Expo-Screenshot-Metadata",
+    },
+  });
+}
+
 mock.module("../../../../vendor/serve-sim/dist/middleware.js", () => ({
   simMiddleware: (options: Record<string, unknown>) => {
     simOptions = options;
     return Object.assign(
       async (request: Request) => {
         backendRequests.push(request);
-        return new Response("sim");
+        return backendResponse(request, "sim");
       },
       { dispose: async () => {} },
     );
@@ -27,11 +51,16 @@ mock.module("../../../../vendor/serve-emu/dist/middleware.js", () => ({
   createRouter: () => ({
     handleRequest: async (request: Request) => {
       backendRequests.push(request);
-      return new Response("emu");
+      return backendResponse(request, "emu");
     },
     stopAll: async () => {},
   }),
 }));
+// Use this checkout's source in the isolated suite; no package build or native action is needed.
+const androidUtils = await import("../../../../../@expo/hub-android-utils/src/index");
+const appleUtils = await import("../../../../../@expo/hub-apple-utils/src/index");
+mock.module("@expo/hub-android-utils", () => androidUtils);
+mock.module("@expo/hub-apple-utils", () => appleUtils);
 const realActions = await import("../../device-actions");
 mock.module("../../device-actions", () => ({
   ...realActions,
@@ -161,3 +190,19 @@ if (platform === "android") {
     expect(actions).toEqual(["boot"]);
   });
 }
+
+test("the authenticated Hub mount preserves screenshot PNG and metadata headers", async () => {
+  const path = `/vendor/serve-${platform === "ios" ? "sim" : "emu"}/api/screenshot?device=${id}`;
+  const response = await request(path, { method: "POST" });
+  expect(response?.status).toBe(200);
+  expect(response!.headers.get("Content-Type")).toBe("image/png");
+  expect(JSON.parse(response!.headers.get("X-Expo-Screenshot-Metadata")!)).toEqual(metadata);
+  expect(response!.headers.get("Access-Control-Expose-Headers")).toContain(
+    "X-Expo-Screenshot-Metadata",
+  );
+  expect(Buffer.from(await response!.arrayBuffer())).toEqual(png);
+  const before = backendRequests.length;
+  const refused = await server.default(new Request(`http://localhost${path}`, { method: "POST" }));
+  expect(refused?.status).toBe(401);
+  expect(backendRequests).toHaveLength(before);
+});

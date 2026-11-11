@@ -380,9 +380,11 @@ client.setOrientation("landscape_left");
 client.reload(); // reload the running React Native bundle
 client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance
 
-// { blob, artifact }, or null when capture fails. `artifact` is the session artifact outcome:
-// { status: 'saved' } | { status: 'disabled' } | { status: 'failed', error?: string } | null
-// (null for a backend that does not report one).
+// { blob, artifact, metadata? }, or null when capture fails. `artifact` is the session artifact
+// outcome: { status: 'saved' } | { status: 'disabled' } | { status: 'failed', error?: string }
+// | null (null for a backend that does not report one). `metadata` is the capture's
+// { width, height, displayRotation, screen? }; it is absent on older servers, and a zero width
+// or height or a null displayRotation means unknown.
 const capture = await client.screenshot();
 if (capture?.artifact?.status === "failed")
   console.warn("not saved to session artifacts", capture.artifact.error);

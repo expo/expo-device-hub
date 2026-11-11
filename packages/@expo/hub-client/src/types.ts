@@ -831,6 +831,20 @@ export type ScreenshotArtifact =
       error?: string;
     };
 
+/** Capture-source metadata. Zero numeric values and null rotation mean unknown. */
+export type ScreenshotMetadata = {
+  width: number;
+  height: number;
+  displayRotation:
+    | "portrait"
+    | "portrait-upside-down"
+    | "landscape-left"
+    | "landscape-right"
+    | null;
+  /** Two-panel device identity; omitted on single-display devices or when unknown. */
+  screen?: "inner" | "outer";
+};
+
 /**
  * A still PNG of the device and its session artifact outcome. `artifact` is
  * `null` when the backend sent no header, as older serve-sim and serve-emu
@@ -839,6 +853,8 @@ export type ScreenshotArtifact =
 export type ScreenshotCapture = {
   blob: Blob;
   artifact: ScreenshotArtifact | null;
+  /** Absent on older servers or when metadata is not recognized. */
+  metadata?: ScreenshotMetadata;
 };
 
 /**
