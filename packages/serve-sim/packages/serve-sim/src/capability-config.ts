@@ -1,7 +1,12 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
-import { isAbsolute, join } from "path";
+import { dirname, isAbsolute, join } from "path";
 import type { CapabilityScope } from "./capabilities";
-import type { LaunchState, RecordedCapability } from "./launch-state";
+import {
+  canonicalDeviceKey,
+  readLaunchState,
+  type LaunchState,
+  type RecordedCapability,
+} from "./launch-state";
 import { stateDir } from "./state";
 import { dirnameOf } from "./runtime";
 
@@ -9,14 +14,21 @@ export function capabilityLoaderDir(): string {
   return join(dirnameOf(import.meta.url), "..", "dist", "capability-loader");
 }
 
-export function capabilityLoaderPath(): string {
+export function capabilityLoaderPath(udid?: string): string {
+  const canonical = udid ? canonicalDeviceKey(udid) : undefined;
+  const enrolled = canonical ? readLaunchState(canonical)?.capabilities.egressGuard : undefined;
+  if (enrolled?.resident) return join(dirname(enrolled.dylib), "libServeSimCapabilityLoader.dylib");
   return join(capabilityLoaderDir(), "libServeSimCapabilityLoader.dylib");
 }
 
 // Same value as MAX_CONFIG_BYTES in Sources/ServeSimCapabilityLoader/serve-sim-capability-loader.c.
 export const MAX_CONFIG_BYTES = 64 * 1024;
 /** The scope tokens the capability loader matches on. */
-const SCOPE_TOKEN: Record<CapabilityScope, string> = { userApps: "user", allApps: "all" };
+const SCOPE_TOKEN: Record<CapabilityScope, string> = {
+  userApps: "user",
+  allApps: "all",
+  allProcesses: "process",
+};
 
 function assertNoSeparators(what: string, value: string): void {
   const found = [...value].find(
@@ -47,6 +59,9 @@ export function formatCapabilityConfig(capabilities: Record<string, RecordedCapa
       })
       .join(";");
     const phase = capability.loadPhase ?? "deferred";
+    if (capability.scope === "allProcesses" && phase !== "startup") {
+      throw new Error(`All-process capability ${capability.name} is startup-only.`);
+    }
     if (phase !== "startup" && phase !== "deferred" && phase !== "startupAndDeferred") {
       throw new Error(
         `Unknown load phase for ${capability.name}: ${phase}. Use startup, deferred, or startupAndDeferred.`,
@@ -94,11 +109,61 @@ export function capabilityConfigPath(udid: string): string {
 }
 
 export function commitCapabilityConfig(udid: string, contents: string): void {
+  assertResidentConfigRetained(udid, contents);
   mkdirSync(stateDir(), { recursive: true });
   const target = capabilityConfigPath(udid);
   const temp = `${target}.${process.pid}.tmp`;
   writeFileSync(temp, contents);
   renameSync(temp, target);
+}
+
+// @ref LLP 0007.000#enrollment-and-policy — surviving inserts/config are ownership evidence even when launch JSON is lost
+export function assertResidentConfigRetained(udid: string, contents: string): void {
+  assertResidentMetadataPresent(udid);
+  const resident = Object.values(readLaunchState(udid)?.capabilities ?? {}).filter(
+    (capability) => capability.resident,
+  );
+  for (const capability of resident) {
+    const expected = formatCapabilityConfig({ [capability.name]: capability }).trimEnd();
+    if (!contents.split("\n").includes(expected)) {
+      throw new Error(
+        `Cannot withdraw resident egress startup config on ${udid}; change policy instead.`,
+      );
+    }
+  }
+}
+
+/** Surviving inserts/config require valid launch metadata, even for observation or cleanup. */
+export function assertResidentMetadataPresent(udid: string): void {
+  const canonical = canonicalDeviceKey(udid);
+  if (canonical !== udid) {
+    if (
+      Object.values(readLaunchState(canonical)?.capabilities ?? {}).some(
+        (capability) => capability.resident,
+      )
+    )
+      throw new Error(
+        `Resident egress requires the canonical device ID ${canonical}; its config cannot be published under an alias.`,
+      );
+    assertResidentMetadataPresent(canonical);
+  }
+  const resident = Object.values(readLaunchState(udid)?.capabilities ?? {}).filter(
+    (capability) => capability.resident,
+  );
+  let previous = "";
+  try {
+    previous = readFileSync(capabilityConfigPath(udid), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const enrolled =
+    managedStartupDylibs(udid).some((path) => path.endsWith("/libServeSimEgressGuard.dylib")) ||
+    previous.split("\n").some((line) => line.startsWith("startup\tprocess\t"));
+  if (enrolled && resident.length === 0) {
+    throw new Error(
+      `Cannot update resident egress config on ${udid}: launch metadata is unavailable; retain the existing enrollment.`,
+    );
+  }
 }
 
 function startupInsertStatePath(udid: string): string {

@@ -7,8 +7,8 @@ export interface PreparedCapability {
   rollback?(error: unknown): Promise<void>;
 }
 
-/** `allApps` includes system apps such as Safari. */
-export type CapabilityScope = "userApps" | "allApps";
+/** `allApps` includes system apps. `allProcesses` is reserved for startup images. */
+export type CapabilityScope = "userApps" | "allApps" | "allProcesses";
 
 export interface CapabilityContext {
   udid: string;

@@ -15,6 +15,7 @@ function commandOutput(args: string[], stdout: string): string {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+export const BOOT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_BUFFER = 4 * 1024 * 1024;
 
 // Errors nameTimeout labeled, tracked by identity so arguments with newlines still match.
@@ -60,6 +61,14 @@ function optionsFor(
   };
 }
 
+function commandCanBoot(args: string[]): boolean {
+  return (
+    args[0] === "boot" ||
+    (args[0] === "bootstatus" &&
+      args.slice(2).some((arg) => arg === "--boot" || /^-[^-]*b/.test(arg)))
+  );
+}
+
 export async function simctlRaw(
   args: string[],
   timeoutOrOptions: number | SimctlOptions = {},
@@ -71,7 +80,7 @@ export async function simctlRaw(
     maxBuffer: options.maxBuffer,
     env: {
       ...(args[0] === "boot" || args[0] === "bootstatus"
-        ? simulatorBootEnv(args[1]!)
+        ? simulatorBootEnv(args[1]!, commandCanBoot(args))
         : process.env),
       ...options.env,
     },
@@ -107,7 +116,12 @@ export function simctlSync(args: string[], timeoutOrOptions: number | SimctlOpti
       stdio: ["ignore", "pipe", "pipe"],
       timeout: options.timeout,
       maxBuffer: options.maxBuffer,
-      env: { ...process.env, ...options.env },
+      env: {
+        ...(args[0] === "boot" || args[0] === "bootstatus"
+          ? simulatorBootEnv(args[1]!, commandCanBoot(args))
+          : process.env),
+        ...options.env,
+      },
     });
     return commandOutput(args, stdout);
   } catch (error) {
