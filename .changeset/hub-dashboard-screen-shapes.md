@@ -1,5 +1,4 @@
 ---
-"@expo/hub-components": minor
 "expo-device-hub": minor
 ---
 
