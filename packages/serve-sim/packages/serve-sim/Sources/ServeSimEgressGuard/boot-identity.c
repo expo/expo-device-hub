@@ -84,6 +84,9 @@ int main(int argc, char **argv) {
       return scan_failure(pids, pids[i], "read process identity", errno);
     }
     if (before.pbi_uid != getuid()) continue;
+    // Unrelated processes can outlive their executable path. Only Simulator
+    // candidates need path/argument visibility; their failures still reject.
+    if (strcmp(before.pbi_comm, "launchd_sim") != 0) continue;
     char path[PROC_PIDPATHINFO_MAXSIZE];
     errno = 0;
     if (proc_pidpath(pids[i], path, sizeof path) <= 0) {
