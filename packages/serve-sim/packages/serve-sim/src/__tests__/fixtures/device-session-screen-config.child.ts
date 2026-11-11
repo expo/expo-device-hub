@@ -3185,6 +3185,59 @@ describe("native active screen config", () => {
     }
   });
 
+  test("cardinal physical rotations bypass panel-relative orientation on both panels", async () => {
+    const { configs } = await start(
+      { width: 1398, height: 2034, screenId: 1 },
+      /* supportsHingeAngle */ true,
+    );
+    await waitUntil(() => configs.at(-1)?.supportsPhysicalOrientation === true);
+    const poses = ["portrait", "pud", "landscape-left", "landscape-right"];
+    for (const screenId of [1, 3]) {
+      screen = { ...screen, screenId };
+      await screenChanged!();
+      for (const deviceOrientation of poses) {
+        ws!.send(
+          Buffer.concat([
+            Buffer.from([0x07]),
+            Buffer.from(JSON.stringify({ orientation: "portrait", deviceOrientation })),
+          ]),
+        );
+      }
+    }
+    await waitUntil(() => physicalOrientations.length === 8);
+    expect(physicalOrientations).toEqual([...poses, ...poses]);
+    expect(inputCalls).not.toContain("orientation");
+  });
+
+  for (const supported of [true, false]) {
+    test(`physical rotation refuses ${supported ? "invalid values" : "unsupported controls"} without legacy fallback`, async () => {
+      const { configs, controlResults } = await start(
+        { width: 1398, height: 2034 },
+        /* supportsHingeAngle */ true,
+        undefined,
+        supported,
+      );
+      await waitUntil(() => configs.at(-1)?.supportsPhysicalOrientation === supported);
+      for (const deviceOrientation of supported ? ["faceup", "invalid", null, 4] : ["portrait"]) {
+        ws!.send(
+          Buffer.concat([
+            Buffer.from([0x07]),
+            Buffer.from(JSON.stringify({ orientation: "portrait", deviceOrientation })),
+          ]),
+        );
+      }
+      ws!.send(
+        Buffer.concat([
+          Buffer.from([0x10]),
+          Buffer.from(JSON.stringify({ requestId: 1, command: { control: "table", value: true } })),
+        ]),
+      );
+      await waitUntil(() => controlResults.length === 1);
+      expect(physicalOrientations).toEqual([]);
+      expect(inputCalls).not.toContain("orientation");
+    });
+  }
+
   test("forwards hinge degrees and acknowledges native success", async () => {
     const { hingeResults, configs } = await start({ width: 2007, height: 2853 });
     for (const angle of [0, 90, 180]) {

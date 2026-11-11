@@ -2,4 +2,4 @@
 "@expo/serve-sim": patch
 ---
 
-Expose independently observed device pose and screen orientation for Simulator clients. Keep legacy orientation behavior for older clients, and avoid pose observation for temporary screenshots. Limit the new ordinary-device observer to single-display iOS runtimes.
+Report physical device pose separately from app orientation so clients can follow external turns on supported iOS runtimes. Support physical rotations on iPhone Duo independently of the active panel; temporary screenshot captures do not start pose observation.

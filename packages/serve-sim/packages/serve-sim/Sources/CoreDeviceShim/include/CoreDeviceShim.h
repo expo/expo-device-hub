@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "CoreDeviceDisplayShim.h"
+#include "CoreDeviceDisplayStateShim.h"
 #include "CoreDeviceMotionShim.h"
 #include "CoreDeviceDigitizerShim.h"
 
