@@ -37,20 +37,45 @@ actor CoreDeviceBridge {
         var connection: UUID?
         var task: Task<Void, Never>?
         var listeners: [UUID: @Sendable (DeviceStateSnapshot) -> Void] = [:]
+        var backoff = ReconnectBackoff()
         init(isFoldable: Bool) { self.isFoldable = isFoldable }
+    }
+    /// Each failure kind logs once, and consecutive failures of one kind double the
+    /// retry delay up to a fixed cap. A registration or an accepted update resets both.
+    private struct ReconnectBackoff {
+        static let maximumDelay: Duration = .seconds(30)
+        static func cap(after initialDelay: Duration) -> Duration { max(maximumDelay, initialDelay) }
+        private var last: (kind: String, delay: Duration)?
+        private var loggedKinds: Set<String> = []
+
+        mutating func failure(_ error: Error, initialDelay: Duration) -> (delay: Duration, log: Bool) {
+            let failure = error as NSError
+            let kind = "\(failure.domain)#\(failure.code)"
+            let delay = if let last, last.kind == kind {
+                min(last.delay * 2, Self.cap(after: initialDelay))
+            } else { initialDelay }
+            last = (kind, delay)
+            return (delay, loggedKinds.insert(kind).inserted)
+        }
     }
     private var deviceStateObservations: [String: DeviceStateObservation] = [:]
     private var observedDeviceStates: [String: ObservedDeviceState] = [:]
     private let deviceStateConsumer: DeviceStateConsumer?
     let hingeClock: @Sendable () -> Double
     private let reconnectDelay: Duration
+    private let reconnectSleep: @Sendable (Duration) async throws -> Void
+    private let log: @Sendable (String) -> Void
 
     init(deviceStateConsumer: DeviceStateConsumer? = nil,
          hingeClock: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime },
-         reconnectDelay: Duration = .seconds(1)) {
+         reconnectDelay: Duration = .seconds(1),
+         reconnectSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+         log: @escaping @Sendable (String) -> Void = { fputs($0, stderr) }) {
         self.deviceStateConsumer = deviceStateConsumer
         self.hingeClock = hingeClock
         self.reconnectDelay = reconnectDelay
+        self.reconnectSleep = reconnectSleep
+        self.log = log
     }
 
     /// CoreDevice's capability objects belong to a simulator boot. A new capture
@@ -156,6 +181,7 @@ actor CoreDeviceBridge {
         observation.token = token
         observation.registering = observation.isFoldable ? nil : token
         observation.connection = nil
+        observation.backoff = ReconnectBackoff()
         observation.task = Task {
             defer {
                 if observation.registering == token { observation.registering = nil }
@@ -210,19 +236,23 @@ actor CoreDeviceBridge {
                 guard supported else { return }
                 throw BridgeError.observationEnded
             } catch {
-                guard !Task.isCancelled, deviceStateObservations[udid]?.token == token else { return }
-                deviceStateObservations[udid]?.connection = nil
+                guard !Task.isCancelled, let observation = deviceStateObservations[udid],
+                      observation.token == token else { return }
+                observation.connection = nil
                 clearObservedDeviceState(udid: udid)
                 for symbol in ["$s10CoreDevice23MonitorMotionCapabilityVN", "$s10CoreDevice28OrientationControlCapabilityVN",
                                "$s10CoreDevice21DisplayInfoCapabilityVN"] {
                     capabilities.removeValue(forKey: "\(udid):\(symbol)")
                 }
-                fputs("[hid] Device state observation unavailable: \(error); reconnecting in \(reconnectDelay)\n", stderr)
+                let retry = observation.backoff.failure(error, initialDelay: reconnectDelay)
+                if retry.log {
+                    log("[hid] Device state observation unavailable: \(error); reconnecting in \(retry.delay). Repeats back off up to \(ReconnectBackoff.cap(after: reconnectDelay)) and are not logged until observation recovers.\n")
+                }
                 if case BridgeError.deviceUnavailable = error, !didLogMissingDeviceHint {
                     didLogMissingDeviceHint = true
-                    fputs("[hid] CoreDevice does not list simulator \(udid). Check `xcrun devicectl list devices`. If it is booted and this started after an Xcode update, the per-user CoreDeviceService may be stale; `pkill -x CoreDeviceService` restarts it on the next CoreDevice request and may interrupt other device sessions.\n", stderr)
+                    log("[hid] CoreDevice does not list simulator \(udid). Check `xcrun devicectl list devices`. If it is booted and this started after an Xcode update, the per-user CoreDeviceService may be stale; `pkill -x CoreDeviceService` restarts it on the next CoreDevice request and may interrupt other device sessions.\n")
                 }
-                do { try await Task.sleep(for: reconnectDelay) }
+                do { try await reconnectSleep(retry.delay) }
                 catch { return }
             }
         }
@@ -233,6 +263,7 @@ actor CoreDeviceBridge {
         guard !Task.isCancelled, let observation = deviceStateObservations[udid],
               observation.token == token, observation.connection == connection,
               hingeResetGenerations[udid, default: 0] == token.generation else { return }
+        observation.backoff = ReconnectBackoff()
         if case .orientation(let sample) = update {
             hingeControlEligibility[udid]?.recordOrientationRead(sample, since: startedAt)
         }
@@ -245,6 +276,7 @@ actor CoreDeviceBridge {
         guard let observation = deviceStateObservations[udid], observation.token == token,
               observation.connection == connection, observation.registering == token else { return }
         observation.registering = nil
+        observation.backoff = ReconnectBackoff()
     }
 
     private func clearObservedDeviceState(udid: String) {

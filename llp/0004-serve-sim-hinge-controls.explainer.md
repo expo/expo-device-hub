@@ -256,7 +256,10 @@ The first listener starts observation; the last cancels and awaits
 teardown. Boot and connection identities reject callbacks from old producers;
 independent native timestamp watermarks reject history and out-of-order angle,
 motion and orientation-query samples. A failure clears observed fields and
-retries after one second while a recording or live preview remains active. A stationary device's
+retries after one second while a recording or live preview remains active. Consecutive
+failures of one kind (error domain and code) double that delay up to 30 seconds. Each kind logs once;
+a registration or an accepted update resets the delay and the logged kinds, so an
+ordinary iPhone that CoreDevice cannot find does not log every second. A stationary device's
 Table activity can be unknown until a fresh motion event arrives.
 
 When CoreDevice does not list the device, the observation logs a troubleshooting
