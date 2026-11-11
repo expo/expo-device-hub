@@ -59,6 +59,9 @@ actor CoreDeviceBridge {
         }
     }
     private var deviceStateObservations: [String: DeviceStateObservation] = [:]
+    /// Devices whose capture is suspended for a reboot. Until the next capture
+    /// start resets the device, no producer starts for them.
+    private var rebootSuspendedUDIDs: Set<String> = []
     private var observedDeviceStates: [String: ObservedDeviceState] = [:]
     private let deviceStateConsumer: DeviceStateConsumer?
     let hingeClock: @Sendable () -> Double
@@ -86,6 +89,7 @@ actor CoreDeviceBridge {
     /// stays: after a reboot it lists the device again, and other devices keep
     /// using it.
     func resetForNewCapture(udid: String) {
+        rebootSuspendedUDIDs.remove(udid)
         capabilities.reset(scope: udid)
         hingeResetGenerations[udid, default: 0] &+= 1
         hingeSupport.removeValue(forKey: udid)
@@ -169,7 +173,7 @@ actor CoreDeviceBridge {
         if observedDeviceStates[udid] == nil {
             observedDeviceStates[udid] = ObservedDeviceState(generation: hingeResetGenerations[udid, default: 0])
         }
-        if starts { startDeviceStateObservation(udid: udid, observation: observation) }
+        if starts, !rebootSuspendedUDIDs.contains(udid) { startDeviceStateObservation(udid: udid, observation: observation) }
         onChange(observedDeviceState(udid: udid))
         return { await self.removeDeviceStateListener(udid: udid, id: id) }
     }
@@ -196,13 +200,28 @@ actor CoreDeviceBridge {
         }
     }
 
-    private func removeDeviceStateListener(udid: String, id: UUID) async {
-        guard let observation = deviceStateObservations[udid], observation.listeners.removeValue(forKey: id) != nil,
-              observation.listeners.isEmpty else { return }
+    /// A capture reboot ends this boot. Stop its producer and keep its listeners,
+    /// so the device gets no CoreDevice pose requests while it shuts down, boots and
+    /// is rearmed. resetForNewCapture starts a producer for the next boot.
+    func suspendDeviceStateObservation(udid: String) {
+        // @ref LLP 0004#live-pose-observation — no pose requests while the device reboots
+        rebootSuspendedUDIDs.insert(udid)
+        // Do not await the task: a registration RPC can ignore cancellation, and a
+        // reboot must not wait for it. The replacement waits for it instead.
+        if let observation = deviceStateObservations[udid] { cancelDeviceStateObservation(udid: udid, observation: observation) }
+    }
+
+    private func cancelDeviceStateObservation(udid: String, observation: DeviceStateObservation) {
         observation.token = nil
         observation.connection = nil
         observation.task?.cancel()
         clearObservedDeviceState(udid: udid)
+    }
+
+    private func removeDeviceStateListener(udid: String, id: UUID) async {
+        guard let observation = deviceStateObservations[udid], observation.listeners.removeValue(forKey: id) != nil,
+              observation.listeners.isEmpty else { return }
+        cancelDeviceStateObservation(udid: udid, observation: observation)
         // A native registration RPC may ignore cancellation. Its task keeps ownership
         // until it returns; a replacement still waits for that task above.
         if observation.registering != nil { return }

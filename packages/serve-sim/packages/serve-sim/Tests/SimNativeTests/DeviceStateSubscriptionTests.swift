@@ -363,6 +363,116 @@ final class DeviceStateSubscriptionTests: XCTestCase {
         XCTAssertEqual(record.lines.filter { $0.contains("xcrun devicectl list devices") }.count, 1)
     }
 
+    func testRebootSuspensionStopsThePoseProducerUntilTheNextCaptureStart() async {
+        let connected = expectation(description: "old boot")
+        let ended = expectation(description: "old producer stopped")
+        let restarted = expectation(description: "next capture start")
+        let source = DeviceStateProducerProbe(onConnect: { index in
+            (index == 0 ? connected : restarted).fulfill()
+        }, onEnd: { index in if index == 0 { ended.fulfill() } })
+        let bridge = makeBridge(source)
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        await fulfillment(of: [connected], timeout: 2)
+        await source.inject(0, .angle(.init(angle: 90, timestamp: 11)))
+        await bridge.suspendDeviceStateObservation(udid: udid)
+        await fulfillment(of: [ended], timeout: 2)
+        let suspended = await bridge.observedDeviceState(udid: udid)
+        XCTAssertEqual(suspended.state, .init())
+        // Thirty reconnect delays: a running retry loop would have connected again.
+        try? await Task.sleep(for: .milliseconds(300))
+        let duringReboot = await source.connectionCount
+        XCTAssertEqual(duringReboot, 1)
+        await bridge.resetForNewCapture(udid: udid)
+        await fulfillment(of: [restarted], timeout: 2)
+        let maximum = await source.maximumActiveConnections
+        XCTAssertEqual(maximum, 1)
+        await unsubscribe()
+    }
+
+    func testRebootSuspensionDuringBackoffStopsRetries() async {
+        let connected = expectation(description: "old boot")
+        let backingOff = expectation(description: "retry delay started")
+        let restarted = expectation(description: "next capture start")
+        let source = DeviceStateProducerProbe(onConnect: { index in
+            (index == 0 ? connected : restarted).fulfill()
+        })
+        let bridge = CoreDeviceBridge(deviceStateConsumer: { _, receive in try await source.consume(receive) },
+                                      hingeClock: { 10 }, reconnectDelay: .milliseconds(50),
+                                      reconnectSleep: { delay in backingOff.fulfill(); try await Task.sleep(for: delay) })
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        await fulfillment(of: [connected], timeout: 2)
+        await source.finish(0, throwing: true)
+        await fulfillment(of: [backingOff], timeout: 2)
+        await bridge.suspendDeviceStateObservation(udid: udid)
+        try? await Task.sleep(for: .milliseconds(300))
+        let duringReboot = await source.connectionCount
+        XCTAssertEqual(duringReboot, 1)
+        await bridge.resetForNewCapture(udid: udid)
+        await fulfillment(of: [restarted], timeout: 2)
+        await unsubscribe()
+    }
+
+    func testSubscribeDuringRebootSuspensionWaitsForTheNextCaptureStart() async {
+        let started = expectation(description: "producer after the next capture start")
+        let source = DeviceStateProducerProbe(onConnect: { _ in started.fulfill() })
+        let bridge = makeBridge(source)
+        await bridge.suspendDeviceStateObservation(udid: udid)
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        try? await Task.sleep(for: .milliseconds(100))
+        let duringReboot = await source.connectionCount
+        XCTAssertEqual(duringReboot, 0)
+        await bridge.resetForNewCapture(udid: udid)
+        await fulfillment(of: [started], timeout: 2)
+        await unsubscribe()
+        let ended = await source.endedConnections
+        XCTAssertEqual(ended, [0])
+    }
+
+    func testResubscribeAfterTheLastListenerLeavesDuringRebootSuspensionStaysPaused() async {
+        let connected = expectation(description: "old boot")
+        let restarted = expectation(description: "next capture start")
+        let source = DeviceStateProducerProbe(onConnect: { index in
+            (index == 0 ? connected : restarted).fulfill()
+        })
+        let bridge = makeBridge(source)
+        let first = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        await fulfillment(of: [connected], timeout: 2)
+        await bridge.suspendDeviceStateObservation(udid: udid)
+        await first()
+        let second = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        try? await Task.sleep(for: .milliseconds(100))
+        let duringReboot = await source.connectionCount
+        XCTAssertEqual(duringReboot, 1)
+        await bridge.resetForNewCapture(udid: udid)
+        await fulfillment(of: [restarted], timeout: 2)
+        let maximum = await source.maximumActiveConnections
+        XCTAssertEqual(maximum, 1)
+        await second()
+    }
+
+    func testRebootSuspensionDoesNotWaitForAHeldTeardownButTheNextProducerDoes() async {
+        let connected = expectation(description: "old boot")
+        let tearingDown = expectation(description: "teardown held")
+        let restarted = expectation(description: "next capture start")
+        let source = DeviceStateProducerProbe(onConnect: { index in
+            (index == 0 ? connected : restarted).fulfill()
+        }, onTeardown: { _ in tearingDown.fulfill() }, holdFirstTeardown: true)
+        let bridge = makeBridge(source)
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        await fulfillment(of: [connected], timeout: 2)
+        await bridge.suspendDeviceStateObservation(udid: udid)
+        await fulfillment(of: [tearingDown], timeout: 2)
+        await bridge.resetForNewCapture(udid: udid)
+        try? await Task.sleep(for: .milliseconds(50))
+        let beforeTeardown = await source.connectionCount
+        XCTAssertEqual(beforeTeardown, 1)
+        await source.releaseTeardown()
+        await fulfillment(of: [restarted], timeout: 2)
+        let maximum = await source.maximumActiveConnections
+        XCTAssertEqual(maximum, 1)
+        await unsubscribe()
+    }
+
     private func makeBridge(_ source: DeviceStateProducerProbe, reconnectDelay: Duration = .milliseconds(10)) -> CoreDeviceBridge {
         CoreDeviceBridge(deviceStateConsumer: { _, receive in try await source.consume(receive) },
                          hingeClock: { 10 }, reconnectDelay: reconnectDelay)

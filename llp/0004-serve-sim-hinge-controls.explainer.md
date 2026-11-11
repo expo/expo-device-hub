@@ -5,7 +5,7 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient, HubComponents
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-11-11 (pose observation pauses during capture reboots, Claude Code, directed by Gabe Debes); 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001, LLP 0016
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -60,6 +60,21 @@ Pose subscription setup is optional to video startup. Slow or failed registratio
 does not block screen/input readiness or capture shutdown; registration completing
 after close immediately detaches its listener. Device classification is retained
 across reboot so a delayed Duo subscription still attaches its live observer.
+
+A capture reboot pauses pose observation for that device. Suspending capture stops
+the producer and keeps its listeners, and a subscription made during the reboot
+adds its listener without starting a producer. The next capture start resets the
+device and starts one producer for all listeners. So CoreDevice gets no pose
+requests for the device while it shuts down, boots and is rearmed. A failed resume
+pauses observation again, so after a failed reboot it stays paused until a capture
+starts. The pause does not wait for a registration RPC that ignores cancellation;
+the next producer waits for it [observed: `suspendDeviceStateObservation` and
+`resetForNewCapture` in `CoreDeviceBridge.swift`, `suspendForReboot` and
+`resumeAfterReboot` in `CaptureEngine.swift`]. Before this pause, the
+capture-reboot e2e test on the Xcode 27 runtime failed in 4 of 5 CI runs: the
+first `simctl spawn` after boot failed while the observer retried CoreDevice.
+Without the observer, 1 of 48 runs failed the same way [observed: EAS job
+"Xcode 26 build on Xcode 27 runtime (1/2)", 2026-11-09 to 2026-11-11].
 
 Ordinary iOS devices use `DisplayInfoProtocol.displayInfoUpdates`, whose parent
 orientation describes physical pose independently of each display's interface
