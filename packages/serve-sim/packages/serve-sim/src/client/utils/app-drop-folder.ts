@@ -21,15 +21,17 @@ export interface AppFolderEntry {
   };
 }
 
-export const APP_FOLDER_GUIDANCE =
-  "Drop a Simulator .app folder or a .tar.gz/.tgz archive. Use an archive for apps with symlinks: Chrome leaves links out of folder drops, even when installation succeeds.";
+export const APP_FOLDER_GUIDANCE = "Drop a Simulator .app folder or a .tar.gz/.tgz archive.";
+// Every folder read failure starts with this text, so the preview can match it.
+export const APP_FOLDER_UNREADABLE =
+  "Could not read the app folder. Drop a .tar.gz/.tgz archive instead; archives keep symlinks and file permissions.";
 
 const LIMITS = { entries: 100000, bytes: 2 * 1024 ** 3 };
 const encoder = new TextEncoder();
 
 function folderReadError(error: unknown): Error {
   const message = error instanceof Error ? error.message : "Could not read app folder";
-  return new Error(`${message}\n${APP_FOLDER_GUIDANCE}`, { cause: error });
+  return new Error(`${APP_FOLDER_UNREADABLE}\n${message}`, { cause: error });
 }
 
 async function readFolder<T>(read: () => T | Promise<T>): Promise<T> {
@@ -104,7 +106,7 @@ export async function packAppFolder(
         throw new Error("App folder is too large (max 2GB before compression)");
       items.push({ path: next.path, file });
     } else {
-      throw new Error(APP_FOLDER_GUIDANCE);
+      throw new Error(APP_FOLDER_UNREADABLE);
     }
   }
 

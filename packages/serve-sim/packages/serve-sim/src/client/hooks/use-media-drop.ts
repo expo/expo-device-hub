@@ -7,7 +7,7 @@ import {
   uploadDroppedFile,
   uploadDroppedAppFolder,
 } from "../utils/drop";
-import { APP_FOLDER_GUIDANCE } from "../utils/app-drop-folder";
+import { APP_FOLDER_GUIDANCE, APP_FOLDER_UNREADABLE } from "../utils/app-drop-folder";
 
 import { isUnsupportedAppArchive, UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
 
@@ -95,7 +95,12 @@ export function useMediaDrop({
         if (entry?.isDirectory || /\.app$/i.test(file.name)) {
           if (!entry?.isDirectory || !/\.app$/i.test(entry.name)) {
             const id = onUploadStart(file.name, "app");
-            onUploadEnd(id, false, APP_FOLDER_GUIDANCE);
+            // A folder without .app is not an app; a .app without a folder entry cannot be read.
+            onUploadEnd(
+              id,
+              false,
+              entry?.isDirectory ? APP_FOLDER_GUIDANCE : APP_FOLDER_UNREADABLE,
+            );
             continue;
           }
           const id = onUploadStart(file.name, "app", true);
