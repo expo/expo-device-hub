@@ -1015,7 +1015,7 @@ export function SimulatorSettingsTool({
 
   const clock = state?.clock;
   useEffect(() => {
-    if (!open || !supported || !clock || clock === HOST_CLOCK || clock === UNREADABLE) return;
+    if (!open || !supported || !clock || clock === UNREADABLE) return;
     let stopped = false;
     // Pick up resets and clock changes made by another client while this panel stays open.
     const timer = setInterval(() => {

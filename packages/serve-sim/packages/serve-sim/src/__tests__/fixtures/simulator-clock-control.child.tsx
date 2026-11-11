@@ -341,6 +341,26 @@ test("closing and unmounting the panel stop canonical clock polling", async () =
   expect(intervals.size).toBe(0);
 });
 
+test("an open panel observes external overrides after host resets", async () => {
+  status.clock = "host";
+  await mountPanel();
+  expect(button().props.children).toBe("Host default");
+  expect(polls()).toHaveLength(1);
+
+  status.clock = "2035-06-01T09:30:00+09:00";
+  await poll();
+  expect(button().props.children).toBe("2035-06-01 09:30");
+
+  status.clock = "host";
+  await poll();
+  expect(button().props.children).toBe("Host default");
+  expect(polls()).toHaveLength(1);
+
+  status.clock = "2036-06-01T10:45:00+09:00";
+  await poll();
+  expect(button().props.children).toBe("2036-06-01 10:45");
+});
+
 test("a stale poll reply cannot replace a clock mutation that started after the read", async () => {
   await mountPanel();
   let finishRead = (_status: typeof status) => {};
