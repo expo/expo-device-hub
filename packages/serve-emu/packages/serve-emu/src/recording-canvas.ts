@@ -33,18 +33,36 @@ export type RecordingDeviceState = Partial<RecordingGeometry> & RecordingPose;
 export type RecordingCanvas = {
   canvas: DisplaySize;
   displays: FoldableDisplays;
-  /** The gRPC capture box, as `maxSize` sets it; 0 captures native size. */
+  /** The gRPC capture box from `captureBox`; 0 captures native size. */
   maxSize: number;
 };
 
 const even = (value: number) => value - (value % 2);
 
 /**
+ * The square box that gRPC capture fits each display into, or 0 for native size. Native-size
+ * MMAP capture sizes its shared memory once, from the startup image, so its box is the startup
+ * display's longest side; an unknown startup display counts as native size.
+ */
+export function captureBox(options: {
+  maxSize: number;
+  imageMode: string;
+  displays: FoldableDisplays;
+  startup: RecordingScreen | null;
+}): number {
+  if (options.maxSize > 0) return options.maxSize;
+  if (options.imageMode !== "mmap" || options.startup === null) return 0;
+  const startup = options.displays[options.startup];
+  return Math.max(startup.width, startup.height);
+}
+
+/**
  * The size of a display's gRPC screenshot after serve-emu crops it to even
- * dimensions: the emulator fits the display into the square capture box.
+ * dimensions: the emulator fits a larger display into the square capture box,
+ * and does not enlarge a smaller one.
  */
 export function captureSize(display: DisplaySize, maxSize: number): DisplaySize {
-  const scale = maxSize > 0 ? Math.min(maxSize / display.width, maxSize / display.height) : 1;
+  const scale = maxSize > 0 ? Math.min(1, maxSize / display.width, maxSize / display.height) : 1;
   return {
     width: Math.max(2, even(Math.floor(display.width * scale))),
     height: Math.max(2, even(Math.floor(display.height * scale))),
@@ -53,6 +71,7 @@ export function captureSize(display: DisplaySize, maxSize: number): DisplaySize 
 
 // @ref LLP 0018#fold-canvas — one canvas wide and tall enough for both displays, as serve-sim's recorder
 /** The fixed recording canvas for a foldable: the bounding box of both displays' captures. */
+/** `maxSize` is the capture box, as `captureBox` gives it. */
 export function recordingCanvas(displays: FoldableDisplays, maxSize: number): RecordingCanvas {
   const inner = captureSize(displays.inner, maxSize);
   const outer = captureSize(displays.outer, maxSize);

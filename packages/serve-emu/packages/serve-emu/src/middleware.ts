@@ -38,7 +38,12 @@ import {
   type FoldState,
 } from "./fold.ts";
 import type { GrpcRecordingOutput } from "./grpc-recording-encoder.ts";
-import { recordingCanvas, type RecordingPose, type RecordingScreen } from "./recording-canvas.ts";
+import {
+  captureBox,
+  recordingCanvas,
+  type RecordingPose,
+  type RecordingScreen,
+} from "./recording-canvas.ts";
 import {
   cameraLaunchIsWired,
   handleCameraRequest,
@@ -436,8 +441,19 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       opts.serial,
     ).catch(() => null);
     if (displays) {
+      const pose = await readFold(opts.serial).catch(() => null);
+      if (pose) recorder.observePose(recordingPose(pose));
       const layout = recorder.foldCanvas(
-        recordingCanvas(displays, streamEncoderSettings.maxDimension),
+        recordingCanvas(
+          displays,
+          captureBox({
+            maxSize: streamEncoderSettings.maxDimension,
+            imageMode: grpcImageMode,
+            displays,
+            // The closed device shows its outer display.
+            startup: pose?.posture ? (pose.posture === "closed" ? "outer" : "inner") : null,
+          }),
+        ),
       );
       let recordedScreen: RecordingScreen | null = null;
       foldRecording = {
@@ -451,8 +467,6 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         fail: (error) => recorder.fail(error),
         active: () => recorder.active,
       };
-      const pose = await readFold(opts.serial).catch(() => null);
-      if (pose) recorder.observePose(recordingPose(pose));
     }
   }
   let openedSession: EmuSession | null = null;

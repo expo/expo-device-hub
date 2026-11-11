@@ -6,6 +6,7 @@ import { parseFoldableDisplays } from "../src/fold.ts";
 import { GrpcRecordingEncoder, type GrpcRecordingOutput } from "../src/grpc-recording-encoder.ts";
 import { ffmpegEncoderArgs, type H264EncoderOpts } from "../src/h264-encoder.ts";
 import {
+  captureBox,
   captureSize,
   placeOnCanvas,
   poseForGeometry,
@@ -55,8 +56,30 @@ test("sizes the canvas to both displays' captures in the gRPC box", () => {
   expect(captureSize(DISPLAYS.inner, 960)).toEqual({ width: 926, height: 960 });
   expect(captureSize(DISPLAYS.outer, 960)).toEqual({ width: 426, height: 960 });
   expect(captureSize(DISPLAYS.outer, 0)).toEqual(DISPLAYS.outer);
+  // The emulator does not enlarge a display that is smaller than the box.
+  expect(captureSize(DISPLAYS.inner, 3000)).toEqual(DISPLAYS.inner);
   expect(LAYOUT.canvas).toEqual({ width: 926, height: 960 });
   expect(recordingCanvas(DISPLAYS, 0).canvas).toEqual({ width: 2076, height: 2424 });
+});
+
+test("sizes a native-size MMAP canvas from the startup display's longest side", () => {
+  const box = (imageMode: string, startup: "inner" | "outer" | null, maxSize = 0) =>
+    captureBox({ maxSize, imageMode, displays: DISPLAYS, startup });
+  expect(box("mmap", "inner")).toBe(2152);
+  expect(box("mmap", "outer")).toBe(2424);
+  // A set maxSize, another image mode, or an unknown startup display keep their own box.
+  expect(box("mmap", "inner", 960)).toBe(960);
+  expect(box("rgb888", "inner")).toBe(0);
+  expect(box("mmap", null)).toBe(0);
+  // Started open, the outer display is scaled into the inner display's 2152 px box.
+  expect(recordingCanvas(DISPLAYS, box("mmap", "inner")).canvas).toEqual({
+    width: 2076,
+    height: 2152,
+  });
+  expect(recordingCanvas(DISPLAYS, box("mmap", "outer")).canvas).toEqual({
+    width: 2076,
+    height: 2424,
+  });
 });
 
 test("centers each display on the canvas, and scales one that does not fit", () => {
