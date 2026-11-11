@@ -67,7 +67,14 @@ import {
 } from "./screen-recording.ts";
 import { parseGesture, type Gesture, type Screen } from "./input.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
-import { createShakeRunner, readShakeRequest, settleShakes, shakeEmulator } from "./shake.ts";
+import {
+  createShakeRunner,
+  readShakeRequest,
+  runShakeRequest,
+  settleShakes,
+  shakeEmulator,
+  type ShakeMotion,
+} from "./shake.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
 import type { StreamSocket } from "./stream-socket.ts";
 import {
@@ -362,8 +369,8 @@ export type CreateAppDependencies = {
   readOrientation?: DeviceSessionStateOptions["readOrientation"];
   /** Lock or free the rotation for a new device state; adb by default. */
   applyRotation?: DeviceSessionStateOptions["applyRotation"];
-  /** Shake the device for `POST /api/shake`; the emulator console by default. */
-  shake?: (serial: string) => Promise<void>;
+  /** Shake the device for `POST /api/shake`; the emulator's physical model by default. */
+  shake?: ShakeMotion;
 };
 
 async function createAppInternal(opts: AppOptions, dependencies: CreateAppDependencies = {}) {
@@ -471,7 +478,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   const webRtcStatsCollector = new WebRtcStatsCollector(() => clock.now());
   let removeFatalListener: (() => void) | null = null;
   const deviceStateOwner = {};
-  const shakeDevice = dependencies.shake ?? ((serial: string) => shakeEmulator(serial));
+  const shakeDevice: ShakeMotion =
+    dependencies.shake ?? ((serial, control) => shakeEmulator(serial, control));
   const shakeRunner = createShakeRunner(shakeDevice);
   const deviceState =
     opts.deviceState ??
@@ -484,7 +492,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       applyRotation:
         dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
       // Replay shakes through the runner too, so a request joins them and stop settles them.
-      shake: (serial) => shakeRunner.run(serial),
+      shake: (serial, durationMs) => shakeRunner.replay(serial, durationMs),
     });
   try {
     deviceState.acquire(deviceStateOwner);
@@ -1805,8 +1813,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     if (url.pathname === "/api/shake") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       try {
-        const { record } = await readShakeRequest(req);
-        await shakeRunner.run(opts.serial, record ? sessionRecorder : undefined);
+        const request = await readShakeRequest(req);
+        await runShakeRequest(shakeRunner, opts.serial, request, sessionRecorder);
         return Response.json({ ok: true });
       } catch (err) {
         return Response.json(

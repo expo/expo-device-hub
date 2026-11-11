@@ -382,26 +382,45 @@ curl -X POST "$BASE/api/key" -H 'Content-Type: application/json' -d '{"keycode":
 
 Shake is emulator-only. `GET /api` reports `"shake": true` when the current device
 can shake. Android has no system shake event, so apps detect a shake from the
-accelerometer. serve-emu writes a short burst of alternating ±2 g on the x axis with
-the emulator console `sensor set acceleration`, then writes the resting value back.
-The body is optional. It answers `{"ok":true}` after the burst and the restore.
-A shake records into the session as a `shake` event when its burst starts, so
-input sent during the burst replays after it. A request that arrives during a
-running shake joins it, including whether its first request recorded it. A
-failed shake leaves no event, and a replay shakes again. Send `{"record":false}` to leave it out of
-the session. A body larger than 1 KiB gets `413`.
-A physical device gets `400` with `ok: false`. A request during a running shake waits
-for that shake and does not start another burst. When the server stops during a
-burst, it stops the burst and waits until the resting value is written back.
+accelerometer. serve-emu shakes the emulator the way a hand shakes a phone: it
+swings the virtual device ±0.5 m on its z axis, toward and away from the viewer,
+at 3 Hz through the emulator's physical model (gRPC `setPhysicalModel`), and the
+emulator computes the accelerometer from that motion. A swing on z does not tilt
+gravity sideways, so it does not rotate an app that follows the sensor. Then it
+moves the device back and waits 500 ms until it rests. serve-emu turns on the
+emulator's gRPC endpoint when it is off.
+
+The body is optional:
+
+- An empty body or `{}` is a click. It swings 3 times and answers `{"ok":true}`
+  when the device rests again.
+- `{"hold":true}` starts a held shake, or keeps the running shake swinging. A
+  held shake stops when no `{"hold":true}` arrived for 1.5 s, so a client sends
+  it again about every 500 ms while the user holds the button. A new held shake
+  answers after its first swing.
+- `{"hold":false}` releases the held shake. It finishes at least 3 swings, and the
+  request answers when the device rests again. No shake swings longer than 20 s.
+
+A shake records into the session as a `shake` event before its first swing, so
+input sent during the shake replays after it. When the shake ends, the event gets
+`durationMs`, the time it swung, and a replay swings as long. A request that
+arrives during a running shake joins it, including whether its first request
+recorded it. A failed shake leaves no event. Send `{"record":false}` to leave it
+out of the session. A body larger than 1 KiB gets `413`. A physical device gets
+`400` with `ok: false`. When the server stops during a shake, it stops swinging
+and waits until the device is back.
 
 ```sh
 curl -X POST "$BASE/api/shake"
+curl -X POST "$BASE/api/shake" -H 'Content-Type: application/json' -d '{"hold":true}'
+curl -X POST "$BASE/api/shake" -H 'Content-Type: application/json' -d '{"hold":false}'
 ```
 
-The burst opens or closes the dev menu in Expo Go and in apps with `expo-dev-menu`.
-Their detector needs 3 changes of direction. React Native's own detector needs 16,
-so a React Native app without `expo-dev-menu` does not react to this burst. Shake is
-not recorded in the session.
+A click opens or closes the dev menu in Expo Go and in apps with `expo-dev-menu`.
+Their detector toggles the menu after 3 changes of direction, then ignores the
+accelerometer for 600 ms. React Native's own detector needs 16 changes of
+direction, so a React Native app without `expo-dev-menu` needs a held shake of
+more than 2 s, as a real phone needs a longer shake.
 
 ### Inspection
 

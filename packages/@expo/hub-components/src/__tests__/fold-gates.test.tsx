@@ -108,6 +108,8 @@ const BASE_CLIENT: DeviceClient = {
   sendKey: () => false,
   pressButton: () => {},
   shake: () => {},
+  startShake: () => {},
+  stopShake: () => {},
   shakeError: null,
   reload: () => {},
   rotate: () => {},

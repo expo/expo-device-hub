@@ -495,6 +495,12 @@ describe("complete API success contracts", () => {
     };
     const parsed = parseSessionSnapshot({ ...sessionSnapshot, events: [shake] });
     expect(parsed.events).toEqual([shake]);
+
+    const held = { ...shake, durationMs: 1_900 };
+    expect(parseSessionSnapshot({ ...sessionSnapshot, events: [held] }).events).toEqual([held]);
+    expect(() =>
+      parseSessionSnapshot({ ...sessionSnapshot, events: [{ ...shake, durationMs: "long" }] }),
+    ).toThrow("durationMs");
   });
 
   test("parses simple action, import, screenshot, and logcat payloads", () => {

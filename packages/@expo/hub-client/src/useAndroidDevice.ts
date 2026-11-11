@@ -150,6 +150,22 @@ const ANDROID_STREAM_SETTING_CAPABILITIES = {
 } as const satisfies DeviceStreamSettingCapabilities;
 
 const KEYCODE_R = 46;
+/** serve-emu ends a held shake 1.5 s after the last renewal; renew well before that. */
+const SHAKE_HOLD_RENEW_MS = 500;
+
+/** A held shake: where it goes, its requests in order, and the timer that renews it. */
+type ShakeHold = {
+  url: string;
+  request: number;
+  queue: Promise<void>;
+  busy: boolean;
+  timer: ReturnType<typeof setInterval> | null;
+};
+
+function endShakeRenewal(hold: ShakeHold): void {
+  if (hold.timer) clearInterval(hold.timer);
+  hold.timer = null;
+}
 /** Field-wise equality so the poll only publishes state when something changed. */
 function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
   return (
@@ -329,6 +345,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [shakeError, setShakeError] = useState<string | null>(null);
   // Counts shakes and device changes, so only the latest shake's answer is shown.
   const shakeRequest = useRef(0);
+  const shakeHold = useRef<ShakeHold | null>(null);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
   const attachedVideoRef = useRef<HTMLVideoElement | null>(null);
   const webRtcVideoOwnerRef = useRef<{
@@ -525,29 +542,85 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     send({ type: "key", keycode: KEYCODE_R, record: false });
   }, [send]);
 
-  // serve-emu answers when the burst ends and the accelerometer is restored; nothing waits for it.
-  const shake = useCallback(() => {
-    if (!shakeSupported || !baseUrl) return;
-    const request = ++shakeRequest.current;
-    const fail = (message: string) => {
-      if (shakeRequest.current === request) setShakeError(message);
-    };
-    setShakeError(null);
-    void sessionFetch(deviceApiUrl(baseUrl, "/api/shake", targetDevice), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    })
-      .then(async (response) => {
-        const payload = (await response.json().catch(() => null)) as {
-          ok?: unknown;
-          error?: unknown;
-        } | null;
-        if (response.ok && payload?.ok === true) return;
-        fail(typeof payload?.error === "string" ? payload.error : "The emulator did not shake.");
+  // Sends one `POST /api/shake` and shows its error while `request` is the latest shake.
+  const postShake = useCallback(
+    (url: string, body: { hold?: boolean }, request: number): Promise<boolean> => {
+      const fail = (message: string) => {
+        if (shakeRequest.current === request) setShakeError(message);
+        return false;
+      };
+      return sessionFetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       })
-      .catch(() => fail("The emulator could not be reached to shake it."));
-  }, [shakeSupported, baseUrl, sessionFetch, targetDevice]);
+        .then(async (response) => {
+          const payload = (await response.json().catch(() => null)) as {
+            ok?: unknown;
+            error?: unknown;
+          } | null;
+          if (response.ok && payload?.ok === true) return true;
+          return fail(
+            typeof payload?.error === "string" ? payload.error : "The emulator did not shake.",
+          );
+        })
+        .catch(() => fail("The emulator could not be reached to shake it."));
+    },
+    [sessionFetch],
+  );
+
+  // serve-emu answers when the shake ends and the device rests again; nothing waits for it.
+  const shake = useCallback(() => {
+    if (!shakeSupported || !baseUrl || shakeHold.current) return;
+    const request = ++shakeRequest.current;
+    setShakeError(null);
+    void postShake(deviceApiUrl(baseUrl, "/api/shake", targetDevice), {}, request);
+  }, [shakeSupported, baseUrl, postShake, targetDevice]);
+
+  // A held shake renews its hold until it is released. Each request waits for the one before,
+  // so a renewal never reaches the server after the release and swings the device again.
+  const sendShakeHold = useCallback(
+    (hold: ShakeHold, held: boolean) => {
+      hold.busy = true;
+      hold.queue = hold.queue
+        .then(() => postShake(hold.url, { hold: held }, hold.request))
+        .then((ok) => {
+          hold.busy = false;
+          if (!ok) endShakeRenewal(hold);
+        });
+    },
+    [postShake],
+  );
+
+  const startShake = useCallback(() => {
+    if (!shakeSupported || !baseUrl || shakeHold.current) return;
+    const hold: ShakeHold = {
+      url: deviceApiUrl(baseUrl, "/api/shake", targetDevice),
+      request: ++shakeRequest.current,
+      queue: Promise.resolve(),
+      busy: false,
+      timer: null,
+    };
+    shakeHold.current = hold;
+    setShakeError(null);
+    sendShakeHold(hold, true);
+    hold.timer = setInterval(() => {
+      if (!hold.busy) sendShakeHold(hold, true);
+    }, SHAKE_HOLD_RENEW_MS);
+  }, [shakeSupported, baseUrl, sendShakeHold, targetDevice]);
+
+  const stopShake = useCallback(() => {
+    const hold = shakeHold.current;
+    if (!hold) return;
+    shakeHold.current = null;
+    endShakeRenewal(hold);
+    sendShakeHold(hold, false);
+  }, [sendShakeHold]);
+
+  // Release a held shake when the device changes or the client unmounts.
+  const stopShakeRef = useRef(stopShake);
+  stopShakeRef.current = stopShake;
+  useEffect(() => () => stopShakeRef.current(), [baseUrl, targetDevice]);
 
   const orientationKind = orientationState ? (orientationState.reports ? "poses" : "legacy") : null;
   // No backend before the first `/api` answer: the kind of server is not known yet.
@@ -2380,6 +2453,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     pressButton,
     reload,
     shake,
+    startShake,
+    stopShake,
     shakeError,
     rotate,
     orientation,

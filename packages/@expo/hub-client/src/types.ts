@@ -1141,11 +1141,20 @@ export interface DeviceClient {
   /**
    * Shake the device once, like Simulator.app's Device → Shake. serve-sim sends it over the
    * helper's input channel, and UIKit gives the foreground app a shake motion event. serve-emu
-   * sends a short accelerometer burst to the emulator (`POST /api/shake`), which opens the
-   * Expo Go and expo-dev-menu dev menu; React Native's own Android detector needs a longer
-   * shake. A no-op while `capabilities.shake` is false.
+   * swings the emulator's virtual device 3 times (`POST /api/shake`), which opens the Expo Go
+   * and expo-dev-menu dev menu. A no-op while `capabilities.shake` is false.
    */
   shake: () => void;
+  /**
+   * Start a shake that lasts until {@link stopShake}, as a person keeps shaking a phone until
+   * the dev menu appears. On Android, serve-emu keeps the emulator swinging while this client
+   * renews the hold, and swings at least as long as {@link shake}; React Native's own detector
+   * needs a hold of more than 2 s. iOS has a real shake event, so this sends one shake there. A
+   * no-op while `capabilities.shake` is false or while a shake is held.
+   */
+  startShake: () => void;
+  /** End the shake that {@link startShake} started. A no-op when none is held. */
+  stopShake: () => void;
   /**
    * Why the last {@link shake} failed, or null. Cleared when the next shake starts and when
    * another device is selected. Android reports the server's error or an unreachable server;

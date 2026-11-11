@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
   decodeEmulatorImage,
+  decodePhysicalModelValue,
   EmulatorGrpcClient,
+  encodePhysicalModelValue,
   encodeImageFormat,
   encodeKeyboardEvent,
   encodeTouchEvent,
@@ -637,5 +639,37 @@ describe("emulator touch protobuf", () => {
     expect(encodeTouchEvent([{ x: 0, y: 0, identifier: 0, pressure: 0 }])).toEqual(
       Buffer.from([0x0a, 0x00]),
     );
+  });
+});
+
+describe("physical model values", () => {
+  test("a set request carries the target and its values as packed floats; a get request only the target", () => {
+    // target POSITION (0) is the protobuf default, so only field 3 is written.
+    const set = encodePhysicalModelValue(0, [1.5, 0, -0.25]);
+    const floats = Buffer.alloc(12);
+    floats.writeFloatLE(1.5, 0);
+    floats.writeFloatLE(0, 4);
+    floats.writeFloatLE(-0.25, 8);
+    expect([...set]).toEqual([0x1a, 14, 0x0a, 12, ...floats]);
+    expect([...encodePhysicalModelValue(0)]).toEqual([]);
+    expect([...encodePhysicalModelValue(1)]).toEqual([0x08, 1]);
+  });
+
+  test("decodes the status, including a negative one, and packed or single floats", () => {
+    expect(decodePhysicalModelValue(encodePhysicalModelValue(0, [0.5, 2, -3]))).toEqual({
+      status: 0,
+      data: [0.5, 2, -3],
+    });
+    // status NO_SERVICE (-3) as a 10-byte varint.
+    const noService = Buffer.from([
+      0x10, 0xfd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+    ]);
+    expect(decodePhysicalModelValue(noService)).toEqual({ status: -3, data: [] });
+    const single = Buffer.alloc(4);
+    single.writeFloatLE(4, 0);
+    expect(decodePhysicalModelValue(Buffer.from([0x1a, 5, 0x0d, ...single]))).toEqual({
+      status: 0,
+      data: [4],
+    });
   });
 });

@@ -542,6 +542,51 @@ export function encodeKeyboardEvent(request: KeyboardEventRequest): Buffer {
   return Buffer.from(output);
 }
 
+/** `PhysicalModelValue.PhysicalType.POSITION`: the device's position, in meters. */
+export const PHYSICAL_MODEL_POSITION = 0;
+
+/**
+ * Encode a `PhysicalModelValue`. With `data` it is a set request that moves the target there
+ * smoothly, as the emulator's Extended Controls do; without it, a get request.
+ */
+export function encodePhysicalModelValue(target: number, data?: readonly number[]): Buffer {
+  const output: number[] = [];
+  varintField(output, 1, target);
+  if (data) {
+    const floats = Buffer.alloc(data.length * 4);
+    data.forEach((value, index) => floats.writeFloatLE(value, index * 4));
+    const parameter: number[] = [];
+    lenField(parameter, 1, floats);
+    messageField(output, 3, parameter);
+  }
+  return Buffer.from(output);
+}
+
+/** Decode a `PhysicalModelValue` reply: its status (0 is OK) and its values. */
+export function decodePhysicalModelValue(buffer: Buffer): { status: number; data: number[] } {
+  let status = 0;
+  const data: number[] = [];
+  const float = new DataView(new ArrayBuffer(4));
+  for (const field of protoFields(buffer)) {
+    if (field.fieldNo === 2 && field.wire === 0) {
+      status = Number(BigInt.asIntN(32, field.varint));
+    } else if (field.fieldNo === 3 && field.wire === 2) {
+      for (const value of protoFields(field.bytes)) {
+        if (value.fieldNo !== 1) continue;
+        if (value.wire === 2) {
+          for (let offset = 0; offset + 4 <= value.bytes.length; offset += 4) {
+            data.push(value.bytes.readFloatLE(offset));
+          }
+        } else if (value.wire === 5) {
+          float.setUint32(0, value.fixed32, true);
+          data.push(float.getFloat32(0, true));
+        }
+      }
+    }
+  }
+  return { status, data };
+}
+
 function grpcFrame(message: Buffer): Buffer {
   const output = Buffer.allocUnsafe(5 + message.length);
   output.writeUInt8(0, 0);
@@ -1186,6 +1231,31 @@ export class EmulatorGrpcClient {
 
   async sendKey(event: KeyboardEventRequest, signal?: AbortSignal): Promise<void> {
     await this.#request("sendKey", encodeKeyboardEvent(event), {
+      timeoutMs: this.#unaryTimeoutMs,
+      signal,
+      maxMessageBytes: 1024,
+    });
+  }
+
+  /** Read a physical model value, such as the device position. */
+  async getPhysicalModel(target: number, signal?: AbortSignal): Promise<number[]> {
+    const [message] = await this.#request("getPhysicalModel", encodePhysicalModelValue(target), {
+      timeoutMs: this.#unaryTimeoutMs,
+      signal,
+      maxMessageBytes: 1024,
+    });
+    const value = decodePhysicalModelValue(message ?? Buffer.alloc(0));
+    if (value.status !== 0) throw new Error(`getPhysicalModel: status ${value.status}`);
+    return value.data;
+  }
+
+  /** Move a physical model value, such as the device position, smoothly to `data`. */
+  async setPhysicalModel(
+    target: number,
+    data: readonly number[],
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.#request("setPhysicalModel", encodePhysicalModelValue(target, data), {
       timeoutMs: this.#unaryTimeoutMs,
       signal,
       maxMessageBytes: 1024,

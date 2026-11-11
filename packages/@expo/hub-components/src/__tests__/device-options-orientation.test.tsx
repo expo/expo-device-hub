@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { type DeviceClient, type DeviceOrientation } from "@expo/hub-client";
-import { DeviceOptionsSection } from "../dashboard/DeviceOptionsSection";
+import { DeviceOptionsSection, SHAKE_HOLD_DESCRIPTION } from "../dashboard/DeviceOptionsSection";
 import { createGlobalStubs } from "./test-globals";
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
@@ -111,7 +111,7 @@ test("the Orientation row follows the client's pose, not the frame, and goes wit
   expect(hasRow()).toBe(false);
 });
 
-test("Shake sends the shake and then tells the dashboard, which wobbles the stream", async () => {
+test("Shake starts the shake on press and stops it on release, and tells the dashboard both", async () => {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("HTMLFormElement", class {});
   stubGlobal("window", {
@@ -122,13 +122,15 @@ test("Shake sends the shake and then tells the dashboard, which wobbles the stre
   });
   const calls: string[] = [];
   const client = {
-    platform: "ios",
+    platform: "android",
     status: "streaming",
     recordingControlsLocked: false,
     orientationUnavailable: null,
     capabilities: { orientation: false, shake: true },
     orientation: null,
     shake: () => calls.push("client.shake"),
+    startShake: () => calls.push("client.startShake"),
+    stopShake: () => calls.push("client.stopShake"),
     deviceSettings: null,
     deviceSettingsStatus: "idle",
     deviceSettingsPending: new Set(),
@@ -139,14 +141,38 @@ test("Shake sends the shake and then tells the dashboard, which wobbles the stre
         client={client}
         showDeviceSettings={false}
         onShake={() => calls.push("onShake")}
+        onShakeEnd={() => calls.push("onShakeEnd")}
       />,
     );
   });
-  const button = renderer!.root.find(
-    (node) => node.type === "button" && node.props.children === "Shake",
-  );
-  await act(async () => button.props.onClick());
-  expect(calls).toEqual(["client.shake", "onShake"]);
+  const button = () =>
+    renderer!.root.find((node) => node.type === "button" && node.props.children === "Shake");
+  const pointer = { button: 0, pointerId: 1, currentTarget: { setPointerCapture() {} } };
+
+  await act(async () => button().props.onPointerDown(pointer));
+  // A second down while held, and the click after the release, do nothing more.
+  await act(async () => button().props.onPointerDown(pointer));
+  expect(calls).toEqual(["client.startShake", "onShake"]);
+  await act(async () => button().props.onPointerUp(pointer));
+  await act(async () => button().props.onClick?.());
+  await act(async () => button().props.onLostPointerCapture(pointer));
+  expect(calls).toEqual(["client.startShake", "onShake", "client.stopShake", "onShakeEnd"]);
+
+  calls.length = 0;
+  await act(async () => button().props.onPointerDown({ ...pointer, button: 2 }));
+  expect(calls).toEqual([]);
+
+  const key = (key: string, repeat = false) => ({ key, repeat, preventDefault() {} });
+  await act(async () => button().props.onKeyDown(key(" ")));
+  await act(async () => button().props.onKeyDown(key(" ", true)));
+  await act(async () => button().props.onKeyUp(key(" ")));
+  expect(calls).toEqual(["client.startShake", "onShake", "client.stopShake", "onShakeEnd"]);
+
+  calls.length = 0;
+  await act(async () => button().props.onKeyDown(key("Enter")));
+  await act(async () => renderer!.unmount());
+  renderer = undefined;
+  expect(calls).toEqual(["client.startShake", "onShake", "client.stopShake", "onShakeEnd"]);
 });
 
 test("a failed shake shows its error under the Shake row", async () => {
@@ -166,7 +192,9 @@ test("a failed shake shows its error under the Shake row", async () => {
     capabilities: { orientation: false, shake: true },
     orientation: null,
     shake: () => {},
-    shakeError: "Emulator acceleration write failed: KO: busy",
+    startShake: () => {},
+    stopShake: () => {},
+    shakeError: "Emulator shake failed: setPhysicalModel: grpc-status 14",
     deviceSettings: null,
     deviceSettingsStatus: "idle",
     deviceSettingsPending: new Set(),
@@ -177,9 +205,56 @@ test("a failed shake shows its error under the Shake row", async () => {
   const row = renderer!.root.find(
     (node) => node.props.label === "Shake device" && "description" in node.props,
   );
-  expect(row.props.description).toBe("Emulator acceleration write failed: KO: busy");
+  expect(row.props.description).toBe("Emulator shake failed: setPhysicalModel: grpc-status 14");
   const button = renderer!.root.find(
     (node) => node.type === "button" && node.props.children === "Shake",
   );
   expect(button.props["aria-describedby"]).toBe(row.props.descriptionId);
+});
+
+test("an Android Shake row says to hold for a longer shake; an iOS row, whose shake is one event, does not", async () => {
+  stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  stubGlobal("HTMLFormElement", class {});
+  stubGlobal("window", {
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
+  const client = (platform: "android" | "ios") =>
+    ({
+      platform,
+      status: "streaming",
+      recordingControlsLocked: false,
+      orientationUnavailable: null,
+      capabilities: { orientation: false, shake: true },
+      orientation: null,
+      shake: () => {},
+      startShake: () => {},
+      stopShake: () => {},
+      shakeError: null,
+      deviceSettings: null,
+      deviceSettingsStatus: "idle",
+      deviceSettingsPending: new Set(),
+    }) as unknown as DeviceClient;
+  const shakeRow = () =>
+    renderer!.root.find(
+      (node) => node.props.label === "Shake device" && "description" in node.props,
+    );
+  const button = () =>
+    renderer!.root.find((node) => node.type === "button" && node.props.children === "Shake");
+
+  await act(async () => {
+    renderer = create(
+      <DeviceOptionsSection client={client("android")} showDeviceSettings={false} />,
+    );
+  });
+  expect(shakeRow().props.description).toBe(SHAKE_HOLD_DESCRIPTION);
+  expect(button().props["aria-describedby"]).toBe(shakeRow().props.descriptionId);
+
+  await act(async () => {
+    renderer!.update(<DeviceOptionsSection client={client("ios")} showDeviceSettings={false} />);
+  });
+  expect(shakeRow().props.description).toBeUndefined();
+  expect(button().props["aria-describedby"]).toBeUndefined();
 });

@@ -24,6 +24,8 @@ export type RecordedEvent =
       delayMs: number;
       source: string;
       kind: "shake";
+      /** How long the shake swung, in ms. A replay swings as long; without it, a click. */
+      durationMs?: number;
     };
 
 export type SessionSnapshot = {
@@ -76,7 +78,7 @@ export type ReplayHandlers = {
   finish?: (signal: AbortSignal) => Promise<void> | void;
   dispatchGesture: (gesture: Gesture, signal: AbortSignal) => Promise<void> | void;
   setLocation: (fix: GeoFix, signal: AbortSignal) => Promise<void> | void;
-  shake: (signal: AbortSignal) => Promise<void> | void;
+  shake: (signal: AbortSignal, durationMs?: number) => Promise<void> | void;
 };
 
 export type SessionReplayClock = {
@@ -250,6 +252,16 @@ export class SessionRecorder {
     return this.#record({ kind: "shake", source });
   }
 
+  /** Give a recorded shake the time it swung, once it ends. */
+  setShakeDuration(id: number, durationMs: number): void {
+    const event = this.#events.find((candidate) => candidate.id === id);
+    if (event?.kind !== "shake" || !Number.isFinite(durationMs)) return;
+    const before = eventBytes(event);
+    event.durationMs = Math.max(0, Math.round(durationMs));
+    this.#retainedBytes += eventBytes(event) - before;
+    this.#trim();
+  }
+
   /**
    * Remove an event whose action failed after it was recorded. The next event takes its time gap,
    * so replay keeps the timing of the events around it.
@@ -374,7 +386,7 @@ export class SessionRecorder {
     handlers: {
       dispatchGesture: (gesture: Gesture) => Promise<void> | void;
       setLocation: (fix: GeoFix) => Promise<void> | void;
-      shake?: () => Promise<void> | void;
+      shake?: (durationMs?: number) => Promise<void> | void;
     },
     multiplier = 1,
   ): Promise<SessionSummary> {
@@ -403,7 +415,7 @@ export class SessionRecorder {
         } else if (event.kind === "location") {
           await handlers.setLocation({ ...event.location });
         } else {
-          await handlers.shake?.();
+          await handlers.shake?.(event.durationMs);
         }
       }
       this.#replayCompletedAt = new Date(this.#clock.now()).toISOString();
@@ -472,7 +484,7 @@ export class SessionRecorder {
         } else if (event.kind === "location") {
           await handlers.setLocation(event.location, replay.controller.signal);
         } else {
-          await handlers.shake(replay.controller.signal);
+          await handlers.shake(replay.controller.signal, event.durationMs);
         }
         this.#assertReplayActive(replay);
       }
@@ -542,11 +554,16 @@ export class SessionRecorder {
     }
     this.#events.push(recorded);
     this.#retainedBytes += bytes + (this.#events.length > 1 ? 1 : 0);
+    this.#trim();
+    return recorded.id;
+  }
+
+  /** Drop the oldest events until the session fits its limits. */
+  #trim(): void {
     while (this.#events.length > this.#maxEvents || this.#retainedBytes > this.#maxBytes) {
       const removed = this.#events.shift()!;
       this.#retainedBytes -= eventBytes(removed) + (this.#events.length > 0 ? 1 : 0);
       this.#droppedEvents++;
     }
-    return recorded.id;
   }
 }

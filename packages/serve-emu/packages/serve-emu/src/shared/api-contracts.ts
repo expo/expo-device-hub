@@ -481,6 +481,8 @@ export type ShakeSessionEvent = {
   delayMs: number;
   source: string;
   kind: "shake";
+  /** How long the shake swung, in ms. Absent on a click recorded by an older server. */
+  durationMs?: number;
 };
 export type SessionEvent = GestureSessionEvent | LocationSessionEvent | ShakeSessionEvent;
 export type RecordedEvent = SessionEvent;
@@ -1638,7 +1640,15 @@ function parseSessionEvent(value: unknown, index: number): SessionEvent {
       location: parseGeoFix(item.location, `session.events[${index}].location`),
     };
   }
-  if (item.kind === "shake") return { ...base, kind: "shake" };
+  if (item.kind === "shake") {
+    return item.durationMs === undefined
+      ? { ...base, kind: "shake" }
+      : {
+          ...base,
+          kind: "shake",
+          durationMs: number(item.durationMs, `session.events[${index}].durationMs`),
+        };
+  }
   return fail(`session.events[${index}].kind is invalid`);
 }
 
