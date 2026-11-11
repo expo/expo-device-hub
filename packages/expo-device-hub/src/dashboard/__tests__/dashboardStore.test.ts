@@ -12,7 +12,6 @@ const iosDevice: Device = {
   booted: true,
   physical: false,
   supported: true,
-  deviceFrame: "ios:iphone-17-pro",
 };
 
 afterEach(() => {
@@ -77,12 +76,12 @@ describe("dashboard store", () => {
     expect(store.getState().streamMode).toBe("mjpeg");
   });
 
-  test("shows supported device frames by default and keeps the viewer toggle", () => {
+  test("shows the device screen shape by default and keeps the viewer toggle", () => {
     const store = createDashboardStore();
 
-    expect(store.getState().showDeviceFrame).toBe(true);
-    store.getState().setShowDeviceFrame(false);
-    expect(store.getState().showDeviceFrame).toBe(false);
+    expect(store.getState().showScreenShape).toBe(true);
+    store.getState().setShowScreenShape(false);
+    expect(store.getState().showScreenShape).toBe(false);
   });
 
   test("owns sidebar sizing and explicit open/close intent", () => {

@@ -37,7 +37,8 @@ type DashboardStoreValues = {
   sidebarPreferences: Record<SidebarSide, SidebarPreference>;
   lastOpenedSidebar: SidebarSide;
   hideUnsupportedDevices: boolean;
-  showDeviceFrame: boolean;
+  /** Clip the screen to its device shape; off shows the plain video rectangle. */
+  showScreenShape: boolean;
   duoPreview: DuoPreviewPreferences;
 };
 
@@ -51,7 +52,7 @@ export type DashboardStore = DashboardStoreValues & {
   openSidebar: (side: SidebarSide, canDock: boolean) => void;
   closeSidebar: (side: SidebarSide) => void;
   setHideUnsupportedDevices: (hide: boolean) => void;
-  setShowDeviceFrame: (show: boolean) => void;
+  setShowScreenShape: (show: boolean) => void;
   setDuoPreview: (patch: Partial<DuoPreviewPreferences>) => void;
 };
 
@@ -148,7 +149,7 @@ function defaultDashboardStoreValues(): DashboardStoreValues {
     },
     lastOpenedSidebar: "right",
     hideUnsupportedDevices: initialHideUnsupportedDevices(),
-    showDeviceFrame: true,
+    showScreenShape: true,
     duoPreview: initialDuoPreview(),
   };
 }
@@ -197,7 +198,7 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
         sidebarPreferences: { ...state.sidebarPreferences, [side]: "hidden" },
       })),
     setHideUnsupportedDevices: (hideUnsupportedDevices) => set({ hideUnsupportedDevices }),
-    setShowDeviceFrame: (showDeviceFrame) => set({ showDeviceFrame }),
+    setShowScreenShape: (showScreenShape) => set({ showScreenShape }),
     setDuoPreview: (patch) =>
       set((state) => {
         const duoPreview = { ...state.duoPreview, ...patch };

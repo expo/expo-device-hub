@@ -14,7 +14,6 @@ const device: Device = {
   booted: true,
   physical: false,
   supported: true,
-  deviceFrame: null,
   deviceModel: "ios:iphone-duo",
 };
 
@@ -250,7 +249,7 @@ describe("PhoneFrame with a display that describes its own glass", () => {
     expect(markup).not.toContain("with 7.556cqw");
   });
 
-  test("keeps the generic shape when the client describes no corners", () => {
+  test("shows the whole stream rectangle when the client describes no corners", () => {
     const markup = renderToStaticMarkup(
       <PhoneFrame
         device={device}
@@ -260,6 +259,8 @@ describe("PhoneFrame with a display that describes its own glass", () => {
       />,
     );
     expect(markup).not.toContain("data-display-corners");
-    expect(markup).toContain("shape(from 14.066cqw -0.5px");
+    expect(markup).not.toContain("clip-path");
+    const frame = markup.match(/data-testid="device-screen-frame"[^>]*style="([^"]*)"/)?.[1];
+    expect(frame).not.toContain("border-radius");
   });
 });

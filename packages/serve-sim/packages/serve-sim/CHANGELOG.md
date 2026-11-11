@@ -1,5 +1,24 @@
 # @expo/serve-sim
 
+## 0.14.1
+
+### Patch Changes
+
+- d033e46: Avoid Darwin filesystem metadata lookups when discovering TCP listeners, so unrelated mounts do not delay port reclamation when starting a server.
+- 154e80a: Capture default Simulator screenshots, including resized and JPEG requests, without starting video when the device profile and runtime enumeration verify one usable display. Keep native display selection when the evidence is missing, ambiguous, or conflicting. Reuse native capture for existing sessions, including sessions created during display verification.
+
+## 0.14.0
+
+### Minor Changes
+
+- d0f7c95: Add optional screenshot resizing and JPEG output to the HTTP and binary WebSocket APIs. Full-resolution PNG remains the default.
+
+### Patch Changes
+
+- b66e959: Add an `automation` flag to screenshot captures so background session thumbnails do not count as user activity. Automated captures skip Desktop copies, and binary captures do not create manual screenshot artifacts.
+
+  The POST screenshot endpoint also accepts `automation: true` in its JSON body with the existing bearer token.
+
 ## 0.13.3
 
 ### Patch Changes

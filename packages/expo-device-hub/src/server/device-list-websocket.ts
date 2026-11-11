@@ -199,7 +199,7 @@ export function deviceListFingerprint(list: HubDeviceList): string {
           booted,
           physical,
           supported,
-          deviceFrame,
+          model,
           deviceModel,
           lastUsedAt,
         }) => ({
@@ -210,7 +210,7 @@ export function deviceListFingerprint(list: HubDeviceList): string {
           booted,
           physical,
           supported,
-          deviceFrame,
+          model,
           deviceModel,
           lastUsedAt,
         }),

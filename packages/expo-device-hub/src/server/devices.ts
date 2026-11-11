@@ -17,14 +17,13 @@
 import { type AndroidDevice, listDevices as listAndroidDevices } from "@expo/hub-android-utils";
 import { listDevices as listAppleDevices } from "@expo/hub-apple-utils";
 
-import { type DeviceFrameProfileId, type DeviceModelId } from "@expo/hub-components";
+import { type DeviceModelId } from "@expo/hub-components";
 
 import { type PlatformFilter } from "../platform-filter";
+import { androidDeviceModel, createAppleDeviceTypeNames } from "./device-models";
 import {
-  androidDeviceFrame,
-  androidDeviceModel,
-  appleDeviceFrame,
-  appleDeviceModel,
+  androidDevice3DModel,
+  appleDevice3DModel,
   isSupportedAndroidDevice,
   isSupportedAppleDevice,
 } from "./device-support";
@@ -49,8 +48,12 @@ export interface HubDevice {
   physical: boolean;
   /** Whether this device type is in the set currently supported and tested by Hub. */
   supported: boolean;
-  /** Frame artwork available for this exact device model, or null when none is available. */
-  deviceFrame: DeviceFrameProfileId | null;
+  /**
+   * The exact hardware model, which picks the screen shape: the simulator device
+   * type name on iOS, such as "iPhone 17 Pro", or the AVD hardware profile id on
+   * Android, such as "pixel_9". Null when unknown, such as for a physical device.
+   */
+  model: string | null;
   /** The 3D preview's model of this exact device model, or null when it has none. */
   deviceModel: DeviceModelId | null;
   /**
@@ -75,13 +78,22 @@ interface PlatformDeviceList {
   error: SerializableError | null;
 }
 
+const appleDeviceTypeNames = createAppleDeviceTypeNames();
+
 /** Available iOS simulators with plist usage history, via `@expo/hub-apple-utils` → `simctl`. */
 export async function listIosSimulators(): Promise<PlatformDeviceList> {
   const listed = await listAppleDevices();
+  const available = listed.value.filter(
+    (device) => device.platform === "iOS" && device.isAvailable,
+  );
+  // Only listed simulators ask for a name: an unavailable one, whose runtime is gone, would
+  // never find its device type and would read the runtimes again every refresh interval.
+  const deviceTypeNames = await appleDeviceTypeNames(
+    available.map((device) => device.deviceTypeIdentifier),
+  );
 
   return {
-    devices: listed.value
-      .filter((device) => device.platform === "iOS" && device.isAvailable)
+    devices: available
       .map((device) => {
         const platform = device.platform ?? "iOS";
 
@@ -93,8 +105,10 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
           booted: device.state.toLowerCase() === "booted",
           physical: false,
           supported: isSupportedAppleDevice(device),
-          deviceFrame: appleDeviceFrame(device),
-          deviceModel: appleDeviceModel(device),
+          model: device.deviceTypeIdentifier
+            ? (deviceTypeNames.get(device.deviceTypeIdentifier) ?? null)
+            : null,
+          deviceModel: appleDevice3DModel(device),
           lastUsedAt: latestTimestamp(device.lastUsedAt, device.lastBootedAt),
         };
       })
@@ -120,8 +134,8 @@ export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
         booted: device.booted,
         physical: device.type === "device",
         supported: isSupportedAndroidDevice(device),
-        deviceFrame: androidDeviceFrame(device),
-        deviceModel: androidDeviceModel(device),
+        model: androidDeviceModel(device),
+        deviceModel: androidDevice3DModel(device),
         lastUsedAt: latestTimestamp(device.lastBootedAt),
       }))
       .filter((device) => device.booted || device.lastUsedAt !== undefined),

@@ -16,7 +16,7 @@ const IOS = {
   booted: true,
   physical: false,
   supported: true,
-  deviceFrame: "ios:iphone-17-pro" as const,
+  model: "iPhone 17 Pro",
   deviceModel: null,
   lastUsedAt: 123,
 };
@@ -29,7 +29,7 @@ const ANDROID = {
   booted: false,
   physical: false,
   supported: true,
-  deviceFrame: "android:pixel-10-pro" as const,
+  model: "pixel_10_pro",
   deviceModel: "android:pixel-9-pro" as const,
   lastUsedAt: 456,
 };
@@ -208,10 +208,10 @@ test("deviceListFingerprint ignores discovery order", () => {
   expect(deviceListFingerprint(a)).toBe(deviceListFingerprint(b));
 });
 
-test("deviceListFingerprint includes device-frame capability changes", () => {
-  const changed = { ...LIST, simulators: [{ ...IOS, deviceFrame: null }] };
-
-  expect(deviceListFingerprint(LIST)).not.toBe(deviceListFingerprint(changed));
+test("deviceListFingerprint includes a model that the server learns later", () => {
+  // The simulator device type names can load after the first poll, so a known model must broadcast.
+  const unknown: HubDeviceList = { ...LIST, simulators: [{ ...IOS, model: null }] };
+  expect(deviceListFingerprint(unknown)).not.toBe(deviceListFingerprint(LIST));
 });
 
 test("deviceListFingerprint includes 3D model changes", () => {

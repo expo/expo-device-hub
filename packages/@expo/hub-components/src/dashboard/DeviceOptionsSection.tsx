@@ -90,7 +90,9 @@ const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = 
 
 const EMPTY_PENDING_SETTINGS: ReadonlySet<DeviceSettingKey> = new Set();
 
-export const NO_DEVICE_FRAME_DESCRIPTION = "No device frame for selected device.";
+export const NO_DEVICE_SHAPE_DESCRIPTION = "No device shape for selected device.";
+
+export const DEVICE_SHAPE_2D_ONLY_DESCRIPTION = "Applies to the 2D view only.";
 
 export const NO_HARDWARE_KEYBOARD_DESCRIPTION =
   "This device has no hardware keyboard, so the on-screen keyboard always shows.";
@@ -98,7 +100,9 @@ export const NO_HARDWARE_KEYBOARD_DESCRIPTION =
 export const ONSCREEN_KEYBOARD_DESCRIPTION =
   "Keeps the on-screen keyboard visible while a hardware keyboard is attached. A device with no hardware keyboard always shows it.";
 
-export type DeviceFrameOption = {
+/** The viewer-local screen shape option: the device shape, or the whole video rectangle. */
+export type ScreenShapeOption = {
+  /** Whether the selected device has a known shape. Without one, the option is off and disabled. */
   available: boolean;
   visible: boolean;
   onVisibleChange: (visible: boolean) => void;
@@ -106,20 +110,20 @@ export type DeviceFrameOption = {
 
 /**
  * Device-wide appearance, connectivity, and accessibility settings, plus iOS
- * keyboard controls, the viewer-local device frame option, and device-level
+ * keyboard controls, the viewer-local screen shape option, and device-level
  * actions (Android Back and Recents keys, shutting down or removing the device).
  * A foldable leads with its fold controls, as serve-sim's settings do for the iPhone Duo.
  */
 export function DeviceOptionsSection({
   client,
-  deviceFrame,
+  screenShape,
   foldPreview,
   showDeviceSettings = true,
   onShutdown,
   onRemove,
 }: {
   client?: DeviceClient;
-  deviceFrame?: DeviceFrameOption;
+  screenShape?: ScreenShapeOption;
   /** Viewer-local 2D/3D choices for a device that the 3D model can show. */
   foldPreview?: FoldPreviewOption;
   /** Whether backend-controlled appearance and accessibility settings are available. */
@@ -143,7 +147,16 @@ export function DeviceOptionsSection({
       : recordingLock === "status-unknown"
         ? "Unavailable until recording status is known."
         : "Unavailable because this would interrupt the recording.";
-  const unavailableFrameDescriptionId = useId();
+  const shapeDescriptionId = useId();
+  // The 3D model draws its own device, so the screen shape applies to the 2D
+  // view only. The 3D view shows while 3D is chosen and its model loads.
+  // @ref LLP 0017#hub-dashboard — the shape option applies to the 2D view only
+  const shapeIn3D = foldPreview?.mode === "3d" && !foldPreview.unavailable;
+  const shapeDescription = !screenShape?.available
+    ? NO_DEVICE_SHAPE_DESCRIPTION
+    : shapeIn3D
+      ? DEVICE_SHAPE_2D_ONLY_DESCRIPTION
+      : undefined;
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
   const orientationErrorId = useId();
@@ -310,18 +323,18 @@ export function DeviceOptionsSection({
         </SidebarRow>
       )}
 
-      {deviceFrame && (
+      {screenShape && (
         <SidebarRow
-          label="Show device frame"
-          description={deviceFrame.available ? undefined : NO_DEVICE_FRAME_DESCRIPTION}
-          descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}
+          label="Show device shape"
+          description={shapeDescription}
+          descriptionId={shapeDescription ? shapeDescriptionId : undefined}
         >
           <SidebarSwitch
-            checked={deviceFrame.available && deviceFrame.visible}
-            disabled={!deviceFrame.available}
-            label="Show device frame"
-            descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}
-            onChange={deviceFrame.onVisibleChange}
+            checked={screenShape.available && screenShape.visible}
+            disabled={!screenShape.available || shapeIn3D}
+            label="Show device shape"
+            descriptionId={shapeDescription ? shapeDescriptionId : undefined}
+            onChange={screenShape.onVisibleChange}
           />
         </SidebarRow>
       )}

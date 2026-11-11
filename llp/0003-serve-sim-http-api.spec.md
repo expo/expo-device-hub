@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-29 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -23,7 +23,7 @@ server's selected device.
 | `/healthz`, `/readyz`                                                                               | Liveness and readiness. These remain reachable without a token when `--require-token` is set. `/readyz` answers 503 while a device is still starting.                                                                                                                                                 |
 | `/`                                                                                                 | The preview page.                                                                                                                                                                                                                                                                                     |
 | `/api`                                                                                              | Current device and stream state, including `execToken`.                                                                                                                                                                                                                                               |
-| `/api/screenshot`                                                                                   | `POST`. A still PNG from the active display, or `?display=<screen ID>`.                                                                                                                                                                                                                               |
+| `/api/screenshot`                                                                                   | `POST`. A still image from the active display, or `?display=<screen ID>`. Defaults to native-resolution PNG; optional `maxWidth`, `format`, and JPEG `quality`.                                                                                                                                       |
 | `/api/apps/icon?bundleId=<id>`                                                                      | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`, the same shape as serve-emu's route, with `bundleId` in place of `packageName`. `icon` is null when the app has its icon only in `Assets.car`. 404 when the app is not installed, 503 when `simctl` cannot answer (retry). |
 | `/api/pasteboard`                                                                                   | `POST` reads the simulator pasteboard as `{ok, text}`; `?copy=1` presses Command+C first; `PUT` with `{"text": …}` writes it. See [Pasteboard](#pasteboard).                                                                                                                                          |
 | `/helper/<udid>/recording/video`                                                                    | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token.                                                                  |
@@ -750,7 +750,7 @@ The catalog leaves out actions with `hidden: true`: `server.*`, `reveal`,
 `screenshot.thumbnail`, `upload.*` and `actions.describe`. They still run when
 called.
 
-`screenshot.capture` takes `{udid, fileName?, display?}` and makes a file name
+`screenshot.capture` takes `{udid, fileName?, display?, output?, automation?}` and makes a file name
 when `fileName` is missing. `display` is a positive simctl screen ID. Known non-integrated ports are rejected
 before capture unless the profile declares exactly one screen, as on tvOS; an
 unknown profile leaves explicit selection available. A client
@@ -782,6 +782,34 @@ concurrent successful publication. Failed captures remove their
 temporary pixels and empty reservations, preserving an existing successful
 screenshot of the same name. [observed: `captureScreenshotAsync`]
 
+HTTP `POST /api/screenshot` also accepts an optional JSON body
+`{ "automation": true }` (at most 1 KiB). Empty bodies or omitted/false automation
+retain manual behavior. True requires the existing exec bearer token and skips
+manual artifact publication and screenshot activity on success/failure. Invalid
+JSON, unknown fields, and nonboolean values return 400 before capture; oversized
+bodies return 413. Binary exec-ws delegates through this same HTTP contract.
+[observed: `src/middleware.ts`, screenshot route and binary adapter]
+
+The optional `automation` flag defaults to `false`. Setting it to `true`
+suppresses the screenshot activity event on both success and failure, so periodic
+background thumbnails do not refresh the session's idle deadline. Omitted or
+`false` preserves manual activity. `actions.describe` exposes the boolean field
+so callers can check support before sending an automated capture.
+[observed: `src/host-actions.ts`, `src/event-log.ts`]
+
+The flag applies to both path and binary output. Binary dispatch carries it as
+a JSON body into the same HTTP capture implementation. Automated captures
+return PNG bytes without publishing a manual screenshot artifact; manual HTTP
+screenshots still publish artifacts and record activity. [observed: `src/middleware.ts`]
+
+Automated path captures skip the convenience Desktop copy and do not consume its
+copy-count limit. They keep the existing staging behavior. Manual captures keep
+their Desktop copy. The
+caller owns reading and removing its uniquely named staged file; a client
+timeout or closed exec socket does not cancel the host action, so it must wait
+for completion or host shutdown before removing a file the action may still write.
+[observed: `src/screenshot-store.ts`, `src/socket/server-control.ts`]
+
 Native screenshot startup and active-display reads use the configured host-action
 deadline. A timed-out one-shot releases its temporary session and stops native
 startup without waiting for the hung start promise; late continuations cannot
@@ -793,30 +821,70 @@ bundles on the event loop. [observed: `withScreenshotDeviceSession`,
 `DeviceSession.start`, `DeviceSession.close`, `getScreenshotDisplayIdsAsync`]
 
 The HTTP `/api/screenshot` download follows the same native active-display
-selection and three-attempt handoff bound as `screenshot.capture`. Its optional
+selection and three-attempt handoff bound as `screenshot.capture`, except for
+verified cold-session direct capture, described next. Its optional
 `display` query selects an explicit panel without starting native capture. It
-keeps the existing PNG response and artifact headers. Native pixels stay in memory
-through display validation and delivery; only simctl capture uses a temporary file,
-which is cleaned up. The completed PNG response declares `Content-Length`,
+defaults to native-resolution PNG and keeps the artifact headers. Native pixels
+stay in memory through display validation and delivery; only simctl capture uses a temporary file,
+which is cleaned up. The completed image response declares `Content-Length`,
 without the host action's Desktop copy. Default HTTP captures share the same
 one-shot session ownership. If native startup or display readback fails, an
 installed device profile confirming exactly one display permits a
 `simctl screenshot` fallback with that display ID. Unknown profiles and multi-display devices still
 require native panel election. [observed: `simMiddleware` screenshot route,
-`getScreenshotDisplayIdsAsync`]
+`captureScreenshotPngAsync`, `getScreenshotDisplayIdsAsync`]
+
+The HTTP `/api/screenshot` route can capture directly without starting native
+video when no device session exists, the installed profile declares exactly one
+integrated panel, and fresh runtime enumeration verifies it. The runtime must expose exactly one integrated
+framebuffer with an IOSurface and one integrated connected screen. Its ID must
+match the profile, and the default, IOSurface, and connected-screen dimensions
+must match the profile panel, allowing rotation. Known `tvOut`, `carPlay`, and
+`scene` auxiliary outputs do not require integrated-panel election; their runtime
+IDs and types must match declared outputs. A multi-panel profile still requires
+native active-display selection even when only one IOSurface exists. Unknown,
+missing, conflicting, or unavailable evidence retains native selection and the
+existing fallback. A sole declared virtual screen retains the strict single
+runtime screen/framebuffer check, with matching declared and runtime types.
+Duplicate selection fields reject the shortcut. Legacy direct capture accepts
+the same known class-1 ports and TVOut/CarPlay
+connected screens as the legacy fallback above, while requiring exactly one
+integrated panel and an IOSurface with matching dimensions. Cold-session
+verification gives profile listing, profile conversion, and runtime enumeration
+separate two-second limits; this is not a shared verification deadline. Failed
+or timed-out verification retains the native path. Host-action display
+validation and native-failure fallback retain the simctl default timeout. Existing
+sessions skip verification and reuse native capture. Sessions created during
+verification also reuse native capture. Explicit display requests keep their
+direct capture path. [observed:
+`getSoleScreenshotDisplayIdAsync`, `captureScreenshotPngAsync`]
+
+EAS workers start capture during initialization to record video, and direct simctl capture is meant for requests that arrive while no capture is running [confirmed: Gabe Debes, 2026-11-05]. Such hosts already have a session when they request a screenshot, so they keep native capture [observed: `peekDeviceSession` checks in `captureScreenshotPngAsync`]. Foreground preview startup creates each device's session after it publishes device state ([LLP 0011](0011-serve-sim-session-startup.explainer.md#startup-order)) [observed: `serve` in `src/index.ts`]. Embedded middleware has no startup session. Its helper stream, panel, WebRTC, recording and control routes, `/readyz`, HID `/ws`, clipboard copy and paste, and prepared-process adoption with a device each create one, so a screenshot requested before any of these can take the direct path. [observed: `serveHelperInProcess`, `attachHidInProcess`, `configureSession`, `simMiddleware` `/readyz` route, `runHostActionAsync`]
+
+HTTP screenshot queries accept optional `maxWidth` (integer, 1–8192),
+`format` (`png` or `jpeg`), and `quality` (integer, 1–100; JPEG default 80).
+Width limiting preserves aspect ratio after rotation and never upscales.
+Native capture snapshots the pixels before Core Image scales them and encodes
+PNG; explicit-display, verified cold-session, and simctl fallback PNGs are resized after capture.
+JPEG responses convert that PNG and use `Content-Type: image/jpeg`; PNG
+responses use `image/png`. JPEG is lossy and does not preserve transparency.
+Collected session artifacts remain PNG at the requested size, including for
+JPEG responses. [observed: `ScreenshotImageOptions`, `ScreenshotEncoder`,
+`captureScreenshotPngAsync`, `simMiddleware` screenshot route]
 
 An authenticated exec-ws client can request
 `{id, action: "screenshot.capture", params: {udid?, display?, output: "binary"}}`
-to receive PNG bytes in one binary response, without staging or Desktop copies.
+to receive image bytes in one binary response, without staging or Desktop copies.
+The same optional `maxWidth`, `format`, and `quality` fields belong in `params`;
+omitting them preserves native-resolution PNG.
 The first four bytes are the unsigned 32-bit request ID in network byte order;
-the remaining bytes are the PNG. IDs must be integers from 0 through 4294967295.
+the remaining bytes are the requested PNG or JPEG. IDs must be integers from
+0 through 4294967295.
 Failures return the usual JSON `{id, error}` frame. Concurrent replies may arrive
-out of order. This request shares the HTTP screenshot route's device restrictions,
-display validation, artifact persistence and error handling, and the socket's
-eight-action admission limit. Device names resolve as for ordinary actions; the
+out of order. This request goes through the HTTP screenshot route, so it shares that route's display selection, including verified cold-session direct capture, its device restrictions, display validation, artifact persistence and error handling. It is also subject to the socket's eight-action admission limit. Device names resolve as for ordinary actions; the
 single-device policy still applies. `fileName` is only supported in path mode.
-`output` defaults to `"path"`, which still returns a staged path. Output selection
-is specific to the screenshot action. `actions.describe` advertises the supported
+`output` defaults to `"path"`, which still returns a staged path and rejects the
+image options. Output selection is specific to the screenshot action. `actions.describe` advertises the supported
 values in `screenshot.capture.properties.output.enum`; clients must check support
 first, since older servers may ignore the parameter and return the path as JSON.
 Binary output requires exec-ws; direct host-action execution rejects it rather

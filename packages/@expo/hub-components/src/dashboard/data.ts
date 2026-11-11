@@ -8,19 +8,6 @@
 
 export type Platform = "ios" | "android";
 
-/** Exact device profile with frame artwork bundled by Hub. */
-export const DEVICE_FRAME_PROFILE_IDS = [
-  "ios:iphone-17-pro",
-  "android:pixel-9",
-  "android:pixel-10-pro",
-] as const;
-export type DeviceFrameProfileId = (typeof DEVICE_FRAME_PROFILE_IDS)[number];
-
-/** Fail closed when a newer or stale server sends an unknown profile id. */
-export function isDeviceFrameProfileId(value: unknown): value is DeviceFrameProfileId {
-  return DEVICE_FRAME_PROFILE_IDS.some((profileId) => profileId === value);
-}
-
 /** Exact device model that the 3D preview can draw. */
 export const DEVICE_MODEL_IDS = [
   "ios:iphone-duo",
@@ -49,8 +36,13 @@ export type Device = {
   physical: boolean;
   /** Whether this device type is in the set currently supported and tested by Hub. */
   supported: boolean;
-  /** Frame artwork available for this exact device model, or null when none is available. */
-  deviceFrame: DeviceFrameProfileId | null;
+  /**
+   * The exact hardware model, which picks the screen shape: the simulator
+   * device type name on iOS, such as `"iPhone 17 Pro"`, or the AVD hardware
+   * profile id on Android, such as `"pixel_9"`. Null or absent when unknown,
+   * such as for a physical device.
+   */
+  model?: string | null;
   /**
    * The 3D model of this exact device model, or null when the 3D preview has none.
    * Optional so that a consumer whose devices have no model can leave it out.
@@ -84,8 +76,6 @@ export type NewDeviceModelOption = {
   label: string;
   /** Whether this model is in the set currently supported and tested by Hub. */
   supported: boolean;
-  /** Frame artwork available for this model, or null when none is available. */
-  deviceFrame: DeviceFrameProfileId | null;
 };
 
 /** An installed runtime/system image and the models it can create. */
@@ -115,8 +105,11 @@ export type NewDeviceRequest = {
   version: string;
   /** Whether the selected model is currently supported and tested by Hub. */
   supported: boolean;
-  /** Frame artwork available for the selected model, or null when none is available. */
-  deviceFrame: DeviceFrameProfileId | null;
+  /**
+   * The selected model as `Device.model` names it: the simulator device type
+   * name (iOS) or the AVD hardware profile id (Android).
+   */
+  model?: string | null;
 };
 
 /** The mutually exclusive target selected in the add-device picker. */

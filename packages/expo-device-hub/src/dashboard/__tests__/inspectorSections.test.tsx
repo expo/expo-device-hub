@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { type DeviceClient, type DevicePlatform } from "@expo/hub-client";
 import {
   type Device,
-  NO_DEVICE_FRAME_DESCRIPTION,
+  NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
 } from "@expo/hub-components";
@@ -206,23 +206,15 @@ test.each([
   },
 );
 
-function device(platform: DevicePlatform, deviceFrame: Device["deviceFrame"]): Device {
+function device(platform: DevicePlatform, supported = true): Device {
   return {
     id: `${platform}-device`,
-    name:
-      deviceFrame === "ios:iphone-17-pro"
-        ? "iPhone 17 Pro"
-        : deviceFrame === "android:pixel-9"
-          ? "Pixel 9"
-          : deviceFrame === "android:pixel-10-pro"
-            ? "Pixel 10 Pro"
-            : "Other",
+    name: !supported ? "Other" : platform === "ios" ? "iPhone 17 Pro" : "Pixel 10 Pro",
     version: platform === "ios" ? "iOS 27.0" : "Android 17.0",
     platform,
     booted: true,
     physical: false,
-    supported: deviceFrame !== null,
-    deviceFrame,
+    supported,
   };
 }
 
@@ -1431,7 +1423,7 @@ test("moves device actions into Device options and hides Remove for physical dev
   const android = renderToStaticMarkup(
     <LogSidebar
       client={inspectorClient("android")}
-      device={device("android", "android:pixel-10-pro")}
+      device={device("android")}
       onShutdown={() => {}}
       onRemove={() => {}}
     />,
@@ -1457,7 +1449,7 @@ test("moves device actions into Device options and hides Remove for physical dev
   const physical = renderToStaticMarkup(
     <LogSidebar
       client={inspectorClient("android")}
-      device={{ ...device("android", "android:pixel-10-pro"), physical: true }}
+      device={{ ...device("android"), physical: true }}
       onShutdown={() => {}}
       onRemove={() => {}}
     />,
@@ -1494,7 +1486,7 @@ test("styles sidebar action buttons like the select pills", () => {
   }
 });
 
-test("keeps sidebar appearance availability aligned without locking the viewer-local frame control", () => {
+test("keeps sidebar appearance availability aligned without locking the viewer-local shape control", () => {
   for (const platform of ["ios", "android"] as const) {
     for (const status of ["idle", "loading", "error", "ready"] as const) {
       const base = inspectorClient(platform);
@@ -1506,12 +1498,10 @@ test("keeps sidebar appearance availability aligned without locking the viewer-l
       const html = renderToStaticMarkup(
         <LogSidebar
           client={client}
-          device={device(
-            platform,
-            platform === "ios" ? "ios:iphone-17-pro" : "android:pixel-10-pro",
-          )}
-          showDeviceFrame
-          onShowDeviceFrameChange={() => {}}
+          device={device(platform)}
+          showScreenShape
+          screenShapeAvailable
+          onShowScreenShapeChange={() => {}}
         />,
       );
       const appearance = selectMarkup(html, "Appearance");
@@ -1520,7 +1510,7 @@ test("keeps sidebar appearance availability aligned without locking the viewer-l
       const otherControl =
         platform === "ios" ? switchMarkup(html, "Reduce motion") : selectMarkup(html, "Network");
       expect(otherControl.includes('disabled=""')).toBe(status !== "ready");
-      expect(switchMarkup(html, "Show device frame")).not.toContain('disabled=""');
+      expect(switchMarkup(html, "Show device shape")).not.toContain('disabled=""');
     }
   }
 });
@@ -1552,50 +1542,50 @@ test("disables only the device setting with an in-flight update", () => {
   }
 });
 
-test("shows an enabled viewer-local frame switch for exact device profiles", () => {
-  for (const [platform, frame] of [
-    ["ios", "ios:iphone-17-pro"],
-    ["android", "android:pixel-10-pro"],
-  ] as const) {
+test("shows an enabled viewer-local shape switch, on and off", () => {
+  for (const platform of ["ios", "android"] as const) {
     const onMarkup = renderToStaticMarkup(
       <LogSidebar
         client={inspectorClient(platform)}
-        device={device(platform, frame)}
-        showDeviceFrame
-        onShowDeviceFrameChange={() => {}}
+        device={device(platform)}
+        showScreenShape
+        screenShapeAvailable
+        onShowScreenShapeChange={() => {}}
       />,
     );
     const offMarkup = renderToStaticMarkup(
       <LogSidebar
         client={inspectorClient(platform)}
-        device={device(platform, frame)}
-        showDeviceFrame={false}
-        onShowDeviceFrameChange={() => {}}
+        device={device(platform)}
+        showScreenShape={false}
+        screenShapeAvailable
+        onShowScreenShapeChange={() => {}}
       />,
     );
 
-    expect(switchMarkup(onMarkup, "Show device frame")).toContain('aria-checked="true"');
-    expect(switchMarkup(onMarkup, "Show device frame")).not.toContain('disabled=""');
-    expect(switchMarkup(offMarkup, "Show device frame")).toContain('aria-checked="false"');
-    expect(switchMarkup(offMarkup, "Show device frame")).not.toContain('disabled=""');
+    expect(switchMarkup(onMarkup, "Show device shape")).toContain('aria-checked="true"');
+    expect(switchMarkup(onMarkup, "Show device shape")).not.toContain('disabled=""');
+    expect(switchMarkup(offMarkup, "Show device shape")).toContain('aria-checked="false"');
+    expect(switchMarkup(offMarkup, "Show device shape")).not.toContain('disabled=""');
   }
 });
 
-test("places the device frame option immediately above the hardware keyboard", () => {
+test("places the device shape option immediately above the hardware keyboard", () => {
   const html = renderToStaticMarkup(
     <LogSidebar
       client={inspectorClient("ios")}
-      device={device("ios", "ios:iphone-17-pro")}
-      showDeviceFrame
-      onShowDeviceFrameChange={() => {}}
+      device={device("ios")}
+      showScreenShape
+      screenShapeAvailable
+      onShowScreenShapeChange={() => {}}
     />,
   );
 
-  const frameIndex = html.indexOf(">Show device frame</span>");
+  const shapeIndex = html.indexOf(">Show device shape</span>");
   const hardwareKeyboardIndex = html.indexOf(">Hardware keyboard</span>");
 
-  expect(frameIndex).toBeGreaterThan(html.indexOf(">VoiceOver</span>"));
-  expect(frameIndex).toBeLessThan(hardwareKeyboardIndex);
+  expect(shapeIndex).toBeGreaterThan(html.indexOf(">VoiceOver</span>"));
+  expect(shapeIndex).toBeLessThan(hardwareKeyboardIndex);
 });
 
 test("shows the Permissions section only when the client can change permissions", () => {
@@ -1669,7 +1659,7 @@ test("shows the Clipboard section only when the client can paste or copy", () =>
   // Sibling sections keyed by the device need distinct keys, or React repeats them on update.
   const tree = LogSidebar({
     client: { ...client, capabilities: { ...client.capabilities, location: {} } },
-    device: device("ios", "ios:iphone-17-pro"),
+    device: device("ios"),
   });
   const duplicateKeys: string[] = [];
   const visit = (node: unknown) => {
@@ -1699,7 +1689,7 @@ test("shows the Clipboard section only when the client can paste or copy", () =>
   expect(copyOnly).not.toContain(">Send</span>");
 });
 
-test("keeps the frame option disabled with an explanation for unsupported devices", () => {
+test("keeps the shape option off and disabled, with an explanation, for a device without a known shape", () => {
   for (const platform of ["ios", "android"] as const) {
     const client = {
       ...inspectorClient(platform),
@@ -1719,21 +1709,21 @@ test("keeps the frame option disabled with an explanation for unsupported device
     const html = renderToStaticMarkup(
       <LogSidebar
         client={client}
-        device={device(platform, null)}
-        showDeviceFrame
-        onShowDeviceFrameChange={() => {}}
+        device={device(platform, false)}
+        showScreenShape
+        onShowScreenShapeChange={() => {}}
       />,
     );
 
     expect(html).toContain('aria-label="Device options"');
-    expect(switchMarkup(html, "Show device frame")).toContain('aria-checked="false"');
-    expect(switchMarkup(html, "Show device frame")).toContain('disabled=""');
-    expect(html).toContain(NO_DEVICE_FRAME_DESCRIPTION);
+    expect(switchMarkup(html, "Show device shape")).toContain('aria-checked="false"');
+    expect(switchMarkup(html, "Show device shape")).toContain('disabled=""');
+    expect(html).toContain(NO_DEVICE_SHAPE_DESCRIPTION);
     expect(html).not.toContain(">Appearance</span>");
   }
 });
 
-test("shows only the viewer-local frame option while iOS device settings are unavailable", () => {
+test("shows only the viewer-local shape option while iOS device settings are unavailable", () => {
   const client = {
     ...inspectorClient("ios"),
     capabilities: {
@@ -1753,13 +1743,14 @@ test("shows only the viewer-local frame option while iOS device settings are una
   const html = renderToStaticMarkup(
     <LogSidebar
       client={client}
-      device={device("ios", "ios:iphone-17-pro")}
-      showDeviceFrame
-      onShowDeviceFrameChange={() => {}}
+      device={device("ios")}
+      showScreenShape
+      screenShapeAvailable
+      onShowScreenShapeChange={() => {}}
     />,
   );
 
-  expect(switchMarkup(html, "Show device frame")).not.toContain('disabled=""');
+  expect(switchMarkup(html, "Show device shape")).not.toContain('disabled=""');
   expect(html).not.toContain(">Appearance</span>");
   expect(html).not.toContain(">Liquid glass</span>");
   expect(html).not.toContain(">Keyboard</span>");
@@ -1815,9 +1806,9 @@ test("keeps the Android on-screen keyboard row off iOS while device settings loa
   const html = renderToStaticMarkup(
     <LogSidebar
       client={client}
-      device={device("ios", "ios:iphone-17-pro")}
-      showDeviceFrame
-      onShowDeviceFrameChange={() => {}}
+      device={device("ios")}
+      showScreenShape
+      onShowScreenShapeChange={() => {}}
     />,
   );
 

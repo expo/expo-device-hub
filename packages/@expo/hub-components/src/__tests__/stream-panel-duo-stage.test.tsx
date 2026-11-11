@@ -30,7 +30,6 @@ function render(error: string | null) {
         booted: true,
         physical: false,
         supported: true,
-        deviceFrame: null,
         deviceModel: "ios:iphone-duo",
       }}
       client={client}

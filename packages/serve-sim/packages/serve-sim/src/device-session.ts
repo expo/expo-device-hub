@@ -411,7 +411,7 @@ export class DeviceSession {
 
   private readonly queueScreenshot = createSerialQueue();
 
-  screenshot(screenID: number, timeoutMs?: number): Promise<Uint8Array> {
+  screenshot(screenID: number, timeoutMs?: number, maxWidth = 0): Promise<Uint8Array> {
     let expired = false;
     const work = withDeviceSessionTask(this, () =>
       this.queueScreenshot(async () => {
@@ -419,7 +419,7 @@ export class DeviceSession {
         await this.start();
         await this.waitForCapture();
         if (expired) throw new Error("Screenshot request expired before capture started");
-        const png = await this.capture.screenshot(screenID);
+        const png = await this.capture.screenshot(screenID, maxWidth);
         await this.waitForCapture();
         return png;
       }),

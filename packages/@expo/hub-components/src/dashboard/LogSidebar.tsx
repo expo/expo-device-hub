@@ -13,7 +13,7 @@ import { EventsSection } from "./EventsSection";
 import { LocationSection } from "./LocationSection";
 import { LogsSection } from "./LogsSection";
 import { StreamOptionsSection } from "./StreamOptionsSection";
-import { type Device, isDeviceFrameProfileId } from "./data";
+import { type Device } from "./data";
 import { type StreamModeAvailability } from "./StreamSection";
 
 export type LogSidebarProps = {
@@ -23,10 +23,15 @@ export type LogSidebarProps = {
   client?: DeviceClient;
   /** Selected device metadata used by viewer-local options. */
   device?: Device;
-  /** Viewer-local preference for supported device-frame artwork. */
-  showDeviceFrame?: boolean;
-  /** Change the viewer-local device-frame preference. */
-  onShowDeviceFrameChange?: (show: boolean) => void;
+  /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
+  showScreenShape?: boolean;
+  /** Change the viewer-local screen shape preference. */
+  onShowScreenShapeChange?: (show: boolean) => void;
+  /**
+   * Whether the selected device has a known screen shape, which the consumer
+   * looks up in `@expo/hub-client/shapes`. Without one, the option is disabled.
+   */
+  screenShapeAvailable?: boolean;
   /** Viewer-selected simulator stream mode. */
   streamMode?: DeviceStreamMode;
   /** Viewer-selected HTTP codec. */
@@ -62,8 +67,9 @@ export type InspectorSectionsProps = Omit<LogSidebarProps, "onToggle" | "width">
 export function InspectorSections({
   client,
   device,
-  showDeviceFrame = true,
-  onShowDeviceFrameChange,
+  showScreenShape = true,
+  onShowScreenShapeChange,
+  screenShapeAvailable = false,
   streamMode,
   httpCodec,
   streamModeAvailability,
@@ -75,11 +81,11 @@ export function InspectorSections({
   onClipboardRequestHandled,
   foldPreview,
 }: InspectorSectionsProps) {
-  const deviceFrame = device
+  const screenShape = device
     ? {
-        available: isDeviceFrameProfileId(device.deviceFrame),
-        visible: showDeviceFrame,
-        onVisibleChange: onShowDeviceFrameChange ?? (() => {}),
+        available: screenShapeAvailable,
+        visible: showScreenShape,
+        onVisibleChange: onShowScreenShapeChange ?? (() => {}),
       }
     : undefined;
   // Physical devices cannot be deleted from the host.
@@ -91,11 +97,11 @@ export function InspectorSections({
       {(client?.capabilities.deviceSettings ||
         client?.capabilities.fold ||
         client?.platform === "android" ||
-        deviceFrame ||
+        screenShape ||
         (client && (onShutdown || onRemoveDevice))) && (
         <DeviceOptionsSection
           client={client}
-          deviceFrame={deviceFrame}
+          screenShape={screenShape}
           foldPreview={foldPreview}
           showDeviceSettings={client?.capabilities.deviceSettings ?? false}
           onShutdown={onShutdown}

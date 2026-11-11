@@ -1,6 +1,6 @@
 {
   "name": "@expo/serve-sim",
-  "version": "0.13.3",
+  "version": "0.14.1",
   "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/serve-sim/packages/serve-sim",
   "bugs": {
     "url": "https://github.com/expo/expo-device-hub/issues"

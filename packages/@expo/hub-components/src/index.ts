@@ -61,7 +61,8 @@ export * from "./theme/tokens";
 // `displayScreen` helper as props. The 3D device preview is the
 // `@expo/hub-components/foldable` entry, injected the same way, so only a
 // consumer that renders it loads three.js. The model descriptions below do
-// not load it.
+// not load it. Screen shapes are `DeviceShape` from `@expo/hub-client/shapes`,
+// also injected, so only a consumer that passes it bundles the shape table.
 export { Sidebar } from "./dashboard/Sidebar";
 export {
   InspectorSections,
@@ -82,11 +83,12 @@ export { DeviceSection, type DeviceSectionProps } from "./dashboard/DeviceSectio
 export { OutputSection } from "./dashboard/OutputSection";
 export { CurrentAppSection } from "./dashboard/CurrentAppSection";
 export {
+  DEVICE_SHAPE_2D_ONLY_DESCRIPTION,
   DeviceOptionsSection,
-  NO_DEVICE_FRAME_DESCRIPTION,
+  NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
-  type DeviceFrameOption,
+  type ScreenShapeOption,
 } from "./dashboard/DeviceOptionsSection";
 export { ActivityCharts, ActivitySection } from "./dashboard/ActivitySection";
 export { AccessibilitySection } from "./dashboard/AccessibilitySection";
@@ -116,15 +118,6 @@ export {
   deviceScreenCornersClipPath,
   type ScreenCornerRadiiCqw,
 } from "./dashboard/deviceScreenClipPath";
-export {
-  deviceFrameLayout,
-  deviceFrameRotation,
-  type DeviceFrameAsset,
-  type DeviceFrameAssets,
-  type DeviceFrameLayout,
-  type DeviceFrameRect,
-  type DeviceFrameRotation,
-} from "./dashboard/deviceFrame";
 export { LogControls } from "./dashboard/LogControls";
 export { LogList } from "./dashboard/LogList";
 export { LogRow } from "./dashboard/LogRow";

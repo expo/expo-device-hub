@@ -8,6 +8,7 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
+import type { DeviceShapeProps } from "@expo/hub-client/shapes";
 import { type DeviceModelAssets } from "../foldable/device-models";
 import type { DeviceModelScreenProps } from "../foldable/DeviceModelScreen";
 import {
@@ -24,7 +25,6 @@ import { type Device } from "./data";
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
 import { deviceScreenLoading } from "./DeviceScreenStatus";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
-import { type DeviceFrameAssets } from "./deviceFrame";
 import { PhoneFrame, type PhoneFrameFoldPreview } from "./PhoneFrame";
 import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
@@ -50,11 +50,11 @@ export function StreamPanel({
   agentInteraction,
   DeviceScreen,
   DeviceModelScreen,
+  DeviceShape,
   foldPreview,
   displayScreen,
   framed = true,
-  showDeviceFrame = true,
-  deviceFrameAssets,
+  showScreenShape = true,
   deviceModelAssets,
   onClipboardFallback,
 }: {
@@ -65,6 +65,8 @@ export function StreamPanel({
   DeviceScreen: ComponentType<DeviceScreenProps>;
   /** 3D renderer from `@expo/hub-components/foldable`; without it every device stays flat. */
   DeviceModelScreen?: ComponentType<DeviceModelScreenProps>;
+  /** Screen shape clip from `@expo/hub-client/shapes`; without it the screen keeps generic corners. */
+  DeviceShape?: ComponentType<DeviceShapeProps>;
   foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
@@ -73,10 +75,8 @@ export function StreamPanel({
    * disable this so the center view reaches every viewport edge unbroken.
    */
   framed?: boolean;
-  /** Viewer-local preference for displaying supported device artwork. */
-  showDeviceFrame?: boolean;
-  /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
-  deviceFrameAssets?: DeviceFrameAssets;
+  /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
+  showScreenShape?: boolean;
   /** Consumer-owned 3D model files; a device whose model has no URL stays flat. */
   deviceModelAssets?: DeviceModelAssets;
   /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
@@ -323,10 +323,10 @@ export function StreamPanel({
             }}
             DeviceScreen={DeviceScreen}
             DeviceModelScreen={DeviceModelScreen}
+            DeviceShape={DeviceShape}
             foldPreview={foldPreview}
             displayScreen={displayScreen}
-            showDeviceFrame={showDeviceFrame}
-            deviceFrameAssets={deviceFrameAssets}
+            showScreenShape={showScreenShape}
             deviceModelAssets={deviceModelAssets}
             onLoadingChange={setScreenLoading}
           />

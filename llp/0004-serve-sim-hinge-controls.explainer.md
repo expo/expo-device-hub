@@ -624,11 +624,12 @@ files, their source commit, and their sizes are in
   import three.js, so the frame reads them without loading the scene.
 - **Selection.** The Hub server sets each device's `deviceModel` from the
   simulator's device type identifier or the emulator's hardware profile (a
-  physical device's product model), as it sets `deviceFrame`. An emulator
+  physical device's product model), next to the `model` that picks the
+  screen shape (LLP 0017). An emulator
   without profile metadata gets no model, because its AVD name is the user's
   and can name another device. A device without a model keeps the flat
   preview, and only a device with a model shows the 2D/3D
-  choice [observed: `appleDeviceModel` and `androidDeviceModel` in
+  choice [observed: `appleDevice3DModel` and `androidDevice3DModel` in
   `packages/expo-device-hub/src/server/device-support.ts`, `modelAvailable` in
   `Dashboard.tsx`]. The consumer passes each model's URL as `deviceModelAssets`;
   the Hub imports the GLBs as Metro assets, so `expo export` copies them into
