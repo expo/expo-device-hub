@@ -7,7 +7,7 @@ import {
   type CapturedRequest,
 } from "../client/hooks/use-capture-stream";
 import { splitUrl } from "../client/components/network-capture-requests";
-import type { CaptureMeta } from "../capture/store";
+import type { CaptureMeta } from "../capabilities/network-capture/store";
 
 const request = (id: string): CapturedRequest => ({
   id,

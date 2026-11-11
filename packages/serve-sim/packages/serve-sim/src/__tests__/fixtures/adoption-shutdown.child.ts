@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { useTempStateDir } from "../helpers";
 import * as commands from "../../simctl";
 
+const captureModule = await import("../../capabilities/network-capture");
+
 let calls: string[] = [];
 let stopped = false;
 let bootstatusFails = false;
@@ -184,7 +186,8 @@ mock.module("../../device-session", () => ({
     cleanupOrder.push("native");
   },
 }));
-mock.module("../../capture", () => ({
+mock.module("../../capabilities/network-capture", () => ({
+  ...captureModule,
   captureRuntime: {
     disableForDevice: async () => {
       cleanupOrder.push("capture");

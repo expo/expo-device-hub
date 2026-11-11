@@ -11,8 +11,8 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { withLaunchStateLockSync } from "../capabilities/runtime/lock";
-import { stateDir } from "../state";
+import { withLaunchStateLockSync } from "../runtime/lock";
+import { stateDir } from "../../state";
 import { writeFileNoFollow } from "./no-follow";
 
 const CAPTURE_DIR_PREFIX = "capture-";

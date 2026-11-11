@@ -368,11 +368,15 @@ console.log("dist/simnet/libSimNetProxy.dylib");
 
 // mitmproxy loads the Python add-on from disk.
 
-cpSync(resolve(root, "src/capture/mitm-addon"), resolve(distDir, "capture/mitm-addon"), {
-  recursive: true,
-  // Exclude interpreter-specific bytecode.
-  filter: (source) => !source.includes("__pycache__"),
-});
+cpSync(
+  resolve(root, "src/capabilities/network-capture/mitm-addon"),
+  resolve(distDir, "capture/mitm-addon"),
+  {
+    recursive: true,
+    // Exclude interpreter-specific bytecode.
+    filter: (source) => !source.includes("__pycache__"),
+  },
+);
 console.log("dist/capture/mitm-addon/");
 
 console.log("Done.");

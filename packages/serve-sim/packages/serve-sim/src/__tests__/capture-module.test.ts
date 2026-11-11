@@ -9,5 +9,5 @@ test("Capture imports share one runtime without starting resources", () => {
     { encoding: "utf8", timeout: 10_000 },
   );
   expect(child.status, child.stderr).toBe(0);
-  expect(child.stdout).toContain("Capture module compatibility and import purity passed.");
+  expect(child.stdout).toContain("Network Capture module identities and import purity passed.");
 });

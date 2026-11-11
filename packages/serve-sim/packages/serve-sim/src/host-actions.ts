@@ -6,7 +6,7 @@ import { z } from "zod";
 import { installAppAsync } from "./app-install";
 import { AppRelativePath, runAppFileAction } from "./app-files";
 
-import { CAPTURE_FIELDS } from "./capture/fields";
+import { CAPTURE_FIELDS } from "./capabilities/network-capture";
 
 import {
   type HostActionResult,
@@ -888,7 +888,7 @@ async function runProcedureAsync(
     }
     case "capture.reboot": {
       const p = parseParams(action, raw);
-      const { rebootWithCapture } = await import("./capture");
+      const { rebootWithCapture } = await import("./capabilities/network-capture");
       try {
         const meta = p.fields
           ? await rebootWithCapture(p.udid, p.enabled, {}, p.fields)
@@ -914,7 +914,7 @@ async function runProcedureAsync(
     }
     case "capture.enable": {
       const p = parseParams(action, raw);
-      const { captureRuntime } = await import("./capture");
+      const { captureRuntime } = await import("./capabilities/network-capture");
       try {
         const meta = await captureRuntime.enableForDevice(p.udid, p.fields);
         captureRuntime.setDeviceCaptureEnabled(p.udid, true);
@@ -929,7 +929,7 @@ async function runProcedureAsync(
     }
     case "capture.fields": {
       const p = parseParams(action, raw);
-      const { captureRuntime } = await import("./capture");
+      const { captureRuntime } = await import("./capabilities/network-capture");
       const meta = captureRuntime.setFieldsForDevice(p.udid, p.fields);
       if (!meta) {
         // The device's meta tells a caller that capture is off, not that the change failed.
@@ -943,7 +943,7 @@ async function runProcedureAsync(
     }
     case "capture.clear": {
       const p = parseParams(action, raw);
-      const { captureRuntime } = await import("./capture");
+      const { captureRuntime } = await import("./capabilities/network-capture");
       if (!captureRuntime.clearForDevice(p.udid)) {
         return { stdout: "", stderr: "No capture session for this device.", exitCode: 1 };
       }
@@ -951,7 +951,7 @@ async function runProcedureAsync(
     }
     case "capture.body": {
       const p = parseParams(action, raw);
-      const { captureRuntime } = await import("./capture");
+      const { captureRuntime } = await import("./capabilities/network-capture");
       const store = captureRuntime.storeFor(p.udid);
       const body = store?.body(p.id);
       if (body) return ok(JSON.stringify(body));

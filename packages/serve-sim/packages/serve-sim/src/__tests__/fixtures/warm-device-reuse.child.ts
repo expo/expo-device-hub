@@ -1,5 +1,7 @@
 import { expect, mock, test } from "bun:test";
 
+const captureModule = await import("../../capabilities/network-capture");
+
 const calls: string[] = [];
 let failStop: string | undefined;
 let notBooted: string | undefined;
@@ -18,7 +20,10 @@ mock.module("../../device-session", () => ({
     await new Promise<void>((resolve) => pendingStops.push(resolve));
   },
 }));
-mock.module("../../capture", () => ({ captureRuntime: { disableForDevice: async () => {} } }));
+mock.module("../../capabilities/network-capture", () => ({
+  ...captureModule,
+  captureRuntime: { disableForDevice: async () => {} },
+}));
 mock.module("../../capabilities/runtime/manager", () => ({
   releaseSession: async (udid: string) => {
     if (udid === failStop) throw new Error("shutdown failed");

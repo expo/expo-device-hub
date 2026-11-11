@@ -1,4 +1,4 @@
-import type { configureCapability } from "../../capabilities/runtime/manager";
+import type { configureCapability } from "../../runtime/manager";
 
 export function capabilityHarness({
   publish = async () => {},

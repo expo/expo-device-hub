@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-06 (the Network panel chooses the capture fields, also during a capture); 2026-10-06 (Gabe Debes: explicit upstream routing, credential transport, shared runtime policy, and self-proxy retries); 2026-11-10 (internal capability runtime boundary)
+**Revised:** 2026-10-06 (the Network panel chooses the capture fields, also during a capture); 2026-10-06 (Gabe Debes: explicit upstream routing, credential transport, shared runtime policy, and self-proxy retries); 2026-11-11 (full internal network-capture module); 2026-11-10 (internal capability runtime boundary)
 **Related:** LLP 0003, LLP 0007
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -13,21 +13,41 @@
 Network capture decrypts supported simulator HTTP(S) traffic. Capture is metadata-only by default;
 headers, query values, and bodies require explicit opt-in because they can contain credentials.
 
-The runtime implementation lives behind `src/capabilities/capture/index.ts`.
-`src/capture/runtime.ts` and the public `src/capture/index.ts` barrel retain their
-exports and reach the same process-wide `captureRuntime`, factory and error class.
-The capability definition uses the shared runtime types and preparation callbacks;
-Capture's operation queue, cancellation, failure metadata and proxy/disk retirement
-remain together. It does not adopt Clipboard's setup/retry policy
-[observed: `src/capabilities/capture/index.ts`].
+## Internal module boundary
 
-Importing or constructing a runtime starts no proxy, server, device setup, native
-build or process handlers. Exit cleanup is installed lazily when disk capture begins.
-The engine, native/Python locators, CA storage and artifact paths remain in the
-existing `src/capture/` modules. Only the CLI's direct singleton import moves to the
-capability entry point; middleware and host adapters retain the public Capture boundary
-[observed: `src/capabilities/capture/index.ts`, `src/capture/mitm-engine.ts`,
-`src/capture/device.ts`, `src/index.ts`, `src/__tests__/capture-module.test.ts`].
+The full implementation lives in `src/capabilities/network-capture/`. Its `index.ts`
+exports the existing runtime/factory, errors, types and host-facing helpers. There
+is one process-wide `captureRuntime`; the registered ID stays `networkCapture`.
+The old `src/capture/` directory and intermediate `capabilities/capture` entry point
+are removed. Implementation leaves import siblings directly, avoiding cycles
+through the public entry point [observed: `src/capabilities/network-capture/`].
+
+The definition uses shared runtime types and preparation callbacks. Capture keeps
+its existing operation queue, cancellation, failed-start metadata, ownership and
+proxy/disk retirement policy; it does not adopt Clipboard's setup/retry policy.
+Importing the module or constructing an unused runtime starts no proxy, server,
+device setup, native build or process handlers. Exit cleanup is installed lazily
+when disk capture begins [observed: `src/capabilities/network-capture/runtime.ts`,
+`src/__tests__/capture-module.test.ts`].
+
+CLI, HTTP/WebSocket, security and UI adapters remain in the host. Host consumers use
+`capabilities/network-capture`; browser value imports use the existing pure
+`fields.ts` and `store.ts` leaves so the Node proxy engine stays out of the client
+bundle. Type-only imports use the public entry point where sufficient. Those
+leaves share the canonical field values and request limit, without duplicate state
+[observed: `src/index.ts`, `src/middleware.ts`, `src/session-configuration.ts`,
+`src/client/components/network-capture-tool.tsx`, `src/client/hooks/use-capture-stream.ts`].
+
+`assets.ts` uses the runtime's shared source/bundle/executable anchor. The Python
+addon moves with the module and remains preferred over stale built output when
+running source. `build.ts` copies it from the new source location to the existing
+`dist/capture/mitm-addon` path. `Sources/SimNetProxy`, `dist/simnet`, CA storage,
+artifact names and state/lock namespaces stay in place. The version build define
+keeps priority over the package-manifest fallback. Source, relocated ESM/CJS and
+two-stage compiled lookup are covered by the asset fixture
+[observed: `src/capabilities/network-capture/assets.ts`,
+`src/capabilities/network-capture/version.ts`, `build.ts`,
+`src/__tests__/capability-assets.test.ts`].
 
 ## How it works
 
@@ -47,7 +67,7 @@ is not configured for this session and asks users to restart with `--network-cap
 Other runners get `brew install mitmproxy`.
 The shared server helper `src/environment.ts` `isRunningOnEAS` owns this runner check.
 The panel hides an action error when it repeats the failed capture state's reason
-[observed: `src/capture/mitm-engine.ts` `mitmdumpMissingMessage`;
+[observed: `src/capabilities/network-capture/mitm-engine.ts` `mitmdumpMissingMessage`;
 `src/client/components/network-capture-tool.tsx` `visibleChangeError`].
 
 The host's system proxy and keychain are unchanged. Stopping capture clears the launchd injection and
@@ -67,8 +87,8 @@ Captured traffic goes direct by default. `--network-capture-proxy http://host:po
 one HTTP proxy. The caller supplies the address, for example to use an EAS local-egress proxy. `none` explicitly selects
 direct traffic. macOS proxy settings, bypass lists, PAC files, and auto-discovery are not read.
 All captured destinations use the configured proxy, so it must also be able to reach any local
-destinations the app uses [observed: `src/capture/upstream.ts` `parseCaptureProxy`;
-`src/capture/mitm-engine.ts` `startMitmProxyAttempt`].
+destinations the app uses [observed: `src/capabilities/network-capture/upstream.ts` `parseCaptureProxy`;
+`src/capabilities/network-capture/mitm-engine.ts` `startMitmProxyAttempt`].
 
 A configured upstream requires the preview server. The CLI rejects it with
 `--detach` or `--no-preview` before device operations because those modes re-execute
@@ -79,14 +99,14 @@ observed: `src/index.ts` CLI validation; `src/stream-runtime-args.ts` `streamHel
 
 mitmproxy uses absolute-form requests for plain HTTP and CONNECT for HTTPS. An upstream connection
 or authentication failure fails the captured request; it does not fall back to direct traffic
-[observed: `src/capture/__tests__/upstream-mitmdump.test.ts`].
+[observed: `src/capabilities/network-capture/__tests__/upstream-mitmdump.test.ts`].
 
 #### Middleware upstream policy
 
 Embedded middleware mounts share the process-wide `captureRuntime`. Creating a mount sets its default
 upstream for new captures; omitting `networkCaptureProxy` or using `none` resets that default to direct.
 An active capture keeps its upstream until capture is restarted. Use separate processes when mounts
-need different proxies [observed: `src/middleware.ts` `simMiddleware`; `src/capture/runtime.ts`
+need different proxies [observed: `src/middleware.ts` `simMiddleware`; `src/capabilities/network-capture/runtime.ts`
 `setUpstream` and `prepareSession`; `src/__tests__/fixtures/capture-host-policy.child.ts`].
 Keeping one process-wide policy is intentional [confirmed: Gabe Debes, 2026-10-05].
 
@@ -97,17 +117,17 @@ in the username or password. A credential-bearing launch argument is visible in 
 arguments and may be saved in shell history. serve-sim removes credentials from the address given to
 mitmproxy and sends them over an anonymous pipe to the addon, which sets authentication in memory.
 No credential config file is written; credentials are not included in capture metadata, panel
-messages, or HAR files [observed: `src/capture/upstream.ts` `parseCaptureProxy`;
-`src/capture/mitm-engine.ts` `startMitmProxyAttempt`; `src/capture/__tests__/upstream-mitmdump.test.ts`].
+messages, or HAR files [observed: `src/capabilities/network-capture/upstream.ts` `parseCaptureProxy`;
+`src/capabilities/network-capture/mitm-engine.ts` `startMitmProxyAttempt`; `src/capabilities/network-capture/__tests__/upstream-mitmdump.test.ts`].
 The addon reads the pipe before announcing readiness; on script reload, EOF leaves its existing
 authentication option intact. A failed credential pipe aborts startup instead of starting a proxy
-without its credentials [observed: `src/capture/mitm-addon/servesim_capture.py` `load` and `running`;
-`src/capture/mitm-engine.ts` `credentialPipeFailed`].
+without its credentials [observed: `src/capabilities/network-capture/mitm-addon/servesim_capture.py` `load` and `running`;
+`src/capabilities/network-capture/mitm-engine.ts` `credentialPipeFailed`].
 Proxy authentication headers are redacted when header capture is enabled. HTTP proxy connections
 are unencrypted, so use a trusted network or a loopback tunnel for an authenticated upstream.
 SOCKS, HTTPS proxy endpoints, Digest, NTLM, and Negotiate authentication are not supported
-[observed: `src/capture/upstream.ts` `parseCaptureProxy`; `src/capture/redact.ts`;
-`src/capture/mitm-addon/servesim_capture.py` `load`].
+[observed: `src/capabilities/network-capture/upstream.ts` `parseCaptureProxy`; `src/capabilities/network-capture/redact.ts`;
+`src/capabilities/network-capture/mitm-addon/servesim_capture.py` `load`].
 
 #### Self-proxy protection
 
@@ -116,8 +136,8 @@ address or localhost name is rejected without a DNS lookup, before creating sess
 mitmdump. This conservative check covers every numeric address, including remote IPs. Startup chooses
 another listener port within its three-attempt limit rather than aborting on the first collision.
 Other host names that resolve to the capture proxy and loops through another proxy are not detected
-[observed: `src/capture/upstream.ts` `assertNotOwnProxy`; `src/capture/mitm-engine.ts`
-`startMitmProxyAttempt` and `startMitmProxy`; `src/capture/__tests__/mitm-engine.test.ts`].
+[observed: `src/capabilities/network-capture/upstream.ts` `assertNotOwnProxy`; `src/capabilities/network-capture/mitm-engine.ts`
+`startMitmProxyAttempt` and `startMitmProxy`; `src/capabilities/network-capture/__tests__/mitm-engine.test.ts`].
 
 ## What is recorded
 
@@ -164,7 +184,7 @@ not UTF-8 text.
 ## Redaction and its limits
 
 Header values are replaced with `[REDACTED]` when their names match one of the rules in
-`src/capture/redact.ts`:
+`src/capabilities/network-capture/redact.ts`:
 
 1. Delimited credential words, including `auth`, `token`, `secret`, `password`, `session`, `cookie`, and
    `key`. This also redacts non-secret headers such as `Idempotency-Key` and `Sec-WebSocket-Key`.

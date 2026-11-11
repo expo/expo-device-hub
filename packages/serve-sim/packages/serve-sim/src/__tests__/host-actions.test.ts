@@ -294,7 +294,7 @@ describe("runHostActionAsync validation", () => {
 
 describe("capture actions", () => {
   it("enables capture on a running device without rebooting", async () => {
-    const capture = await import("../capture");
+    const capture = await import("../capabilities/network-capture");
     const meta = capture.captureRuntime.metaFor(UDID);
     const enable = spyOn(capture.captureRuntime, "enableForDevice").mockResolvedValue(meta);
     const setEnabled = spyOn(capture.captureRuntime, "setDeviceCaptureEnabled");
@@ -317,7 +317,7 @@ describe("capture actions", () => {
   });
 
   it("enables capture with the fields the panel chose", async () => {
-    const capture = await import("../capture");
+    const capture = await import("../capabilities/network-capture");
     const meta = capture.captureRuntime.metaFor(UDID);
     const enable = spyOn(capture.captureRuntime, "enableForDevice").mockResolvedValue(meta);
     const setEnabled = spyOn(capture.captureRuntime, "setDeviceCaptureEnabled");
@@ -335,7 +335,7 @@ describe("capture actions", () => {
   });
 
   it("changes a capturing device's fields, and says when capture is off", async () => {
-    const capture = await import("../capture");
+    const capture = await import("../capabilities/network-capture");
     const meta = { ...capture.captureRuntime.metaFor(UDID), fields: ["query"] };
     const set = spyOn(capture.captureRuntime, "setFieldsForDevice")
       .mockReturnValueOnce(meta)
@@ -370,7 +370,7 @@ describe("capture actions", () => {
   });
 
   it("passes the panel's fields to a capture reboot", async () => {
-    const capture = await import("../capture");
+    const capture = await import("../capabilities/network-capture");
     const meta = capture.captureRuntime.metaFor(UDID);
     const reboot = spyOn(capture, "rebootWithCapture").mockResolvedValue(meta);
     try {
@@ -386,7 +386,7 @@ describe("capture actions", () => {
   });
 
   it("allows an explicit capture reboot without a startup flag", async () => {
-    const capture = await import("../capture");
+    const capture = await import("../capabilities/network-capture");
     const meta = capture.captureRuntime.metaFor(UDID);
     const reboot = spyOn(capture, "rebootWithCapture").mockResolvedValue(meta);
     try {
@@ -402,7 +402,7 @@ describe("capture actions", () => {
   });
 
   it("reports a reboot whose capture failed to start as a failed action", async () => {
-    const capture = await import("../capture");
+    const capture = await import("../capabilities/network-capture");
     const meta = {
       ...capture.captureRuntime.metaFor(UDID),
       attachment: "failed" as const,

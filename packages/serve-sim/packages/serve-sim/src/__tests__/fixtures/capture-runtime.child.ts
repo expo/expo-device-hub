@@ -1,4 +1,4 @@
-import { capabilityHarness } from "../../capture/__tests__/capability-harness";
+import { capabilityHarness } from "../../capabilities/network-capture/__tests__/capability-harness";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -9,9 +9,12 @@ import {
   CaptureEnableError,
   discardCaptureArtifactsForExit,
   type CaptureRuntimeOptions,
-} from "../../capture/runtime";
-import { CaptureStore } from "../../capture/store";
-import { type CaptureProxy, type MitmProxyDeps } from "../../capture/mitm-engine";
+} from "../../capabilities/network-capture/runtime";
+import { CaptureStore } from "../../capabilities/network-capture/store";
+import {
+  type CaptureProxy,
+  type MitmProxyDeps,
+} from "../../capabilities/network-capture/mitm-engine";
 import { installShims, useTempStateDir } from "../helpers";
 
 const UDID = "ABCD1234-0000-0000-0000-0000000000EF";

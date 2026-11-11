@@ -2,9 +2,9 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { UDID, installShims, useTempStateDir } from "../../__tests__/helpers";
-import { readServeSimStates } from "../../middleware";
-import { inProcessServeSimState } from "../../state";
+import { UDID, installShims, useTempStateDir } from "../../../__tests__/helpers";
+import { readServeSimStates } from "../../../middleware";
+import { inProcessServeSimState } from "../../../state";
 import { captureRuntime, createCaptureRuntime } from "../runtime";
 import { capabilityHarness } from "./capability-harness";
 import { rebootWithCapture } from "../reboot";

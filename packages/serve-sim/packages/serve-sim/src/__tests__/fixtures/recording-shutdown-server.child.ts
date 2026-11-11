@@ -122,7 +122,7 @@ mock.module("../../capabilities/runtime/manager", () => ({
     armed = false;
   },
 }));
-const { captureRuntime } = await import("../../capture/runtime");
+const { captureRuntime } = await import("../../capabilities/network-capture/runtime");
 spyOn(captureRuntime, "disableAll").mockImplementation(async () => {
   event("capture-disable");
 });

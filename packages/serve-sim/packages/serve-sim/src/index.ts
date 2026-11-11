@@ -10,8 +10,8 @@ import {
 } from "./recording-timeouts";
 import { timeStartup } from "./startup-timing";
 import { SingleDevicePolicy } from "./single-device";
-import { captureRuntime } from "./capabilities/capture";
-import { rebootedWithCaptureSince } from "./capture/reboot";
+import { captureRuntime } from "./capabilities/network-capture";
+import { rebootedWithCaptureSince } from "./capabilities/network-capture";
 import { Command, InvalidArgumentError } from "commander";
 import { execFileSync, execSync, spawn as nodeSpawn, type ChildProcess } from "child_process";
 import {
@@ -74,8 +74,8 @@ import {
   waitForLaunchUpdates,
 } from "./capabilities/runtime/manager";
 import { LaunchStateLockTimeoutError } from "./capabilities/runtime/lock";
-import { parseCaptureFields } from "./capture/fields";
-import { parseCaptureProxy } from "./capture/upstream";
+import { parseCaptureFields } from "./capabilities/network-capture";
+import { parseCaptureProxy } from "./capabilities/network-capture";
 import { killOwnListeners } from "./ports";
 import { bootDevice, findBootedDevice, resolveDevice, resolveDeviceMatches } from "./device";
 import { openSimulatorHost } from "./simulator-host";
@@ -116,7 +116,7 @@ import {
   startDeviceSession,
 } from "./device-session";
 import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "./stop-process";
-import { captureHarPaths, followCaptureHar } from "./capture";
+import { captureHarPaths, followCaptureHar } from "./capabilities/network-capture";
 
 // Budget for capture teardown and capability disarming together.
 const SHUTDOWN_TIMEOUT_MS = 20_000;
@@ -1844,7 +1844,9 @@ function resolveTargetDevices(devices: string[]): string[] {
 
 // One per process: the starter remembers the devices whose capture start failed here, so the
 // preview's second call does not repeat a failed start (see createCaptureStarter).
-let captureStarter: ReturnType<(typeof import("./capture"))["createCaptureStarter"]> | undefined;
+let captureStarter:
+  | ReturnType<(typeof import("./capabilities/network-capture"))["createCaptureStarter"]>
+  | undefined;
 
 /**
  * Whether startup can publish the default capabilities and arm the loader in one step: no
@@ -1871,7 +1873,7 @@ async function startNetworkCapture(
   fields: string[] | undefined,
   quiet: boolean,
 ): Promise<void> {
-  const capture = await import("./capture");
+  const capture = await import("./capabilities/network-capture");
   if (sessionStopping) return;
   capture.captureRuntime.setFields(capture.resolveCaptureFields(fields));
   captureStarter ??= capture.createCaptureStarter();
@@ -1985,7 +1987,10 @@ async function serve(
       );
     });
 
-  const capture = await timeStartup("capture-module", () => import("./capture"));
+  const capture = await timeStartup(
+    "capture-module",
+    () => import("./capabilities/network-capture"),
+  );
   // The panel can turn capture on too, so a public preview without the token gate refuses it there
   // as well as for --network-capture.
   capture.captureRuntime.refuseCapture(publicCaptureRefusal(host, !!options.requireToken));
@@ -2965,7 +2970,7 @@ Examples:
     let captureStopping: Promise<void> | null = null;
     const stopNetworkCapture = (): Promise<void> => {
       captureStopping ??= (async () => {
-        const capture = await import("./capture");
+        const capture = await import("./capabilities/network-capture");
         await capture.captureRuntime.disableAll();
       })();
       return captureStopping;
@@ -3049,7 +3054,7 @@ Examples:
         }
         // Set before any capability is applied: `--enable networkCapture` starts capture here, before
         // serve() runs. The flag check above already refuses it; this keeps the runtime in step.
-        (await import("./capture")).captureRuntime.refuseCapture(
+        (await import("./capabilities/network-capture")).captureRuntime.refuseCapture(
           publicCaptureRefusal(opts.host, !!opts.requireToken),
         );
         await startNetworkCapture(

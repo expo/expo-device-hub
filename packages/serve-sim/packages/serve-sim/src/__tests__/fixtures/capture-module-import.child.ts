@@ -10,19 +10,21 @@ const events = ["exit", "SIGINT", "SIGTERM", "SIGHUP"] as const;
 const before = events.map((event) => process.rawListeners(event));
 
 try {
-  const capture = await import("../../capabilities/capture");
-  const legacy = await import("../../capture/runtime");
-  const publicCapture = await import("../../capture");
+  const capture = await import("../../capabilities/network-capture");
+  const implementation = await import("../../capabilities/network-capture/runtime");
+  const store = await import("../../capabilities/network-capture/store");
   const runtime = await import("../../capabilities/index");
 
-  assert.equal(capture.captureRuntime, legacy.captureRuntime);
-  assert.equal(capture.captureRuntime, publicCapture.captureRuntime);
-  assert.equal(capture.captureRuntime.capability, legacy.captureRuntime.capability);
-  assert.equal(capture.createCaptureRuntime, legacy.createCaptureRuntime);
-  assert.equal(capture.createCaptureRuntime, publicCapture.createCaptureRuntime);
-  assert.equal(capture.CaptureEnableError, legacy.CaptureEnableError);
-  assert.equal(capture.CaptureEnableError, publicCapture.CaptureEnableError);
-  assert.equal(capture.discardCaptureArtifactsForExit, legacy.discardCaptureArtifactsForExit);
+  assert.equal(capture.captureRuntime, implementation.captureRuntime);
+  assert.equal(capture.captureRuntime.capability, implementation.captureRuntime.capability);
+  assert.equal(capture.createCaptureRuntime, implementation.createCaptureRuntime);
+  assert.equal(capture.CaptureEnableError, implementation.CaptureEnableError);
+  assert.equal(
+    capture.discardCaptureArtifactsForExit,
+    implementation.discardCaptureArtifactsForExit,
+  );
+  assert.equal(capture.CaptureStore, store.CaptureStore);
+  assert.equal(capture.MAX_REQUESTS, store.MAX_REQUESTS);
   const unused = capture.createCaptureRuntime();
   await unused.disableAll();
 
@@ -33,7 +35,7 @@ try {
     events.map((event) => process.rawListeners(event)),
     before,
   );
-  console.log("Capture module compatibility and import purity passed.");
+  console.log("Network Capture module identities and import purity passed.");
 } finally {
   rmSync(directory, { recursive: true, force: true });
 }

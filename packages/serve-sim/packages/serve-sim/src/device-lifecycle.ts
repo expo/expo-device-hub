@@ -1,6 +1,6 @@
 import { bootDevice, confirmDeviceBooted, shutdownDevice } from "./device";
 import { retireDeviceSession } from "./device-session";
-import { captureRuntime } from "./capture";
+import { captureRuntime } from "./capabilities/network-capture";
 import { releaseSession } from "./capabilities/runtime/manager";
 import { stopCameraHelper } from "./camera-helper";
 import {

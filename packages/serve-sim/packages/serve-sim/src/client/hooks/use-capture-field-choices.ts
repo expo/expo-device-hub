@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import type { CaptureField } from "../../capture/fields";
+import type { CaptureField } from "../../capabilities/network-capture";
 
 /**
  * The fields last picked for each simulator, or last applied live, used by the next enable. Kept at

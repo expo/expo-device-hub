@@ -27,7 +27,7 @@ import {
   startMitmProxy,
 } from "../mitm-engine";
 import { CaptureStore } from "../store";
-import { useTempStateDir } from "../../__tests__/helpers";
+import { useTempStateDir } from "../../../__tests__/helpers";
 
 const MARKER = "serve-sim-capture-Qz7pLm";
 const SELF = 400;

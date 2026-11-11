@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { locateMitmdump, mitmdumpMissingMessage } from "../../src/capture/mitm-engine";
+import {
+  locateMitmdump,
+  mitmdumpMissingMessage,
+} from "../../src/capabilities/network-capture/mitm-engine";
 
 export async function checkMitmproxy(timeoutMs = 60_000): Promise<void> {
   const binary = locateMitmdump();

@@ -502,7 +502,7 @@ and accepted in-flight chords drain before capture stops. Pending software-keybo
 probes are invalidated and drained with native toggles before shutdown; the new
 boot resets the hidden-keyboard cache before admitting input. The replacement HID
 receives the current panel selection even if its ID is unchanged; input admission
-resumes only after routing completes [observed: `src/capture/reboot.ts`, `src/device-session.ts`,
+resumes only after routing completes [observed: `src/capabilities/network-capture/reboot.ts`, `src/device-session.ts`,
 `Sources/SimNative/CaptureEngine.swift`].
 
 No samples are submitted while the mailbox is empty. The first resumed sample

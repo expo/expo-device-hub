@@ -11,7 +11,7 @@ import {
 } from "../state";
 import { freePortAsync, useTempStateDir } from "./helpers";
 
-const CLI_PATH = join(import.meta.dir, "../../src/index.ts");
+const CLI_PATH = join(import.meta.dir, "../index.ts");
 
 function statePid(file: string): number {
   return (JSON.parse(readFileSync(file, "utf-8")) as { pid: number }).pid;

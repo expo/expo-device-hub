@@ -12,7 +12,10 @@ export {
   MAX_CONTROL_BODY_BYTES_ENV,
   formatOversizedControlBodyWarning,
   maxControlBodyBytes,
+  locateMitmdump,
+  mitmdumpMissingMessage,
 } from "./mitm-engine";
+export type { CaptureProxy, MitmProxyDeps } from "./mitm-engine";
 export {
   HarAccumulator,
   harFromStore,
@@ -20,6 +23,7 @@ export {
   parseFinishedCaptureRequest,
   toHarEntry,
 } from "./har";
+export type { HarEntry } from "./har";
 export {
   CAPTURE_FIELDS,
   DEFAULT_CAPTURE_FIELDS,
@@ -35,7 +39,9 @@ export {
   captureRuntime,
   createCaptureRuntime,
   CaptureEnableError,
+  discardCaptureArtifactsForExit,
   type CaptureRuntime,
+  type CaptureRuntimeOptions,
 } from "./runtime";
 export { createCaptureStarter, startCaptureForDevice, type StartCaptureDeps } from "./start";
 export {
@@ -47,5 +53,8 @@ export {
   type CapturedRequest,
   type CaptureEvent,
   type CaptureMeta,
+  type CaptureAttachment,
 } from "./store";
 export { serveSimVersion } from "./version";
+export { parseCaptureProxy } from "./upstream";
+export type { CaptureUpstream } from "./upstream";

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
-import { simMiddleware } from "../../middleware";
-import { useTempStateDir } from "../../__tests__/helpers";
+import { simMiddleware } from "../../../middleware";
+import { useTempStateDir } from "../../../__tests__/helpers";
 
 const TOKEN = "capture-token-xyz";
 

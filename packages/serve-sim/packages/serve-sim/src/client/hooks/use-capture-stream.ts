@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  MAX_REQUESTS,
-  type CaptureEvent,
-  type CaptureMeta,
-  type CaptureAttachment,
-  type CapturedBody,
-  type CapturedRequest,
-} from "../../capture/store";
+import { MAX_REQUESTS } from "../../capabilities/network-capture/store";
+import type {
+  CaptureEvent,
+  CaptureMeta,
+  CaptureAttachment,
+  CapturedBody,
+  CapturedRequest,
+} from "../../capabilities/network-capture";
 import { openHostEventStream, runHostAction } from "../../socket/client-control";
 
 export type { CaptureMeta, CaptureAttachment, CapturedBody, CapturedRequest };

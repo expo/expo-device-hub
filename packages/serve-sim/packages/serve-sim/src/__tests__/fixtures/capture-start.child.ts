@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import { CaptureEnableError } from "../../capture/runtime";
-import { createCaptureStarter } from "../../capture/start";
-import type { CaptureMeta } from "../../capture/store";
+import { CaptureEnableError } from "../../capabilities/network-capture/runtime";
+import { createCaptureStarter } from "../../capabilities/network-capture/start";
+import type { CaptureMeta } from "../../capabilities/network-capture/store";
 
 const UDID = "ABCD1234-0000-0000-0000-0000000000EF";
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { captureRuntime } from "../capture/runtime";
-import { startCaptureForDevice } from "../capture/start";
+import { captureRuntime } from "../capabilities/network-capture/runtime";
+import { startCaptureForDevice } from "../capabilities/network-capture/start";
 
 import {
   disableNetworkCaptureForStoppedDevice,

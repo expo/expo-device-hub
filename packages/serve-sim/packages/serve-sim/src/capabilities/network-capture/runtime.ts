@@ -1,22 +1,13 @@
 import { isDeviceNotBooted } from "../../device";
-import { locateProxyDylib, trustCaInSimulator, isDeviceInjected } from "../../capture/device";
+import { locateProxyDylib, trustCaInSimulator, isDeviceInjected } from "./device";
 import { configureCapability } from "../runtime/manager";
 import type { CapabilityDefinition, PreparedCapability } from "../runtime/capability";
-import {
-  CaptureDiskAccumulator,
-  captureArtifactPaths,
-  sweepAbandonedCaptureDirs,
-} from "../../capture/disk";
-import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "../../capture/fields";
-import {
-  CAPTURE_SCHEMA_VERSION,
-  CaptureStore,
-  type CaptureEvent,
-  type CaptureMeta,
-} from "../../capture/store";
-import { startMitmProxy, type CaptureProxy, type MitmProxyDeps } from "../../capture/mitm-engine";
-import { serveSimVersion } from "../../capture/version";
-import type { CaptureUpstream } from "../../capture/upstream";
+import { CaptureDiskAccumulator, captureArtifactPaths, sweepAbandonedCaptureDirs } from "./disk";
+import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "./fields";
+import { CAPTURE_SCHEMA_VERSION, CaptureStore, type CaptureEvent, type CaptureMeta } from "./store";
+import { startMitmProxy, type CaptureProxy, type MitmProxyDeps } from "./mitm-engine";
+import { serveSimVersion } from "./version";
+import type { CaptureUpstream } from "./upstream";
 
 export class CaptureEnableError extends Error {
   readonly meta: CaptureMeta;

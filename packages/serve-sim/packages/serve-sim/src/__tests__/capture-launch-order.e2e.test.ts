@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "fs";
 import { createServer, type Server } from "http";
 import { join } from "path";
 
-import { locateMitmdump } from "../capture/mitm-engine";
+import { locateMitmdump } from "../capabilities/network-capture/mitm-engine";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
 import { freePortAsync, killHelpersForDevice, useTempStateDir } from "./helpers";
 

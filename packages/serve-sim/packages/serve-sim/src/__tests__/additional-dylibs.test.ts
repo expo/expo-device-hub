@@ -19,7 +19,7 @@ import { additionalDylibs, simulatorBootEnv } from "../capabilities/runtime/addi
 import { simMiddleware } from "../middleware";
 import { startDeviceInProcess } from "../device-lifecycle";
 import { simctl, simctlSync } from "../simctl";
-import { locateProxyDylib } from "../capture/device";
+import { locateProxyDylib } from "../capabilities/network-capture/device";
 import { freePortAsync, useTempStateDir, withShimsAsync } from "./helpers";
 
 const UDID = "11111111-2222-3333-4444-555555555555";

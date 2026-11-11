@@ -5,8 +5,8 @@ import { createServer, type Server } from "http";
 import { join } from "path";
 import WebSocket from "ws";
 
-import type { HarEntry } from "../capture/har";
-import { locateMitmdump } from "../capture/mitm-engine";
+import type { HarEntry } from "../capabilities/network-capture/har";
+import { locateMitmdump } from "../capabilities/network-capture/mitm-engine";
 import { simctlSync } from "../simctl";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
 import { freePortAsync, killHelpersForDevice, useTempStateDir } from "./helpers";

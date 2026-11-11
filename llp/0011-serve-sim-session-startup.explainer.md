@@ -241,7 +241,7 @@ heartbeat; warmup starts no video [observed: `src/device-session.ts`,
 `src/middleware.ts`, `src/session-owner.ts`].
 Capture restarts with the requested upstream before the CLI succeeds and before app operations; an upstream
 failure never selects direct traffic [observed: `src/index.ts`, `src/middleware.ts`,
-`src/device-session.ts`, `src/capture/upstream.ts`].
+`src/device-session.ts`, `src/capabilities/network-capture/upstream.ts`].
 
 Adoption rejects helper/detach modes, list/kill combinations, debug logging,
 insecure-host policy changes, app-startup flags, capability overrides and

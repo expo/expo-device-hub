@@ -2,14 +2,14 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { writeFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { isDeviceInjected, proxyDylibCandidates } from "../device";
-import { useTempStateDir } from "../../__tests__/helpers";
-import { writeLaunchState } from "../../capabilities/runtime/state";
+import { useTempStateDir } from "../../../__tests__/helpers";
+import { writeLaunchState } from "../../runtime/state";
 import {
   capabilityConfigPath,
   commitCapabilityConfig,
   renderCapabilityConfig,
-} from "../../capabilities/runtime/config";
-import { capabilityLoaderPath } from "../../capabilities/runtime/manager";
+} from "../../runtime/config";
+import { capabilityLoaderPath } from "../../runtime/manager";
 
 const UDID = "ABCD1234-0000-0000-0000-0000000000EF";
 const DYLIB = "/opt/libSimNetProxy.dylib";
@@ -142,6 +142,6 @@ test("capture is unhealthy when the port file is missing or names an old proxy",
 
 test("proxyDylibCandidates includes the checkout's native build", () => {
   expect(proxyDylibCandidates()).toContain(
-    resolve(import.meta.dir, "../../../dist/simnet/libSimNetProxy.dylib"),
+    resolve(import.meta.dir, "../../../../dist/simnet/libSimNetProxy.dylib"),
   );
 });

@@ -60,8 +60,8 @@ mock.module("../../capabilities/runtime/manager", () => ({
     armed = false;
   },
 }));
-const { captureReapersForTest } = await import("../../capture/mitm-engine");
-const { captureRuntime } = await import("../../capture/runtime");
+const { captureReapersForTest } = await import("../../capabilities/network-capture/mitm-engine");
+const { captureRuntime } = await import("../../capabilities/network-capture/runtime");
 const captureMetaForOriginal = captureRuntime.metaFor;
 spyOn(captureRuntime, "metaFor").mockImplementation(
   (udid: string) =>
