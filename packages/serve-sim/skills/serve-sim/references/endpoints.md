@@ -186,6 +186,6 @@ format is internal and may also contain short-lived TURN credentials.
 
 ### Screenshot image options
 
-`POST /api/screenshot?device=<UDID>&maxWidth=402&format=jpeg&quality=80` returns a JPEG scaled to at most 402 pixels wide, preserving aspect ratio after display rotation. Scaling uses Core Image before native PNG encoding. Explicit display / simctl fallback captures are resized after capture. PNG remains the default, and collected session artifacts stay PNG at the requested size.
+`POST /api/screenshot?device=<UDID>&maxWidth=402&format=jpeg&quality=80` returns a JPEG scaled to at most 402 pixels wide, preserving aspect ratio after display rotation. Scaling uses Core Image before native PNG encoding. Explicit-display, verified cold-session, and simctl fallback captures are resized after capture. PNG remains the default, and collected session artifacts stay PNG at the requested size.
 
 The same options work on `screenshot.capture` with `params: { output: "binary", maxWidth: 402, format: "jpeg", quality: 80 }`. Binary replies keep the four-byte request ID prefix followed by image bytes. File-path output does not accept image options. JPEG output is lossy and does not preserve transparency.

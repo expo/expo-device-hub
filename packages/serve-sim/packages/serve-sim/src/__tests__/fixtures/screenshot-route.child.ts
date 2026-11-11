@@ -31,6 +31,7 @@ mock.module("../../native", () => ({
     return quality ? jpeg : bytes;
   },
 }));
+let soleDisplay: number | null = null;
 let activeDisplay = 7;
 const capturedDisplays: number[] = [];
 let unstable = false,
@@ -67,6 +68,7 @@ mock.module("../../device-session", () => ({
   },
 }));
 mock.module("../../screenshot-display", () => ({
+  getSoleScreenshotDisplayIdAsync: async () => soleDisplay,
   getScreenshotDisplayIdsAsync: async () => {
     fallbackReads++;
     return [7];
@@ -322,6 +324,22 @@ test("JPEG conversion failure publishes only a failure and no artifact", async (
   }
 });
 
+test("binary requests use verified cold-session direct capture with image options", async () => {
+  soleDisplay = 7;
+  unstable = false;
+  simctlCaptures = 0;
+  const before = targets.length;
+  try {
+    const binary = (await socketRequest({ udid: UDID, maxWidth: 402 })) as Buffer;
+    expect(binary.readUInt32BE()).toBe(42);
+    expect(binary.subarray(4)).toEqual(png);
+    expect(simctlCaptures).toBe(1);
+    expect(converted.at(-1)).toEqual([402, 0]);
+    expect(targets).toHaveLength(before);
+  } finally {
+    soleDisplay = null;
+  }
+});
 test("binary automation preserves manual activity and suppresses success and failure events", async () => {
   for (const automation of [undefined, false, true]) {
     for (const failed of [false, true]) {
