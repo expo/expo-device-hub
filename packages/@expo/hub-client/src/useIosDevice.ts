@@ -825,7 +825,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (streamMode === "webrtc") return;
     setActiveWebRtcCodec(webRtcCodec);
   }, [streamMode, webRtcCodec]);
-  // True while the in-flight single-finger drag began in the home-indicator band.
+  // The HID edge of the home indicator where the in-flight single-finger drag
+  // began, kept through its release; undefined when it began elsewhere.
   const edgeGestureRef = useRef<number | undefined>(undefined);
   // Latest screen config, read by the (stable) input callbacks for orientation.
   const screenRef = useRef<SimScreenConfig | null>(null);
@@ -1156,17 +1157,21 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     key("up", HID_USAGE_R);
   }, [sendWs]);
 
-  // The answer is the send: serve-sim has no reply, so the shown pose then waits for the
-  // helper's readback. A choice the queue drops for age, which the queue notices only at its
-  // next flush, fails when the queue's age limit has passed.
+  // Only a known pose drives the controls. While the native pose observer has no
+  // sample (null), the controls use the legacy readback, order and commands, so
+  // Rotate still advances.
+  const observedDevicePose = screen?.deviceOrientation ?? null;
   const usesNativeDevicePose =
-    screen?.deviceOrientation !== undefined &&
-    (isDuo ? screen.supportsPhysicalOrientation === true : screen.supportsHingeAngle === false);
+    observedDevicePose !== null &&
+    (isDuo ? screen?.supportsPhysicalOrientation === true : screen?.supportsHingeAngle === false);
   const readbackOrientation = usesNativeDevicePose
-    ? deviceOrientationForPose(screen!.deviceOrientation)
+    ? deviceOrientationForPose(observedDevicePose)
     : isDeviceOrientation(screen?.orientation)
       ? screen.orientation
       : null;
+  // The answer is the send: serve-sim has no reply, so the shown pose then waits for the
+  // helper's readback. A choice the queue drops for age, which the queue notices only at its
+  // next flush, fails when the queue's age limit has passed.
   const orientationBackend = useMemo<DeviceOrientationBackend | null>(
     () =>
       connectionScope === null
@@ -1174,7 +1179,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         : {
             // The simulator, not the token: a reconnect keeps its choices in order.
             device: JSON.stringify([baseUrl, targetDevice]),
-            // Xcode's Device Hub turns the iPhone Duo clockwise.
+            // Xcode's Device Hub turns the iPhone Duo clockwise. With a known
+            // observed pose, the Duo's names are physical poses, which
+            // DEVICE_ORIENTATIONS turns clockwise. An ordinary iPhone's physical
+            // names in CLOCKWISE_ORIENTATIONS send the legacy command order.
             orientations:
               isDuo && usesNativeDevicePose
                 ? DEVICE_ORIENTATIONS
@@ -2238,7 +2246,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           setHardwareKeyboardConnectedState(null);
           setPhysicalPose(undefined);
           sentHingePoseRef.current = undefined;
-          observedRotationRef.current = null;
+          // observedRotationRef stays: the 3D view still shows that pose, so an
+          // external turn during the drop is a turn on the next config. Only a
+          // new hinge session, which resets the view, clears it.
           endRotation();
           if (hingePendingRef.current) {
             const message = "Connection lost while changing the device pose.";

@@ -36,7 +36,7 @@ export function homeIndicatorEdge(
   const turn =
     config?.deviceOrientation !== undefined
       ? (((rotationDegreesForOrientation(framingOrientation(config)) -
-          rotationDegreesForOrientation(config.screenOrientation)) %
+          rotationDegreesForOrientation(interfaceOrientation(config))) %
           360) +
           360) %
         360
@@ -63,7 +63,12 @@ export function isDeviceOrientation(value: unknown): value is DeviceOrientation 
   return (DEVICE_ORIENTATIONS as readonly unknown[]).includes(value);
 }
 
-/** The four poses, in the order Rotate steps through them on iOS and Android. */
+/**
+ * The four poses, in the order Rotate steps through them on Android and on an
+ * iPhone without a known observed physical pose. An iPhone Duo with a known
+ * observed pose also uses this order: its names are then physical poses, and
+ * this order turns them clockwise.
+ */
 export const DEVICE_ORIENTATIONS = [
   "portrait",
   "landscape_left",
@@ -71,7 +76,13 @@ export const DEVICE_ORIENTATIONS = [
   "landscape_right",
 ] as const satisfies readonly DeviceOrientation[];
 
-/** The four poses clockwise. The iPhone Duo rotates in this order, as Xcode's Device Hub and serve-sim turn it. */
+/**
+ * The four interface orientations clockwise. An iPhone Duo without a known
+ * observed physical pose rotates in this order, as Xcode's Device Hub and
+ * serve-sim turn it. An ordinary iPhone with a known observed pose also uses
+ * this order, by physical names, so its interface commands step in
+ * {@link DEVICE_ORIENTATIONS} order.
+ */
 export const CLOCKWISE_ORIENTATIONS = [
   "portrait",
   "landscape_right",
@@ -175,6 +186,16 @@ export function legacyOrientationForDeviceChoice(pose: DeviceOrientation): Devic
       : pose;
 }
 
+/**
+ * The interface orientation of an observed config. When it is unknown, the raw
+ * frame shape decides, as in the legacy rule of {@link streamGeometry}:
+ * landscape pixels already face the framing, and portrait pixels are not turned.
+ */
+function interfaceOrientation(config: ScreenSize): DeviceOrientation | undefined {
+  if (config.screenOrientation) return config.screenOrientation;
+  return config.width > config.height ? framingOrientation(config) : undefined;
+}
+
 function framingOrientation(config: ScreenSize): DeviceOrientation | undefined {
   if (config.deviceOrientation === undefined) return config.orientation;
   const physical = deviceOrientationForPose(config.deviceOrientation);
@@ -226,7 +247,7 @@ export function streamGeometry(config?: ScreenSize | null): StreamGeometry {
   const display = displayScreen(config);
   if (config?.deviceOrientation !== undefined) {
     const frameRotation = rotationDegreesForOrientation(framingOrientation(config));
-    const screenRotation = rotationDegreesForOrientation(config.screenOrientation);
+    const screenRotation = rotationDegreesForOrientation(interfaceOrientation(config));
     const pixelsRotation =
       config.framesUpright || (config.width > config.height && Math.abs(screenRotation) === 90)
         ? screenRotation

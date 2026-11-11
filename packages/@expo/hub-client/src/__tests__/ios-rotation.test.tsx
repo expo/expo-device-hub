@@ -495,7 +495,26 @@ test("ordinary-device controls follow observed pose independently of a portrait-
       deviceOrientation: null,
     }),
   );
-  expect(client().orientation).toBeNull();
+  // An unknown pose leaves the controls to the legacy readback.
+  expect(client().orientation).toBe("landscape_right");
+});
+
+test("Rotate follows the legacy readback while the native pose stays unknown", async () => {
+  const { client, helper } = await mount();
+  const unknownPose = {
+    supportsHingeAngle: false,
+    screenOrientation: "portrait",
+    deviceOrientation: null,
+  };
+  await act(async () => helper().screen("portrait", unknownPose));
+  expect(client().orientation).toBe("portrait");
+  await act(async () => client().rotate());
+  expect(helper().rotations()).toEqual(["landscape_left"]);
+  now = 2000;
+  await act(async () => helper().screen("landscape_left", unknownPose));
+  expect(client().orientation).toBe("landscape_left");
+  await act(async () => client().rotate());
+  expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down"]);
 });
 
 test("Duo Rotate advances from observed pose when Home stays portrait", async () => {

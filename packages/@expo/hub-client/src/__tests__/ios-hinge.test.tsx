@@ -531,6 +531,34 @@ test("an external turn during an angle edit is applied when the edit releases th
   ]);
 });
 
+test("an external turn while the input socket reconnects turns the view once", async () => {
+  installBrowser({ duo: true });
+  // The input socket retries after the same 1.5 s as the readback grace.
+  const retry = holdReadbackGrace();
+  const { socket, events, observe } = await connect();
+  await act(async () =>
+    socket.push(0x82, { ...observed(70, "portrait"), deviceOrientation: "portrait" }),
+  );
+  observe();
+  await act(async () => socket.onclose?.({ code: 1006, reason: "" }));
+  await retry();
+  const replacement = FakeSocket.instances.findLast((instance) =>
+    instance.url.includes("/helper/ws"),
+  )!;
+  expect(replacement).not.toBe(socket);
+  await act(async () => replacement.open());
+  await act(async () =>
+    replacement.push(0x82, {
+      ...observed(70, "landscape-left"),
+      deviceOrientation: "landscape-left",
+    }),
+  );
+  expect(events.filter((event) => event.type === "reset")).toEqual([]);
+  expect(events.filter((event) => event.type === "rotated")).toEqual([
+    { type: "rotated", quarterTurns: 1 },
+  ]);
+});
+
 test("a named readback after an angle edit still turns a custom view", async () => {
   installBrowser({ duo: true });
   const { socket, client, events, observe } = await connect();
