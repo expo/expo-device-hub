@@ -16,11 +16,11 @@ import {
 } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { CaptureStore } from "./store";
 import { assertNotOwnProxy, OwnProxyPortError, type CaptureUpstream } from "./upstream";
-import { dirnameOf } from "../runtime";
 import { isRunningOnEAS } from "../environment";
 import { withStateLockSync } from "../state-lock";
 import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "./fields";
@@ -43,7 +43,7 @@ export {
 };
 
 // Bun inlines bare `__dirname` as the build machine's path; resolve from import.meta instead.
-const __dirname = dirnameOf(import.meta.url);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const STARTUP_TIMEOUT_MS = 30_000;
 const STARTUP_POLL_MS = 200;

@@ -1,12 +1,12 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { isCapabilityArmed } from "../capabilities/runtime/manager";
-import { dirnameOf } from "../runtime";
 import { simctl } from "../simctl";
 
-const __dirname = dirnameOf(import.meta.url);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const DYLIB_NAME = "libSimNetProxy.dylib";
 
 export async function trustCaInSimulator(udid: string, caPem: string): Promise<void> {

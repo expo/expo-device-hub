@@ -5,13 +5,29 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-06 (the Network panel chooses the capture fields, also during a capture); 2026-10-06 (Gabe Debes: explicit upstream routing, credential transport, shared runtime policy, and self-proxy retries)
+**Revised:** 2026-10-06 (the Network panel chooses the capture fields, also during a capture); 2026-10-06 (Gabe Debes: explicit upstream routing, credential transport, shared runtime policy, and self-proxy retries); 2026-11-10 (internal capability runtime boundary)
 **Related:** LLP 0003, LLP 0007
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
 Network capture decrypts supported simulator HTTP(S) traffic. Capture is metadata-only by default;
 headers, query values, and bodies require explicit opt-in because they can contain credentials.
+
+The runtime implementation lives behind `src/capabilities/capture/index.ts`.
+`src/capture/runtime.ts` and the public `src/capture/index.ts` barrel retain their
+exports and reach the same process-wide `captureRuntime`, factory and error class.
+The capability definition uses the shared runtime types and preparation callbacks;
+Capture's operation queue, cancellation, failure metadata and proxy/disk retirement
+remain together. It does not adopt Clipboard's setup/retry policy
+[observed: `src/capabilities/capture/index.ts`].
+
+Importing or constructing a runtime starts no proxy, server, device setup, native
+build or process handlers. Exit cleanup is installed lazily when disk capture begins.
+The engine, native/Python locators, CA storage and artifact paths remain in the
+existing `src/capture/` modules. Only the CLI's direct singleton import moves to the
+capability entry point; middleware and host adapters retain the public Capture boundary
+[observed: `src/capabilities/capture/index.ts`, `src/capture/mitm-engine.ts`,
+`src/capture/device.ts`, `src/index.ts`, `src/__tests__/capture-module.test.ts`].
 
 ## How it works
 

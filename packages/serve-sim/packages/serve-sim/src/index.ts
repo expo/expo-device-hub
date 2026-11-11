@@ -10,7 +10,7 @@ import {
 } from "./recording-timeouts";
 import { timeStartup } from "./startup-timing";
 import { SingleDevicePolicy } from "./single-device";
-import { captureRuntime } from "./capture/runtime";
+import { captureRuntime } from "./capabilities/capture";
 import { rebootedWithCaptureSince } from "./capture/reboot";
 import { Command, InvalidArgumentError } from "commander";
 import { execFileSync, execSync, spawn as nodeSpawn, type ChildProcess } from "child_process";
