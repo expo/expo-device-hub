@@ -31,7 +31,7 @@ import {
 import { apiUrl, deviceApiUrl } from "./android-api-url";
 import { readAndroidLocation, writeAndroidLocation } from "./android-location";
 import { androidPermissionsBackend } from "./android-permissions";
-import { carryForwardAppDetails, fetchAndroidAppDetails } from "./android-app-icon";
+import { appBuildKey, carryForwardAppDetails, fetchAndroidAppDetails } from "./android-app-icon";
 import {
   type AndroidSessionEvent,
   clearAndroidEventCursor,
@@ -150,6 +150,8 @@ const ANDROID_STREAM_SETTING_CAPABILITIES = {
 } as const satisfies DeviceStreamSettingCapabilities;
 
 const KEYCODE_R = 46;
+/** Waits before each retry of a failed app details read; the read stops after the last. */
+const APP_DETAILS_RETRY_MS = [4_000, 16_000, 64_000];
 /** Field-wise equality so the poll only publishes state when something changed. */
 function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
   return (
@@ -2026,29 +2028,41 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   }, [active, baseUrl, targetDevice, sessionFetch]);
 
   // ── Foreground app details (icon and label) — serve-emu reads both from the
-  //    installed APK with `aapt2`, once per package, so this is not polled. ──
+  //    installed APK with `aapt2`, once per installed build, so this is not
+  //    polled. A failed read retries a few times, because a missing name would
+  //    otherwise stay missing until another app comes to the foreground. ──
   const foregroundAppId = foregroundApp?.id ?? null;
+  const foregroundAppBuild = appBuildKey(foregroundApp);
   useEffect(() => {
     if (!active || !baseUrl || !foregroundAppId) return;
     let cancelled = false;
-    fetchAndroidAppDetails(baseUrl, targetDevice, foregroundAppId, sessionFetch)
-      .then(({ iconDataUrl, label }) => {
-        if (cancelled || (!iconDataUrl && !label)) return;
-        setForegroundApp((prev) =>
-          prev && prev.id === foregroundAppId
-            ? {
-                ...prev,
-                ...(iconDataUrl && { iconDataUrl }),
-                ...(label && { label }),
-              }
-            : prev,
-        );
-      })
-      .catch(() => {});
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const read = (attempt: number) => {
+      fetchAndroidAppDetails(baseUrl, targetDevice, foregroundAppId, sessionFetch)
+        .then(({ iconDataUrl, label }) => {
+          if (cancelled || (!iconDataUrl && !label)) return;
+          setForegroundApp((prev) =>
+            prev && appBuildKey(prev) === foregroundAppBuild
+              ? {
+                  ...prev,
+                  ...(iconDataUrl && { iconDataUrl }),
+                  ...(label && { label }),
+                }
+              : prev,
+          );
+        })
+        .catch(() => {
+          const delay = APP_DETAILS_RETRY_MS[attempt];
+          if (cancelled || delay === undefined) return;
+          retryTimer = setTimeout(() => read(attempt + 1), delay);
+        });
+    };
+    read(0);
     return () => {
       cancelled = true;
+      clearTimeout(retryTimer);
     };
-  }, [active, baseUrl, targetDevice, foregroundAppId, sessionFetch]);
+  }, [active, baseUrl, targetDevice, foregroundAppId, foregroundAppBuild, sessionFetch]);
 
   // ── Device options (best-effort) ──
   // Keep Hub in sync with changes made on-device or through serve-emu's own UI.

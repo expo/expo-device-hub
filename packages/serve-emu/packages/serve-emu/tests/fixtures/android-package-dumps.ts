@@ -68,3 +68,14 @@ application-icon-480:'res/drawable/ic_launcher_home.xml'
 application-icon-640:'res/drawable/ic_launcher_home.xml'
 application: label='Pixel Launcher' icon='res/drawable/ic_launcher_home.xml'
 `;
+
+/**
+ * `aapt2 dump badging` (build-tools 37.0.0) of an APK built for this test. Its
+ * `res/values/strings.xml` declares the app name as
+ * `<string name="app_name">Bob\'s \"Best\" C:\\Apps\nLine2\tTab</string>`, so
+ * the name is: Bob's "Best" C:\Apps, a newline, then Line2, a tab, and Tab.
+ */
+export const ESCAPED_LABEL_BADGING = String.raw`
+application-label:'Bob's \"Best\" C:\\Apps\nLine2	Tab'
+application: label='Bob's \"Best\" C:\\Apps\nLine2	Tab' icon=''
+`;

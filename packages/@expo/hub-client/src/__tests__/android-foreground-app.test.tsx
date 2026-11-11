@@ -8,6 +8,8 @@ import { createGlobalStubs } from "./test-globals";
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 const realSetInterval = setInterval;
 const FOREGROUND_POLL_MS = 5000;
+const APP_DETAILS_RETRY_MS = [4_000, 16_000, 64_000];
+const realSetTimeout = setTimeout;
 
 class Socket {
   addEventListener() {}
@@ -24,15 +26,21 @@ afterEach(async () => {
 });
 
 /** What serve-emu reports: `/api/foreground` has no label; `/api/apps/icon` has it. */
-const APPS: Record<string, { activity: string; label: string }> = {
+const APPS: Record<string, { activity: string; label: string; build: string }> = {
   "com.google.android.apps.nexuslauncher": {
     activity: "com.google.android.apps.nexuslauncher.NexusLauncherActivity",
     label: "Pixel Launcher",
+    build: "907",
   },
-  "com.android.chrome": { activity: "com.google.android.apps.chrome.Main", label: "Chrome" },
+  "com.android.chrome": {
+    activity: "com.google.android.apps.chrome.Main",
+    label: "Chrome",
+    build: "1",
+  },
 };
 
-async function mount() {
+async function mount({ failedDetailReads = 0 } = {}) {
+  const apps = structuredClone(APPS);
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("window", {
     addEventListener() {},
@@ -40,6 +48,15 @@ async function mount() {
     setTimeout,
     clearTimeout,
   });
+  // Details retries run only when the test asks.
+  const retries: Array<() => void> = [];
+  stubGlobal("setTimeout", ((callback: () => void, ms?: number) => {
+    if (ms !== undefined && APP_DETAILS_RETRY_MS.includes(ms)) {
+      retries.push(callback);
+      return realSetTimeout(() => {}, 1_000_000);
+    }
+    return realSetTimeout(callback, ms);
+  }) as typeof setTimeout);
   stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
   stubGlobal("WebSocket", Socket);
   // The foreground poll runs only when the test asks.
@@ -57,11 +74,11 @@ async function mount() {
         ok: true,
         app: {
           packageName: foreground,
-          activity: APPS[foreground]!.activity,
+          activity: apps[foreground]!.activity,
           pid: 1310,
           label: null,
           versionName: "16",
-          versionCode: "907",
+          versionCode: apps[foreground]!.build,
           minSdk: 36,
           debuggable: false,
         },
@@ -70,11 +87,18 @@ async function mount() {
     if (parsed.pathname === "/api/apps/icon") {
       const packageName = parsed.searchParams.get("packageName")!;
       detailRequests.push(packageName);
+      if (failedDetailReads > 0) {
+        failedDetailReads -= 1;
+        return Response.json(
+          { ok: false, error: "aapt2 dump resources timed out" },
+          { status: 400 },
+        );
+      }
       return Response.json({
         ok: true,
         packageName,
         icon: { mimeType: "image/png", data: "aWNvbg==" },
-        label: APPS[packageName]!.label,
+        label: apps[packageName]!.label,
       });
     }
     return Response.json({}, { status: 404 });
@@ -89,7 +113,7 @@ async function mount() {
     });
     return null;
   }
-  const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  const settle = () => act(async () => new Promise((resolve) => realSetTimeout(resolve, 0)));
   await act(async () => {
     renderer = create(<Harness />);
   });
@@ -98,6 +122,13 @@ async function mount() {
   return {
     client: () => client,
     detailRequests,
+    retries,
+    apps,
+    retry: async () => {
+      await act(async () => retries.shift()!());
+      await settle();
+      await settle();
+    },
     poll: async (next?: string) => {
       if (next) foreground = next;
       await act(async () => {
@@ -138,4 +169,39 @@ test("Android drops the old label when another app comes to the foreground", asy
     "com.google.android.apps.nexuslauncher",
     "com.android.chrome",
   ]);
+});
+
+test("Android reads the details again when a reinstall changes the build", async () => {
+  const harness = await mount();
+  harness.apps["com.google.android.apps.nexuslauncher"]!.build = "908";
+  harness.apps["com.google.android.apps.nexuslauncher"]!.label = "Pixel Launcher Beta";
+
+  await harness.poll();
+
+  expect(harness.client().foregroundApp).toMatchObject({
+    build: "908",
+    label: "Pixel Launcher Beta",
+  });
+  expect(harness.detailRequests).toHaveLength(2);
+});
+
+test("Android retries a failed details read", async () => {
+  const harness = await mount({ failedDetailReads: 1 });
+  expect(harness.client().foregroundApp?.label).toBeUndefined();
+  expect(harness.retries).toHaveLength(1);
+
+  await harness.retry();
+
+  expect(harness.client().foregroundApp?.label).toBe("Pixel Launcher");
+  expect(harness.detailRequests).toHaveLength(2);
+  expect(harness.retries).toHaveLength(0);
+});
+
+test("Android gives up on details after the last retry", async () => {
+  const harness = await mount({ failedDetailReads: 99 });
+  for (let i = 0; i < APP_DETAILS_RETRY_MS.length; i += 1) await harness.retry();
+
+  expect(harness.detailRequests).toHaveLength(APP_DETAILS_RETRY_MS.length + 1);
+  expect(harness.retries).toHaveLength(0);
+  expect(harness.client().foregroundApp?.label).toBeUndefined();
 });

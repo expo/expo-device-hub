@@ -94,20 +94,27 @@ export function selectIconEntry(badging: string): string | null {
 }
 
 /**
+ * `aapt2` prints a label through `ResTable::normalizeForOutput`, which escapes
+ * only `\`, `"`, and a newline. It leaves apostrophes and tabs as they are.
+ */
+function unescapeBadgingValue(value: string): string {
+  return value.replace(/\\([\\"n])/g, (_, char: string) => (char === "n" ? "\n" : char));
+}
+
+/**
  * The default-locale `application-label:'…'` line, else the `label='…'` of the
- * `application:` line. `aapt2` does not escape apostrophes, so the first form
- * reads to the end of the line, and the second stops only before the next
- * attribute.
+ * `application:` line. Apostrophes are not escaped, so the first form reads to
+ * the end of the line, and the second stops only before the next attribute.
  */
 export function selectApplicationLabel(badging: string): string | null {
   let fallback: string | null = null;
   for (const line of badging.split("\n")) {
     const trimmed = line.trim();
     const label = /^application-label:'(.*)'$/.exec(trimmed)?.[1];
-    if (label) return label;
+    if (label) return unescapeBadgingValue(label);
     fallback ??= /^application: label='(.*?)'(?: [a-zA-Z-]+='|$)/.exec(trimmed)?.[1] || null;
   }
-  return fallback;
+  return fallback && unescapeBadgingValue(fallback);
 }
 
 export function parseAdaptiveForegroundId(xmltree: string): string | null {

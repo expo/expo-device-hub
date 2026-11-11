@@ -13,7 +13,7 @@ import {
 } from "../src/apk-icon.ts";
 import type { execText } from "../src/exec.ts";
 import type { AppDetails } from "../src/shared/api-contracts.ts";
-import { LAUNCHER_BADGING } from "./fixtures/android-package-dumps.ts";
+import { ESCAPED_LABEL_BADGING, LAUNCHER_BADGING } from "./fixtures/android-package-dumps.ts";
 
 const SETTINGS_BADGING = [
   "application-icon-120:'res/drawable/ic_launcher_settings.xml'",
@@ -198,6 +198,15 @@ describe("selectApplicationLabel", () => {
     expect(
       selectApplicationLabel("application: label='Krystof's App' icon='res/mipmap/ic.png'"),
     ).toBe("Krystof's App");
+  });
+
+  test("decodes the backslash, quote, and newline escapes that aapt2 prints", () => {
+    const name = 'Bob\'s "Best" C:\\Apps\nLine2\tTab';
+    expect(selectApplicationLabel(ESCAPED_LABEL_BADGING)).toBe(name);
+    const applicationLine = ESCAPED_LABEL_BADGING.split("\n").find((line) =>
+      line.startsWith("application: "),
+    )!;
+    expect(selectApplicationLabel(applicationLine)).toBe(name);
   });
 
   test("returns null when the APK declares no label", () => {

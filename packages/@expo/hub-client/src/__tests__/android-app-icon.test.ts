@@ -160,6 +160,13 @@ describe("carryForwardAppDetails", () => {
     expect(carryForwardAppDetails({ id: "com.android.settings" }, next)).toBe(next);
   });
 
+  test("drops both when a reinstall changes the build of the same app", () => {
+    const resolved = { ...settings, version: "16", build: "907" };
+    const next = { id: "com.android.settings", version: "16", build: "908" };
+
+    expect(carryForwardAppDetails(resolved, next)).toBe(next);
+  });
+
   test("drops both when the foreground app changes", () => {
     const next = { id: "com.android.chrome" };
 
