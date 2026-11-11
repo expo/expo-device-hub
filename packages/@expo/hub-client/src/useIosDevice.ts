@@ -2982,6 +2982,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     dropTimeoutMs: SCREEN_LOAD_TIMEOUT_MS,
   });
 
+  // Only the streamed simulator is current. The server marks every simulator
+  // with a running helper, so with two helpers a consumer that names the
+  // current device, such as the screen shape lookup, could take the other
+  // one's name. Before the streamed id is known, a running helper stays the
+  // best guess.
+  const shownDevices = useMemo(
+    () =>
+      !currentDeviceId || devices === PLACEHOLDER_DEVICES
+        ? devices
+        : devices.map((device) => ({ ...device, current: device.id === currentDeviceId })),
+    [devices, currentDeviceId],
+  );
+
   return {
     platform: "ios",
     status: presentation.status,
@@ -2994,7 +3007,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     deviceModelUrl: isDuo ? (knownConfig?.deviceKitModelUrl ?? null) : null,
     displayCorners,
     fps,
-    devices,
+    devices: shownDevices,
     logs,
     logsEnabled,
     attachLogs,
