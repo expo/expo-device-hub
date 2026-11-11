@@ -148,6 +148,7 @@ import {
   clockwiseQuarterTurns,
   deviceOrientationForPose,
   legacyOrientationForDeviceChoice,
+  physicalOrientationForInterface,
   DEVICE_ORIENTATIONS,
   CLOCKWISE_ORIENTATIONS,
   isDeviceOrientation,
@@ -1158,7 +1159,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // helper's readback. A choice the queue drops for age, which the queue notices only at its
   // next flush, fails when the queue's age limit has passed.
   const usesNativeDevicePose =
-    !isDuo && screen?.supportsHingeAngle === false && screen.deviceOrientation !== undefined;
+    screen?.deviceOrientation !== undefined &&
+    (isDuo ? screen.supportsPhysicalOrientation === true : screen.supportsHingeAngle === false);
   const readbackOrientation = usesNativeDevicePose
     ? deviceOrientationForPose(screen!.deviceOrientation)
     : isDeviceOrientation(screen?.orientation)
@@ -1173,7 +1175,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             device: JSON.stringify([baseUrl, targetDevice]),
             // Xcode's Device Hub turns the iPhone Duo clockwise.
             orientations:
-              isDuo || usesNativeDevicePose ? CLOCKWISE_ORIENTATIONS : DEVICE_ORIENTATIONS,
+              isDuo && usesNativeDevicePose
+                ? DEVICE_ORIENTATIONS
+                : isDuo || usesNativeDevicePose
+                  ? CLOCKWISE_ORIENTATIONS
+                  : DEVICE_ORIENTATIONS,
             reportsPose: true,
             pushesReports: true,
             set: (orientation) =>
@@ -1185,7 +1191,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
                 const wireOrientation = usesNativeDevicePose
                   ? legacyOrientationForDeviceChoice(orientation)
                   : orientation;
-                const queued = sendWs(WS_MSG_ORIENTATION, { orientation: wireOrientation }, () => {
+                const payload = {
+                  orientation: wireOrientation,
+                  ...(isDuo && usesNativeDevicePose
+                    ? { deviceOrientation: physicalOrientationForInterface(wireOrientation) }
+                    : {}),
+                };
+                const queued = sendWs(WS_MSG_ORIENTATION, payload, () => {
                   clearTimeout(timer);
                   resolve(orientation);
                 });
@@ -1248,8 +1260,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // one render turn it as far as the device.
   const turnDuoForChoice = useCallback(
     (from: DeviceOrientation | null, to: DeviceOrientation) =>
-      turnDuo(clockwiseQuarterTurns(from ?? "portrait", to)),
-    [turnDuo],
+      turnDuo(
+        clockwiseQuarterTurns(
+          usesNativeDevicePose && from
+            ? legacyOrientationForDeviceChoice(from)
+            : (from ?? "portrait"),
+          usesNativeDevicePose ? legacyOrientationForDeviceChoice(to) : to,
+        ),
+      ),
+    [turnDuo, usesNativeDevicePose],
   );
   const {
     orientation,
