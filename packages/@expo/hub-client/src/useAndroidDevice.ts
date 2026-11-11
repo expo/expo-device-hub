@@ -2040,16 +2040,20 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     const read = (attempt: number) => {
       fetchAndroidAppDetails(baseUrl, targetDevice, foregroundAppId, sessionFetch)
         .then(({ iconDataUrl, label }) => {
-          if (cancelled || (!iconDataUrl && !label)) return;
-          setForegroundApp((prev) =>
-            prev && appBuildKey(prev) === foregroundAppBuild
-              ? {
-                  ...prev,
-                  ...(iconDataUrl && { iconDataUrl }),
-                  ...(label && { label }),
-                }
-              : prev,
-          );
+          if (cancelled) return;
+          setForegroundApp((prev) => {
+            if (!prev || appBuildKey(prev) !== foregroundAppBuild) return prev;
+            if (
+              prev.iconDataUrl === (iconDataUrl ?? undefined) &&
+              prev.label === (label ?? undefined)
+            ) {
+              return prev;
+            }
+            // A successful read describes this build, so it also clears an icon
+            // or label carried over from the build before a reinstall.
+            const { iconDataUrl: _carriedIcon, label: _carriedLabel, ...app } = prev;
+            return { ...app, ...(iconDataUrl && { iconDataUrl }), ...(label && { label }) };
+          });
         })
         .catch(() => {
           const delay = APP_DETAILS_RETRY_MS[attempt];

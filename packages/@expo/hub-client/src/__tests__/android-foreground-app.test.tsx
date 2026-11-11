@@ -26,7 +26,10 @@ afterEach(async () => {
 });
 
 /** What serve-emu reports: `/api/foreground` has no label; `/api/apps/icon` has it. */
-const APPS: Record<string, { activity: string; label: string; build: string }> = {
+const APPS: Record<
+  string,
+  { activity: string; label: string | null; build: string; noIcon?: boolean }
+> = {
   "com.google.android.apps.nexuslauncher": {
     activity: "com.google.android.apps.nexuslauncher.NexusLauncherActivity",
     label: "Pixel Launcher",
@@ -99,7 +102,7 @@ async function mount({ failedDetailReads = 0 } = {}) {
       return Response.json({
         ok: true,
         packageName,
-        icon: { mimeType: "image/png", data: "aWNvbg==" },
+        icon: apps[packageName]!.noIcon ? null : { mimeType: "image/png", data: "aWNvbg==" },
         label: apps[packageName]!.label,
       });
     }
@@ -201,6 +204,20 @@ test("Android reads the details again when a reinstall changes the build", async
     label: "Pixel Launcher Beta",
   });
   expect(harness.detailRequests).toHaveLength(2);
+});
+
+test("Android clears the old build's icon and label when the new build has none", async () => {
+  const harness = await mount();
+  const launcher = harness.apps["com.google.android.apps.nexuslauncher"]!;
+  launcher.build = "908";
+  launcher.label = null;
+  launcher.noIcon = true;
+
+  await harness.poll();
+
+  expect(harness.client().foregroundApp?.build).toBe("908");
+  expect(harness.client().foregroundApp?.label).toBeUndefined();
+  expect(harness.client().foregroundApp?.iconDataUrl).toBeUndefined();
 });
 
 test("Android retries a failed details read", async () => {
