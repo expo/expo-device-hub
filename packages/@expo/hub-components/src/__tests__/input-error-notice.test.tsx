@@ -18,7 +18,6 @@ function renderFrame(
     version: "test",
     booted: true,
     physical: false,
-    deviceFrame: null,
     supported: true,
   };
   return renderToStaticMarkup(

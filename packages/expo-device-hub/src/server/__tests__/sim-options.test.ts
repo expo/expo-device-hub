@@ -23,13 +23,11 @@ describe("appleRuntimesToOptions", () => {
               value: "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
               label: "iPhone 17 Pro",
               supported: true,
-              deviceFrame: "ios:iphone-17-pro",
             },
             {
               value: "com.apple.CoreSimulator.SimDeviceType.iPhone-16",
               label: "iPhone 16",
               supported: true,
-              deviceFrame: null,
             },
           ],
         },
@@ -41,13 +39,11 @@ describe("appleRuntimesToOptions", () => {
               value: "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
               label: "iPhone 17 Pro",
               supported: true,
-              deviceFrame: "ios:iphone-17-pro",
             },
             {
               value: "com.apple.CoreSimulator.SimDeviceType.iPhone-16",
               label: "iPhone 16",
               supported: true,
-              deviceFrame: null,
             },
           ],
         },
@@ -77,13 +73,11 @@ describe("androidImagesToOptions", () => {
               value: "pixel_9",
               label: "Pixel 9",
               supported: true,
-              deviceFrame: "android:pixel-9",
             },
             {
               value: "pixel_10_pro",
               label: "Pixel 10 Pro",
               supported: true,
-              deviceFrame: "android:pixel-10-pro",
             },
           ],
         },
@@ -95,13 +89,11 @@ describe("androidImagesToOptions", () => {
               value: "pixel_9",
               label: "Pixel 9",
               supported: true,
-              deviceFrame: "android:pixel-9",
             },
             {
               value: "pixel_10_pro",
               label: "Pixel 10 Pro",
               supported: true,
-              deviceFrame: "android:pixel-10-pro",
             },
           ],
         },
@@ -115,9 +107,7 @@ describe("androidImagesToOptions", () => {
       [{ id: "pixel_fold", index: 0, name: "Pixel Fold", oem: "Google", tag: null }],
     ).runtimes[0]?.models;
 
-    expect(models).toEqual([
-      { value: "pixel_fold", label: "Pixel Fold", supported: false, deviceFrame: null },
-    ]);
+    expect(models).toEqual([{ value: "pixel_fold", label: "Pixel Fold", supported: false }]);
   });
 
   test("pairs mobile and specialized images with compatible profile tags", () => {

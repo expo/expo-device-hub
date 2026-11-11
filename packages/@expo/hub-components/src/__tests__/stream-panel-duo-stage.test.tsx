@@ -31,7 +31,6 @@ function render(error: string | null) {
         booted: true,
         physical: false,
         supported: true,
-        deviceFrame: null,
       }}
       client={client}
       DeviceScreen={() => <div data-testid="flat-screen" />}

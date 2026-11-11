@@ -65,7 +65,6 @@ test("a sidebar without an add handler lists devices above the inspector, withou
     booted: true,
     physical: false,
     supported: true,
-    deviceFrame: null,
   };
   const markup = renderToStaticMarkup(
     <Sidebar

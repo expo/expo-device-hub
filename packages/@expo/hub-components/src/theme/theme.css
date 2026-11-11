@@ -48,8 +48,3 @@
   --expo-theme-button-agent-overlay-disabled-border: transparent;
   --expo-theme-button-agent-overlay-disabled-text: var(--slate-11);
 }
-
-/* React's inline-style serialization does not yet expose this new CSS property. */
-[data-device-frame-screen="true"] {
-  corner-shape: var(--expo-device-frame-corner-shape, round);
-}

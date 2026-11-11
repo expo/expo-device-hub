@@ -152,6 +152,56 @@ function Screen() {
 }
 ```
 
+### Show the screen in its device shape
+
+Import `DeviceShape` from `@expo/hub-client/shapes` to clip the screen to the shape
+of its device: the corners of each iPhone, iPad, and Pixel model, and the shape of the
+display that an iPhone Duo shows. Like `DeviceScreen`, it takes the client, and it turns
+with the device. It only clips, so it draws nothing and pointer input keeps working. A
+model without a known shape gets no clip. Apps that do not import
+`@expo/hub-client/shapes` do not bundle the shapes.
+
+```tsx
+import { DeviceScreen, useDeviceClient } from "@expo/hub-client";
+import { DeviceShape, useScreenShape } from "@expo/hub-client/shapes";
+
+function ShapedScreen({ model }: { model: string }) {
+  const client = useDeviceClient();
+  // The shape as the viewer sees it, turned with the device, for the box's proportions.
+  const shape = useScreenShape({ client, model });
+  const aspectRatio = shape ? `${shape.width} / ${shape.height}` : "9 / 19.5";
+  return (
+    <div style={{ position: "relative", width: 360, aspectRatio }}>
+      <DeviceShape client={client} model={model} style={{ position: "absolute", inset: 0 }}>
+        <DeviceScreen client={client} />
+      </DeviceShape>
+    </div>
+  );
+}
+```
+
+The client's device name is the default model, but a simulator can report its name
+late. Pass `model` when you know it: the simulator device type name on iOS, such as
+`"iPhone 17 Pro"`, or the AVD hardware profile id on Android, such as `"pixel_9"`.
+`platform`, `display`, `orientation`, and `shape` also override the client, and
+without a client they are the only source, for example for a recording:
+
+```tsx
+<DeviceShape
+  platform="ios"
+  model="iPhone Duo"
+  display="inner"
+  style={{ position: "absolute", inset: 0 }}
+>
+  <video src={recordingUrl} />
+</DeviceShape>
+```
+
+`useScreenShape` returns the same shape for layout, such as the box's aspect ratio above.
+The clip keeps the corners right for the shape's own proportions, so give the box those
+proportions, or pass the box's `aspectRatio` to `DeviceShape`.
+`screenShapeClipPath` returns the CSS `clip-path` for an element that you cannot wrap.
+
 ### Fold a foldable device
 
 `client.fold` has the fold state of a foldable device, such as the iPhone Duo, and is
