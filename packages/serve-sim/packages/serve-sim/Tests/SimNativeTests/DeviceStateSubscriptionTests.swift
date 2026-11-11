@@ -345,6 +345,24 @@ final class DeviceStateSubscriptionTests: XCTestCase {
         await unsubscribe()
     }
 
+    func testRepeatedFailuresLogOncePerKindAndBackOffUntilAnUpdate() async {
+        let waiting = expectation(description: "producer after the recovered failure")
+        let failures = FailingDeviceStateProducer(onWait: { waiting.fulfill() })
+        let record = ReconnectRecord()
+        let bridge = CoreDeviceBridge(deviceStateConsumer: { _, receive in try await failures.consume(receive) },
+                                      hingeClock: { 10 },
+                                      reconnectSleep: { delay in record.sleep(delay); try await Task.sleep(for: .milliseconds(1)) },
+                                      log: { record.log($0) })
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        await fulfillment(of: [waiting], timeout: 2)
+        await unsubscribe()
+        XCTAssertEqual(record.delays, [1, 2, 4, 8, 16, 30, 30, 1, 2, 1].map { Duration.seconds($0) })
+        let prefix = "[hid] Device state observation unavailable: "
+        let logged = record.lines.filter { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count).prefix { $0 != ";" }) }
+        XCTAssertEqual(logged, ["deviceUnavailable", "disconnected", "disconnected"])
+        XCTAssertEqual(record.lines.filter { $0.contains("xcrun devicectl list devices") }.count, 1)
+    }
+
     private func makeBridge(_ source: DeviceStateProducerProbe, reconnectDelay: Duration = .milliseconds(10)) -> CoreDeviceBridge {
         CoreDeviceBridge(deviceStateConsumer: { _, receive in try await source.consume(receive) },
                          hingeClock: { 10 }, reconnectDelay: reconnectDelay)
@@ -425,4 +443,38 @@ private actor PendingDeviceStateRegistration {
         return false
     }
     func release() { pending?.resume(); pending = nil }
+}
+
+/// Fails seven times as missing and twice as disconnected, then delivers one update
+/// before it disconnects again. The next attempt waits until cancellation.
+private actor FailingDeviceStateProducer {
+    private var attempts = 0
+    private let onWait: @Sendable () -> Void
+    init(onWait: @escaping @Sendable () -> Void) { self.onWait = onWait }
+
+    func consume(_ receive: @escaping DeviceStateProducerProbe.Receiver) async throws -> Bool {
+        let attempt = attempts
+        attempts += 1
+        switch attempt {
+        case 0..<7: throw CoreDeviceBridge.BridgeError.deviceUnavailable
+        case 7..<9: throw ProducerError.disconnected
+        case 9:
+            await receive(.angle(.init(angle: 90, timestamp: 11)))
+            throw ProducerError.disconnected
+        default:
+            onWait()
+            try await Task.sleep(for: .seconds(60))
+            return true
+        }
+    }
+}
+
+private final class ReconnectRecord: @unchecked Sendable {
+    private let lock = NSLock()
+    private var sleeps: [Duration] = []
+    private var logged: [String] = []
+    var delays: [Duration] { lock.withLock { sleeps } }
+    var lines: [String] { lock.withLock { logged } }
+    func sleep(_ delay: Duration) { lock.withLock { sleeps.append(delay) } }
+    func log(_ line: String) { lock.withLock { logged.append(line) } }
 }
