@@ -761,6 +761,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // The pose observed while no local command owned the hinge, or while one was
   // pending. A readback that still lags a local preset matches it.
   const observedPoseRef = useRef<FoldPose | null | undefined>(undefined);
+  const observedRotationRef = useRef<DeviceOrientation | null>(null);
   const hingePendingRef = useRef(false);
   const sentHingePoseRef = useRef<FoldPose | null | undefined>(undefined);
   const hingeQueueRef = useRef<ReturnType<
@@ -1230,9 +1231,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         : commandPose
           ? hingePoseOrientation(commandPose)
           : current
-            ? observedScreenConfig(current).physicalOrientation
+            ? (current.deviceOrientation ?? observedScreenConfig(current).physicalOrientation)
             : undefined;
       rotationRef.current = { target: turnedPhysicalOrientation(start, quarterTurns) };
+      observedRotationRef.current = deviceOrientationForPose(rotationRef.current.target);
       setRotationRequest((request) => request + 1);
       setOrientationOverride(true);
       emitHingeEvent({ type: "rotated", quarterTurns });
@@ -1243,10 +1245,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const landRotation = useCallback(
     (config: ScreenSize | null) => {
       if (rotationRef.current === null) return;
-      if (config) observedPoseRef.current = observedScreenConfig(config).hingePose;
+      if (config) {
+        const observed = observedScreenConfig(config);
+        observedPoseRef.current = observed.hingePose;
+        const actual = deviceOrientationForPose(config.deviceOrientation);
+        const displayed = observedRotationRef.current;
+        if (displayed && actual) {
+          const quarterTurns = clockwiseQuarterTurns(
+            legacyOrientationForDeviceChoice(displayed),
+            legacyOrientationForDeviceChoice(actual),
+          );
+          if (quarterTurns) emitHingeEvent({ type: "rotated", quarterTurns });
+        }
+        if (actual) observedRotationRef.current = actual;
+      }
       endRotation();
     },
-    [endRotation],
+    [endRotation, emitHingeEvent],
   );
   // As in serve-sim's rotation tracker (`duo-rotation-state.ts`, serve-sim at
   // ace59bf34, #385), a rotation whose readback does not arrive ends after the
@@ -2223,6 +2238,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           setHardwareKeyboardConnectedState(null);
           setPhysicalPose(undefined);
           sentHingePoseRef.current = undefined;
+          observedRotationRef.current = null;
           endRotation();
           if (hingePendingRef.current) {
             const message = "Connection lost while changing the device pose.";
@@ -2309,6 +2325,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setPhysicalPose(undefined);
     sentHingePoseRef.current = undefined;
     observedPoseRef.current = undefined;
+    observedRotationRef.current = null;
     endRotation();
     hingeQueueRef.current?.clear();
     // Every command of the old session gets a final event, so no listener
@@ -2386,6 +2403,33 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     liveHinge?.hingePose,
     liveHinge?.physicalOrientation,
     physicalPose,
+  ]);
+
+  useEffect(() => {
+    // Keep the displayed baseline while a local control owns the view, then
+    // reconcile external turns on release even without another native config.
+    if (!isDuo || orientationOverride || hingePending || hingePreview) return;
+    const actual = deviceOrientationForPose(screen?.deviceOrientation);
+    if (!actual) return;
+    const previous = observedRotationRef.current;
+    observedRotationRef.current = actual;
+    // A shown named preset frames itself. A custom view still needs its turn
+    // even when the observation happens to match a preset after an angle edit.
+    if (!previous || (liveHinge?.hingePose && physicalPose != null)) return;
+    const quarterTurns = clockwiseQuarterTurns(
+      legacyOrientationForDeviceChoice(previous),
+      legacyOrientationForDeviceChoice(actual),
+    );
+    if (quarterTurns) emitHingeEvent({ type: "rotated", quarterTurns });
+  }, [
+    isDuo,
+    screen?.deviceOrientation,
+    liveHinge?.hingePose,
+    physicalPose,
+    orientationOverride,
+    hingePending,
+    hingePreview,
+    emitHingeEvent,
   ]);
 
   const videoKind = useWebRtc ? "video" : useAvcc ? "canvas" : "img";
