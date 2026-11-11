@@ -135,3 +135,13 @@ test("a shake the input socket never sends shows an error; a sent one does not",
   expect(tags(socket)).toContain(0x14);
   expect(client().shakeError).toBeNull();
 });
+
+test("holding shake on iOS sends one shake, and the release sends nothing", async () => {
+  const { client, admit } = await renderClient({ inputShake: true });
+  const socket = await admit();
+
+  await act(async () => client().startShake());
+  await act(async () => client().stopShake());
+
+  expect(tags(socket)).toEqual([0x14]);
+});

@@ -162,6 +162,8 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     sendKey: () => false,
     pressButton: () => {},
     shake: () => {},
+    startShake: () => {},
+    stopShake: () => {},
     shakeError: null,
     reload: () => {},
     rotate: () => {},

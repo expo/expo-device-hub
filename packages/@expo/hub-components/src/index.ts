@@ -59,6 +59,7 @@ export * from "./theme/tokens";
 export { Sidebar, type SidebarProps } from "./dashboard/Sidebar";
 export { InspectorSections, type InspectorSectionsProps } from "./dashboard/InspectorSections";
 export { StreamPanel } from "./dashboard/StreamPanel";
+export { SHAKE_WOBBLE_MS } from "./dashboard/shakeWobble";
 export {
   ScreenshotToast,
   ScreenshotToaster,

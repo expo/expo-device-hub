@@ -83,7 +83,14 @@ import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { ControlInputError, ControlInputQueue } from "./control-input-queue.ts";
 import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
-import { createShakeRunner, readShakeRequest, settleShakes, shakeEmulator } from "./shake.ts";
+import {
+  createShakeRunner,
+  readShakeRequest,
+  runShakeRequest,
+  settleShakes,
+  shakeEmulator,
+  type ShakeMotion,
+} from "./shake.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
 import { parseSessionReplayMultiplier, SessionReplayConflictError } from "./session-recorder.ts";
 import {
@@ -331,8 +338,8 @@ export type ServerDependencies = {
   readOrientation?: DeviceSessionStateOptions["readOrientation"];
   /** Lock or free the rotation for each device's state; adb by default. */
   applyRotation?: DeviceSessionStateOptions["applyRotation"];
-  /** Shake the device for `POST /api/shake`; the emulator console by default. */
-  shake?: (serial: string) => Promise<void>;
+  /** Shake the device for `POST /api/shake`; the emulator's physical model by default. */
+  shake?: ShakeMotion;
   createInputQueue?: (session: ScrcpySession) => ControlInputQueue;
   recoveryClock?: RecoveryWatchdogClock;
   createUploadManager?: (options: UploadManagerOptions) => UploadManager;
@@ -394,7 +401,8 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     dependencies.setLocation ??
     ((serial: string, fix: GeoFix, signal: AbortSignal) =>
       setEmulatorLocationAsync(serial, fix, signal));
-  const shakeDevice = dependencies.shake ?? ((serial: string) => shakeEmulator(serial));
+  const shakeDevice: ShakeMotion =
+    dependencies.shake ?? ((serial, control) => shakeEmulator(serial, control));
   const shakeRunner = createShakeRunner(shakeDevice);
   const createInputQueue =
     dependencies.createInputQueue ??
@@ -574,7 +582,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             applyRotation:
               dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
             // Replay shakes through the runner too, so a request joins them and stop settles them.
-            shake: (serial) => shakeRunner.run(serial),
+            shake: (serial, durationMs) => shakeRunner.replay(serial, durationMs),
           }),
     });
     context.registerCleanup(() =>
@@ -2226,9 +2234,9 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       if (url.pathname === "/api/shake") {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         try {
-          const { record } = await readShakeRequest(req);
+          const request = await readShakeRequest(req);
           await runForContext(requestContext, (context) =>
-            shakeRunner.run(context.serial, record ? context.recorder : undefined),
+            runShakeRequest(shakeRunner, context.serial, request, context.recorder),
           );
           return Response.json({ ok: true });
         } catch (err) {

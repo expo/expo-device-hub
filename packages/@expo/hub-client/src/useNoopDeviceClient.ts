@@ -96,6 +96,8 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   pressButton: () => {},
   reload: () => {},
   shake: () => {},
+  startShake: () => {},
+  stopShake: () => {},
   shakeError: null,
   rotate: () => {},
   orientation: null,
