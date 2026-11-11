@@ -204,6 +204,6 @@ describe("latestWins", () => {
 test("clock controls keep ticking, preserve edits, and report failures", async () => {
   const { runChildSuite } = await import("./fixtures/run-child-suite");
   const { exitCode, output } = await runChildSuite("simulator-clock-control.child.tsx");
-  expect(output).toContain("21 pass");
+  expect(output).toContain("25 pass");
   expect(exitCode).toBe(0);
 }, 15_000);

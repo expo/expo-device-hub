@@ -361,6 +361,42 @@ test("an open panel observes external overrides after host resets", async () => 
   expect(button().props.children).toBe("2036-06-01 10:45");
 });
 
+for (const clock of ["host", initialStatus.clock]) {
+  for (const failure of ["rejected", "empty"]) {
+    test(`a ${clock} clock recovers polling after ${failure} status replies`, async () => {
+      status.clock = clock;
+      await mountPanel();
+      if (failure === "rejected") readError = "Clock poll connection closed";
+      else emptyStatus = true;
+      const expectedError = readError ?? "Unexpected simulator-settings reply";
+
+      await poll();
+      const messages = () =>
+        renderer!.root.findAllByType("span").map((node) => node.props.children);
+      expect(button().props.children).toBe("Unavailable");
+      expect(button().props.disabled).toBe(true);
+      expect(messages()).toContain(expectedError);
+      expect(polls()).toHaveLength(0);
+
+      const retry = () =>
+        renderer!.root.findAllByType("button").find((node) => node.props.children === "Retry")!;
+      await act(async () => retry().props.onClick());
+      expect(button().props.children).toBe("Unavailable");
+      expect(messages()).toContain(expectedError);
+      expect(polls()).toHaveLength(0);
+
+      readError = null;
+      emptyStatus = false;
+      await act(async () => retry().props.onClick());
+      expect(renderer!.root.findByType(ClockControl).props.value).toBe(clock);
+      expect(button().props.children).toBe(clock === "host" ? "Host default" : "2030-01-01 09:00");
+      expect(button().props.disabled).toBe(false);
+      expect(messages()).not.toContain(expectedError);
+      expect(polls()).toHaveLength(1);
+    });
+  }
+}
+
 test("a stale poll reply cannot replace a clock mutation that started after the read", async () => {
   await mountPanel();
   let finishRead = (_status: typeof status) => {};
