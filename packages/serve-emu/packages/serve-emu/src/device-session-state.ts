@@ -34,7 +34,7 @@ type DeviceSessionStateOptions = {
    * Shake the device for a recorded shake's duration when a replay reaches it; the emulator's
    * physical model by default.
    */
-  shake?(serial: string, durationMs?: number): Promise<void>;
+  shake?(serial: string, durationMs: number | undefined, signal: AbortSignal): Promise<void>;
   recorder?: SessionRecorder;
   logcat?: LogcatHub;
   routeClock?: RoutePlaybackClock;
@@ -67,7 +67,7 @@ export class DeviceSessionState {
   readonly orientation: DisplayOrientationReader;
 
   readonly #applyLocation: DeviceSessionStateOptions["applyLocation"];
-  readonly #shake: (serial: string, durationMs?: number) => Promise<void>;
+  readonly #shake: NonNullable<DeviceSessionStateOptions["shake"]>;
   readonly #applyRotation: DeviceSessionStateOptions["applyRotation"];
   readonly #recordLock: (pose: ScreenOrientation | null) => void;
   readonly #now: () => number;
@@ -81,8 +81,8 @@ export class DeviceSessionState {
     this.#applyLocation = options.applyLocation;
     this.#shake =
       options.shake ??
-      (async (serial, durationMs) => {
-        await shakeEmulatorFor(serial, durationMs);
+      (async (serial, durationMs, signal) => {
+        await shakeEmulatorFor(serial, durationMs, signal);
       });
     this.#applyRotation = options.applyRotation;
     const display = createDisplayOrientationReader({
@@ -129,7 +129,7 @@ export class DeviceSessionState {
       },
       shake: async (signal, durationMs) => {
         if (signal.aborted) throw abortReason(signal, "session replay cancelled");
-        await this.#shake(this.serial, durationMs);
+        await this.#shake(this.serial, durationMs, signal);
       },
     };
   }

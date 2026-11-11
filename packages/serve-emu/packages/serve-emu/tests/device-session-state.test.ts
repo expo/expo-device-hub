@@ -184,3 +184,26 @@ test("a context that creates its device state needs every device dependency", ()
   const missing: ConstructorParameters<typeof ActiveDeviceSession>[0] = partial;
   expect(missing.serial).toBe("device-a");
 });
+
+describe("DeviceSessionState shake replay", () => {
+  test("a replayed shake gets its recorded duration and the replay's abort signal", async () => {
+    const calls: Array<{ serial: string; durationMs: number | undefined; signal: AbortSignal }> =
+      [];
+    const state = new DeviceSessionState({
+      serial: "emulator-5554",
+      applyLocation: async () => {},
+      readOrientation: readNoOrientation,
+      applyRotation: async () => {
+        throw new Error("not used");
+      },
+      shake: async (serial, durationMs, signal) => {
+        calls.push({ serial, durationMs, signal });
+      },
+    });
+    const replay = new AbortController();
+
+    await state.replayHandlers.shake(replay.signal, 2_400);
+
+    expect(calls).toEqual([{ serial: "emulator-5554", durationMs: 2_400, signal: replay.signal }]);
+  });
+});

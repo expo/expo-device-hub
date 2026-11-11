@@ -152,12 +152,17 @@ const ANDROID_STREAM_SETTING_CAPABILITIES = {
 const KEYCODE_R = 46;
 /** serve-emu ends a held shake 1.5 s after the last renewal; renew well before that. */
 const SHAKE_HOLD_RENEW_MS = 500;
+/**
+ * serve-emu swings one shake for at most 20 s. Stop renewing then too, so a hold whose release
+ * never comes (a lost key-up) does not start shake after shake.
+ */
+const SHAKE_HOLD_MAX_MS = 20_000;
 
-/** A held shake: where it goes, its requests in order, and the timer that renews it. */
+/** A held shake: where it goes, when it started, and the timer that renews it. */
 type ShakeHold = {
   url: string;
   request: number;
-  queue: Promise<void>;
+  startedAt: number;
   busy: boolean;
   timer: ReturnType<typeof setInterval> | null;
 };
@@ -346,6 +351,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Counts shakes and device changes, so only the latest shake's answer is shown.
   const shakeRequest = useRef(0);
   const shakeHold = useRef<ShakeHold | null>(null);
+  // The hold requests of every press, in order: a release that waits for its press's answer
+  // still reaches serve-emu before the next press, so it cannot end the next press's hold.
+  const shakeHoldQueue = useRef<Promise<void>>(Promise.resolve());
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
   const attachedVideoRef = useRef<HTMLVideoElement | null>(null);
   const webRtcVideoOwnerRef = useRef<{
@@ -582,7 +590,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const sendShakeHold = useCallback(
     (hold: ShakeHold, held: boolean) => {
       hold.busy = true;
-      hold.queue = hold.queue
+      shakeHoldQueue.current = shakeHoldQueue.current
         .then(() => postShake(hold.url, { hold: held }, hold.request))
         .then((ok) => {
           hold.busy = false;
@@ -597,7 +605,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     const hold: ShakeHold = {
       url: deviceApiUrl(baseUrl, "/api/shake", targetDevice),
       request: ++shakeRequest.current,
-      queue: Promise.resolve(),
+      startedAt: Date.now(),
       busy: false,
       timer: null,
     };
@@ -605,7 +613,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setShakeError(null);
     sendShakeHold(hold, true);
     hold.timer = setInterval(() => {
-      if (!hold.busy) sendShakeHold(hold, true);
+      if (Date.now() - hold.startedAt >= SHAKE_HOLD_MAX_MS) endShakeRenewal(hold);
+      else if (!hold.busy) sendShakeHold(hold, true);
     }, SHAKE_HOLD_RENEW_MS);
   }, [shakeSupported, baseUrl, sendShakeHold, targetDevice]);
 

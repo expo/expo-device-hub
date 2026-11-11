@@ -1149,7 +1149,7 @@ export interface DeviceClient {
    * Start a shake that lasts until {@link stopShake}, as a person keeps shaking a phone until
    * the dev menu appears. On Android, serve-emu keeps the emulator swinging while this client
    * renews the hold, and swings at least as long as {@link shake}; React Native's own detector
-   * needs a hold of more than 2 s. iOS has a real shake event, so this sends one shake there. A
+   * needs a hold of about 3 s. iOS has a real shake event, so this sends one shake there. A
    * no-op while `capabilities.shake` is false or while a shake is held.
    */
   startShake: () => void;

@@ -53,22 +53,40 @@ export function SidebarActionButton({
 
 /**
  * Pointer and keyboard handlers for a button that acts while it is held. A press starts on a
- * primary pointer down or on Enter or Space, and ends once, on release, cancel, lost capture,
- * blur, or unmount.
+ * primary pointer down or on Enter or Space, and ends once: on release, cancel, lost capture,
+ * blur, unmount, or when the window loses focus or the page hides, because a release outside the
+ * window never reaches the button. A click without a pointer or key press before it, as a screen
+ * reader sends, is a short press.
  */
 function useHoldPress(onPressStart?: () => void, onPressEnd?: () => void) {
   const pressed = useRef(false);
+  // Set by a pointer or key press, so the click that follows it does not press again.
+  const pressedBeforeClick = useRef(false);
   const end = useRef(onPressEnd);
   end.current = onPressEnd;
-  const start = () => {
-    if (pressed.current) return;
-    pressed.current = true;
-    onPressStart?.();
-  };
+  const stopWatching = useRef(() => {});
   const finish = () => {
     if (!pressed.current) return;
     pressed.current = false;
+    stopWatching.current();
     end.current?.();
+  };
+  const start = () => {
+    if (pressed.current) return;
+    pressed.current = true;
+    pressedBeforeClick.current = true;
+    onPressStart?.();
+    const onVisibility = () => {
+      if (globalThis.document?.visibilityState === "hidden") finish();
+    };
+    globalThis.window?.addEventListener?.("blur", finish);
+    globalThis.window?.addEventListener?.("pagehide", finish);
+    globalThis.document?.addEventListener?.("visibilitychange", onVisibility);
+    stopWatching.current = () => {
+      globalThis.window?.removeEventListener?.("blur", finish);
+      globalThis.window?.removeEventListener?.("pagehide", finish);
+      globalThis.document?.removeEventListener?.("visibilitychange", onVisibility);
+    };
   };
   useEffect(() => () => finish(), []);
   return {
@@ -90,6 +108,14 @@ function useHoldPress(onPressStart?: () => void, onPressEnd?: () => void) {
     },
     onKeyUp: (event: KeyboardEvent<HTMLButtonElement>) => {
       if (event.key === "Enter" || event.key === " ") finish();
+    },
+    onClick: () => {
+      if (pressedBeforeClick.current) {
+        pressedBeforeClick.current = false;
+        return;
+      }
+      start();
+      finish();
     },
   };
 }

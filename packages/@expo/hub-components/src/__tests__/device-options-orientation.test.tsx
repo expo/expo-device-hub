@@ -258,3 +258,55 @@ test("an Android Shake row says to hold for a longer shake; an iOS row, whose sh
   expect(shakeRow().props.description).toBeUndefined();
   expect(button().props["aria-describedby"]).toBeUndefined();
 });
+
+test("a Shake press ends when the window loses focus, and a click alone is a short shake", async () => {
+  const listeners = new Map<string, Set<() => void>>();
+  stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  stubGlobal("HTMLFormElement", class {});
+  stubGlobal("window", {
+    addEventListener(type: string, listener: () => void) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type)!.add(listener);
+    },
+    removeEventListener(type: string, listener: () => void) {
+      listeners.get(type)?.delete(listener);
+    },
+    setTimeout,
+    clearTimeout,
+  });
+  const calls: string[] = [];
+  const client = {
+    platform: "android",
+    status: "streaming",
+    recordingControlsLocked: false,
+    orientationUnavailable: null,
+    capabilities: { orientation: false, shake: true },
+    orientation: null,
+    shake: () => calls.push("client.shake"),
+    startShake: () => calls.push("start"),
+    stopShake: () => calls.push("stop"),
+    deviceSettings: null,
+    deviceSettingsStatus: "idle",
+    deviceSettingsPending: new Set(),
+  } as unknown as DeviceClient;
+  await act(async () => {
+    renderer = create(<DeviceOptionsSection client={client} showDeviceSettings={false} />);
+  });
+  const button = () =>
+    renderer!.root.find((node) => node.type === "button" && node.props.children === "Shake");
+
+  // Enter goes down, then the window loses focus and the key-up never comes.
+  await act(async () => button().props.onKeyDown({ key: "Enter", repeat: false }));
+  expect(listeners.get("blur")?.size).toBe(1);
+  await act(async () => [...listeners.get("blur")!].forEach((listener) => listener()));
+  expect(calls).toEqual(["start", "stop"]);
+  expect(listeners.get("blur")?.size).toBe(0);
+  // The click that followed the key press does not shake again.
+  await act(async () => button().props.onClick());
+  expect(calls).toEqual(["start", "stop"]);
+
+  // A click with no pointer or key press before it, as a screen reader sends.
+  await act(async () => button().props.onClick());
+  expect(calls).toEqual(["start", "stop", "start", "stop"]);
+  expect(calls).not.toContain("client.shake");
+});
