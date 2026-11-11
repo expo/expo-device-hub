@@ -28,6 +28,11 @@ export type H264EncoderOpts = {
   inputFormat?: H264EncoderInputFormat;
   /** Android display rotation quarter turns applied before encoding. */
   quarterTurn?: QuarterTurn;
+  /**
+   * A fixed output frame. The even-cropped input is scaled to `content`'s size and drawn at
+   * its position on a black frame of this size. Without it, the output is the input's size.
+   */
+  canvas?: H264EncoderCanvas;
   fps: number;
   bitRate: number;
   /** Seconds between forced keyframes; 0 uses libx264's default keyint. */
@@ -40,6 +45,12 @@ export type H264EncoderOpts = {
 };
 
 export type QuarterTurn = 0 | 1 | 2 | 3;
+
+export type H264EncoderCanvas = {
+  width: number;
+  height: number;
+  content: { x: number; y: number; width: number; height: number };
+};
 
 const NAL_IDR = 5;
 const NAL_SPS = 7;
@@ -110,6 +121,24 @@ function positiveInteger(value: number, name: string, max: number): number {
   return value;
 }
 
+function validateCanvas(canvas: H264EncoderCanvas): void {
+  const evenDimension = (value: number, name: string) => {
+    positiveInteger(value, name, MAX_DIMENSION);
+    if (value < 2 || value % 2 !== 0) throw new RangeError(`${name} must be even`);
+  };
+  evenDimension(canvas.width, "canvas width");
+  evenDimension(canvas.height, "canvas height");
+  evenDimension(canvas.content.width, "canvas content width");
+  evenDimension(canvas.content.height, "canvas content height");
+  const { x, y } = canvas.content;
+  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || x < 0 || y < 0) {
+    throw new RangeError("canvas content position must be non-negative integers");
+  }
+  if (x + canvas.content.width > canvas.width || y + canvas.content.height > canvas.height) {
+    throw new RangeError("canvas content must fit inside the canvas");
+  }
+}
+
 function validateOptions(opts: H264EncoderOpts): number | null {
   const width = positiveInteger(opts.width, "width", MAX_DIMENSION);
   const height = positiveInteger(opts.height, "height", MAX_DIMENSION);
@@ -132,6 +161,7 @@ function validateOptions(opts: H264EncoderOpts): number | null {
   if (!Number.isInteger(quarterTurn) || quarterTurn < 0 || quarterTurn > 3) {
     throw new RangeError("quarterTurn must be an integer from 0 through 3");
   }
+  if (opts.canvas) validateCanvas(opts.canvas);
 
   if (opts.encoderName !== undefined && !FFMPEG_ENCODER_NAMES.includes(opts.encoderName)) {
     throw new RangeError(`unsupported ffmpeg H.264 encoder ${opts.encoderName}`);
@@ -190,11 +220,18 @@ export function ffmpegInputArgs(
   ];
 }
 
-export function videoFilter(quarterTurn: QuarterTurn): string {
+export function videoFilter(quarterTurn: QuarterTurn, canvas?: H264EncoderCanvas): string {
   const filters = ["crop=trunc(iw/2)*2:trunc(ih/2)*2"];
   if (quarterTurn === 1) filters.push("transpose=cclock");
   else if (quarterTurn === 2) filters.push("hflip", "vflip");
   else if (quarterTurn === 3) filters.push("transpose=clock");
+  if (canvas) {
+    const { content } = canvas;
+    filters.push(
+      `scale=${content.width}:${content.height}`,
+      `pad=${canvas.width}:${canvas.height}:${content.x}:${content.y}:black`,
+    );
+  }
   return filters.join(",");
 }
 
@@ -208,6 +245,7 @@ type FfmpegEncoderArgsOptions = Pick<
   | "quarterTurn"
   | "inputFormat"
   | "encoderName"
+  | "canvas"
 >;
 
 export function resolveVaapiDevice(): string {
@@ -230,7 +268,7 @@ export function ffmpegEncoderArgs(
     "-bufsize",
     String(opts.bitRate),
   ];
-  const filter = videoFilter(opts.quarterTurn ?? 0);
+  const filter = videoFilter(opts.quarterTurn ?? 0, opts.canvas);
   const args = ["-hide_banner", "-loglevel", "error"];
   if (encoderName === "h264_vaapi") {
     args.push("-init_hw_device", `vaapi=va:${vaapiDevice}`, "-filter_hw_device", "va");
@@ -868,8 +906,8 @@ export class H264Encoder {
     const croppedWidth = opts.width - (opts.width % 2);
     const croppedHeight = opts.height - (opts.height % 2);
     const transposed = this.quarterTurn === 1 || this.quarterTurn === 3;
-    this.encodedWidth = transposed ? croppedHeight : croppedWidth;
-    this.encodedHeight = transposed ? croppedWidth : croppedHeight;
+    this.encodedWidth = opts.canvas?.width ?? (transposed ? croppedHeight : croppedWidth);
+    this.encodedHeight = opts.canvas?.height ?? (transposed ? croppedWidth : croppedHeight);
     this.#parser = new H264OutputParser({
       fps: opts.fps,
       onFrame: opts.onFrame,

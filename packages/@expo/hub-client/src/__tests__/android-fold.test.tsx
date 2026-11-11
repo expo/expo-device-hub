@@ -93,7 +93,7 @@ async function mount() {
     token?: boolean;
     locked?: boolean;
   }) {
-    result = useAndroidFold(url, token ? nextFetch : fetchImpl, locked);
+    result = useAndroidFold(url, token ? nextFetch : fetchImpl, locked ? "recording" : null);
     return null;
   }
   await act(async () => {
@@ -207,9 +207,12 @@ test("surfaces write failures and rejects changes while recording is locked", as
   expect(h.result().fold?.pending).toBe(false);
   expect(h.result().fold?.error).toBe("Fold failed");
   await h.update({ locked: true });
+  expect(h.result().fold?.unavailable).toBe("recording");
   await h.choose("closed");
   expect(h.writes).toHaveLength(1);
   expect(h.result().fold?.error).toContain("recording");
+  await h.update({ locked: false });
+  expect(h.result().fold?.unavailable).toBeUndefined();
 });
 
 test("a queued choice is rejected if recording locks before its turn", async () => {
@@ -337,7 +340,7 @@ for (const stage of ["headers", "body"] as const) {
       );
     };
     function Harness() {
-      result = useAndroidFold("https://hub.test/api/fold?device=one", fetchImpl, false);
+      result = useAndroidFold("https://hub.test/api/fold?device=one", fetchImpl, null);
       return null;
     }
     try {

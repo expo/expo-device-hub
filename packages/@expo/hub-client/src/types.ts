@@ -215,6 +215,12 @@ export interface DeviceFold {
   pending: boolean;
   /** The last failed fold command, cleared when the next one starts. */
   error: string | null;
+  /**
+   * Why fold commands are unavailable now; absent while they are available. An Android
+   * recording sets it until it reports that it follows folds, and `setControl` then only sets
+   * `error`.
+   */
+  unavailable?: DeviceRecordingLockReason;
   /** Present exactly when `capabilities.fold.tableMode` is true. */
   tableMode?: DeviceFoldTableMode;
   /** Present when the backend reports how the device is held. */

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { DeviceSessionState } from "../src/device-session-state.ts";
-import { createApp, type AppClock } from "../src/middleware.ts";
+import { createApp, type AppClock, type CreateAppDependencies } from "../src/middleware.ts";
 import { ScreenRecording } from "../src/screen-recording.ts";
 import { type ScrcpySession, type VideoFrame, type VideoPacket } from "../src/scrcpy.ts";
 import {
@@ -800,5 +800,123 @@ test("reports the display orientation in /api and /health and records the locked
     expect(calls).toEqual([`read ${session.serial}`, `lock ${session.serial} landscape_left`]);
   } finally {
     app.stop();
+  }
+});
+
+const FOLD_DISPLAYS = {
+  inner: { width: 2076, height: 2152 },
+  outer: { width: 1080, height: 2424 },
+};
+const FOLD_KEYFRAME = Buffer.from(
+  "000000016742c01fd9005005bb0110000003001000000303c0f18324800000000168cb83cb200000000165888421",
+  "hex",
+);
+
+async function foldRecorder(root: string) {
+  return ScreenRecording.create({
+    directory: join(root, "session"),
+    udid: "device-test",
+    deviceName: "Pixel_9_Pro_Fold",
+    runtimeDisplayName: "Android 16",
+    createWriter: async ({ path }) => {
+      await writeFile(path, "test-writer");
+      return { add: async () => {}, finish: async () => {}, cancel: async () => {} };
+    },
+  });
+}
+
+test("a foldable's gRPC capture records on the fold canvas and reports that it follows folds", async () => {
+  const root = await mkdtemp(join(tmpdir(), "create-app-fold-recording-"));
+  const recorder = await foldRecorder(root);
+  const { session } = fakeScrcpySession(1);
+  let recording: Parameters<NonNullable<CreateAppDependencies["startSession"]>>[0]["recording"];
+  const app = await createApp(
+    {
+      serial: session.serial,
+      streamMode: "grpc-screenshot",
+      maxSize: 960,
+      screenRecording: recorder,
+    },
+    {
+      readOrientation: readNoOrientation,
+      readFoldableDisplays: async () => FOLD_DISPLAYS,
+      readFoldState: async () => ({ supported: true, posture: "opened", hingeAngle: 180 }),
+      startSession: async (options) => {
+        recording = options.recording;
+        return { ...adaptScrcpySession(session), mode: "grpc-screenshot", feedsRecording: true };
+      },
+    },
+  );
+  try {
+    expect(recording?.canvas).toEqual({ width: 926, height: 960 });
+    expect(recorder.followsFold).toBe(true);
+    recording!.accept(
+      { type: "frame", data: FOLD_KEYFRAME, pts: 0n, isConfig: false, isKey: true },
+      {
+        width: 2076,
+        height: 2152,
+        screen: "inner",
+        contentRect: { x: 0, y: 0, width: 926, height: 960 },
+      },
+    );
+    await recorder.ready;
+    const info = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await info.json()).toMatchObject({
+      screenRecording: { status: "recording", followsFold: true },
+    });
+    await recorder.finish();
+    const manifest = JSON.parse(await readFile(join(root, "session", "session.json"), "utf8"));
+    expect(manifest).toMatchObject({ width: 926, height: 960 });
+    expect(manifest.deviceStates).toEqual([
+      {
+        timeMs: 0,
+        state: {
+          width: 2076,
+          height: 2152,
+          screen: "inner",
+          contentRect: { x: 0, y: 0, width: 926, height: 960 },
+          hingeAngle: 180,
+          posture: "opened",
+        },
+      },
+    ]);
+  } finally {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("refuses a fold while the recording takes the viewers' packets", async () => {
+  const root = await mkdtemp(join(tmpdir(), "create-app-fold-locked-"));
+  const recorder = await foldRecorder(root);
+  const { session } = fakeScrcpySession(1);
+  let requestedRecording = false;
+  const app = await createApp(
+    { serial: session.serial, screenRecording: recorder },
+    {
+      readOrientation: readNoOrientation,
+      readFoldableDisplays: async () => FOLD_DISPLAYS,
+      startSession: async (options) => {
+        requestedRecording = options.recording !== undefined;
+        return adaptScrcpySession(session);
+      },
+    },
+  );
+  try {
+    // scrcpy capture never encodes the fold canvas.
+    expect(requestedRecording).toBe(false);
+    expect(recorder.followsFold).toBe(false);
+    const response = await app.handleRequest(
+      new Request("http://middleware.test/api/fold", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ posture: "closed" }),
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ ok: false });
+  } finally {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
   }
 });

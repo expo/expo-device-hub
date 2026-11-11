@@ -241,6 +241,10 @@ function FoldButtons() {
 }
 ```
 
+While `fold.unavailable` is set, the device does not accept fold commands, so disable your
+fold controls. An Android recording sets it to its recording lock reason, unless the recording
+reports that it follows folds; serve-emu does that for a foldable with gRPC capture.
+
 `fold.tableMode` and `fold.physical` are present only on a device that has them. The
 poses share one vocabulary, `FOLD_POSES`: `closed`, `open`, `laptop`, `book`, and
 `tent`. `fold.observe` reports the steps of each fold command, from its request to its
@@ -375,7 +379,7 @@ client.setOrientation("landscape_left");
 // them.
 // While an Android recording could break, client.recordingLock is "status-unknown" or
 // "recording" and rotate, setOrientation and the stream setters are silently ignored. Disable
-// those controls from it. client.orientationUnavailable gives the reason orientation cannot
+// those controls from it. Fold has its own reason, client.fold.unavailable. client.orientationUnavailable gives the reason orientation cannot
 // change now, also while the iOS input socket cannot take input.
 client.reload(); // reload the running React Native bundle
 client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance

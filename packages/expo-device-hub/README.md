@@ -143,6 +143,14 @@ value stops the Hub at startup with the variable name in the error.
 On success, `recordings.json` in the output directory lists a subdirectory containing
 `recording.mp4` and `session.json`. Failed recordings leave the manifest empty.
 
+A foldable emulator, such as the Pixel 9 Pro Fold, can fold and unfold while it records with
+the default gRPC capture. The Hub records it on one fixed canvas that fits both displays and
+centers the shown display on it. `session.json` then has a `deviceStates` timeline with the
+display (`inner` or `outer`), its place on the canvas, the hinge angle, and the posture at each
+change. The recording status that `/api` reports has `followsFold: true`. With scrcpy capture,
+a fold still ends the recording, and the Hub refuses fold commands while it records. LLP 0018
+in the repository's `llp/` folder describes the canvas and the timeline.
+
 Keep the emulator's orientation and capture settings unchanged during recording.
 Rotation invalidates the recording. A capture failure does not: the Hub restarts the
 capture and the recording continues when the encoder configuration is unchanged. The gap

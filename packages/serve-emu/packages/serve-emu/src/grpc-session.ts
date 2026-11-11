@@ -37,6 +37,7 @@ import {
   rgb888MmapRegionBytes,
   type StableMmapRead,
 } from "./grpc-mmap.ts";
+import { GrpcRecordingEncoder } from "./grpc-recording-encoder.ts";
 import { compileGesture, normalizeTextForControl, type Gesture } from "./input.ts";
 import {
   SCRCPY_DEFAULTS,
@@ -1591,6 +1592,7 @@ export async function startGrpcSession(
   let closed = false;
   let closeTask: Promise<void> | null = null;
   let encoderLifecycle: GrpcEncoderLifecycle<GrpcSessionEncoder> | null = null;
+  let recordingEncoder: GrpcRecordingEncoder | null = null;
   let encoderHasOutput = false;
   let captureTransport: GrpcImageCaptureTransport | null = null;
   let latest: EmuImage | null = null;
@@ -1712,7 +1714,10 @@ export async function startGrpcSession(
     }
     if (!repeat && latest === lastSubmittedImage) return;
     const now = performance.now();
-    const accepted = encoder.write(latest.image, nowUs());
+    const ptsUs = nowUs();
+    const accepted = encoder.write(latest.image, ptsUs);
+    // The recording follows the frames that the live stream accepts, with the same timestamps.
+    if (accepted) recordingEncoder?.write(latest, ptsUs);
     waitingForEncoder = !accepted || !encoder.writable;
     pendingRepeat = !accepted && repeat;
     if (accepted) lastSubmittedImage = latest;
@@ -2079,7 +2084,10 @@ export async function startGrpcSession(
     displaySizePollTimer = null;
     controls?.close(new Error("gRPC screenshot session closed"));
     const inputRelease = inputSource === "grpc" ? releaseInput() : Promise.resolve();
-    const encoderClose = encoderLifecycle?.close() ?? Promise.resolve();
+    const encoderClose = Promise.all([
+      encoderLifecycle?.close() ?? Promise.resolve(),
+      recordingEncoder?.close() ?? Promise.resolve(),
+    ]);
     removeScrcpyControlListeners?.();
     removeScrcpyControlListeners = null;
     const scrcpyControlClose =
@@ -2209,6 +2217,17 @@ export async function startGrpcSession(
         }),
     });
     const transport = captureTransport;
+    if (options.recording) {
+      const output = options.recording;
+      recordingEncoder = new GrpcRecordingEncoder({
+        output,
+        createEncoder: (encoderOptions) => runtime.createEncoder(encoderOptions),
+        fps: maxFps,
+        bitRate,
+        keyFrameInterval,
+        inputFormat: transport.encoderInputFormat,
+      });
+    }
 
     let firstFrameTimer: ReturnType<typeof setTimeout> | null = null;
     let firstFrameAbort: (() => void) | null = null;
@@ -2296,6 +2315,7 @@ export async function startGrpcSession(
       serial,
       meta,
       controls,
+      ...(recordingEncoder ? { feedsRecording: true } : {}),
       diagnostics: () => ({ grpcCapture: captureDiagnostics.snapshot() }),
       readFrame,
       onFatal(listener) {

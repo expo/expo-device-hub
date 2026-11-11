@@ -15,7 +15,8 @@ const POSTURES: Record<string, FoldPosture> = {
   TENT: "tent",
 };
 
-type FoldState = Omit<FoldStatus, "hingeRange">;
+/** The hinge state of a device, without its range. */
+export type FoldState = Omit<FoldStatus, "hingeRange">;
 
 const UNSUPPORTED: FoldState = { supported: false, posture: null, hingeAngle: null };
 
@@ -35,7 +36,10 @@ export async function getFoldStatus(
 }
 
 /** The sensor's angle and the posture Android derives from it. */
-async function readFoldState(serial: string, runExec: typeof execText): Promise<FoldState> {
+export async function readFoldState(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<FoldState> {
   if (!isEmulatorSerial(serial)) return UNSUPPORTED;
 
   const sensor = await runExec("adb", ["-s", serial, "emu", "sensor", "get", "hinge-angle0"], {
@@ -93,14 +97,8 @@ async function readHingeRange(
   serial: string,
   runExec: typeof execText,
 ): Promise<FoldStatus["hingeRange"]> {
-  const avdPath = await readEmuConsoleValue(serial, ["avd", "path"], runExec);
-  if (!avdPath) return null;
-  let config: string;
-  try {
-    config = await readFile(join(avdPath, "hardware-qemu.ini"), "utf8");
-  } catch {
-    return null;
-  }
+  const config = await readHardwareConfig(serial, runExec);
+  if (config === null) return null;
   // The value lists one range per hinge, starting with hinge-angle0's.
   const range = config.match(
     /^hw\.sensor\.hinge\.ranges\s*=\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/m,
@@ -109,6 +107,60 @@ async function readHingeRange(
   const min = Number(range[1]);
   const max = Number(range[2]);
   return Number.isFinite(min) && Number.isFinite(max) && min < max ? { min, max } : null;
+}
+
+/**
+ * The hardware config that the emulator writes at launch, or null when this
+ * host cannot read it, for example when adb reaches an emulator on another host.
+ */
+async function readHardwareConfig(
+  serial: string,
+  runExec: typeof execText,
+): Promise<string | null> {
+  const avdPath = await readEmuConsoleValue(serial, ["avd", "path"], runExec);
+  if (!avdPath) return null;
+  try {
+    return await readFile(join(avdPath, "hardware-qemu.ini"), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** A display's size in its native pixels. */
+export type DisplaySize = { width: number; height: number };
+
+/**
+ * The two displays of a foldable emulator: `inner` is the whole panel that the
+ * open device shows, and `outer` is the display region that the closed device
+ * shows, such as a Pixel Pro Fold's cover display.
+ */
+export type FoldableDisplays = { inner: DisplaySize; outer: DisplaySize };
+
+/** The displays of a foldable emulator, or null for a device without a hinge and a fold region. */
+export async function readFoldableDisplays(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<FoldableDisplays | null> {
+  if (!isEmulatorSerial(serial)) return null;
+  const config = await readHardwareConfig(serial, runExec);
+  return config === null ? null : parseFoldableDisplays(config);
+}
+
+export function parseFoldableDisplays(config: string): FoldableDisplays | null {
+  const value = (key: string) =>
+    config.match(new RegExp(`^${key.replace(/\./g, "\\.")}\\s*=\\s*(.*?)\\s*$`, "m"))?.[1];
+  const size = (prefix: string): DisplaySize | null => {
+    const width = Number(value(`${prefix}.width`));
+    const height = Number(value(`${prefix}.height`));
+    return Number.isSafeInteger(width) && Number.isSafeInteger(height) && width > 0 && height > 0
+      ? { width, height }
+      : null;
+  };
+  if (!/^(?:true|yes)$/i.test(value("hw.sensor.hinge") ?? "")) return null;
+  const inner = size("hw.lcd");
+  // The emulator shows display region 0.1 of the panel while the device is folded.
+  const outer = size("hw.displayRegion.0.1");
+  return inner && outer ? { inner, outer } : null;
 }
 
 export async function setFoldPosture(

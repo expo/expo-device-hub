@@ -10,7 +10,13 @@ import {
 } from "./android-fold";
 import { foldCommandOffered, type FoldControlCommand } from "./fold";
 import { createLatestWriter } from "./latest-writer";
-import { type DeviceFold, type DeviceFoldCapabilities } from "./types";
+import {
+  type DeviceFold,
+  type DeviceFoldCapabilities,
+  type DeviceRecordingLockReason,
+} from "./types";
+
+const LOCKED_MESSAGE = "Fold changes are unavailable while recording is locked.";
 
 interface Owner {
   url: string;
@@ -33,7 +39,12 @@ interface Write {
 
 /** Android's fold adapter. Requests from a retired device or token cannot update this one. */
 // @ref LLP 0016#android-emulators — share fold state and capabilities without platform UI or placeholder groups
-export function useAndroidFold(url: string | null, fetchImpl: FoldFetch, locked: boolean) {
+export function useAndroidFold(
+  url: string | null,
+  fetchImpl: FoldFetch,
+  lock: DeviceRecordingLockReason | null,
+) {
+  const locked = lock !== null;
   const owner = useMemo<Owner | null>(
     () => (url ? { url, fetchImpl, revision: 0, pending: false, status: null } : null),
     [url, fetchImpl],
@@ -48,8 +59,7 @@ export function useAndroidFold(url: string | null, fetchImpl: FoldFetch, locked:
     return createLatestWriter(
       async ({ owner: target, angle }: Write) => {
         if (current.current !== target) return null;
-        if (lockedRef.current)
-          throw new Error("Fold changes are unavailable while recording is locked.");
+        if (lockedRef.current) throw new Error(LOCKED_MESSAGE);
         return requestAndroidFold(target.fetchImpl, target.url, angle);
       },
       (outcome) => {
@@ -128,9 +138,7 @@ export function useAndroidFold(url: string | null, fetchImpl: FoldFetch, locked:
           status: owner.status,
           pending: owner.pending,
           choice: previous?.owner === owner ? previous.choice : undefined,
-          error: lockedRef.current
-            ? "Fold changes are unavailable while recording is locked."
-            : "Fold control is not supported.",
+          error: lockedRef.current ? LOCKED_MESSAGE : "Fold control is not supported.",
         }));
         return;
       }
@@ -154,10 +162,11 @@ export function useAndroidFold(url: string | null, fetchImpl: FoldFetch, locked:
             pose: androidFoldPose(visible?.choice ?? status.hingeAngle ?? undefined),
             pending: visible?.pending ?? false,
             error: visible?.error ?? null,
+            ...(lock ? { unavailable: lock } : {}),
             setControl,
           }
         : null,
-    [status, visible, setControl],
+    [status, visible, setControl, lock],
   );
   return { fold, foldCapabilities: capabilities };
 }

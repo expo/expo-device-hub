@@ -1,0 +1,318 @@
+import { afterEach, expect, test } from "bun:test";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseFoldableDisplays } from "../src/fold.ts";
+import { GrpcRecordingEncoder, type GrpcRecordingOutput } from "../src/grpc-recording-encoder.ts";
+import { ffmpegEncoderArgs, type H264EncoderOpts } from "../src/h264-encoder.ts";
+import {
+  captureSize,
+  placeOnCanvas,
+  poseForGeometry,
+  recordingCanvas,
+  recordingGeometry,
+  type RecordingGeometry,
+} from "../src/recording-canvas.ts";
+import { ScreenRecording } from "../src/screen-recording.ts";
+import type { VideoFrame } from "../src/scrcpy.ts";
+
+// The Pixel 9 Pro Fold AVD profile: the inner panel and the region that the closed device shows.
+const PIXEL_9_PRO_FOLD = `hw.lcd.width = 2076
+hw.lcd.height = 2152
+hw.displayRegion.0.1.xOffset = 0
+hw.displayRegion.0.1.width = 1080
+hw.displayRegion.0.1.height = 2424
+hw.displayRegion.0.2.width = 0
+hw.sensor.hinge = true
+hw.sensor.hinge.ranges = 0-180
+`;
+const DISPLAYS = { inner: { width: 2076, height: 2152 }, outer: { width: 1080, height: 2424 } };
+const LAYOUT = recordingCanvas(DISPLAYS, 960);
+const INNER: RecordingGeometry = recordingGeometry({ width: 926, height: 960 }, LAYOUT);
+const OUTER: RecordingGeometry = recordingGeometry({ width: 427, height: 960 }, LAYOUT);
+
+const roots: string[] = [];
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+test("reads a foldable's two displays from the emulator's hardware config", () => {
+  expect(parseFoldableDisplays(PIXEL_9_PRO_FOLD)).toEqual(DISPLAYS);
+  expect(parseFoldableDisplays(PIXEL_9_PRO_FOLD.replace("hinge = true", "hinge = yes"))).toEqual(
+    DISPLAYS,
+  );
+  // A phone has no hinge, and a hinge without a fold region names no second display.
+  expect(parseFoldableDisplays(PIXEL_9_PRO_FOLD.replace("hinge = true", "hinge = false"))).toBe(
+    null,
+  );
+  expect(parseFoldableDisplays(PIXEL_9_PRO_FOLD.replace("0.1.width = 1080", "0.1.width = 0"))).toBe(
+    null,
+  );
+});
+
+test("sizes the canvas to both displays' captures in the gRPC box", () => {
+  // The emulator fits each display into the 960 px box; serve-emu crops odd sizes to even.
+  expect(captureSize(DISPLAYS.inner, 960)).toEqual({ width: 926, height: 960 });
+  expect(captureSize(DISPLAYS.outer, 960)).toEqual({ width: 426, height: 960 });
+  expect(captureSize(DISPLAYS.outer, 0)).toEqual(DISPLAYS.outer);
+  expect(LAYOUT.canvas).toEqual({ width: 926, height: 960 });
+  expect(recordingCanvas(DISPLAYS, 0).canvas).toEqual({ width: 2076, height: 2424 });
+});
+
+test("centers each display on the canvas, and scales one that does not fit", () => {
+  expect(INNER).toEqual({
+    width: 2076,
+    height: 2152,
+    screen: "inner",
+    contentRect: { x: 0, y: 0, width: 926, height: 960 },
+  });
+  expect(OUTER).toEqual({
+    width: 1080,
+    height: 2424,
+    screen: "outer",
+    contentRect: { x: 250, y: 0, width: 426, height: 960 },
+  });
+  // A turned inner display is wider than the canvas.
+  expect(placeOnCanvas({ width: 960, height: 926 }, LAYOUT.canvas)).toEqual({
+    x: 0,
+    y: 34,
+    width: 926,
+    height: 892,
+  });
+  expect(recordingGeometry({ width: 960, height: 926 }, LAYOUT)).toMatchObject({
+    width: 2152,
+    height: 2076,
+    screen: "inner",
+  });
+});
+
+test("leaves the pose unknown while the hinge reading contradicts the shown display", () => {
+  expect(poseForGeometry(OUTER, { hingeAngle: 0, posture: "closed" })).toEqual({
+    hingeAngle: 0,
+    posture: "closed",
+  });
+  expect(poseForGeometry(OUTER, { hingeAngle: 180, posture: "opened" })).toEqual({});
+  expect(poseForGeometry(INNER, { hingeAngle: 0, posture: "closed" })).toEqual({});
+  expect(poseForGeometry(INNER, { hingeAngle: 90, posture: "half_opened" })).toEqual({
+    hingeAngle: 90,
+    posture: "half_opened",
+  });
+  expect(poseForGeometry(INNER, { hingeAngle: 45 })).toEqual({ hingeAngle: 45 });
+});
+
+test("adds a canvas and a centered picture to the ffmpeg filter", () => {
+  const args = ffmpegEncoderArgs({
+    width: 427,
+    height: 960,
+    fps: 30,
+    bitRate: 4_000_000,
+    keyFrameInterval: 1,
+    canvas: { ...LAYOUT.canvas, content: OUTER.contentRect },
+  });
+  expect(args[args.indexOf("-vf") + 1]).toBe(
+    "crop=trunc(iw/2)*2:trunc(ih/2)*2,scale=426:960,pad=926:960:250:0:black",
+  );
+});
+
+const config = Buffer.from(
+  "000000016742c01fd9005005bb0110000003001000000303c0f18324800000000168cb83cb20",
+  "hex",
+);
+const key = Buffer.concat([config, Buffer.from("0000000165888421", "hex")]);
+const delta = Buffer.from("00000001419a13", "hex");
+const frame = (pts: bigint, data = key, isKey = true): VideoFrame => ({
+  type: "frame",
+  pts,
+  data,
+  isKey,
+  isConfig: false,
+});
+
+async function recorder() {
+  const root = await mkdtemp(join(tmpdir(), "recording-fold-test-"));
+  roots.push(root);
+  const recording = await ScreenRecording.create({
+    directory: join(root, "session"),
+    udid: "emulator-5554",
+    deviceName: "Pixel_9_Pro_Fold",
+    runtimeDisplayName: "Android 16",
+    clock: { monotonicUs: () => 0n, epochMs: () => 1_800_000_000_000 },
+    createWriter: async ({ path }) => {
+      await writeFile(path, "test-writer");
+      return { add: async () => {}, finish: async () => {}, cancel: async () => {} };
+    },
+  });
+  const manifest = async () =>
+    JSON.parse(await readFile(join(root, "session", "session.json"), "utf8"));
+  return { recording, manifest };
+}
+
+test("keeps one track through a fold and writes the display timeline", async () => {
+  const { recording, manifest } = await recorder();
+  recording.followFold();
+  expect(recording.snapshot()).toEqual({ status: "waiting", followsFold: true });
+  recording.observePose({ hingeAngle: 180, posture: "opened" });
+  recording.accept(frame(1_000_000n), LAYOUT.canvas, "grpc-screenshot", INNER);
+  await recording.ready;
+  expect(recording.snapshot()).toMatchObject({ status: "recording", followsFold: true });
+  recording.accept(frame(1_100_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", INNER);
+  // The cover display shows before the hinge reading catches up: the pose is unknown.
+  recording.accept(frame(3_000_000n), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  recording.observePose({ hingeAngle: 0, posture: "closed" });
+  recording.accept(frame(3_500_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  // A pose-only change within 250 ms of the previous entry waits for a later frame.
+  recording.observePose({ hingeAngle: 10, posture: "closed" });
+  recording.accept(frame(3_600_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  recording.accept(frame(3_700_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  recording.accept(frame(3_800_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  recording.observePose({ hingeAngle: 180, posture: "opened" });
+  recording.accept(frame(5_000_000n), LAYOUT.canvas, "grpc-screenshot", INNER);
+  recording.observePose({ hingeAngle: 90, posture: "half_opened" });
+  recording.accept(frame(5_100_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", INNER);
+  await recording.finish();
+  const result = await manifest();
+  expect(result).toMatchObject({ status: "complete", width: 926, height: 960 });
+  const pose = (entry: { state: Record<string, unknown> }) => ({
+    screen: entry.state.screen,
+    hingeAngle: entry.state.hingeAngle,
+    posture: entry.state.posture,
+  });
+  expect(
+    result.deviceStates.map((entry: { timeMs: number; state: Record<string, unknown> }) => ({
+      timeMs: entry.timeMs,
+      ...pose(entry),
+    })),
+  ).toEqual([
+    { timeMs: 0, screen: "inner", hingeAngle: 180, posture: "opened" },
+    { timeMs: 2000, screen: "outer", hingeAngle: undefined, posture: undefined },
+    { timeMs: 2500, screen: "outer", hingeAngle: 0, posture: "closed" },
+    { timeMs: 2800, screen: "outer", hingeAngle: 10, posture: "closed" },
+    { timeMs: 4000, screen: "inner", hingeAngle: 180, posture: "opened" },
+    // The final written state stays, although it is within 250 ms of the previous entry.
+    { timeMs: 4100, screen: "inner", hingeAngle: 90, posture: "half_opened" },
+  ]);
+  expect(result.deviceStates[1].state.contentRect).toEqual({
+    x: 250,
+    y: 0,
+    width: 426,
+    height: 960,
+  });
+});
+
+test("a recording without fold geometry writes no timeline", async () => {
+  const { recording, manifest } = await recorder();
+  recording.accept(frame(1_000_000n), { width: 1080, height: 2400 }, "grpc-screenshot");
+  await recording.ready;
+  expect(recording.snapshot()).not.toHaveProperty("followsFold");
+  recording.accept(frame(1_100_000n, delta, false), { width: 1080, height: 2400 }, "scrcpy");
+  await recording.finish();
+  expect(await manifest()).not.toHaveProperty("deviceStates");
+});
+
+type FakeEncoder = {
+  options: H264EncoderOpts;
+  writes: bigint[];
+  writable: boolean;
+  closed: boolean;
+};
+
+function fakeEncoders() {
+  let recording = true;
+  const encoders: FakeEncoder[] = [];
+  const accepted: Array<{ pts: bigint; geometry: RecordingGeometry }> = [];
+  const failures: Error[] = [];
+  const output: GrpcRecordingOutput = {
+    ...LAYOUT,
+    accept: (packet, geometry) =>
+      accepted.push({ pts: packet.type === "frame" ? packet.pts : -1n, geometry }),
+    fail: (error) => failures.push(error),
+    active: () => recording,
+  };
+  const encoder = new GrpcRecordingEncoder({
+    output,
+    fps: 30,
+    bitRate: 4_000_000,
+    keyFrameInterval: 1,
+    inputFormat: "rgb24",
+    createEncoder: (options) => {
+      const fake: FakeEncoder = { options, writes: [], writable: true, closed: false };
+      encoders.push(fake);
+      return {
+        get writable() {
+          return fake.writable;
+        },
+        write: (_image, ptsUs) => {
+          fake.writes.push(ptsUs);
+          return true;
+        },
+        close: async () => {
+          fake.closed = true;
+        },
+      };
+    },
+  });
+  return {
+    encoder,
+    encoders,
+    accepted,
+    failures,
+    endRecording: () => {
+      recording = false;
+    },
+  };
+}
+
+const image = (width: number, height: number) => ({ image: Buffer.alloc(0), width, height });
+
+test("starts a canvas encoder per display size, and drops a replaced encoder's output", async () => {
+  const { encoder, encoders, accepted, failures } = fakeEncoders();
+  encoder.write(image(926, 960), 1n);
+  encoder.write(image(926, 960), 2n);
+  expect(encoders).toHaveLength(1);
+  expect(encoders[0]!.options).toMatchObject({
+    encoderName: "libx264",
+    width: 926,
+    height: 960,
+    canvas: { width: 926, height: 960, content: { x: 0, y: 0, width: 926, height: 960 } },
+  });
+  encoders[0]!.options.onFrame(frame(1n));
+  encoder.write(image(427, 960), 3n);
+  expect(encoders).toHaveLength(2);
+  expect(encoders[0]!.closed).toBe(true);
+  expect(encoders[1]!.options.canvas).toEqual({
+    width: 926,
+    height: 960,
+    content: { x: 250, y: 0, width: 426, height: 960 },
+  });
+  // The first encoder flushes an older frame after the switch; the recording never sees it.
+  encoders[0]!.options.onFrame(frame(2n));
+  encoders[1]!.options.onFrame(frame(3n));
+  expect(accepted.map(({ pts, geometry }) => [pts, geometry.screen])).toEqual([
+    [1n, "inner"],
+    [3n, "outer"],
+  ]);
+  // A busy encoder skips the frame instead of queueing it.
+  encoders[1]!.writable = false;
+  encoder.write(image(427, 960), 4n);
+  expect(encoders[1]!.writes).toEqual([3n]);
+  encoders[0]!.options.onExit("retired exit");
+  expect(failures).toEqual([]);
+  encoders[1]!.options.onExit("boom");
+  expect(failures.map((error) => error.message)).toEqual(["Recording encoder failed: boom"]);
+  encoder.write(image(926, 960), 5n);
+  expect(encoders).toHaveLength(2);
+  await encoder.close();
+  expect(encoders.every((fake) => fake.closed)).toBe(true);
+});
+
+test("stops encoding once the recording ends", async () => {
+  const { encoder, encoders, endRecording } = fakeEncoders();
+  encoder.write(image(926, 960), 1n);
+  endRecording();
+  encoder.write(image(926, 960), 2n);
+  encoder.write(image(427, 960), 3n);
+  await encoder.close();
+  expect(encoders).toHaveLength(1);
+  expect(encoders[0]!.writes).toEqual([1n]);
+  expect(encoders[0]!.closed).toBe(true);
+});
