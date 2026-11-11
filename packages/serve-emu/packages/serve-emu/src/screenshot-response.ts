@@ -14,21 +14,47 @@ import {
 } from "./screenshot-artifacts.ts";
 import type { ScreenshotArtifactReport, ScreenshotBase64Response } from "./shared/api-contracts.ts";
 
-// @ref LLP 0003#action-catalog — metadata uses fresh device observations without starting an adb query.
-/** Capture with fresh observed cache values only; never query the device for metadata. */
+/** Width and height from a PNG's IHDR chunk, or null when the bytes are not a PNG. */
+export function pngSize(png: Uint8Array): { width: number; height: number } | null {
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (png.byteLength < 24 || signature.some((byte, i) => png[i] !== byte)) return null;
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  if (view.getUint32(12) !== 0x49484452) return null; // "IHDR"
+  const width = view.getUint32(16);
+  const height = view.getUint32(20);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+// @ref LLP 0003#action-catalog — the rotation is observed around this capture, as serve-sim's comes with its frame.
+/**
+ * Capture between two display-rotation readings: one that finishes before the capture starts
+ * and one that starts after it ends. The rotation is reported only when both agree and match
+ * the image's shape, with no Hub rotation command between them, so a single turn around the
+ * capture, including a 180-degree one, leaves it null. Width and height come from the PNG, which `screencap` does not scale.
+ */
 export async function captureScreenshot(
   capture: () => Promise<Uint8Array>,
-  orientation: Pick<DisplayOrientationReader, "peek">,
+  orientation: Pick<DisplayOrientationReader, "observe">,
 ): Promise<{ png: Uint8Array; metadata: ScreenshotMetadata }> {
-  const before = orientation.peek();
+  const first = await orientation.observe();
   const png = await capture();
-  const after = orientation.peek();
+  const after = await orientation.observe();
   const metadata = screenshotMetadata();
-  if (before && before === after) {
-    metadata.displayRotation = before.orientation.replaceAll(
-      "_",
-      "-",
-    ) as ScreenshotMetadata["displayRotation"];
+  const size = pngSize(png);
+  if (size) {
+    metadata.width = size.width;
+    metadata.height = size.height;
+  }
+  const pose = first?.orientation;
+  if (
+    pose &&
+    pose === after?.orientation &&
+    first.generation === after.generation &&
+    (!size ||
+      size.width === size.height ||
+      pose.startsWith("portrait") === size.height > size.width)
+  ) {
+    metadata.displayRotation = pose.replaceAll("_", "-") as ScreenshotMetadata["displayRotation"];
   }
   return { png, metadata };
 }

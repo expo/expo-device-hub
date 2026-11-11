@@ -824,12 +824,21 @@ integration are separate changes. [observed: `src/host-actions.ts`,
 
 ServeEmu returns the same object in PNG headers and its existing base64 JSON
 response. Both standalone and Hub-mounted routes use the same capture helper.
-Only a fresh native orientation observation, unchanged across capture, fills
-`displayRotation`; a command or lack of a fresh observation leaves it null.
-The device-owned cache survives stream-source switches; a switch alone does not
-invalidate a still-fresh observation. The cache accessor never starts an adb query. Width/height remain zero
-because streamed frames may be scaled; panel identity remains unknown and `screen` is omitted.
-[observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
+Like serve-sim, the rotation describes the captured frame. One display-rotation
+read finishes before `adb screencap` starts and one starts after it ends.
+`displayRotation` is filled only when both readings agree, match the PNG's
+shape, and have no Hub rotation command between them, so a single turn around
+the capture, including a 180-degree turn, leaves it null. A Hub rotation command
+marks the reader before it turns the display; readings that overlap the command
+are dropped, so a commanded pose is never reported as observed, and a failed
+command leaves the cached reading stale. Two outside turns (for example from adb
+or a test tool) that return to the starting pose between the readings are not
+detected.
+Each read is about 90 ms on an emulator. A newer reading also refreshes the
+device-owned cache that `/api` uses.
+Width and height come from the PNG's IHDR, because `screencap` returns the
+display at native size; panel identity remains unknown and `screen` is omitted.
+[confirmed: Gabe Debes, 2026-11-11; observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
 `display-orientation.ts`, `middleware.ts`, and `server.ts`]
 
 The optional `automation` flag defaults to `false`. Setting it to `true`

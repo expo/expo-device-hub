@@ -4,8 +4,14 @@ const MAX_AGE_MS = 1_000;
 const FRESH_WAIT_MS = 300;
 
 export type DisplayOrientationReader = {
-  /** Fresh observed state only; never starts a device query or returns a commanded pose. */
-  peek(): Readonly<{ orientation: ScreenOrientation }> | null;
+  /**
+   * A new reading that starts now and never shares an earlier one. Resolves null when the read
+   * fails, or when a lock is in flight or lands before the read finishes, so it never reports a
+   * pose a command is changing. `generation` changes with every lock command, so two readings
+   * with the same generation had no Hub command between them. A newer success also becomes the
+   * cached reading.
+   */
+  observe(): Promise<Readonly<{ orientation: ScreenOrientation; generation: number }> | null>;
   /**
    * The last reading, or null before the first one. Starts a new reading in the background
    * when this one is older than a second, for the synchronous `/health` snapshot. The reader
@@ -26,24 +32,26 @@ export type DisplayOrientationReaderOptions = {
 };
 
 /**
- * A reader of the display pose, and `locked` for the owner that changes the lock. A locked
- * pose becomes the reading for the next second; null (a free rotation) makes the reading
- * stale. A read that started before a lock never replaces the reading, and a caller after a
- * lock never shares that read.
+ * A reader of the display pose, and `locking`/`locked` for the owner that changes the lock.
+ * `locking` runs before the lock command, so a reading that overlaps the command is dropped.
+ * A locked pose becomes the reading for the next second; null (a free rotation or a failed
+ * command) makes the reading stale. A read that started before a lock never replaces the
+ * reading, and a caller after a lock never shares that read.
  */
 export function createDisplayOrientationReader({
   read,
   now = () => performance.now(),
 }: DisplayOrientationReaderOptions): {
   reader: DisplayOrientationReader;
+  locking(): void;
   locked(pose: ScreenOrientation | null): void;
 } {
   let orientation: ScreenOrientation | null = null;
   let readAt = Number.NEGATIVE_INFINITY;
-  let observed: Readonly<{ orientation: ScreenOrientation }> | null = null;
-  let observedAt = Number.NEGATIVE_INFINITY;
   // Each lock starts a new generation; a read only counts for the generation it started in.
   let generation = 0;
+  // Lock commands that have started but not yet reported their pose.
+  let inFlight = 0;
   let pending: { generation: number; read: Promise<ScreenOrientation | null> } | null = null;
 
   const refresh = () => {
@@ -58,15 +66,13 @@ export function createDisplayOrientationReader({
     entry.read = (async () => {
       try {
         const next = await read();
-        if (readGeneration === generation) {
+        // A newer `observe()` reading wins over this older one.
+        if (readGeneration === generation && inFlight === 0 && startedAt >= readAt)
           orientation = next;
-          observed = { orientation: next };
-          observedAt = startedAt;
-        }
       } catch {
         // Keep the last reading.
       } finally {
-        if (readGeneration === generation) readAt = startedAt;
+        if (readGeneration === generation && startedAt >= readAt) readAt = startedAt;
         if (pending === entry) pending = null;
       }
       return orientation;
@@ -76,8 +82,22 @@ export function createDisplayOrientationReader({
 
   return {
     reader: {
-      peek() {
-        return now() - observedAt <= MAX_AGE_MS ? observed : null;
+      async observe() {
+        if (inFlight > 0) return null;
+        const readGeneration = generation;
+        const startedAt = now();
+        let next: ScreenOrientation;
+        try {
+          next = await read();
+        } catch {
+          return null;
+        }
+        if (readGeneration !== generation || inFlight > 0) return null;
+        if (startedAt >= readAt) {
+          orientation = next;
+          readAt = startedAt;
+        }
+        return { orientation: next, generation: readGeneration };
       },
       current() {
         if (now() - readAt > MAX_AGE_MS) void refresh();
@@ -96,10 +116,13 @@ export function createDisplayOrientationReader({
         }
       },
     },
+    locking() {
+      generation++;
+      inFlight++;
+    },
     locked(pose) {
       generation++;
-      observed = null;
-      observedAt = Number.NEGATIVE_INFINITY;
+      inFlight = Math.max(0, inFlight - 1);
       if (pose) {
         orientation = pose;
         readAt = now();

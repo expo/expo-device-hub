@@ -6,7 +6,11 @@ import type { ScreenOrientation } from "../src/shared/api-contracts.ts";
 function reader(readings: Array<ScreenOrientation | Error | Promise<ScreenOrientation>>) {
   let time = 0;
   let reads = 0;
-  const { reader: instance, locked } = createDisplayOrientationReader({
+  const {
+    reader: instance,
+    locking,
+    locked,
+  } = createDisplayOrientationReader({
     read: async () => {
       const next = readings[Math.min(reads++, readings.length - 1)];
       if (next instanceof Error) throw next;
@@ -14,7 +18,13 @@ function reader(readings: Array<ScreenOrientation | Error | Promise<ScreenOrient
     },
     now: () => time,
   });
-  return { instance, locked, advance: (ms: number) => (time += ms), reads: () => reads };
+  return {
+    instance,
+    locking,
+    locked,
+    advance: (ms: number) => (time += ms),
+    reads: () => reads,
+  };
 }
 
 function deferred() {
@@ -98,18 +108,44 @@ describe("display orientation reader", () => {
   });
 });
 
-test("cached metadata reads never query or report commanded, stale, or failed observations", async () => {
-  const { instance, locked, advance, reads } = reader(["portrait", new Error("offline")]);
-  expect(instance.peek()).toBeNull();
-  expect(reads()).toBe(0);
-  await instance.fresh();
-  expect(instance.peek()).toEqual({ orientation: "portrait" });
-  advance(1001);
-  expect(instance.peek()).toBeNull();
+test("observe reads now, never reports a commanded or failed reading, and updates the cache", async () => {
+  const { instance, locked, reads } = reader(["portrait", "landscape_left", new Error("offline")]);
+  await expect(instance.observe()).resolves.toMatchObject({ orientation: "portrait" });
+  expect(instance.current()).toBe("portrait");
   expect(reads()).toBe(1);
-  await instance.fresh();
-  expect(instance.peek()).toBeNull();
+  // Each call starts its own read instead of sharing the last one.
+  const turned = instance.observe();
+  locked("portrait");
+  await expect(turned).resolves.toBeNull();
+  expect(instance.current()).toBe("portrait");
+  await expect(instance.observe()).resolves.toBeNull();
+  expect(reads()).toBe(3);
+});
+
+test("an older shared read never replaces a newer observation", async () => {
+  const old = deferred();
+  const { instance, advance } = reader([old.promise, "landscape_right"]);
+  const shared = instance.fresh();
+  advance(10);
+  await expect(instance.observe()).resolves.toMatchObject({ orientation: "landscape_right" });
+  old.resolve("portrait");
+  await shared;
+  expect(instance.current()).toBe("landscape_right");
+});
+
+test("observe drops readings while a lock command is in flight", async () => {
+  const pending = deferred();
+  const { instance, locking, locked } = reader(["portrait", pending.promise, "landscape_left"]);
+  const before = await instance.observe();
+  expect(before).toMatchObject({ orientation: "portrait" });
+  const overlapping = instance.observe();
+  locking();
+  await expect(instance.observe()).resolves.toBeNull();
+  pending.resolve("landscape_left");
+  await expect(overlapping).resolves.toBeNull();
   locked("landscape_left");
-  expect(instance.peek()).toBeNull();
-  expect(reads()).toBe(2);
+  const after = await instance.observe();
+  expect(after).toMatchObject({ orientation: "landscape_left" });
+  // The lock command between the two readings shows in their generations.
+  expect(after!.generation).not.toBe(before!.generation);
 });
