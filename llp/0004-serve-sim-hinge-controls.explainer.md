@@ -239,7 +239,8 @@ restart.
 
 A hinge command that arrives before the startup read first reads native state
 and the saved record, so its save keeps the saved orientation. This includes a
-pose command that fails.
+pose command that fails. After a rotation, it keeps the orientation that the
+rotation set: the target of a physical rotation, or unknown after a legacy one.
 
 ## Confirmed hinge state
 

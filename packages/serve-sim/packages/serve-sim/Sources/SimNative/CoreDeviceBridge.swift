@@ -41,7 +41,7 @@ actor CoreDeviceBridge {
         init(isFoldable: Bool) { self.isFoldable = isFoldable }
     }
     /// Each failure kind logs once, and consecutive failures of one kind double the
-    /// retry delay up to a fixed cap. A registration or an accepted update resets both.
+    /// retry delay up to a fixed cap. An accepted update or a new observation resets both.
     private struct ReconnectBackoff {
         static let maximumDelay: Duration = .seconds(30)
         static func cap(after initialDelay: Duration) -> Duration { max(maximumDelay, initialDelay) }
@@ -263,12 +263,14 @@ actor CoreDeviceBridge {
         guard !Task.isCancelled, let observation = deviceStateObservations[udid],
               observation.token == token, observation.connection == connection,
               hingeResetGenerations[udid, default: 0] == token.generation else { return }
-        observation.backoff = ReconnectBackoff()
         if case .orientation(let sample) = update {
             hingeControlEligibility[udid]?.recordOrientationRead(sample, since: startedAt)
         }
         let oldRevision = observedDeviceStates[udid]?.revision
-        observedDeviceStates[udid]?.apply(update, since: startedAt)
+        // A sample the timestamp check rejects as history is not recovery.
+        if observedDeviceStates[udid]?.apply(update, since: startedAt) == true {
+            observation.backoff = ReconnectBackoff()
+        }
         if observedDeviceStates[udid]?.revision != oldRevision { publishObservedDeviceState(udid: udid) }
     }
 
