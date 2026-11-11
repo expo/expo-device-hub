@@ -31,7 +31,7 @@ import {
 import { apiUrl, deviceApiUrl } from "./android-api-url";
 import { readAndroidLocation, writeAndroidLocation } from "./android-location";
 import { androidPermissionsBackend } from "./android-permissions";
-import { carryForwardAppIcon, fetchAndroidAppIcon } from "./android-app-icon";
+import { carryForwardAppDetails, fetchAndroidAppDetails } from "./android-app-icon";
 import {
   type AndroidSessionEvent,
   clearAndroidEventCursor,
@@ -2008,9 +2008,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           minSdk: data.app.minSdk ?? undefined,
           debuggable: data.app.debuggable ?? undefined,
         };
-        setForegroundApp((prev) =>
-          prev && sameForegroundApp(prev, next) ? prev : carryForwardAppIcon(prev, next),
-        );
+        setForegroundApp((prev) => {
+          // Compare after the carry-forward, so a poll without the resolved label stays a no-op.
+          const carried = carryForwardAppDetails(prev, next);
+          return prev && sameForegroundApp(prev, carried) ? prev : carried;
+        });
       } catch {
         /* offline / unsupported — keep the last known app */
       }
@@ -2023,15 +2025,23 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [active, baseUrl, targetDevice, sessionFetch]);
 
+  // ── Foreground app details (icon and label) — serve-emu reads both from the
+  //    installed APK with `aapt2`, once per package, so this is not polled. ──
   const foregroundAppId = foregroundApp?.id ?? null;
   useEffect(() => {
     if (!active || !baseUrl || !foregroundAppId) return;
     let cancelled = false;
-    fetchAndroidAppIcon(baseUrl, targetDevice, foregroundAppId, sessionFetch)
-      .then((iconDataUrl) => {
-        if (cancelled || !iconDataUrl) return;
+    fetchAndroidAppDetails(baseUrl, targetDevice, foregroundAppId, sessionFetch)
+      .then(({ iconDataUrl, label }) => {
+        if (cancelled || (!iconDataUrl && !label)) return;
         setForegroundApp((prev) =>
-          prev && prev.id === foregroundAppId ? { ...prev, iconDataUrl } : prev,
+          prev && prev.id === foregroundAppId
+            ? {
+                ...prev,
+                ...(iconDataUrl && { iconDataUrl }),
+                ...(label && { label }),
+              }
+            : prev,
         );
       })
       .catch(() => {});

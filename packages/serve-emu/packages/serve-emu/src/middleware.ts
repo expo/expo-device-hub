@@ -47,7 +47,7 @@ import {
 } from "./app-management.ts";
 import { listPermissions, resetPermissions } from "./app-permissions.ts";
 import { getForegroundApp } from "./app-info.ts";
-import { readAppIcon } from "./apk-icon.ts";
+import { readAppDetails } from "./apk-icon.ts";
 import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
 import { loadDeviceGrid } from "./device-grid.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
@@ -1922,7 +1922,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         return Response.json({
           ok: true,
           packageName: pkg,
-          icon: await readAppIcon(opts.serial, pkg),
+          ...(await readAppDetails(opts.serial, pkg)),
         });
       } catch (err) {
         return middlewareRequestFailure(err);

@@ -68,10 +68,9 @@ async function packageDetails(serial: string, packageName: string, runExec: type
     const versionCode = dump.match(/versionCode=(\d+)/)?.[1] ?? null;
     const minSdkRaw = dump.match(/minSdk=(\d+)/)?.[1];
     const minSdk = minSdkRaw ? Number(minSdkRaw) : null;
-    const label =
-      dump.match(/application-label(?:-[a-zA-Z]+)?:'([^']+)'/)?.[1] ??
-      dump.match(/labelRes=0x[0-9a-fA-F]+ nonLocalizedLabel=([^\n]+)/)?.[1]?.trim() ??
-      null;
+    // `dumpsys package` never prints the app's label: the device keeps only its
+    // resource id. `GET /api/apps/icon` reads the label from the APK instead.
+    const label = null;
     const debuggable = /pkgFlags=\[[^\]]*\bDEBUGGABLE\b/.test(dump) || /\bDEBUGGABLE\b/.test(dump);
     return { label, versionName, versionCode, minSdk, debuggable };
   } catch {

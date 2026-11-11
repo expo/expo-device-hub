@@ -499,10 +499,13 @@ const APP_ICON_MIME_TYPES = ["image/png", "image/webp", "image/jpeg", "image/gif
 export type AppIconMimeType = (typeof APP_ICON_MIME_TYPES)[number];
 /** `data` is base64, with no `data:` URL prefix. */
 export type AppIcon = { mimeType: AppIconMimeType; data: string };
-export type AppIconResponse = ApiSuccess<{
-  packageName: string;
+/** What `aapt2 dump badging` reads from one installed APK. */
+export type AppDetails = {
   icon: AppIcon | null;
-}>;
+  /** The default-locale `android:label`; `null` when the APK declares none. */
+  label: string | null;
+};
+export type AppIconResponse = ApiSuccess<{ packageName: string } & AppDetails>;
 
 export type FileImportResponse = ApiSuccess<{
   output: string;
@@ -1700,6 +1703,7 @@ export function parseAppIconResponse(value: unknown): AppIconResponse {
     ok: true,
     packageName: string(root.packageName, "app icon response.packageName"),
     icon: root.icon === null ? null : parseAppIcon(root.icon),
+    label: nullableString(root.label, "app icon response.label"),
   };
 }
 

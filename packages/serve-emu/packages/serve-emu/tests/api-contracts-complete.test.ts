@@ -545,17 +545,22 @@ describe("complete API success contracts", () => {
           ok: true,
           packageName: "com.android.settings",
           icon: { mimeType, data: "aWNvbg==" },
+          label: "Settings",
         }),
       ).toEqual({
         ok: true,
         packageName: "com.android.settings",
         icon: { mimeType, data: "aWNvbg==" },
+        label: "Settings",
       });
     }
-    expect(parseAppIconResponse({ ok: true, packageName: "com.example.app", icon: null })).toEqual({
+    expect(
+      parseAppIconResponse({ ok: true, packageName: "com.example.app", icon: null, label: null }),
+    ).toEqual({
       ok: true,
       packageName: "com.example.app",
       icon: null,
+      label: null,
     });
 
     expect(
@@ -786,5 +791,8 @@ describe("API parser rejection boundaries", () => {
     expect(() => parseAppIconResponse({ ok: true, icon: null })).toThrow(
       "app icon response.packageName must be a string",
     );
+    expect(() =>
+      parseAppIconResponse({ ok: true, packageName: "com.example.app", icon: null, label: 7 }),
+    ).toThrow("app icon response.label must be a string");
   });
 });

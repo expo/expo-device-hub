@@ -10,6 +10,10 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ## Unreleased
 
+- `GET /api/apps/icon` also returns `label`, the app's user-visible name, read with
+  `aapt2 dump badging` from the same pulled APK. `GET /api/foreground` now always
+  reports `label: null`: its parser looked for badging lines in `dumpsys package`
+  output, which has no label, so it never found one on a real device.
 - Add strict host hardware H.264 encoding for Android gRPC streaming with `--encoder hardware` and an Encoder control in the standalone UI. Software remains the default; stream-mode and health APIs report the active backend and hardware probe failures.
 - `--token` must not be empty and can contain only letters, digits, and `-._~`.
   The CLI throws an error on any other token.
