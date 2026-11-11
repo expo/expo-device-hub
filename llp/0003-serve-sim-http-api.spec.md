@@ -161,9 +161,21 @@ height handling remains owned by the existing viewport logic
 
 Only servers started with `--orphan` offer process ownership to the local
 `serve-sim <udid> --adopt` CLI. Matching preview settings alone do not opt in
-[confirmed: Gabe Debes, 2026-10-26]. HTTP and `/exec-ws` do not expose ownership or reconfiguration, even to a
-preview-token holder. The CLI uses a private Unix socket, not the preview server
+[confirmed: Gabe Debes, 2026-10-26]. HTTP and `/exec-ws` do not expose session ownership or handoff reconfiguration, even to a
+preview-token holder. Ordinary `egress.status`/`egress.set` policy actions for an
+already-owned resident device are described below; they do not expose session
+ownership or configuration handoff. The CLI uses a private Unix socket, not the preview server
 [observed: `src/session-owner.ts`, `src/middleware.ts`].
+
+### Egress policy controls
+
+The right Tools panel uses authenticated typed host actions `egress.status`
+(`udid`) and `egress.set` (`udid`, `enabled`). The existing selected-device policy
+applies. A mutation requires resident enrollment owned by this server and runs
+under its device lock, with native policy self-check before success. It cannot
+enroll, reboot or claim a session. Existing connections and in-flight operations
+are left alone [confirmed: Gabe Debes, 2026-10-29, right-panel controls and narrowed
+egress boundary; observed: `src/egress.ts`, `src/host-actions.ts`].
 
 The server creates its owner socket and separate random authority in a private
 0700 directory under canonical `/tmp`, with 0600 socket and authority files. This
