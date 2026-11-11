@@ -6,8 +6,8 @@ import {
   rearmCapabilityLoader,
   releaseSession,
   releaseSessionSync,
-} from "../../launch-manager";
-import { LaunchStateLockedError } from "../../launch-state-lock";
+} from "../runtime/manager";
+import { LaunchStateLockedError } from "../runtime/lock";
 import { clipboardCapability } from "./definition";
 import { createCapabilitySession, type CapabilitySessionBackend } from "../runtime/session";
 

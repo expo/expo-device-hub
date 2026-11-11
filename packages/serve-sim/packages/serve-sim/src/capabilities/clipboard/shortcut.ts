@@ -1,4 +1,4 @@
-import type { KeyEvent } from "./text-to-keys";
+import type { KeyEvent } from "../../text-to-keys";
 
 // USB HID Usage Page 0x07 keyboard usages.
 export const KEY_C = 0x06;

@@ -4,7 +4,7 @@ import { createServer } from "http";
 import { join } from "path";
 import { WebSocket, WebSocketServer } from "ws";
 import { locateNativeAddon } from "../native";
-import { createClipboardSession } from "../clipboard-session";
+import { createClipboardSession } from "../capabilities/clipboard";
 import { closeDeviceSession, getDeviceSession } from "../device-session";
 import { getUiOption, setUiOption } from "../ui-settings";
 import { simctlSync } from "../simctl";

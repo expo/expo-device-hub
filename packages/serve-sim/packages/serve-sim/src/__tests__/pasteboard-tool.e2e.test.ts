@@ -4,8 +4,8 @@ import { createHash } from "crypto";
 import { cpSync, mkdtempSync, readFileSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { locateSimpbArtifact } from "../sim-pasteboard";
-import { copyFromSim } from "../sim-pasteboard-copy";
+import { locateSimpbArtifact } from "../capabilities/clipboard";
+import { copyFromSim } from "../capabilities/clipboard";
 import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { pasteboardTool, writeTestPasteboard } from "./pasteboard-sim";
 

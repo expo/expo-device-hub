@@ -4,8 +4,8 @@ import { join } from "path";
 import { setTimeout as sleep } from "timers/promises";
 import { debugPasteboard } from "../../debug";
 import { frontmostAppOf } from "../../foreground-tracker";
-import { isCapabilityEnabled } from "../../launch-manager";
-import { readLaunchState } from "../../launch-state";
+import { isCapabilityEnabled } from "../runtime/manager";
+import { readLaunchState } from "../runtime/state";
 import { simctl } from "../../simctl";
 import { withStateLock } from "../../state-lock";
 import {
@@ -13,7 +13,7 @@ import {
   PasteboardTooLargeError,
   readPasteboardViaSimctl,
   type PasteboardReadResult,
-} from "../../sim-pasteboard";
+} from "./pasteboard";
 import { CLIPBOARD_CAPABILITY } from "./definition";
 
 const SPRINGBOARD_BUNDLE = "com.apple.springboard";

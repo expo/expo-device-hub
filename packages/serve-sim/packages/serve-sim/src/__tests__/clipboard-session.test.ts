@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { spawn } from "child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
-import { createClipboardSession } from "../clipboard-session";
+import { createClipboardSession } from "../capabilities/clipboard";
 import {
   capabilityConfigPath,
   enableCapabilities,
@@ -12,7 +12,7 @@ import {
 } from "../capabilities/runtime/manager";
 import { writeLaunchState } from "../capabilities/runtime/state";
 import { simMiddleware } from "../middleware";
-import { clipboardCapability } from "../sim-pasteboard-reader";
+import { clipboardCapability } from "../capabilities/clipboard";
 import { installShims, recordState, useTempStateDir } from "./helpers";
 
 const UDID = `CLIPBOARD-SESSION-${process.pid}`;
@@ -370,8 +370,8 @@ describe("clipboard release at process exit", () => {
   // A host like the Hub: it sets up the reader, and its SIGINT handler ends with process.exit.
   async function runHost(beforeExit = "", { handlesSigint = true } = {}) {
     const script = `
-      const { createClipboardSession } = await import(${JSON.stringify(join(import.meta.dir, "../clipboard-session.ts"))});
-      const { clipboardCapability } = await import(${JSON.stringify(join(import.meta.dir, "../sim-pasteboard-reader.ts"))});
+      const { createClipboardSession } = await import(${JSON.stringify(join(import.meta.dir, "../capabilities/clipboard/index.ts"))});
+      const { clipboardCapability } = await import(${JSON.stringify(join(import.meta.dir, "../capabilities/clipboard/index.ts"))});
       clipboardCapability.setEnabled = async ({ enabled }) => enabled ? { dylib: ${JSON.stringify(READER)} } : null;
       const clipboard = createClipboardSession();
       await clipboard.initialize(${JSON.stringify(UDID)});

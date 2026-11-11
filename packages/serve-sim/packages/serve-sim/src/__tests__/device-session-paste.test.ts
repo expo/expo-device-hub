@@ -5,9 +5,9 @@ import { join } from "path";
 import { DeviceSession } from "../device-session";
 import { NativeHid } from "../native";
 import { HID_USAGE_BY_CODE } from "../client/utils/hid";
-import { PasteboardCopyTimeoutError, copyFromSim } from "../sim-pasteboard-copy";
-import { withSimPasteboardLock } from "../sim-pasteboard";
-import { pasteTextIntoSim } from "../sim-pasteboard-paste";
+import { PasteboardCopyTimeoutError, copyFromSim } from "../capabilities/clipboard";
+import { withSimPasteboardLock } from "../capabilities/clipboard";
+import { pasteTextIntoSim } from "../capabilities/clipboard";
 import { withShimsAsync } from "./helpers";
 
 const ControlLeft = HID_USAGE_BY_CODE.ControlLeft!;

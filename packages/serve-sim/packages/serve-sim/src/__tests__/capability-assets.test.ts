@@ -6,26 +6,43 @@ import { join, resolve } from "node:path";
 
 const fixture = join(import.meta.dir, "fixtures/capability-assets.child.ts");
 const loader = "libServeSimCapabilityLoader.dylib";
+const tool = "serve-sim-pasteboard";
+const reader = "libSimPasteboardReader.dylib";
 
 test("capability assets resolve in source, relocated ESM/CJS and a compiled executable", async () => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "capability-assets-")));
   const dist = join(directory, "relocated", "dist");
   const work = join(directory, "unrelated-working-directory");
   mkdirSync(join(dist, "capability-loader"), { recursive: true });
+  mkdirSync(join(dist, "simpb"));
   mkdirSync(work);
   writeFileSync(join(dist, "capability-loader", loader), "probe asset");
-  const run = (command: string, args: string[], base: string) => {
-    const child = spawnSync(command, args, { cwd: work, encoding: "utf8", timeout: 20_000 });
+  writeFileSync(join(dist, "simpb", tool), "probe tool");
+  writeFileSync(join(dist, "simpb", reader), "probe reader");
+  const run = (command: string, args: string[], base: string, override?: string) => {
+    const child = spawnSync(command, args, {
+      cwd: work,
+      env: { ...process.env, SERVE_SIM_SIMPB_DIR: override },
+      encoding: "utf8",
+      timeout: 20_000,
+    });
     expect(child.status, child.stderr).toBe(0);
     expect(JSON.parse(child.stdout)).toEqual({
       base,
       directory: resolve(base, "..", "dist", "capability-loader"),
       path: resolve(base, "..", "dist", "capability-loader", loader),
       exists: true,
+      pasteboardTool: join(override ?? resolve(base, "..", "dist", "simpb"), tool),
+      pasteboardReader: join(override ?? resolve(base, "..", "dist", "simpb"), reader),
     });
   };
   try {
     run(process.execPath, [fixture], resolve(import.meta.dir, ".."));
+    const override = join(directory, "override");
+    mkdirSync(override);
+    writeFileSync(join(override, tool), "override tool");
+    writeFileSync(join(override, reader), "override reader");
+    run(process.execPath, [fixture], resolve(import.meta.dir, ".."), override);
 
     const esm = await Bun.build({
       entrypoints: [fixture],

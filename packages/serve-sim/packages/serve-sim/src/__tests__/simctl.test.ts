@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { isSimctlTimeout, simctl, simctlRaw, simctlSync } from "../simctl";
-import { PasteboardTooLargeError } from "../sim-pasteboard";
-import { PasteboardUnavailableError, readSimPasteboardResult } from "../sim-pasteboard-reader";
+import { PasteboardTooLargeError } from "../capabilities/clipboard";
+import { PasteboardUnavailableError, readSimPasteboardResult } from "../capabilities/clipboard";
 import { withShimsAsync } from "./helpers";
 
 describe("simctl", () => {

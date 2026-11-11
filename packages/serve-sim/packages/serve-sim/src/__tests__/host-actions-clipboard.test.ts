@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { describeHostActions, runHostActionAsync } from "../host-actions";
-import * as pasteboard from "../sim-pasteboard";
-import * as reader from "../sim-pasteboard-reader";
+import * as pasteboard from "../capabilities/clipboard";
+import * as reader from "../capabilities/clipboard";
 import * as sessions from "../device-session";
 import { UDID } from "./helpers";
 

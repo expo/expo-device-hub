@@ -10,17 +10,17 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { PasteboardTooLargeError, writeSimPasteboard } from "../sim-pasteboard";
+import { PasteboardTooLargeError, writeSimPasteboard } from "../capabilities/clipboard";
 import {
   clipboardCapability,
   pasteboardTarget,
   requestInjectedPasteboard,
-} from "../sim-pasteboard-reader";
+} from "../capabilities/clipboard";
 import {
   PasteboardCopyTimeoutError,
   copyFromSim,
   waitForPasteboardChange,
-} from "../sim-pasteboard-copy";
+} from "../capabilities/clipboard";
 import { withShimsAsync } from "./helpers";
 
 function container(): string {

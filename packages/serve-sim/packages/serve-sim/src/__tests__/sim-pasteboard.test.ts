@@ -2,8 +2,8 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { buildSimpbArtifact, writeSimPasteboard } from "../sim-pasteboard";
-import { pasteTextIntoSim } from "../sim-pasteboard-paste";
+import { buildSimpbArtifact, writeSimPasteboard } from "../capabilities/clipboard";
+import { pasteTextIntoSim } from "../capabilities/clipboard";
 import { installShims, withShimsAsync } from "./helpers";
 
 describe("buildSimpbArtifact", () => {

@@ -4,12 +4,12 @@ import { join } from "path";
 import * as deviceSessions from "../device-session";
 import { simMiddleware } from "../middleware";
 import { servePreview } from "../runtime";
-import { MAX_PASTEBOARD_TEXT_BYTES, PasteboardBusyError } from "../sim-pasteboard";
+import { MAX_PASTEBOARD_TEXT_BYTES, PasteboardBusyError } from "../capabilities/clipboard";
 import {
   PasteboardCopyTimeoutError,
   copyFromSim,
   withCleanupWarning,
-} from "../sim-pasteboard-copy";
+} from "../capabilities/clipboard";
 import {
   ensureFixtureInstalled,
   FIXTURE_BUNDLE,

@@ -1,5 +1,5 @@
 import type { CapabilityDefinition } from "../runtime/capability";
-import { buildSimpbArtifact, locateSimpbArtifact } from "../../sim-pasteboard";
+import { buildSimpbArtifact, locateSimpbArtifact } from "./pasteboard";
 
 export const CLIPBOARD_CAPABILITY = "clipboard";
 

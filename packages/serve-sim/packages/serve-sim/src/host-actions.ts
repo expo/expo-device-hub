@@ -31,8 +31,11 @@ import { CA_DEBUG_FLAGS } from "./ca-debug";
 import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";
 import { UI_OPTIONS } from "./ui-settings";
 import { TouchCoordinate, TouchGesture } from "./touch-gesture";
-import { MAX_PASTEBOARD_TEXT_BYTES, writeSimPasteboard } from "./sim-pasteboard";
-import { cleanupWarningOf } from "./sim-pasteboard-copy";
+import {
+  MAX_PASTEBOARD_TEXT_BYTES,
+  cleanupWarningOf,
+  writeSimPasteboard,
+} from "./capabilities/clipboard";
 import type { StreamSettings } from "./stream-settings";
 import {
   UploadChunk,
@@ -776,7 +779,7 @@ async function runProcedureAsync(
       const p = parseParams(action, raw);
       try {
         if (action === "clipboard.read") {
-          const { readSimPasteboardResult } = await import("./sim-pasteboard-reader");
+          const { readSimPasteboardResult } = await import("./capabilities/clipboard");
           return ok(JSON.stringify(await readSimPasteboardResult(p.udid)));
         }
         if (action === "clipboard.write") {

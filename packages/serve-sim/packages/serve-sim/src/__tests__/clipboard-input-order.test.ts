@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { DeviceSession } from "../device-session";
-import { withSimPasteboardLock } from "../sim-pasteboard";
+import { withSimPasteboardLock } from "../capabilities/clipboard";
 
 function queuedSession() {
   const order: string[] = [];
