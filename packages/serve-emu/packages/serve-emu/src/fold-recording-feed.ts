@@ -17,7 +17,7 @@ export type FoldRecordingFeedOptions = {
   /** The pose that the UI shows on the panel now, or null before the first reading. */
   orientation(): ScreenOrientation | null;
   observe(pose: RecordingPose): void;
-  /** False once the recording ends; the feed then stops reading. */
+  /** False once the recording ends; the feed then stops, and closes the gRPC sensor. */
   active(): boolean;
 };
 
@@ -46,6 +46,23 @@ export function startFoldRecordingFeed(options: FoldRecordingFeedOptions): FoldR
     sensor = null;
   };
 
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    lifetime.abort();
+    if (timer) clearTimeout(timer);
+    timer = null;
+    dropSensor();
+  };
+
+  /** False once the feed has stopped. A recording that ended stops it, with its gRPC stream. */
+  const running = () => {
+    if (stopped) return false;
+    if (options.active()) return true;
+    stop();
+    return false;
+  };
+
   const readHinge = async (): Promise<number | null> => {
     const current = sensor;
     if (current) {
@@ -63,7 +80,7 @@ export function startFoldRecordingFeed(options: FoldRecordingFeedOptions): FoldR
   const read = () => {
     if (timer) clearTimeout(timer);
     timer = null;
-    if (stopped || !options.active()) return;
+    if (!running()) return;
     if (reading) {
       // A push during a read can come after the angle that the read returned.
       readAgain = true;
@@ -82,7 +99,8 @@ export function startFoldRecordingFeed(options: FoldRecordingFeedOptions): FoldR
       .catch(() => {})
       .finally(() => {
         reading = false;
-        if (stopped || !options.active()) return;
+        // A timer or a read is always pending until the feed stops, so it sees the end.
+        if (!running()) return;
         if (readAgain) {
           readAgain = false;
           read();
@@ -108,15 +126,5 @@ export function startFoldRecordingFeed(options: FoldRecordingFeedOptions): FoldR
     .catch(() => {});
 
   read();
-  return {
-    readNow: read,
-    stop() {
-      if (stopped) return;
-      stopped = true;
-      lifetime.abort();
-      if (timer) clearTimeout(timer);
-      timer = null;
-      dropSensor();
-    },
-  };
+  return { readNow: read, stop };
 }

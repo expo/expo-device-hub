@@ -139,7 +139,7 @@ test("reads over adb when the sensor does not open, and leaves out unknown field
   state.feed.stop();
 });
 
-test("stops reading when the recording ends, and closes a sensor that opens after a stop", async () => {
+test("stops when the recording ends, and closes a sensor that opens after a stop", async () => {
   const fake = fakeSensor();
   let open!: (sensor: HingeSensor) => void;
   const state = feedWith(() => new Promise((resolve) => (open = resolve)));
@@ -157,5 +157,20 @@ test("stops reading when the recording ends, and closes a sensor that opens afte
   const reads = second.reads;
   await wait(250);
   expect(second.reads).toBe(reads);
-  ending.feed.stop();
+  // The end of the recording closes the sensor and its posture stream without a stop().
+  expect(second.closed).toBe(true);
+  expect(second.watchAborted).toBe(true);
+});
+
+test("a recording that ends before the sensor opens closes the sensor when it opens", async () => {
+  const fake = fakeSensor();
+  let open!: (sensor: HingeSensor) => void;
+  const state = feedWith(() => new Promise((resolve) => (open = resolve)));
+  await wait(10);
+  state.end();
+  await wait(1_100);
+  open(fake.sensor);
+  await wait(10);
+  expect(fake.closed).toBe(true);
+  expect(fake.reads).toBe(0);
 });
