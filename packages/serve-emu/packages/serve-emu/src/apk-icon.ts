@@ -133,25 +133,47 @@ export function parseAdaptiveForegroundId(xmltree: string): string | null {
   return null;
 }
 
-const VERSION_QUALIFIER = /^v\d+$/;
+const VERSION_QUALIFIER = /^v(\d+)$/;
 const NUMERIC_DENSITY = /^(\d+)dpi$/;
 
 /**
  * Reads a resource config such as `xxxhdpi-v26`. `density` is null when the config names none: ``,
- * `v26`, `nodpi` or `anydpi`. An API level (`-v26`) does not change the look: an APK whose minSdk is
- * below 26 keeps it on its adaptive icon bitmaps. `plain` is false when the config has any other
- * qualifier, such as `night` or `round`, so it is not the launcher's default look.
+ * `v26`, `nodpi` or `anydpi`. `apiLevel` is the `-vNN` minimum, 0 when absent: an APK whose minSdk
+ * is below 26 keeps `-v26` on its adaptive icon bitmaps. `plain` is false when the config has any
+ * other qualifier, such as `night` or `round`, so it is not the launcher's default look.
  */
-export function readResourceConfig(qualifier: string): { density: number | null; plain: boolean } {
+export function readResourceConfig(qualifier: string): {
+  density: number | null;
+  apiLevel: number;
+  plain: boolean;
+} {
   let density: number | null = null;
+  let apiLevel = 0;
   let plain = true;
   for (const part of qualifier.split("-")) {
-    if (!part || VERSION_QUALIFIER.test(part) || part === "nodpi" || part === "anydpi") continue;
+    const version = VERSION_QUALIFIER.exec(part)?.[1];
+    if (version) {
+      apiLevel = Number(version);
+      continue;
+    }
+    if (!part || part === "nodpi" || part === "anydpi") continue;
     const value = DENSITY_BY_QUALIFIER[part] ?? Number(NUMERIC_DENSITY.exec(part)?.[1] ?? NaN);
     if (Number.isFinite(value)) density = value;
     else plain = false;
   }
-  return { density, plain };
+  return { density, apiLevel, plain };
+}
+
+type Candidate = { density: number; apiLevel: number; path: string };
+
+/**
+ * Denser first; within one density, the newer API level, which Android shows on a current device.
+ * `aapt2 dump badging` resolves the icon entry for the newest API too, so both steps agree.
+ */
+function better(next: Candidate, current: Candidate | null): boolean {
+  if (!current) return true;
+  if (next.density !== current.density) return next.density > current.density;
+  return next.apiLevel > current.apiLevel;
 }
 
 /**
@@ -159,26 +181,25 @@ export function readResourceConfig(qualifier: string): { density: number | null;
  * night one) when the resource has nothing else.
  */
 export function selectResourceFilePath(block: string): string | null {
-  let best: { density: number; path: string } | null = null;
-  let defaultConfig: string | null = null;
-  let variant: { density: number; path: string } | null = null;
+  let best: Candidate | null = null;
+  let defaultConfig: Candidate | null = null;
+  let variant: Candidate | null = null;
   for (const line of block.split("\n")) {
     const match = /^\((.*?)\)\s+\(file\)\s+(\S+)(?:\s+type=(\S+))?/.exec(line.trim());
     if (!match) continue;
     const [, qualifier = "", path = "", type] = match;
     if (type === "XML" || path.endsWith(".xml")) continue;
-    const { density, plain } = readResourceConfig(qualifier);
+    const { density, apiLevel, plain } = readResourceConfig(qualifier);
+    const candidate = { density: density ?? 0, apiLevel, path };
     if (!plain) {
-      if (!variant || (density ?? 0) > variant.density) variant = { density: density ?? 0, path };
-      continue;
+      if (better(candidate, variant)) variant = candidate;
+    } else if (density === null) {
+      if (better(candidate, defaultConfig)) defaultConfig = candidate;
+    } else if (better(candidate, best)) {
+      best = candidate;
     }
-    if (density === null) {
-      defaultConfig ??= path;
-      continue;
-    }
-    if (!best || density > best.density) best = { density, path };
   }
-  return best?.path ?? defaultConfig ?? variant?.path ?? null;
+  return (best ?? defaultConfig ?? variant)?.path ?? null;
 }
 
 export function iconMimeType(bytes: Uint8Array): AppIconMimeType | null {
