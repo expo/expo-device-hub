@@ -370,9 +370,15 @@ client.rotate();
 // poses that setOrientation accepts. client.orientation shows the choice at once, then the
 // backend's report; read client.orientationPending and client.orientationError like location.
 client.setOrientation("landscape_left");
-// client.screen.orientation is the pose of the shown frames. client.screen.framesUpright is
-// true when the backend already sends upright frames (serve-emu), so DeviceScreen never turns
-// them.
+// Observed iOS devices separate app screenOrientation from physical deviceOrientation.
+// A null observation is unknown; omitted fields mean the helper lacks this contract.
+// screen.orientation follows the app interface in this mode; displayScreen/streamGeometry
+// use physical pose for framing and map video/input accordingly. Duo and older helpers
+// retain their existing geometry. client.orientation follows physical pose on observed iOS,
+// including Duo, so portrait-only apps do not reset the Rotate cursor;
+// Native-pose Duo keeps its clockwise physical order; older Duo uses legacy names.
+// Ordinary observed iOS uses CLOCKWISE_ORIENTATIONS; older helpers use DEVICE_ORIENTATIONS.
+// framesUpright means the backend already sends upright frames (serve-emu).
 // While an Android recording could break, client.recordingLock is "status-unknown" or
 // "recording" and rotate, setOrientation and the stream setters are silently ignored. Disable
 // those controls from it. client.orientationUnavailable gives the reason orientation cannot

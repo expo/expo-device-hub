@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-11-04 (Android fold adapter, Codex gpt-6.1-sol); 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command)
+**Revised:** 2026-11-04 (Android fold adapter, Codex gpt-6.1-sol); 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command); 2026-11-09 (ordinary-device screen/physical observations, Codex directed by Gabe Debes); 2026-11-10 (unknown interface orientation follows the raw frame shape; Claude Code, directed by Gabe Debes)
 **Related:** LLP 0000, LLP 0004, LLP 0013
 
 ## Summary
@@ -75,7 +75,22 @@ serve-sim's display IDs (1 for the cover, 3 for the inner display) stay inside t
 
 ## Screen
 
-`ScreenSize` has only platform-neutral fields: `width`, `height`, `orientation`, `inputUnavailable`, and `display`. `display` names the display that the size and orientation describe, as native readback confirmed it. Only a foldable sets it [observed: `simScreenSize` in `screen-config.ts`].
+`ScreenSize` publishes `width`, `height`, `orientation`, `framesUpright`, `inputUnavailable`, and `display`. `display` names the display that the size and orientation describe, as native readback confirmed it. Only a foldable sets it [observed: `simScreenSize` in `screen-config.ts`].
+
+Confirmed ordinary iOS devices can also publish optional `screenOrientation` and
+`deviceOrientation`. The first is native interface orientation; the second is
+physical pose (`portrait`, `pud`, `landscape-left`, `landscape-right`, `faceup`,
+`facedown`). A present null means unknown; absence means the helper lacks this
+observation contract. In this mode, `screen.orientation` follows the native
+interface and becomes undefined when that observation is unknown. It never
+falls back to the last rotation command. `displayScreen` supplies physical
+framing, and `streamGeometry` maps interface pixels/input to that framing.
+When the interface orientation is unknown, the raw frame shape decides, as in
+the legacy rule: landscape pixels already face the framing, and portrait pixels
+are taken as unturned content and turned to the framing. `homeIndicatorEdge` uses the same interface orientation.
+Duo retains its existing projected screen contract; these ordinary-device
+fields do not alter its geometry
+[observed: `simScreenSize` in `screen-config.ts`, `orientation.ts`].
 
 serve-sim's screen config also carries the hinge state and the display ID. The iOS adapter keeps that config as `SimScreenConfig` and publishes the projection. A hinge move alone keeps the same `screen` object [observed: `publicScreen` in `useIosDevice.ts`].
 

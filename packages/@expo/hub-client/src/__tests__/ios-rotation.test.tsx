@@ -455,3 +455,222 @@ test("an iOS orientation choice is still sent under Strict Mode, which runs effe
   await act(async () => client().setOrientation("landscape_right"));
   expect(helper().rotations()).toEqual(["landscape_right"]);
 });
+
+test("ordinary-device controls follow observed pose independently of a portrait-only app", async () => {
+  const { client, helper } = await mount();
+  await act(async () =>
+    helper().screen("landscape_right", {
+      supportsHingeAngle: false,
+      screenOrientation: "portrait",
+      deviceOrientation: "landscape-left",
+    }),
+  );
+  expect(client().orientation).toBe("landscape_left");
+  expect(client().screen?.orientation).toBe("portrait");
+  expect(client().screen?.deviceOrientation).toBe("landscape-left");
+  await act(async () =>
+    client().sendTouch({ phase: "begin", x: 0.2, y: 0.4, edgeGestures: false }),
+  );
+  const touch = helper()
+    .sent.map((frame) => new Uint8Array(frame))
+    .find((frame) => frame[0] === 0x03)!;
+  const point = JSON.parse(new TextDecoder().decode(touch.subarray(1)));
+  expect(point.x).toBeCloseTo(0.6);
+  expect(point.y).toBeCloseTo(0.2);
+  await act(async () => client().setOrientation("landscape_left"));
+  expect(helper().rotations().at(-1)).toBe("landscape_right");
+  now = 2000;
+  await act(async () =>
+    helper().screen("landscape_right", {
+      supportsHingeAngle: false,
+      screenOrientation: "portrait",
+      deviceOrientation: "portrait",
+    }),
+  );
+  expect(client().orientation).toBe("portrait");
+  await act(async () =>
+    helper().screen("landscape_right", {
+      supportsHingeAngle: false,
+      screenOrientation: "portrait",
+      deviceOrientation: null,
+    }),
+  );
+  // An unknown pose leaves the controls to the legacy readback.
+  expect(client().orientation).toBe("landscape_right");
+});
+
+test("Rotate follows the legacy readback while the native pose stays unknown", async () => {
+  const { client, helper } = await mount();
+  const unknownPose = {
+    supportsHingeAngle: false,
+    screenOrientation: "portrait",
+    deviceOrientation: null,
+  };
+  await act(async () => helper().screen("portrait", unknownPose));
+  expect(client().orientation).toBe("portrait");
+  await act(async () => client().rotate());
+  expect(helper().rotations()).toEqual(["landscape_left"]);
+  now = 2000;
+  await act(async () => helper().screen("landscape_left", unknownPose));
+  expect(client().orientation).toBe("landscape_left");
+  await act(async () => client().rotate());
+  expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down"]);
+});
+
+test("Duo Rotate advances from observed pose when Home stays portrait", async () => {
+  const { client, helper } = await mount();
+  await act(async () =>
+    helper().screen("portrait", {
+      supportsHingeAngle: true,
+      supportsPhysicalOrientation: true,
+      screenOrientation: "portrait",
+      deviceOrientation: "landscape-left",
+      observedDeviceState: { hingeAngle: 0, physicalOrientation: "landscape-left" },
+    }),
+  );
+  expect(client().orientation).toBe("landscape_left");
+  const turns: number[] = [];
+  const stop = client().fold?.observe?.((event) => {
+    if (event.type === "rotated") turns.push(event.quarterTurns);
+  });
+  await act(async () => client().rotate());
+  expect(helper().rotations().at(-1)).toBe("portrait_upside_down");
+  expect(turns).toEqual([1]);
+  stop?.();
+});
+
+test("observed Duo keeps its clockwise physical turn from portrait", async () => {
+  const { client, helper } = await mount();
+  await act(async () =>
+    helper().screen("portrait", {
+      supportsHingeAngle: true,
+      supportsPhysicalOrientation: true,
+      screenOrientation: "portrait",
+      deviceOrientation: "portrait",
+    }),
+  );
+  const turns: number[] = [];
+  const stop = client().fold?.observe?.((event) => {
+    if (event.type === "rotated") turns.push(event.quarterTurns);
+  });
+  await act(async () => client().rotate());
+  expect(client().orientation).toBe("landscape_left");
+  expect(turns).toEqual([1]);
+  stop?.();
+});
+
+test("external Duo turns update the model without sending a rotation back", async () => {
+  const { client, helper } = await mount();
+  const config = {
+    supportsHingeAngle: true,
+    supportsPhysicalOrientation: true,
+    screenOrientation: "portrait",
+    deviceOrientation: "portrait",
+  };
+  await act(async () => helper().screen("portrait", config));
+  const turns: number[] = [];
+  const stop = client().fold?.observe?.((event) => {
+    if (event.type === "rotated") turns.push(event.quarterTurns);
+  });
+  await act(async () =>
+    helper().screen("portrait", { ...config, deviceOrientation: "landscape-left" }),
+  );
+  expect(turns).toEqual([1]);
+  expect(helper().rotations()).toEqual([]);
+  await act(async () => client().rotate());
+  expect(turns).toEqual([1, 1]);
+  await act(async () => helper().screen("portrait", { ...config, deviceOrientation: "pud" }));
+  expect(turns).toEqual([1, 1]);
+  stop?.();
+});
+
+for (const [actual, correction] of [
+  ["landscape-right", 2],
+  ["portrait", -1],
+] as const) {
+  test(`Duo reconciles native ${actual} after the local rotation grace`, async () => {
+    const { client, helper } = await mount();
+    const config = {
+      supportsHingeAngle: true,
+      supportsPhysicalOrientation: true,
+      deviceOrientation: "portrait",
+      observedDeviceState: { hingeAngle: 0, physicalOrientation: "portrait", tableMode: false },
+    };
+    await act(async () => helper().screen("portrait", config));
+    const turns: number[] = [];
+    const stop = client().fold?.observe?.((event) => {
+      if (event.type === "rotated") turns.push(event.quarterTurns);
+    });
+    await act(async () => client().rotate());
+    const readback = {
+      ...config,
+      deviceOrientation: actual,
+      observedDeviceState: { ...config.observedDeviceState, physicalOrientation: actual },
+    };
+    await act(async () => helper().screen("portrait", readback));
+    expect(turns).toEqual([1]);
+    now = 2000;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+    });
+    expect(turns).toEqual([1, correction]);
+    await act(async () => helper().screen("portrait", readback));
+    expect(turns).toEqual([1, correction]);
+    stop?.();
+  });
+}
+
+test("observed Duo choices target physical poses on both panels", async () => {
+  const { client, helper } = await mount();
+  for (const screenId of [1, 3]) {
+    await act(async () =>
+      helper().screen("portrait", {
+        screenId,
+        supportsHingeAngle: true,
+        supportsPhysicalOrientation: true,
+        screenOrientation: "portrait",
+        deviceOrientation: "portrait",
+      }),
+    );
+    for (const [choice, physical] of [
+      ["portrait", "portrait"],
+      ["portrait_upside_down", "pud"],
+      ["landscape_left", "landscape-left"],
+      ["landscape_right", "landscape-right"],
+    ] as const) {
+      await act(async () => client().setOrientation(choice));
+      const frame = helper()
+        .sent.filter((data) => new Uint8Array(data)[0] === 0x07)
+        .at(-1)!;
+      expect(
+        JSON.parse(new TextDecoder().decode(new Uint8Array(frame).subarray(1))).deviceOrientation,
+      ).toBe(physical);
+    }
+  }
+});
+
+test("portrait-locked landscape home swipes retain the interface edge through release", async () => {
+  const { client, helper } = await mount();
+  await act(async () =>
+    helper().screen("landscape_right", {
+      supportsHingeAngle: false,
+      screenOrientation: "portrait",
+      deviceOrientation: "landscape-left",
+    }),
+  );
+  await act(async () => {
+    client().sendTouch({ phase: "begin", x: 0.99, y: 0.5 });
+    client().sendTouch({ phase: "move", x: 0.7, y: 0.5 });
+    client().sendTouch({ phase: "end", x: 0.6, y: 0.5 });
+    client().sendTouch({ phase: "begin", x: 0.5, y: 0.99 });
+    client().sendTouch({ phase: "end", x: 0.5, y: 0.99 });
+  });
+  const touches = helper()
+    .sent.map((frame) => new Uint8Array(frame))
+    .filter((frame) => frame[0] === 0x03)
+    .map((frame) => JSON.parse(new TextDecoder().decode(frame.subarray(1))));
+  expect(touches.slice(0, 3).map((touch) => touch.edge)).toEqual([3, 3, 3]);
+  expect(touches[0].x).toBeCloseTo(0.5);
+  expect(touches[0].y).toBeCloseTo(0.99);
+  expect(touches.slice(3).map((touch) => touch.edge)).toEqual([undefined, undefined]);
+});

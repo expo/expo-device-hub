@@ -26,11 +26,31 @@ export const HID_EDGE_RIGHT = 4;
  */
 export const HOME_INDICATOR_BAND_NORM = 0.93;
 
-export function homeIndicatorEdge({
-  y,
-  edgeGestures = true,
-}: Pick<TouchSample, "y" | "edgeGestures">): number | undefined {
-  return edgeGestures && y >= HOME_INDICATOR_BAND_NORM ? HID_EDGE_BOTTOM : undefined;
+export function homeIndicatorEdge(
+  { x = 0.5, y, edgeGestures = true }: Pick<TouchSample, "y" | "edgeGestures"> & { x?: number },
+  config?: ScreenSize | null,
+): number | undefined {
+  if (!edgeGestures) return undefined;
+  // The home indicator follows the app interface, which can stay portrait while
+  // the physical device turns. Older helpers only report the display bottom.
+  const turn =
+    config?.deviceOrientation !== undefined
+      ? (((rotationDegreesForOrientation(framingOrientation(config)) -
+          rotationDegreesForOrientation(interfaceOrientation(config))) %
+          360) +
+          360) %
+        360
+      : 0;
+  switch (turn) {
+    case 90:
+      return x <= 1 - HOME_INDICATOR_BAND_NORM ? HID_EDGE_LEFT : undefined;
+    case 180:
+      return y <= 1 - HOME_INDICATOR_BAND_NORM ? HID_EDGE_TOP : undefined;
+    case 270:
+      return x >= HOME_INDICATOR_BAND_NORM ? HID_EDGE_RIGHT : undefined;
+    default:
+      return y >= HOME_INDICATOR_BAND_NORM ? HID_EDGE_BOTTOM : undefined;
+  }
 }
 
 /**
@@ -43,7 +63,12 @@ export function isDeviceOrientation(value: unknown): value is DeviceOrientation 
   return (DEVICE_ORIENTATIONS as readonly unknown[]).includes(value);
 }
 
-/** The four poses, in the order Rotate steps through them on iOS and Android. */
+/**
+ * The four poses, in the order Rotate steps through them on Android and on an
+ * ordinary iPhone without native pose controls (a known observed pose and the
+ * matching capability). An iPhone Duo with native pose controls also uses this
+ * order: its names are then physical poses, and this order turns them clockwise.
+ */
 export const DEVICE_ORIENTATIONS = [
   "portrait",
   "landscape_left",
@@ -51,7 +76,13 @@ export const DEVICE_ORIENTATIONS = [
   "landscape_right",
 ] as const satisfies readonly DeviceOrientation[];
 
-/** The four poses clockwise. The iPhone Duo rotates in this order, as Xcode's Device Hub and serve-sim turn it. */
+/**
+ * The four interface orientations clockwise. An iPhone Duo without a known
+ * observed physical pose rotates in this order, as Xcode's Device Hub and
+ * serve-sim turn it. An ordinary iPhone with a known observed pose also uses
+ * this order, by physical names, so its interface commands step in
+ * {@link DEVICE_ORIENTATIONS} order.
+ */
 export const CLOCKWISE_ORIENTATIONS = [
   "portrait",
   "landscape_right",
@@ -128,18 +159,75 @@ export function rotationDegreesForOrientation(orientation?: DeviceOrientation | 
   }
 }
 
+/** Physical pose names exposed to the existing orientation controls. */
+export function deviceOrientationForPose(
+  pose?: HingePhysicalOrientation | null,
+): DeviceOrientation | null {
+  switch (pose) {
+    case "portrait":
+      return "portrait";
+    case "pud":
+      return "portrait_upside_down";
+    case "landscape-left":
+      return "landscape_left";
+    case "landscape-right":
+      return "landscape_right";
+    default:
+      return null;
+  }
+}
+
+/** The legacy wire command names follow interface orientation, opposite physical landscape names. */
+export function legacyOrientationForDeviceChoice(pose: DeviceOrientation): DeviceOrientation {
+  return pose === "landscape_left"
+    ? "landscape_right"
+    : pose === "landscape_right"
+      ? "landscape_left"
+      : pose;
+}
+
+/**
+ * The interface orientation of an observed config. When it is unknown, the raw
+ * frame shape decides, as in the legacy rule of {@link streamGeometry}:
+ * landscape pixels already face the framing, and portrait pixels are taken as
+ * unturned content and turned to the framing.
+ */
+// @ref LLP 0016#screen — an unknown interface orientation maps pixels by the raw frame shape
+function interfaceOrientation(config: ScreenSize): DeviceOrientation | undefined {
+  if (config.screenOrientation) return config.screenOrientation;
+  return config.width > config.height ? framingOrientation(config) : undefined;
+}
+
+function framingOrientation(config: ScreenSize): DeviceOrientation | undefined {
+  if (config.deviceOrientation === undefined) return config.orientation;
+  const physical = deviceOrientationForPose(config.deviceOrientation);
+  return physical
+    ? legacyOrientationForDeviceChoice(physical)
+    : (config.screenOrientation ?? undefined);
+}
+
 /** The screen size as it should be *displayed* (width/height swapped for landscape). */
 export function displayScreen(config?: ScreenSize | null): ScreenSize | null {
   if (!config || config.width <= 0 || config.height <= 0) return null;
-  const landscape = isLandscapeOrientation(config.orientation) || config.width > config.height;
+  const orientation = framingOrientation(config);
+  const observed = config.deviceOrientation !== undefined;
+  const landscape =
+    observed && orientation !== undefined
+      ? isLandscapeOrientation(orientation)
+      : isLandscapeOrientation(orientation) || config.width > config.height;
   const width = landscape
     ? Math.max(config.width, config.height)
     : Math.min(config.width, config.height);
   const height = landscape
     ? Math.min(config.width, config.height)
     : Math.max(config.width, config.height);
-  if (width === config.width && height === config.height) return config;
-  return { ...config, width, height };
+  if (
+    width === config.width &&
+    height === config.height &&
+    (!observed || orientation === config.orientation)
+  )
+    return config;
+  return { ...config, width, height, ...(observed ? { orientation } : {}) };
 }
 
 export interface StreamGeometry {
@@ -159,6 +247,29 @@ export interface StreamGeometry {
  */
 export function streamGeometry(config?: ScreenSize | null): StreamGeometry {
   const display = displayScreen(config);
+  if (config?.deviceOrientation !== undefined) {
+    const frameRotation = rotationDegreesForOrientation(framingOrientation(config));
+    const screenRotation = rotationDegreesForOrientation(interfaceOrientation(config));
+    const pixelsRotation =
+      config.framesUpright || (config.width > config.height && Math.abs(screenRotation) === 90)
+        ? screenRotation
+        : 0;
+    const turn = (((frameRotation - pixelsRotation) % 360) + 360) % 360;
+    const inputOrientation: DeviceOrientation | undefined =
+      turn === 90
+        ? "landscape_left"
+        : turn === 180
+          ? "portrait_upside_down"
+          : turn === 270
+            ? "landscape_right"
+            : undefined;
+    return {
+      display,
+      rotationDegrees: turn === 270 ? -90 : turn,
+      needsRotation: turn !== 0,
+      inputOrientation,
+    };
+  }
   const orientationRotation = rotationDegreesForOrientation(config?.orientation);
   const rotatesSideways = Math.abs(orientationRotation) === 90;
   const rawIsLandscape = !!config && config.width > config.height;
