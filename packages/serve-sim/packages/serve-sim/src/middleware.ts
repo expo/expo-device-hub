@@ -51,7 +51,7 @@ import {
   type MetricsSamplerCache,
 } from "./metrics-sampler";
 import { handleAppIconRequest } from "./app-icon";
-import { describeForegroundApp } from "./foreground-app-details";
+import { foregroundAppEvents } from "./foreground-app-details";
 import {
   foregroundTracker,
   type ForegroundApp,
@@ -3369,16 +3369,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         if (res.writableEnded || (app.bundleId === lastApp?.bundleId && app.pid === lastApp.pid))
           return;
         lastApp = app;
-        // describeForegroundApp is awaited, so a later switch can resolve first; only write if no
+        // The bundle lookup is awaited, so a later switch can resolve first; only write while no
         // newer emit has started, otherwise a slow lookup could overwrite the client with a stale app.
         const generationAtStart = ++generation;
-        const { isReactNative, label } = await describeForegroundApp(udid, app.bundleId);
-        if (!res.writableEnded && generationAtStart === generation) {
-          res.write(
-            "data: " +
-              JSON.stringify({ bundleId: app.bundleId, pid: app.pid, isReactNative, label }) +
-              "\n\n",
-          );
+        for await (const event of foregroundAppEvents(udid, app)) {
+          if (res.writableEnded || generationAtStart !== generation) return;
+          res.write("data: " + JSON.stringify(event) + "\n\n");
         }
       };
       const subscription = foregroundTracker.subscribe(udid, (app) => void emit(app));

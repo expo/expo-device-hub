@@ -41,7 +41,9 @@ are server-sent event streams; the rest return JSON.
 
 Each `/appstate` event is `{bundleId, pid, isReactNative, label}`. The server reads
 `label` (`CFBundleDisplayName`, else `CFBundleName`, or `null`) from the bundle path that
-simctl reports (`src/foreground-app-details.ts`). A client cannot read it with
+simctl reports (`src/foreground-app-details.ts`). A known React Native shell (Expo Go)
+is reported at once without `label`, so the reload control does not wait for simctl; its
+`label` follows in a second event for the same bundle id and pid. A client cannot read the name with
 `app.infoPlist` everywhere: on an EAS iOS 27.1 worker, simctl reports Apple's apps under
 `/private/var/run/com.apple.security.cryptexd/mnt/…`, outside `ALLOWED_ROOTS`, and
 `app.infoPlist` refuses that path [observed: 2026-11-12, staging session].

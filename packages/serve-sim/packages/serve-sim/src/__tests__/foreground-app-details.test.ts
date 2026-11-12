@@ -6,6 +6,7 @@ import {
   type ForegroundAppDetailsDeps,
   appLabelFromInfoPlist,
   describeForegroundApp,
+  foregroundAppEvents,
 } from "../foreground-app-details";
 
 const UDID = "11111111-2222-3333-4444-555555555555";
@@ -97,5 +98,59 @@ describe("describeForegroundApp", () => {
       label: null,
     });
     expect(deps.plistReads).toEqual([]);
+  });
+});
+
+describe("foregroundAppEvents", () => {
+  async function collect(events: AsyncGenerator<unknown>) {
+    const out: unknown[] = [];
+    for await (const event of events) out.push(event);
+    return out;
+  }
+
+  test("sends one event with the label for an app that needs the lookup", async () => {
+    const deps = fakeDeps(CRYPTEX_SAFARI, SAFARI);
+
+    expect(
+      await collect(
+        foregroundAppEvents(UDID, { bundleId: "com.apple.mobilesafari", pid: 6582 }, deps),
+      ),
+    ).toEqual([
+      { bundleId: "com.apple.mobilesafari", pid: 6582, isReactNative: false, label: "Safari" },
+    ]);
+  });
+
+  test("reports Expo Go before simctl answers, then sends its label", async () => {
+    let answer!: (path: string | null) => void;
+    const deps = {
+      ...fakeDeps(null, { CFBundleDisplayName: "Expo Go" }),
+      appContainer: () => new Promise<string | null>((resolve) => (answer = resolve)),
+    };
+    const events = foregroundAppEvents(UDID, { bundleId: "host.exp.Exponent", pid: 7 }, deps);
+
+    // The first event does not wait for the lookup, which has not answered yet.
+    expect((await events.next()).value).toEqual({
+      bundleId: "host.exp.Exponent",
+      pid: 7,
+      isReactNative: true,
+    });
+
+    const second = events.next();
+    answer("/sim/Containers/Bundle/Application/Y/Exponent.app");
+    expect((await second).value).toEqual({
+      bundleId: "host.exp.Exponent",
+      pid: 7,
+      isReactNative: true,
+      label: "Expo Go",
+    });
+    expect((await events.next()).done).toBe(true);
+  });
+
+  test("sends no second event for Expo Go when the label is unknown", async () => {
+    const deps = fakeDeps(new Error("simctl timed out"), null);
+
+    expect(
+      await collect(foregroundAppEvents(UDID, { bundleId: "host.exp.Exponent", pid: 7 }, deps)),
+    ).toEqual([{ bundleId: "host.exp.Exponent", pid: 7, isReactNative: true }]);
   });
 });

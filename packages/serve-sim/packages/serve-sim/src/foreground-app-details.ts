@@ -55,6 +55,33 @@ export function appLabelFromInfoPlist(info: unknown): string | null {
   return null;
 }
 
+/** One `/appstate` event. */
+export type ForegroundAppEvent = {
+  bundleId: string;
+  pid?: number;
+  isReactNative: boolean;
+  label?: string | null;
+};
+
+/**
+ * The `/appstate` events for one foreground app, in order. A known React Native shell (Expo Go) is
+ * reported at once, as before the label existed, so the preview's reload control does not wait for
+ * a lagging simctl; its label follows in a second event for the same bundle id and pid. Any other
+ * app needs the simctl lookup for `isReactNative` anyway, so it gets one event with both answers.
+ */
+export async function* foregroundAppEvents(
+  udid: string,
+  app: { bundleId: string; pid?: number },
+  overrides: Partial<ForegroundAppDetailsDeps> = {},
+): AsyncGenerator<ForegroundAppEvent> {
+  const { bundleId, pid } = app;
+  const knownShell = RN_BUNDLE_IDS.has(bundleId);
+  if (knownShell) yield { bundleId, pid, isReactNative: true };
+  const { isReactNative, label } = await describeForegroundApp(udid, bundleId, overrides);
+  if (!knownShell) yield { bundleId, pid, isReactNative, label };
+  else if (label) yield { bundleId, pid, isReactNative, label };
+}
+
 /** One simctl lookup serves both answers. A failed lookup gives `{ isReactNative, label: null }`. */
 export async function describeForegroundApp(
   udid: string,

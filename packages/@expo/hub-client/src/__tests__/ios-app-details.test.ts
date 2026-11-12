@@ -328,6 +328,20 @@ describe("applyIosAppState", () => {
     ).toBe(prev);
   });
 
+  test("adds a label that a later event for the same app carries", () => {
+    // serve-sim reports Expo Go at once, then sends its label in a second event.
+    const prev = { id: "host.exp.Exponent", pid: 7, isReactNative: true };
+
+    expect(
+      applyIosAppState(prev, {
+        bundleId: "host.exp.Exponent",
+        pid: 7,
+        isReactNative: true,
+        label: "Expo Go",
+      }),
+    ).toEqual({ ...prev, label: "Expo Go" });
+  });
+
   test("keeps the bundle details on a relaunch with a new pid", () => {
     const prev = { id: "com.example.foo", pid: 1, label: "Foo", version: "1.2.3" };
 
