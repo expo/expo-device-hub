@@ -1,4 +1,5 @@
 import { ScreenshotImageOptions } from "./screenshot-options";
+import { screenshotMetadata } from "./screenshot-metadata";
 import { timeStartup } from "./startup-timing";
 import { rm, stat } from "fs/promises";
 import { join } from "path";
@@ -976,12 +977,12 @@ async function runProcedureAsync(
         const { resolveBootedDeviceAsync } = await import("./device");
         const { getScreenshotDisplayIdsAsync } = await import("./screenshot-display");
         p.udid = await resolveBootedDeviceAsync(p.udid);
-        const capture = (
+        const capture = async (
           display: number,
           read?: () => Promise<number>,
           native?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
-        ) =>
-          captureScreenshotAsync(
+        ) => {
+          const result = await captureScreenshotAsync(
             {
               udid: p.udid,
               fileName: p.fileName ?? newScreenshotName(),
@@ -991,6 +992,9 @@ async function runProcedureAsync(
             read,
             native,
           );
+          if (result.exitCode !== 0) return result;
+          return { ...result, metadata: screenshotMetadata() };
+        };
         failure = "Could not capture the screenshot. Check the host logs for details.";
         if (p.display !== undefined) {
           const ids = await getScreenshotDisplayIdsAsync(p.udid);
@@ -1017,9 +1021,13 @@ async function runProcedureAsync(
             };
             const display = await read();
             selected = true;
-            return await capture(display, read, (id, timeoutMs) =>
-              session.screenshot(id, timeoutMs),
-            );
+            let metadata = screenshotMetadata();
+            const result = await capture(display, read, async (id, timeoutMs) => {
+              const shot = await session.screenshotWithMetadata(id, timeoutMs);
+              metadata = shot.metadata;
+              return shot.data;
+            });
+            return result.exitCode === 0 ? { ...result, metadata } : result;
           });
         } catch (error) {
           // @ref LLP 0003#action-catalog — only a proven sole screen can bypass native election
@@ -1089,8 +1097,8 @@ export async function runHostActionAsync(
       ? runProcedureAsync(action, params, streamSettings, binPath, deviceName)
       : runInvocation(buildInvocation(action, params, binPath)));
   }
-  // exec-ws spreads this straight into the reply, so only the three fields the page reads leave
-  // the process. `timedOut` steers the message a handler composes; the page has no use for it.
-  const { stdout, stderr, exitCode } = result;
-  return { stdout, stderr, exitCode };
+  // exec-ws spreads this into its reply. Keep the explicit public result fields;
+  // `timedOut` stays internal, while screenshot metadata accompanies the path.
+  const { stdout, stderr, exitCode, metadata } = result;
+  return metadata ? { stdout, stderr, exitCode, metadata } : { stdout, stderr, exitCode };
 }

@@ -36,6 +36,8 @@ export function screenConfigsEqual(a: SimScreenConfig | null, b: SimScreenConfig
     a.width === b.width &&
     a.height === b.height &&
     a.orientation === b.orientation &&
+    a.screenOrientation === b.screenOrientation &&
+    a.deviceOrientation === b.deviceOrientation &&
     a.screenId === b.screenId &&
     a.hingeAngle === b.hingeAngle &&
     a.supportsHingeAngle === b.supportsHingeAngle &&
@@ -86,6 +88,13 @@ export function isRotationReadback(
 export function simScreenSize(config: SimScreenConfig, foldable: boolean): ScreenSize {
   const screen: ScreenSize = { width: config.width, height: config.height };
   if (config.orientation !== undefined) screen.orientation = config.orientation;
+  if (!foldable && config.supportsHingeAngle === false) {
+    if (config.screenOrientation !== undefined) screen.screenOrientation = config.screenOrientation;
+    if (config.deviceOrientation !== undefined) {
+      screen.deviceOrientation = config.deviceOrientation;
+      screen.orientation = config.screenOrientation ?? undefined;
+    }
+  }
   if (config.inputUnavailable !== undefined) screen.inputUnavailable = config.inputUnavailable;
   const display = foldable ? duoDisplayId(config.screenId) : undefined;
   if (display) screen.display = display;
@@ -100,6 +109,8 @@ export function screenSizesEqual(a: ScreenSize | null, b: ScreenSize | null): bo
       a.width === b.width &&
       a.height === b.height &&
       a.orientation === b.orientation &&
+      a.screenOrientation === b.screenOrientation &&
+      a.deviceOrientation === b.deviceOrientation &&
       a.inputUnavailable === b.inputUnavailable &&
       a.display === b.display)
   );

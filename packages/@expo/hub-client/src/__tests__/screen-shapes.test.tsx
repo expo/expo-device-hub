@@ -14,6 +14,7 @@ import {
   screenShapeGeometryClipPath,
   screenShapeOrientation,
 } from "../shapes";
+import { displayScreen } from "../orientation";
 import { uniformScreenShape } from "../shapes/screen-shape";
 import { type ScreenSize } from "../types";
 import { createGlobalStubs } from "./test-globals";
@@ -171,6 +172,24 @@ describe("rotation", () => {
     expect(
       screenShapeOrientation({ width: 400, height: 800, orientation: "portrait_upside_down" }),
     ).toBe("portrait_upside_down");
+  });
+
+  test("turns with the observed device pose around a portrait-only app", () => {
+    const app = {
+      width: 1206,
+      height: 2622,
+      orientation: "portrait",
+      screenOrientation: "portrait",
+    } as const;
+    expect(screenShapeOrientation(displayScreen({ ...app, deviceOrientation: "pud" }))).toBe(
+      "portrait_upside_down",
+    );
+    expect(
+      screenShapeOrientation(displayScreen({ ...app, deviceOrientation: "landscape-left" })),
+    ).toBe("landscape_right");
+    expect(
+      screenShapeOrientation(displayScreen({ ...app, deviceOrientation: "landscape-right" })),
+    ).toBe("landscape_left");
   });
 });
 

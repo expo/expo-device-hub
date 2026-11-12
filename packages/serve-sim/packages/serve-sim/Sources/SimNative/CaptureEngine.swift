@@ -125,6 +125,7 @@ actor CaptureEngine {
     private var rebootSuspended = false
     // The device trait survives reboot while FrameCapture's boot-bound state is cleared.
     private var isFoldable = false
+    private var supportsDevicePose = false
     private var captureGeneration: UInt64 = 0
     private var recording: NativeVideoRecorder?
     private var recordingStarting = false
@@ -173,6 +174,7 @@ actor CaptureEngine {
                 frameContinuation.yield(Frame(pixelBuffer: pixelBuffer, timestamp: timestamp, canvas: canvas, captureGeneration: generation, isActivePanel: screen.isActivePanel))
             }
             isFoldable = await frameCapture.isFoldable
+            supportsDevicePose = await frameCapture.supportsDevicePose
         } catch {
             frameContinuation.finish()
             self.frameContinuation = nil
@@ -242,13 +244,20 @@ actor CaptureEngine {
     }
 
     func screenshot(_ screenID: UInt32, maxWidth: Int = 0) async throws -> Data {
+        try await screenshotWithMetadata(screenID, maxWidth: maxWidth).data
+    }
+
+    func screenshotWithMetadata(_ screenID: UInt32, maxWidth: Int = 0) async throws -> NativeScreenshot {
         guard phase == .running, !rebootSuspended else { throw CancellationError() }
         let generation = captureGeneration
         let frame = try await frameCapture.screenshotPixels(screenID: screenID)
         guard phase == .running, generation == captureGeneration, !rebootSuspended else { throw CancellationError() }
-        let png = try await screenshotEncoder.encode(frame.pixels, orientation: frame.orientation, maxWidth: maxWidth)
+        let encoded = try await screenshotEncoder.encodeWithMetadata(frame.pixels, orientation: frame.orientation, maxWidth: maxWidth)
         guard phase == .running, generation == captureGeneration, !rebootSuspended else { throw CancellationError() }
-        return png
+        return NativeScreenshot(data: encoded.data, metadata: NativeScreenshotMetadata(
+            width: encoded.width, height: encoded.height,
+            displayRotation: NativeScreenshotMetadata.rotation(frame.orientation),
+            screen: frame.screen))
     }
 
     private func handleFrame(_ frame: Frame) async {
@@ -485,6 +494,8 @@ actor CaptureEngine {
         await frameCapture.stop(preservingObservers: true)
         nativeFrameMailbox.setActive(false)
         recording?.suspendForReboot()
+        // Only an engine without a fixed panel resets the device at its next start.
+        if screenID == nil { await CoreDeviceBridge.shared.suspendDeviceStateObservation(udid: deviceUDID) }
     }
 
     /// The caller has awaited bootstatus. Only a snapshot from the new capture can resume recording.
@@ -520,22 +531,20 @@ actor CaptureEngine {
         } catch {
             await frameCapture.stop(preservingObservers: true)
             mailbox.setActive(false)
+            // FrameCapture.start may have restarted pose observation; a failed resume keeps it paused.
+            // A stopped engine already removed its listeners, and a newer capture may own the device.
+            if screenID == nil, phase == .running { await CoreDeviceBridge.shared.suspendDeviceStateObservation(udid: deviceUDID) }
             throw error
         }
     }
 
     func subscribeDeviceState(_ callback: @escaping @Sendable (DeviceStateSnapshot) -> Void,
                               onDetach: @escaping @Sendable () async -> Void = {}) async -> @Sendable () async -> Void {
-        guard phase == .running else { await onDetach(); return {} }
+        guard phase == .running, supportsDevicePose else { await onDetach(); return {} }
         let id = UUID()
         let unsubscribe: @Sendable () async -> Void
-        if isFoldable {
-            let removeListener = await CoreDeviceBridge.shared.subscribeDeviceState(udid: deviceUDID, onChange: callback)
-            unsubscribe = { await onDetach(); await removeListener() }
-        } else {
-            callback(await CoreDeviceBridge.shared.observedDeviceState(udid: deviceUDID))
-            unsubscribe = onDetach
-        }
+        let removeListener = await CoreDeviceBridge.shared.subscribeDeviceState(udid: deviceUDID, isFoldable: isFoldable, onChange: callback)
+        unsubscribe = { await onDetach(); await removeListener() }
         guard phase == .running else {
             await unsubscribe()
             return {}

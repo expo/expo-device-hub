@@ -20,6 +20,7 @@
 import { type CSSProperties } from "react";
 
 import { type FoldControlCommand, type FoldPose } from "./fold";
+import type { HingePhysicalOrientation } from "./hinge-control";
 
 export type DevicePlatform = "ios" | "android";
 
@@ -70,6 +71,10 @@ export interface ScreenSize {
   height: number;
   /** Last known orientation, when the backend reports it (serve-sim, serve-emu). */
   orientation?: DeviceOrientation;
+  /** Independently observed interface orientation; null means unknown. */
+  screenOrientation?: DeviceOrientation | null;
+  /** Independently observed physical pose; absent on older helpers, null when unknown. */
+  deviceOrientation?: HingePhysicalOrientation | null;
   /**
    * True when frames already show the display as it faces (serve-emu), so the client never
    * turns the video. serve-sim can send raw portrait frames for a turned device instead.
@@ -159,7 +164,7 @@ export type FoldCommandEvent =
    */
   | { type: "reset" }
   /**
-   * The viewer rotated the device, which clears its named pose, by
+   * A local control or native observation rotated the device, which clears its named pose, by
    * `quarterTurns` (clockwise positive): one for Rotate, or the turns to the
    * orientation that the viewer chose.
    */
@@ -226,8 +231,8 @@ export interface DeviceFold {
    */
   setControl: (command: FoldControlCommand) => void;
   /**
-   * Follow every fold command and rotation of this client, whichever control
-   * started it, as {@link FoldCommandEvent}s. Returns a function that stops
+   * Follow this client's fold commands and local or observed physical rotations
+   * as {@link FoldCommandEvent}s. Returns a function that stops
    * the listener. Absent when the backend reports no command lifecycle.
    */
   observe?: (listener: (event: FoldCommandEvent) => void) => () => void;
@@ -831,6 +836,20 @@ export type ScreenshotArtifact =
       error?: string;
     };
 
+/** Capture-source metadata. Zero numeric values and null rotation mean unknown. */
+export type ScreenshotMetadata = {
+  width: number;
+  height: number;
+  displayRotation:
+    | "portrait"
+    | "portrait-upside-down"
+    | "landscape-left"
+    | "landscape-right"
+    | null;
+  /** Two-panel device identity; omitted on single-display devices or when unknown. */
+  screen?: "inner" | "outer";
+};
+
 /**
  * A still PNG of the device and its session artifact outcome. `artifact` is
  * `null` when the backend sent no header, as older serve-sim and serve-emu
@@ -839,6 +858,8 @@ export type ScreenshotArtifact =
 export type ScreenshotCapture = {
   blob: Blob;
   artifact: ScreenshotArtifact | null;
+  /** Absent on older servers or when metadata is not recognized. */
+  metadata?: ScreenshotMetadata;
 };
 
 /**

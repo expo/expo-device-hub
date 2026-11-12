@@ -1,5 +1,11 @@
 # @expo/hub-client
 
+## 1.12.1
+
+### Patch Changes
+
+- 0b81172: Expose capture-source metadata alongside screenshot PNGs when the server provides it. Older servers and unrecognized optional metadata keep the existing screenshot behavior.
+
 ## 1.12.0
 
 ### Minor Changes

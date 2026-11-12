@@ -1,5 +1,6 @@
 import { ScreenshotImageOptions } from "./screenshot-options";
 import { convertScreenshot } from "./native";
+import { SCREENSHOT_METADATA_HEADER, screenshotMetadataHeaders } from "./screenshot-metadata";
 import { startDeviceInProcess, stopDeviceInProcess } from "./device-lifecycle";
 export { startDeviceInProcess } from "./device-lifecycle";
 export { gridDeviceState } from "./state";
@@ -2884,7 +2885,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       udid = udid.toUpperCase();
       try {
         const captureStarted = performance.now();
-        const { png, nativeMs } = await captureScreenshotPngAsync({
+        const { png, nativeMs, metadata } = await captureScreenshotPngAsync({
           udid,
           display: display?.data,
           maxWidth,
@@ -2909,9 +2910,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           "Content-Type": format === "jpeg" ? "image/jpeg" : "image/png",
           "Content-Length": String(image.byteLength),
           // The route allows configured cross-origin callers, and they can only read custom headers listed here.
-          "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, Server-Timing`,
+          "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, ${SCREENSHOT_METADATA_HEADER}, Server-Timing`,
           "Server-Timing": serverTiming,
           ...screenshotArtifactHeaders(artifact),
+          ...screenshotMetadataHeaders(metadata),
         });
         res.end(image);
       } catch (err) {
