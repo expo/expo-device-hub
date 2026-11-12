@@ -98,6 +98,7 @@ actor FrameCapture {
     private var deviceUDID: String?
     private var displayProfile = SimulatorDisplayProfile()
     private(set) var isFoldable = false
+    private(set) var supportsDevicePose = false
     private var authoritativeDisplay: CoreDeviceDisplayState?
     private var capturedPanelActivity: Bool?
     private var displayInfoTask: Task<Void, Never>?
@@ -146,6 +147,11 @@ actor FrameCapture {
         displayProfile = SimulatorDisplayProfile.read(from: device)
         legacyScreenSize = SimDisplayMetadata.legacyScreenSize(from: device)
         isFoldable = displayProfile.isFoldable
+        let runtimeSelector = NSSelectorFromString("runtime")
+        let runtime = device.responds(to: runtimeSelector)
+            ? device.perform(runtimeSelector)?.takeUnretainedValue() as? NSObject : nil
+        let runtimeIdentifier = runtime?.value(forKey: "identifier") as? String ?? ""
+        supportsDevicePose = displayProfile.supportsDevicePose(runtimeIdentifier: runtimeIdentifier)
         if screenID == nil {
             await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
@@ -526,7 +532,7 @@ actor FrameCapture {
 
     /// Retain the selected native surface independently of video size, cadence and subscribers.
     /// CPU readback and compression belong on the screenshot queue, not the video capture actor.
-    func screenshotPixels(screenID: UInt32) async throws -> (pixels: CVPixelBuffer, orientation: String?) {
+    func screenshotPixels(screenID: UInt32) async throws -> (pixels: CVPixelBuffer, orientation: String?, screen: RecordingScreen?) {
         guard displayConfigurationReady else { throw makeError(10, "Simulator display is unavailable") }
         // The producer maintains these surfaces through callbacks and bounded revalidation.
         // A synchronous ROCKit lookup here can stall the same queue that delivers video.
@@ -540,7 +546,8 @@ actor FrameCapture {
             throw makeError(10, "Could not read simulator display")
         }
         // CVPixelBuffer retains its IOSurface even if a transition retires this descriptor.
-        return (source, screenMetadata[key]?.applying(authoritativeDisplay).orientation)
+        let display = screenMetadata[key]?.applying(authoritativeDisplay)
+        return (source, display?.orientation, display?.recordingScreen(in: displayProfile))
     }
 
     private func captureFrame(force: Bool = false, allowLiveRevalidation: Bool = true) {
@@ -797,6 +804,7 @@ actor FrameCapture {
         if !preservingObservers { screenObservers.removeAll() }
         deviceUDID = nil
         isFoldable = false
+        supportsDevicePose = false
         displayProfile = SimulatorDisplayProfile()
         legacyScreenSize = nil
         authoritativeDisplay = nil

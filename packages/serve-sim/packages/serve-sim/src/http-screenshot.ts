@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { peekDeviceSession, withScreenshotDeviceSession } from "./device-session";
 import { convertScreenshot } from "./native";
+import { screenshotMetadata, type ScreenshotMetadata } from "./screenshot-metadata";
 import {
   getScreenshotDisplayIdsAsync,
   getSoleScreenshotDisplayIdAsync,
@@ -23,10 +24,13 @@ export async function captureScreenshotPngAsync(p: {
   maxWidth: number | undefined;
   settings: StreamSettings | undefined;
   isBooted: () => Promise<boolean>;
-}): Promise<{ png: Uint8Array; nativeMs: number }> {
+}): Promise<{ png: Uint8Array; nativeMs: number; metadata: ScreenshotMetadata }> {
   let file: string | undefined;
   let nativeMs = 0;
+  // Native captures carry their frame's metadata; simctl captures keep the unknown defaults.
+  let metadata = screenshotMetadata();
   const capture = async (id: number) => {
+    metadata = screenshotMetadata();
     file ??= join(tmpdir(), `serve-sim-screenshot-${randomBytes(8).toString("hex")}.png`);
     const result = await captureScreenshotFileAsync({
       udid: p.udid,
@@ -39,11 +43,12 @@ export async function captureScreenshotPngAsync(p: {
     return p.maxWidth ? await convertScreenshot(png, p.maxWidth) : png;
   };
   try {
-    if (p.display !== undefined) return { png: await capture(p.display), nativeMs };
+    if (p.display !== undefined) return { png: await capture(p.display), nativeMs, metadata };
     // @ref LLP 0003#action-catalog -- a cold session with one verified display needs no native video
     const sole = peekDeviceSession(p.udid) ? null : await getSoleScreenshotDisplayIdAsync(p.udid);
     // A viewer can start a session while the probes run; recheck with no await before simctl starts.
-    if (sole !== null && !peekDeviceSession(p.udid)) return { png: await capture(sole), nativeMs };
+    if (sole !== null && !peekDeviceSession(p.udid))
+      return { png: await capture(sole), nativeMs, metadata };
     const png = await withScreenshotDeviceSession(p.udid, p.settings, async (session) => {
       const read = () => session.activeScreenId();
       return Buffer.from(
@@ -53,7 +58,9 @@ export async function captureScreenshotPngAsync(p: {
           async (id, timeoutMs) => {
             const started = performance.now();
             try {
-              return await session.screenshot(id, timeoutMs, p.maxWidth);
+              const shot = await session.screenshotWithMetadata(id, timeoutMs, p.maxWidth);
+              metadata = shot.metadata;
+              return shot.data;
             } finally {
               nativeMs += performance.now() - started;
             }
@@ -70,7 +77,7 @@ export async function captureScreenshotPngAsync(p: {
       if (ids?.length !== 1) throw error;
       return await capture(ids[0]!);
     });
-    return { png, nativeMs };
+    return { png, nativeMs, metadata };
   } finally {
     // Best-effort cleanup; the PNG is already in memory by now.
     if (file) await unlink(file).catch(() => {});

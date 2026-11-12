@@ -1,5 +1,12 @@
 # @expo/serve-sim
 
+## 0.14.2
+
+### Patch Changes
+
+- 0c9742e: Populate screenshot dimensions, screen rotation, and display identity from native capture state. Older native helpers and the simctl fallback keep unknown metadata values.
+- 5ece7f9: Add a screenshot metadata response contract with zero/null defaults for unknown values. Existing paths and PNG output remain unchanged.
+
 ## 0.14.1
 
 ### Patch Changes

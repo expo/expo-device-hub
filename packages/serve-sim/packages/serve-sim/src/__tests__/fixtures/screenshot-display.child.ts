@@ -59,6 +59,20 @@ mock.module("../../device-session", () => ({
     const args = [udid, settings];
     owners.push(args);
     return capture({
+      async screenshotWithMetadata(
+        this: { screenshot(display: number): Promise<Uint8Array> },
+        display: number,
+      ) {
+        return {
+          data: await this.screenshot(display),
+          metadata: {
+            width: 0,
+            height: 0,
+            displayRotation: "portrait",
+            screen: display === 3 ? "inner" : "outer",
+          },
+        };
+      },
       screenshot: async (display: number) => {
         nativeDisplay = display;
         if (nativeFailure) throw nativeFailure;

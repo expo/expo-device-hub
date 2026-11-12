@@ -4,6 +4,7 @@ struct DeviceStateSnapshot: Codable, Equatable, Sendable {
     let generation: UInt64
     let revision: UInt64
     let state: CoreDeviceBridge.HingeState
+    var orientationObserved: Bool = false
 }
 
 struct DeviceMotionSample: Decodable, Sendable {
@@ -61,11 +62,15 @@ struct ObservedDeviceState {
 
     init(generation: UInt64) { self.generation = generation }
 
-    var snapshot: DeviceStateSnapshot { .init(generation: generation, revision: revision, state: state) }
+    var snapshot: DeviceStateSnapshot {
+        .init(generation: generation, revision: revision, state: state,
+              orientationObserved: orientationTimestamp != nil)
+    }
 
     @discardableResult
     mutating func apply(_ update: DeviceStateUpdate, since startedAt: Double) -> Bool {
         let previous = state
+        let hadOrientationObservation = orientationTimestamp != nil
         switch update {
         case .angle(let sample):
             guard fresh(sample.timestamp, since: startedAt, after: angleTimestamp) else { return false }
@@ -87,7 +92,7 @@ struct ObservedDeviceState {
             orientationTimestamp = sample.timestamp
             state.orientation = sample.orientation
         }
-        if state != previous { revision &+= 1 }
+        if state != previous || hadOrientationObservation != (orientationTimestamp != nil) { revision &+= 1 }
         return true
     }
 

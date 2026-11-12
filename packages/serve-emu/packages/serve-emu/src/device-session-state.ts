@@ -63,6 +63,7 @@ export class DeviceSessionState {
   readonly #applyLocation: DeviceSessionStateOptions["applyLocation"];
   readonly #applyRotation: DeviceSessionStateOptions["applyRotation"];
   readonly #recordLock: (pose: ScreenOrientation | null) => void;
+  readonly #beginLock: () => void;
   readonly #now: () => number;
   readonly #owners = new Set<DeviceStateOwner>();
   readonly #inputTargets = new Map<DeviceStateOwner, ReplayInputTarget>();
@@ -78,6 +79,7 @@ export class DeviceSessionState {
     });
     this.orientation = display.reader;
     this.#recordLock = display.locked;
+    this.#beginLock = display.locking;
     this.#now = options.now ?? Date.now;
     this.recorder = options.recorder ?? new SessionRecorder();
     this.logcat = options.logcat ?? new LogcatHub(options.serial);
@@ -154,12 +156,19 @@ export class DeviceSessionState {
 
   /**
    * Lock or free the rotation and record it, so `/api` right after a lock reports the locked
-   * pose instead of a read from before it.
+   * pose instead of a read from before it. Readings that overlap the command are dropped, and a
+   * failed command leaves the reading stale.
    */
   async setOrientation(mode: OrientationMode): Promise<OrientationStatus> {
-    const status = await this.#applyRotation(this.serial, mode);
-    this.#recordLock(status.pose);
-    return status;
+    this.#beginLock();
+    let pose: ScreenOrientation | null = null;
+    try {
+      const status = await this.#applyRotation(this.serial, mode);
+      pose = status.pose;
+      return status;
+    } finally {
+      this.#recordLock(pose);
+    }
   }
 
   release(owner: DeviceStateOwner, reason: string): Promise<void> {

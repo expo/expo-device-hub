@@ -4,6 +4,12 @@ import Foundation
 import ImageIO
 import CoreImage
 
+struct EncodedScreenshot: Sendable {
+    let data: Data
+    let width: Int
+    let height: Int
+}
+
 /// Keep CPU readback and PNG compression off the video capture actor.
 actor ScreenshotEncoder {
     private let queue = DispatchSerialQueue(label: "screenshot-encoder", qos: .userInitiated)
@@ -11,6 +17,10 @@ actor ScreenshotEncoder {
     private lazy var context = CIContext(options: [.useSoftwareRenderer: false])
 
     func encode(_ pixels: CVPixelBuffer, orientation: String? = nil, maxWidth: Int = 0) throws -> Data {
+        try encodeWithMetadata(pixels, orientation: orientation, maxWidth: maxWidth).data
+    }
+
+    func encodeWithMetadata(_ pixels: CVPixelBuffer, orientation: String? = nil, maxWidth: Int = 0) throws -> EncodedScreenshot {
         let width = CVPixelBufferGetWidth(pixels), height = CVPixelBufferGetHeight(pixels)
         // Match the preview's display geometry: some runtimes rotate the surface itself,
         // others keep portrait pixels and publish orientation separately.
@@ -27,7 +37,7 @@ actor ScreenshotEncoder {
         if rotation != .up || maxWidth > 0 {
             image = try render(resize(CIImage(cgImage: image).oriented(rotation), maxWidth: maxWidth))
         }
-        return try encode(image, jpegQuality: nil)
+        return EncodedScreenshot(data: try encode(image, jpegQuality: nil), width: image.width, height: image.height)
     }
 
     /// Also handles the simctl fallback. The artifact stays PNG even for a JPEG response.
