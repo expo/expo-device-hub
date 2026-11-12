@@ -144,6 +144,23 @@ describe.skipIf(!available)("the other models", () => {
     }
   });
 
+  test("each model names the black glass around its displays", async () => {
+    for (const model of Object.values(DEVICE_MODELS)) {
+      const { rig: loaded } = await rig(model);
+      expect(loaded.bezels.map((material) => material.name)).toEqual([
+        ...(model.bezelMaterials ?? []),
+      ]);
+      for (const material of loaded.bezels) {
+        // Black in the model: their gray in the scene is the room they reflect.
+        expect(Math.max(material.color.r, material.color.g, material.color.b)).toBeLessThan(0.01);
+      }
+    }
+    const phone = DEVICE_MODELS["android:pixel-9-pro"];
+    await expect(rig({ ...phone, bezelMaterials: ["Missing glass"] })).rejects.toThrow(
+      "has no Missing glass material",
+    );
+  });
+
   test("each display mesh has the shape of its framebuffer", async () => {
     for (const model of Object.values(DEVICE_MODELS)) {
       const { rig: loaded } = await rig(model);
