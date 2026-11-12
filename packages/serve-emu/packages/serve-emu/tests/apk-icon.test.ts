@@ -153,6 +153,46 @@ describe("selectResourceFilePath", () => {
     expect(selectResourceFilePath(block)).toBe("res/drawable-nodpi/ic.png");
   });
 
+  test("reads densities that carry an API level, as Expo Go's adaptive icon foreground does", () => {
+    // `aapt2 dump resources` of Expo Go 57.0.9 (host.exp.exponent, versionCode 444). Its minSdk is
+    // below 26, so the foreground bitmaps keep the `-v26` that adaptive icons need.
+    const block = [
+      "    resource 0x7f100001 mipmap/ic_foreground",
+      "      (mdpi-v26) (file) res/w7.png type=PNG",
+      "      (hdpi-v26) (file) res/mJ.png type=PNG",
+      "      (xhdpi-v26) (file) res/1Q.png type=PNG",
+      "      (xxhdpi-v26) (file) res/cI.png type=PNG",
+      "      (xxxhdpi-v26) (file) res/kb.png type=PNG",
+    ].join("\n");
+    expect(selectResourceFilePath(block)).toBe("res/kb.png");
+  });
+
+  test("treats an API level alone as the default config", () => {
+    expect(selectResourceFilePath("      (v26) (file) res/ic.png type=PNG")).toBe("res/ic.png");
+  });
+
+  test("reads a numeric density", () => {
+    const block = ["      (xhdpi) (file) res/a.png", "      (420dpi) (file) res/b.png"].join("\n");
+    expect(selectResourceFilePath(block)).toBe("res/b.png");
+  });
+
+  test("prefers the plain look over a night or round variant of the same density", () => {
+    const block = [
+      "      (night-xxxhdpi-v8) (file) res/dark.png type=PNG",
+      "      (round-xxxhdpi) (file) res/round.png type=PNG",
+      "      (xxhdpi-v26) (file) res/plain.png type=PNG",
+    ].join("\n");
+    expect(selectResourceFilePath(block)).toBe("res/plain.png");
+  });
+
+  test("falls back to a variant when the block has no plain bitmap", () => {
+    const block = [
+      "      (night-xxhdpi-v8) (file) res/dark-low.png type=PNG",
+      "      (night-xxxhdpi-v8) (file) res/dark-high.png type=PNG",
+    ].join("\n");
+    expect(selectResourceFilePath(block)).toBe("res/dark-high.png");
+  });
+
   test("returns null when the block holds only vectors", () => {
     expect(selectResourceFilePath("      (anydpi-v26) (file) res/ic.xml type=XML")).toBeNull();
   });
