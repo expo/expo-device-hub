@@ -5,7 +5,7 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient, HubComponents
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-11 (pose observation pauses during capture reboots, Claude Code, directed by Gabe Debes); 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-11-12 (the reboot pause is not shown to fix the Xcode 27 reboot failure); 2026-11-11 (pose observation pauses during capture reboots, Claude Code, directed by Gabe Debes); 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001, LLP 0016
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -70,11 +70,16 @@ pauses observation again, so after a failed reboot it stays paused until a captu
 starts. The pause does not wait for a registration RPC that ignores cancellation;
 the next producer waits for it [observed: `suspendDeviceStateObservation` and
 `resetForNewCapture` in `CoreDeviceBridge.swift`, `suspendForReboot` and
-`resumeAfterReboot` in `CaptureEngine.swift`]. Before this pause, the
-capture-reboot e2e test on the Xcode 27 runtime failed in 4 of 5 CI runs: the
-first `simctl spawn` after boot failed while the observer retried CoreDevice.
-Without the observer, 1 of 48 runs failed the same way [observed: EAS job
-"Xcode 26 build on Xcode 27 runtime (1/2)", 2026-11-09 to 2026-11-11].
+`resumeAfterReboot` in `CaptureEngine.swift`]. The pause was added because the
+capture-reboot e2e test on the Xcode 27 runtime failed in 4 of 5 CI runs before
+it. Later data does not show that the observer causes that failure. The first
+`simctl spawn` after an iOS 27 boot is slow with or without the observer, and the
+failure is more frequent on smaller runners
+([LLP 0011](0011-serve-sim-session-startup.explainer.md#boot-is-a-readiness-barrier)).
+In one diagnostic run with the pause, a spawn timed out in 1 of 24 reboots with
+the observer off and in 0 of 30 with it on [observed: EAS diagnostic run
+`01a1cdae`, 2026-11-12]. No run compared the observer with and without the pause
+on one runner class, so it is not known whether the pause is still necessary.
 
 Ordinary iOS devices use `DisplayInfoProtocol.displayInfoUpdates`, whose parent
 orientation describes physical pose independently of each display's interface
