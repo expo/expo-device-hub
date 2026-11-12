@@ -17,7 +17,34 @@ export async function execSdkTool(
   { signal }: { signal?: AbortSignal } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   if (!isBatchFile(toolPath)) return execFileAsync(toolPath, args, { signal });
-  return execFileAsync(buildBatchCommand(toolPath, args), [], { shell: true, signal });
+  return execBatch(buildBatchCommand(toolPath, args), signal);
+}
+
+/**
+ * Run a `.bat` command line through `cmd.exe`, and on abort kill its whole
+ * process tree. Killing only `cmd.exe` would leave the wrapper's JVM running,
+ * and every later device-list poll would start another one. The promise
+ * rejects as soon as `signal` aborts, without waiting for the tree to exit.
+ */
+function execBatch(
+  command: string,
+  signal: AbortSignal | undefined,
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const killTree = () => {
+      if (child.pid !== undefined) {
+        execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], () => {});
+      }
+      reject(signal?.reason);
+    };
+    const child = execFile(command, [], { shell: true }, (error, stdout, stderr) => {
+      signal?.removeEventListener("abort", killTree);
+      if (error) reject(error);
+      else resolve({ stdout, stderr });
+    });
+    if (signal?.aborted) killTree();
+    else signal?.addEventListener("abort", killTree, { once: true });
+  });
 }
 
 /** Whether `toolPath` is a Windows batch wrapper rather than a native binary. */

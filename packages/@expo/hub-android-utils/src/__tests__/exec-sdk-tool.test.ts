@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildBatchCommand, execSdkTool, isBatchFile } from "../exec-sdk-tool";
@@ -95,6 +95,36 @@ describe("execSdkTool", () => {
         '--package "system-images;android-36.1;google_apis_playstore;x86_64" ' +
           '--device "3.2in HVGA slider (ADP1)"',
       );
+    });
+
+    test("kills the wrapper's child process when the signal aborts", async () => {
+      // Like avdmanager.bat starting a JVM: the wrapper's child holds the
+      // output pipes and outlives cmd.exe unless the whole tree is killed.
+      const pidFile = join(directory, "child.pid");
+      const stalled = join(directory, "stalled.bat");
+      // Single quotes only: the script sits inside cmd.exe double quotes.
+      const quotedPidFile = `'${pidFile.replaceAll("\\", "\\\\")}'`;
+      const child = `require('fs').writeFileSync(${quotedPidFile}, String(process.pid)); setInterval(() => {}, 1000)`;
+      writeFileSync(stalled, `@echo off\r\n"${process.execPath}" -e "${child}"\r\n`);
+
+      const controller = new AbortController();
+      const run = execSdkTool(stalled, [], { signal: controller.signal });
+      while (!existsSync(pidFile)) await Bun.sleep(50);
+      const pid = Number(readFileSync(pidFile, "utf8"));
+      controller.abort();
+
+      await expect(run).rejects.toBeDefined();
+      const isRunning = () => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      const deadline = Date.now() + 5000;
+      while (isRunning() && Date.now() < deadline) await Bun.sleep(100);
+      expect(isRunning()).toBe(false);
     });
   });
 });

@@ -40,16 +40,20 @@ export async function listDevices({
   timeoutMs = LIST_DEVICES_TIMEOUT_MS,
 }: { timeoutMs?: number } = {}): Promise<AndroidUtilsResult<AndroidDevice[]>> {
   try {
-    const signal = AbortSignal.timeout(timeoutMs);
+    const deadline = AbortSignal.timeout(timeoutMs);
+    // Each command gets its own signal tied to the shared deadline: on Bun
+    // 1.3.14 a signal passed to a second child process after the first one
+    // exits no longer fires.
+    const signal = () => AbortSignal.any([deadline]);
     const env = process.env;
     const home = homedir();
     const avdmanager = resolveAvdmanagerPath(env, home);
     const adb = resolveAdbPath(env, home);
 
-    const avdList = await runAvdmanagerListAvd(avdmanager, { signal });
+    const avdList = await runAvdmanagerListAvd(avdmanager, { signal: signal() });
     if (avdList.error) return result([], avdList.error);
 
-    const adbList = await runAdbDevices(adb, { signal });
+    const adbList = await runAdbDevices(adb, { signal: signal() });
     if (adbList.error) return result([], adbList.error);
 
     const avdBlocks = avdList.value ? parseAvdList(avdList.value) : [];
@@ -66,7 +70,7 @@ export async function listDevices({
 async function inspectConnectedDevices(
   adb: string,
   adbStdout: string | null,
-  signal: AbortSignal,
+  signal: () => AbortSignal,
 ): Promise<AndroidUtilsResult<ConnectedDevice[]>> {
   if (!adbStdout) return result([]);
 
@@ -83,9 +87,9 @@ async function inspectConnectedDevices(
 async function inspectDevice(
   adb: string,
   serial: string,
-  signal: AbortSignal,
+  signal: () => AbortSignal,
 ): Promise<AndroidUtilsResult<ConnectedDevice>> {
-  const getprop = await runAdbGetprop(adb, serial, { signal });
+  const getprop = await runAdbGetprop(adb, serial, { signal: signal() });
   if (getprop.error) {
     return result({ serial, isEmulator: false, avdName: null, properties: {} }, getprop.error);
   }
@@ -94,7 +98,7 @@ async function inspectDevice(
   const isEmulator = isEmulatorProps(properties);
   let avdName: string | null = null;
   if (isEmulator) {
-    const named = await runAdbEmuAvdName(adb, serial, { signal });
+    const named = await runAdbEmuAvdName(adb, serial, { signal: signal() });
     if (named.error) {
       return result({ serial, isEmulator, avdName, properties }, named.error);
     }
