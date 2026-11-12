@@ -59,6 +59,11 @@ export interface DeviceModelDescription {
   displays: { main: DeviceModelDisplay; cover?: DeviceModelDisplay };
   hinge?: DeviceModelHinge;
   /**
+   * The materials of the black glass around the displays, named as in the GLB.
+   * The scene lowers their reflection, so they stay near the stream's black.
+   */
+  bezelMaterials?: readonly string[];
+  /**
    * How the client streams the device: each display on its own (`client.displays`,
    * the iPhone Duo on serve-sim), or one flat screen that shows the active display.
    */
@@ -106,6 +111,7 @@ export const DEVICE_MODELS: Readonly<Record<DeviceModelId, DeviceModelDescriptio
         texture: { width: 736, height: 1600 },
       },
     },
+    bezelMaterials: ["Front • glossy black ceramic"],
     streams: "screen",
   },
   "android:pixel-9-pro": {
@@ -119,6 +125,7 @@ export const DEVICE_MODELS: Readonly<Record<DeviceModelId, DeviceModelDescriptio
         texture: { width: 717, height: 1600 },
       },
     },
+    bezelMaterials: ["Display • glossy black border"],
     streams: "screen",
   },
   "android:pixel-9-pro-fold": {
@@ -149,6 +156,7 @@ export const DEVICE_MODELS: Readonly<Record<DeviceModelId, DeviceModelDescriptio
       left: "L • stationary cover-display leaf",
       right: "R • moving rear-camera leaf",
     },
+    bezelMaterials: ["Black • glossy display bezel"],
     streams: "screen",
   },
 };

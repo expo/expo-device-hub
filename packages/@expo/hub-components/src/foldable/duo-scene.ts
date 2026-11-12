@@ -47,6 +47,12 @@ import {
 import { duoInitialView, duoViewFolds, duoViewRotation, type DuoView } from "./duo-view";
 import { type DuoHingeCommands } from "./useDuoFraming";
 
+/**
+ * How much of the room the black glass around a display reflects. A quarter
+ * keeps a faint sheen and keeps the bezel near the stream's black.
+ */
+export const BEZEL_REFLECTION = 0.25;
+
 /** What the scene reads from React on every frame; the component supplies the latest values. */
 export interface DuoSceneState {
   /** The model that the scene draws. The scene reads it once, when it starts. */
@@ -260,7 +266,7 @@ export function createDuoScene(
     });
     for (const material of originals) {
       for (const value of Object.values(material)) {
-        if (value instanceof THREE.Texture) {
+        if (value instanceof THREE.Texture && value !== environment.texture) {
           value.dispose();
           if (value.image instanceof ImageBitmap) value.image.close();
         }
@@ -295,6 +301,17 @@ export function createDuoScene(
           }
           mesh.material = surface.material;
         }
+      }
+      // @ref LLP 0004#3d-preview-in-the-hub — the black glass around a display reflects a quarter of the room
+      // The stream is unlit, so its black reflects nothing, and the glossy glass
+      // around it, which mirrors the room, showed gray beside it. A material's
+      // own reflection strength needs its own environment map, turned as the
+      // scene's is, or the room's brightest panel comes back as glare.
+      for (const material of loaded.bezels) {
+        material.envMap = environment.texture;
+        material.envMapRotation.copy(scene.environmentRotation);
+        material.envMapIntensity = BEZEL_REFLECTION;
+        material.needsUpdate = true;
       }
       root.add(model);
       callbacks.ready();

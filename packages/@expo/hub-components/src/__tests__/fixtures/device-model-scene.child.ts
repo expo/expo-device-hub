@@ -158,7 +158,7 @@ mock.module("../../foldable/device-model-rig", () => ({
     return rig;
   },
 }));
-const { createDuoScene } = await import("../../foldable/duo-scene");
+const { BEZEL_REFLECTION, createDuoScene } = await import("../../foldable/duo-scene");
 
 type ModelId = keyof typeof DEVICE_MODELS;
 
@@ -286,6 +286,43 @@ test.skipIf(!MODELS_AVAILABLE)(
       expect(begins[1]!.y).toBeLessThan(0.25);
     } finally {
       scene.dispose();
+    }
+  },
+);
+
+test.skipIf(!MODELS_AVAILABLE)(
+  "the black glass around a display reflects less of the room, and the room outlives the model",
+  async () => {
+    const scene = await setup(
+      "android:pixel-9-pro",
+      stream(portrait.width, portrait.height),
+      portrait,
+    );
+    let disposed = false;
+    try {
+      const bezels = scene.rig().bezels;
+      expect(bezels.length).toBeGreaterThan(0);
+      const room = bezels[0]!.envMap!;
+      expect(room).toBeInstanceOf(three.Texture);
+      for (const material of bezels) {
+        expect(material.envMap).toBe(room);
+        expect(material.envMapIntensity).toBe(BEZEL_REFLECTION);
+        // Turned as the scene's room is, so its brightest panel stays behind the model.
+        expect(material.envMapRotation.y).toBeCloseTo(Math.PI);
+      }
+      // Every other material keeps the scene's own room.
+      scene.rig().model.traverse((object) => {
+        if (!(object instanceof three.Mesh)) return;
+        for (const material of [object.material].flat()) {
+          if (!bezels.includes(material)) expect(material.envMap ?? null).toBeNull();
+        }
+      });
+      const disposeRoom = spyOn(room, "dispose");
+      scene.dispose();
+      disposed = true;
+      expect(disposeRoom).not.toHaveBeenCalled();
+    } finally {
+      if (!disposed) scene.dispose();
     }
   },
 );

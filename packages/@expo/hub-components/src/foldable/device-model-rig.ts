@@ -29,6 +29,8 @@ export interface DeviceModelRig {
   halves: { left: THREE.Object3D; right: THREE.Object3D } | null;
   /** The meshes that show each display. */
   displays: { main: THREE.Mesh[]; cover: THREE.Mesh[] };
+  /** The materials of the black glass around the displays, as the description names them. */
+  bezels: THREE.MeshStandardMaterial[];
   /** The folds that {@link fold} set last. */
   readonly folds: DeviceModelFolds;
   /**
@@ -272,6 +274,16 @@ export function rigDeviceModel(description: DeviceModelDescription, gltf: GLTF):
     // A bent or animated mesh leaves its stored bounds.
     mesh.frustumCulled = false;
   }
+  const materials = meshesUnder(asset).flatMap((mesh) =>
+    Array.isArray(mesh.material) ? mesh.material : [mesh.material],
+  );
+  const bezels = (description.bezelMaterials ?? []).map((name) => {
+    const material = materials.find((candidate) => candidate.name === name);
+    if (!(material instanceof THREE.MeshStandardMaterial)) {
+      throw new Error(`The ${description.name} model has no ${name} material`);
+    }
+    return material;
+  });
 
   // A phone turns around its center. A foldable keeps its hinge on the Y axis,
   // and the scene centers its folded body every frame.
@@ -311,6 +323,7 @@ export function rigDeviceModel(description: DeviceModelDescription, gltf: GLTF):
     model,
     halves,
     displays,
+    bezels,
     folds,
     fold(next, deform = true) {
       folds.left = next.left;
