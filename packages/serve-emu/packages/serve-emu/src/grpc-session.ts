@@ -26,6 +26,7 @@ import {
   H264Encoder,
   resolveFfmpegEncoder,
   reportFfmpegEncoderFailure,
+  supportsTimedKeyFrames,
   type FfmpegEncoderName,
   type H264EncoderInputFormat,
   type H264EncoderOpts,
@@ -1228,6 +1229,8 @@ export type GrpcSessionEncoder = {
 
 export type GrpcSessionRuntime = {
   resolveEncoder(encoder: GrpcEncoder, signal: AbortSignal): Promise<FfmpegEncoderName>;
+  /** Whether ffmpeg can count a recording's keyframe interval in real time; false when absent. */
+  supportsTimedKeyFrames?(signal: AbortSignal): Promise<boolean>;
   reportEncoderFailure(encoderName: FfmpegEncoderName, message: string): void;
   ensureEndpoint(serial: string, signal: AbortSignal): Promise<GrpcEndpoint>;
   createClient(endpoint: GrpcEndpoint): GrpcSessionClient;
@@ -1483,6 +1486,7 @@ const defaultReadDisplaySizeSignal: NonNullable<
 
 const DEFAULT_GRPC_SESSION_RUNTIME: GrpcSessionRuntime = {
   resolveEncoder: resolveFfmpegEncoder,
+  supportsTimedKeyFrames,
   reportEncoderFailure: reportFfmpegEncoderFailure,
   ensureEndpoint: ensureEmulatorGrpcEndpoint,
   createClient: (endpoint) => new EmulatorGrpcClient(endpoint),
@@ -1569,11 +1573,15 @@ export async function startGrpcSession(
 
   let endpoint: Awaited<ReturnType<typeof ensureEmulatorGrpcEndpoint>>;
   let encoderName: FfmpegEncoderName;
+  let timedKeyFrames = false;
   try {
     encoderName = await runtime.resolveEncoder(
       options.encoder ?? DEFAULT_GRPC_ENCODER,
       lifetime.signal,
     );
+    if (options.recording) {
+      timedKeyFrames = (await runtime.supportsTimedKeyFrames?.(lifetime.signal)) ?? false;
+    }
     endpoint = await runtime.ensureEndpoint(serial, lifetime.signal);
   } catch (error) {
     options.signal?.removeEventListener("abort", abortFromParent);
@@ -2224,7 +2232,7 @@ export async function startGrpcSession(
         createEncoder: (encoderOptions) => runtime.createEncoder(encoderOptions),
         fps: maxFps,
         bitRate,
-        keyFrameInterval,
+        timedKeyFrames,
         inputFormat: transport.encoderInputFormat,
       });
     }

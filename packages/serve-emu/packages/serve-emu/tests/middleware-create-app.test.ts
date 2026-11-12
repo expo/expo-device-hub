@@ -830,6 +830,8 @@ test("a foldable's gRPC capture records on the fold canvas and reports that it f
   const recorder = await foldRecorder(root);
   const { session } = fakeScrcpySession(1);
   let recording: Parameters<NonNullable<CreateAppDependencies["startSession"]>>[0]["recording"];
+  let sensorOpened = false;
+  let sensorClosed = false;
   const app = await createApp(
     {
       serial: session.serial,
@@ -838,9 +840,20 @@ test("a foldable's gRPC capture records on the fold canvas and reports that it f
       screenRecording: recorder,
     },
     {
-      readOrientation: readNoOrientation,
+      readOrientation: async () => "landscape_left",
       readFoldableDisplays: async () => FOLD_DISPLAYS,
       readFoldState: async () => ({ supported: true, posture: "opened", hingeAngle: 180 }),
+      openHingeSensor: async () => {
+        sensorOpened = true;
+        return {
+          readAngle: async () => 180,
+          watchPostures: (_onChange, signal) =>
+            new Promise((resolve) => signal.addEventListener("abort", () => resolve())),
+          close: () => {
+            sensorClosed = true;
+          },
+        };
+      },
       startSession: async (options) => {
         recording = options.recording;
         return { ...adaptScrcpySession(session), mode: "grpc-screenshot", feedsRecording: true };
@@ -850,6 +863,8 @@ test("a foldable's gRPC capture records on the fold canvas and reports that it f
   try {
     expect(recording?.canvas).toEqual({ width: 926, height: 960 });
     expect(recorder.followsFold).toBe(true);
+    // The recording reads the hinge over gRPC while it follows folds.
+    expect(sensorOpened).toBe(true);
     // A fold canvas frame's PTS is the host monotonic time of its capture.
     const pts = BigInt(Math.round(performance.now() * 1000));
     recording!.accept(
@@ -878,7 +893,7 @@ test("a foldable's gRPC capture records on the fold canvas and reports that it f
           screen: "inner",
           contentRect: { x: 0, y: 0, width: 926, height: 960 },
           hingeAngle: 180,
-          posture: "opened",
+          orientation: "landscape_left",
         },
       },
     ]);
@@ -886,6 +901,7 @@ test("a foldable's gRPC capture records on the fold canvas and reports that it f
     await app.stop();
     await rm(root, { recursive: true, force: true });
   }
+  expect(sensorClosed).toBe(true);
 });
 
 test("refuses a fold while the recording takes the viewers' packets", async () => {

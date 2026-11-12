@@ -33,9 +33,17 @@ export type GrpcRecordingEncoderOptions = {
   createEncoder(options: H264EncoderOpts): RecordingEncoder;
   fps: number;
   bitRate: number;
-  keyFrameInterval: number;
+  /** Whether ffmpeg can count the keyframe interval in real time, from `supportsTimedKeyFrames`. */
+  timedKeyFrames: boolean;
   inputFormat: H264EncoderInputFormat;
 };
+
+// @ref LLP 0018#recording-keyframes — serve-sim's recorder keyframes every 60 frames or 1 s at most
+/**
+ * Seconds between the recording's keyframes, as serve-sim's recorder: a seek decodes at most this
+ * much, and a recording that stops without its end keeps all but about this much.
+ */
+export const RECORDING_KEY_FRAME_INTERVAL_S = 1;
 
 // @ref LLP 0018#recording-encoder — a second encoder, so the live stream keeps each display's own size
 /**
@@ -86,7 +94,8 @@ export class GrpcRecordingEncoder {
         inputFormat: this.#options.inputFormat,
         fps: this.#options.fps,
         bitRate: this.#options.bitRate,
-        keyFrameInterval: this.#options.keyFrameInterval,
+        keyFrameInterval: RECORDING_KEY_FRAME_INTERVAL_S,
+        timedKeyFrames: this.#options.timedKeyFrames,
         canvas: { ...this.#options.output.canvas, content: geometry.contentRect },
         onFrame: (frame) => {
           if (entry.current && this.#active === entry.current) {

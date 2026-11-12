@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseFoldableDisplays } from "../src/fold.ts";
 import { GrpcRecordingEncoder, type GrpcRecordingOutput } from "../src/grpc-recording-encoder.ts";
-import { ffmpegEncoderArgs, type H264EncoderOpts } from "../src/h264-encoder.ts";
+import {
+  createTimedKeyFrameProbe,
+  ffmpegEncoderArgs,
+  type H264EncoderOpts,
+} from "../src/h264-encoder.ts";
 import {
   captureBox,
   captureSize,
@@ -26,9 +30,15 @@ hw.displayRegion.0.1.height = 2424
 hw.displayRegion.0.2.width = 0
 hw.sensor.hinge = true
 hw.sensor.hinge.ranges = 0-180
+hw.sensor.posture_list = 1, 2, 3
+hw.sensor.hinge_angles_posture_definitions = 0-30, 30-150, 150-180
 hw.sensor.hinge.fold_to_displayRegion.0.1_at_posture = 1
 `;
-const DISPLAYS = { inner: { width: 2076, height: 2152 }, outer: { width: 1080, height: 2424 } };
+const DISPLAYS = {
+  inner: { width: 2076, height: 2152 },
+  outer: { width: 1080, height: 2424 },
+  closedHinge: { min: 0, max: 30 },
+};
 const LAYOUT = recordingCanvas(DISPLAYS, 960);
 const INNER: RecordingGeometry = recordingGeometry({ width: 926, height: 960 }, LAYOUT);
 const OUTER: RecordingGeometry = recordingGeometry({ width: 427, height: 960 }, LAYOUT);
@@ -43,6 +53,20 @@ test("reads a foldable's two displays from the emulator's hardware config", () =
   expect(parseFoldableDisplays(PIXEL_9_PRO_FOLD.replace("hinge = true", "hinge = yes"))).toEqual(
     DISPLAYS,
   );
+  // The closed posture's angles come from the range at its index in the posture list.
+  expect(
+    parseFoldableDisplays(
+      PIXEL_9_PRO_FOLD.replace("posture_list = 1, 2, 3", "posture_list = 3, 2, 1").replace(
+        "0-30, 30-150, 150-180",
+        "150-180, 30-150, 0-25",
+      ),
+    )?.closedHinge,
+  ).toEqual({ min: 0, max: 25 });
+  // Without them, the displays stay and the hinge has no closed range.
+  const { closedHinge: _, ...displaysOnly } = DISPLAYS;
+  expect(
+    parseFoldableDisplays(PIXEL_9_PRO_FOLD.replace(/^hw\.sensor\.hinge_angles.*\n/m, "")),
+  ).toEqual(displaysOnly);
   // A phone has no hinge, and a hinge without a fold region names no second display.
   expect(parseFoldableDisplays(PIXEL_9_PRO_FOLD.replace("hinge = true", "hinge = false"))).toBe(
     null,
@@ -120,18 +144,22 @@ test("centers each display on the canvas, and scales one that does not fit", () 
   });
 });
 
-test("leaves the pose unknown while the hinge reading contradicts the shown display", () => {
-  expect(poseForGeometry(OUTER, { hingeAngle: 0, posture: "closed" })).toEqual({
+test("leaves the hinge unknown while its reading contradicts the shown display", () => {
+  const closed = DISPLAYS.closedHinge;
+  expect(poseForGeometry(OUTER, { hingeAngle: 0, orientation: "portrait" }, closed)).toEqual({
     hingeAngle: 0,
-    posture: "closed",
+    orientation: "portrait",
   });
-  expect(poseForGeometry(OUTER, { hingeAngle: 180, posture: "opened" })).toEqual({});
-  expect(poseForGeometry(INNER, { hingeAngle: 0, posture: "closed" })).toEqual({});
-  expect(poseForGeometry(INNER, { hingeAngle: 90, posture: "half_opened" })).toEqual({
-    hingeAngle: 90,
-    posture: "half_opened",
-  });
-  expect(poseForGeometry(INNER, { hingeAngle: 45 })).toEqual({ hingeAngle: 45 });
+  // The orientation stays when the hinge goes.
+  expect(
+    poseForGeometry(OUTER, { hingeAngle: 180, orientation: "landscape_left" }, closed),
+  ).toEqual({ orientation: "landscape_left" });
+  expect(poseForGeometry(INNER, { hingeAngle: 0 }, closed)).toEqual({});
+  expect(poseForGeometry(INNER, { hingeAngle: 29.5 }, closed)).toEqual({});
+  expect(poseForGeometry(INNER, { hingeAngle: 30 }, closed)).toEqual({ hingeAngle: 30 });
+  expect(poseForGeometry(INNER, { hingeAngle: 90 }, closed)).toEqual({ hingeAngle: 90 });
+  // A profile without posture angles keeps every reading.
+  expect(poseForGeometry(OUTER, { hingeAngle: 180 }, undefined)).toEqual({ hingeAngle: 180 });
 });
 
 test("adds a canvas and a centered picture to the ffmpeg filter", () => {
@@ -146,6 +174,80 @@ test("adds a canvas and a centered picture to the ffmpeg filter", () => {
   expect(args[args.indexOf("-vf") + 1]).toBe(
     "crop=trunc(iw/2)*2:trunc(ih/2)*2,scale=426:960,pad=926:960:250:0:black",
   );
+});
+
+test("counts the recording's keyframe interval in real time as well as in frames", () => {
+  const options = {
+    width: 427,
+    height: 960,
+    fps: 60,
+    bitRate: 4_000_000,
+    keyFrameInterval: 1,
+    canvas: { ...LAYOUT.canvas, content: OUTER.contentRect },
+  };
+  const args = ffmpegEncoderArgs({ ...options, timedKeyFrames: true });
+  expect(args[args.indexOf("-vf") + 1]).toBe(
+    "settb=AVTB,setpts='if(isnan(PREV_OUTPTS),0,max(RTCTIME-RTCSTART,PREV_OUTPTS+1))'," +
+      "crop=trunc(iw/2)*2:trunc(ih/2)*2,scale=426:960,pad=926:960:250:0:black",
+  );
+  const timed = args.indexOf("-fps_mode");
+  expect(args.slice(timed, timed + 6)).toEqual([
+    "-fps_mode",
+    "passthrough",
+    "-enc_time_base",
+    "1:1000000",
+    "-force_key_frames",
+    // One second, less half a frame of timing jitter.
+    "expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+0.991667))",
+  ]);
+  // 60 frames is the other limit, as serve-sim's recorder.
+  expect(args).toContain("keyint=60:min-keyint=60:scenecut=0:repeat-headers=1:aud=1");
+  // Without it, the command line stays as it was.
+  const frameCounted = ffmpegEncoderArgs(options);
+  expect(frameCounted).not.toContain("-fps_mode");
+  expect(frameCounted[frameCounted.indexOf("-vf") + 1]).toStartWith("crop=");
+  expect(() =>
+    ffmpegEncoderArgs({ ...options, timedKeyFrames: true, encoderName: "h264_videotoolbox" }),
+  ).toThrow("timed keyframes need the libx264 encoder");
+  expect(() =>
+    ffmpegEncoderArgs({ ...options, timedKeyFrames: true, keyFrameInterval: 0 }),
+  ).toThrow("timed keyframes need a positive keyFrameInterval");
+});
+
+test("asks ffmpeg once whether it knows the timed keyframe options", async () => {
+  const calls: string[][] = [];
+  let status: number | null = 0;
+  const probe = createTimedKeyFrameProbe({
+    resolveBinary: () => "ffmpeg-test",
+    runExec: async (_binary, args) => {
+      calls.push(args);
+      return { status, stdout: "", stderr: "", timedOut: false, error: null } as never;
+    },
+  });
+  expect(await probe()).toBe(true);
+  expect(await probe()).toBe(true);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toContain("-fps_mode");
+  // ffmpeg older than 5.1 rejects -fps_mode; the answer is kept too.
+  status = 8;
+  const old = createTimedKeyFrameProbe({
+    resolveBinary: () => "ffmpeg-old",
+    runExec: async () =>
+      ({ status, stdout: "", stderr: "", timedOut: false, error: null }) as never,
+  });
+  expect(await old()).toBe(false);
+  // A probe that could not run is asked again.
+  let runs = 0;
+  const flaky = createTimedKeyFrameProbe({
+    resolveBinary: () => "ffmpeg-flaky",
+    runExec: async () => {
+      runs++;
+      return { status: null, stdout: "", stderr: "", timedOut: true, error: null } as never;
+    },
+  });
+  expect(await flaky()).toBe(false);
+  expect(await flaky()).toBe(false);
+  expect(runs).toBe(2);
 });
 
 const config = Buffer.from(
@@ -215,24 +317,27 @@ async function recorder(options: { realWriter?: boolean } = {}) {
 test("keeps one track through a fold and writes the display timeline", async () => {
   const { recording, manifest } = await recorder();
   recording.followFold();
+  recording.foldCanvas(LAYOUT);
   expect(recording.snapshot()).toEqual({ status: "waiting", followsFold: true });
-  recording.observePose({ hingeAngle: 180, posture: "opened" });
+  recording.observePose({ hingeAngle: 180, orientation: "portrait" });
   recording.accept(frame(1_000_000n), LAYOUT.canvas, "grpc-screenshot", INNER);
   await recording.ready;
   expect(recording.snapshot()).toMatchObject({ status: "recording", followsFold: true });
   recording.accept(frame(1_100_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", INNER);
-  // The cover display shows before the hinge reading catches up: the pose is unknown.
+  // The cover display shows before the hinge reading catches up: the hinge is unknown.
   recording.accept(frame(3_000_000n), LAYOUT.canvas, "grpc-screenshot", OUTER);
-  recording.observePose({ hingeAngle: 0, posture: "closed" });
+  recording.observePose({ hingeAngle: 0 });
   recording.accept(frame(3_500_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", OUTER);
-  // A pose-only change within 250 ms of the previous entry waits for a later frame.
-  recording.observePose({ hingeAngle: 10, posture: "closed" });
+  // A hinge-only change within 250 ms of the previous entry waits for a later frame.
+  recording.observePose({ hingeAngle: 10 });
   recording.accept(frame(3_600_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", OUTER);
   recording.accept(frame(3_700_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", OUTER);
+  // A turn of the UI is a layout change, so it does not wait.
+  recording.observePose({ orientation: "landscape_left" });
   recording.accept(frame(3_800_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", OUTER);
-  recording.observePose({ hingeAngle: 180, posture: "opened" });
+  recording.observePose({ hingeAngle: 180 });
   recording.accept(frame(5_000_000n), LAYOUT.canvas, "grpc-screenshot", INNER);
-  recording.observePose({ hingeAngle: 90, posture: "half_opened" });
+  recording.observePose({ hingeAngle: 90 });
   recording.accept(frame(5_100_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", INNER);
   await recording.finish();
   const result = await manifest();
@@ -240,7 +345,7 @@ test("keeps one track through a fold and writes the display timeline", async () 
   const pose = (entry: { state: Record<string, unknown> }) => ({
     screen: entry.state.screen,
     hingeAngle: entry.state.hingeAngle,
-    posture: entry.state.posture,
+    orientation: entry.state.orientation,
   });
   expect(
     result.deviceStates.map((entry: { timeMs: number; state: Record<string, unknown> }) => ({
@@ -248,14 +353,16 @@ test("keeps one track through a fold and writes the display timeline", async () 
       ...pose(entry),
     })),
   ).toEqual([
-    { timeMs: 0, screen: "inner", hingeAngle: 180, posture: "opened" },
-    { timeMs: 2000, screen: "outer", hingeAngle: undefined, posture: undefined },
-    { timeMs: 2500, screen: "outer", hingeAngle: 0, posture: "closed" },
-    { timeMs: 2800, screen: "outer", hingeAngle: 10, posture: "closed" },
-    { timeMs: 4000, screen: "inner", hingeAngle: 180, posture: "opened" },
+    { timeMs: 0, screen: "inner", hingeAngle: 180, orientation: "portrait" },
+    { timeMs: 2000, screen: "outer", hingeAngle: undefined, orientation: "portrait" },
+    { timeMs: 2500, screen: "outer", hingeAngle: 0, orientation: "portrait" },
+    { timeMs: 2800, screen: "outer", hingeAngle: 10, orientation: "landscape_left" },
+    { timeMs: 4000, screen: "inner", hingeAngle: 180, orientation: "landscape_left" },
     // The final written state stays, although it is within 250 ms of the previous entry.
-    { timeMs: 4100, screen: "inner", hingeAngle: 90, posture: "half_opened" },
+    { timeMs: 4100, screen: "inner", hingeAngle: 90, orientation: "landscape_left" },
   ]);
+  // The hinge angle holds the posture, so the timeline does not repeat it.
+  for (const entry of result.deviceStates) expect(entry.state).not.toHaveProperty("posture");
   expect(result.deviceStates[1].state.contentRect).toEqual({
     x: 250,
     y: 0,
@@ -267,12 +374,12 @@ test("keeps one track through a fold and writes the display timeline", async () 
 test("a frame shows the hinge reading from before it was captured", async () => {
   const { recording, manifest, setTime } = await recorder();
   setTime(900_000n);
-  recording.observePose({ hingeAngle: 180, posture: "opened" });
+  recording.observePose({ hingeAngle: 180 });
   recording.accept(frame(1_000_000n), LAYOUT.canvas, "grpc-screenshot", INNER);
   await recording.ready;
   // A reading after the next frame's capture, but before ffmpeg returns that frame.
   setTime(1_200_000n);
-  recording.observePose({ hingeAngle: 90, posture: "half_opened" });
+  recording.observePose({ hingeAngle: 90 });
   recording.accept(frame(1_100_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", INNER);
   recording.accept(frame(1_500_000n, delta, false), LAYOUT.canvas, "grpc-screenshot", INNER);
   setTime(2_000_000n);
@@ -379,7 +486,7 @@ function fakeEncoders() {
     output,
     fps: 30,
     bitRate: 4_000_000,
-    keyFrameInterval: 1,
+    timedKeyFrames: true,
     inputFormat: "rgb24",
     createEncoder: (options) => {
       const fake: FakeEncoder = { options, writes: [], writable: true, closed: false };
@@ -418,6 +525,8 @@ test("starts a canvas encoder per display size, and drops a replaced encoder's o
   expect(encoders).toHaveLength(1);
   expect(encoders[0]!.options).toMatchObject({
     encoderName: "libx264",
+    keyFrameInterval: 1,
+    timedKeyFrames: true,
     width: 926,
     height: 960,
     canvas: { width: 926, height: 960, content: { x: 0, y: 0, width: 926, height: 960 } },

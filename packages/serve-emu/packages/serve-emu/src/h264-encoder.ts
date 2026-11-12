@@ -37,6 +37,12 @@ export type H264EncoderOpts = {
   bitRate: number;
   /** Seconds between forced keyframes; 0 uses libx264's default keyint. */
   keyFrameInterval: number;
+  /**
+   * Also count `keyFrameInterval` in real time between the frames that arrive, not only in
+   * frames at `fps`, so a slow screen still gets a keyframe at most that often. libx264 only;
+   * needs an ffmpeg that `supportsTimedKeyFrames` accepts.
+   */
+  timedKeyFrames?: boolean;
   onFrame: (frame: VideoFrame) => void;
   /** Called once when ffmpeg or its output parser fails unexpectedly. */
   onExit: (reason: string) => void;
@@ -242,11 +248,84 @@ type FfmpegEncoderArgsOptions = Pick<
   | "fps"
   | "bitRate"
   | "keyFrameInterval"
+  | "timedKeyFrames"
   | "quarterTurn"
   | "inputFormat"
   | "encoderName"
   | "canvas"
 >;
+
+// @ref LLP 0018#recording-keyframes — at most a keyframe interval apart in real time, as serve-sim's recorder
+/**
+ * Real-time timestamps for each frame and a keyframe at the first frame a keyframe interval
+ * after the last one. Each input frame stays exactly one output frame, so the output parser
+ * still pairs access units with submitted timestamps in order. The interval allows half a frame
+ * at `fps` of timing jitter, so frames a full interval apart do not miss it.
+ */
+function timedKeyFrameArgs(
+  encoderName: FfmpegEncoderName,
+  opts: Pick<H264EncoderOpts, "fps" | "keyFrameInterval">,
+): { filter: string; args: string[] } {
+  if (encoderName !== "libx264") {
+    throw new RangeError("timed keyframes need the libx264 encoder");
+  }
+  if (!(opts.keyFrameInterval > 0)) {
+    throw new RangeError("timed keyframes need a positive keyFrameInterval");
+  }
+  const interval = Number(Math.max(0, opts.keyFrameInterval - 0.5 / opts.fps).toFixed(6));
+  return {
+    // Strictly increasing microseconds from the wall clock, for frames that arrive together too.
+    filter: "settb=AVTB,setpts='if(isnan(PREV_OUTPTS),0,max(RTCTIME-RTCSTART,PREV_OUTPTS+1))'",
+    args: [
+      "-fps_mode",
+      "passthrough",
+      "-enc_time_base",
+      "1:1000000",
+      "-force_key_frames",
+      `expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+${interval}))`,
+    ],
+  };
+}
+
+/** The options of `timedKeyFrameArgs` that an ffmpeg must know; older than 5.1 lacks -fps_mode. */
+const TIMED_KEY_FRAME_PROBE_ARGS = [
+  "-hide_banner",
+  "-fps_mode",
+  "passthrough",
+  "-enc_time_base",
+  "1:1000000",
+  "-force_key_frames",
+  "expr:1",
+  "-version",
+];
+
+/**
+ * Build an abortable check of whether ffmpeg knows the timed keyframe options. It caches each
+ * answer per binary, but not a probe that failed to run.
+ */
+export function createTimedKeyFrameProbe(
+  options: FfmpegAvailabilityProbeOptions = {},
+): (signal?: AbortSignal) => Promise<boolean> {
+  const resolveBinary = options.resolveBinary ?? resolveFfmpeg;
+  const runExec = options.runExec ?? execText;
+  const answers = new Map<string, boolean>();
+  return async (signal?: AbortSignal): Promise<boolean> => {
+    const binary = resolveBinary();
+    const known = answers.get(binary);
+    if (known !== undefined) return known;
+    const result = await runExec(binary, TIMED_KEY_FRAME_PROBE_ARGS, {
+      timeout: FFMPEG_PROBE_TIMEOUT_MS,
+      maxBuffer: FFMPEG_PROBE_MAX_BYTES,
+      signal,
+      lane: "background",
+    });
+    if (result.error || result.timedOut || result.status === null) return false;
+    answers.set(binary, result.status === 0);
+    return result.status === 0;
+  };
+}
+
+export const supportsTimedKeyFrames = createTimedKeyFrameProbe();
 
 export function resolveVaapiDevice(): string {
   return process.env.SERVE_EMU_VAAPI_DEVICE?.trim() || "/dev/dri/renderD128";
@@ -268,7 +347,10 @@ export function ffmpegEncoderArgs(
     "-bufsize",
     String(opts.bitRate),
   ];
-  const filter = videoFilter(opts.quarterTurn ?? 0, opts.canvas);
+  const timed = opts.timedKeyFrames ? timedKeyFrameArgs(encoderName, opts) : null;
+  const filter = timed
+    ? `${timed.filter},${videoFilter(opts.quarterTurn ?? 0, opts.canvas)}`
+    : videoFilter(opts.quarterTurn ?? 0, opts.canvas);
   const args = ["-hide_banner", "-loglevel", "error"];
   if (encoderName === "h264_vaapi") {
     args.push("-init_hw_device", `vaapi=va:${vaapiDevice}`, "-filter_hw_device", "va");
@@ -278,6 +360,7 @@ export function ffmpegEncoderArgs(
     "-an",
     "-vf",
     encoderName === "h264_vaapi" ? `${filter},format=nv12,hwupload` : filter,
+    ...(timed?.args ?? []),
   );
   switch (encoderName) {
     case "libx264":

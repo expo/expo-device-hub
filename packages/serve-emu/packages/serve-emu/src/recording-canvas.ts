@@ -1,5 +1,5 @@
-import type { DisplaySize, FoldableDisplays } from "./fold.ts";
-import type { FoldPosture } from "./shared/api-contracts.ts";
+import type { DisplaySize, FoldableDisplays, HingeAngles } from "./fold.ts";
+import type { ScreenOrientation } from "./shared/api-contracts.ts";
 
 /** A rectangle in encoded pixels, from the canvas's top-left corner. */
 export type RecordingRect = { x: number; y: number; width: number; height: number };
@@ -17,10 +17,13 @@ export type RecordingGeometry = {
   contentRect: RecordingRect;
 };
 
-/** How the hinge stands while a frame is recorded. Unknown fields are absent. */
+/**
+ * How the device stands while a frame is recorded: the hinge, and the pose that the UI shows on
+ * the panel, named as serve-sim's `orientation`. Unknown fields are absent.
+ */
 export type RecordingPose = {
   hingeAngle?: number;
-  posture?: FoldPosture;
+  orientation?: ScreenOrientation;
 };
 
 /** One complete device state in the recording's `deviceStates` timeline. */
@@ -137,11 +140,19 @@ export function recordingGeometry(
 }
 
 /**
- * The pose that a frame of this geometry can show. A hinge reading that contradicts the shown
- * display is older than the fold that switched it, so the frame leaves the pose unknown.
+ * The pose that a frame of this geometry can show. The emulator shows the outer display at the
+ * closed posture's angles. A hinge reading that contradicts the shown display comes from the
+ * other side of a fold that Android has not shown yet, or has shown before the reading, so the
+ * frame leaves the hinge unknown.
  */
-export function poseForGeometry(geometry: RecordingGeometry, pose: RecordingPose): RecordingPose {
-  if (pose.posture === undefined) return pose;
-  const closed = pose.posture === "closed";
-  return (geometry.screen === "outer") === closed ? pose : {};
+export function poseForGeometry(
+  geometry: RecordingGeometry,
+  pose: RecordingPose,
+  closedHinge: HingeAngles | undefined,
+): RecordingPose {
+  if (pose.hingeAngle === undefined || !closedHinge) return pose;
+  const closed = pose.hingeAngle >= closedHinge.min && pose.hingeAngle < closedHinge.max;
+  if ((geometry.screen === "outer") === closed) return pose;
+  const { hingeAngle: _, ...rest } = pose;
+  return rest;
 }

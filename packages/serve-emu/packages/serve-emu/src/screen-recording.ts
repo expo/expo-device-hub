@@ -55,20 +55,25 @@ type TimelineEntry = RecordedDeviceState & { atSeconds: number };
 /** A pose-only change waits this long after the previous entry, as in serve-sim's recordings. */
 const POSE_COALESCE_MS = 250;
 
-/** Hinge readings kept for frames still in the encoder, a few seconds at one reading per second. */
+/**
+ * Pose changes kept for frames still in the encoder. Only a change adds one, so this covers
+ * several seconds even while the hinge moves.
+ */
 const MAX_POSE_HISTORY = 64;
 
-const sameGeometry = (a: RecordingDeviceState, b: RecordingDeviceState) =>
+/** The shown display and how the UI stands on it. A change of either commits at once. */
+const sameLayout = (a: RecordingDeviceState, b: RecordingDeviceState) =>
   a.width === b.width &&
   a.height === b.height &&
   a.screen === b.screen &&
   a.contentRect?.x === b.contentRect?.x &&
   a.contentRect?.y === b.contentRect?.y &&
   a.contentRect?.width === b.contentRect?.width &&
-  a.contentRect?.height === b.contentRect?.height;
+  a.contentRect?.height === b.contentRect?.height &&
+  a.orientation === b.orientation;
 
 const sameState = (a: RecordingDeviceState, b: RecordingDeviceState) =>
-  sameGeometry(a, b) && a.hingeAngle === b.hingeAngle && a.posture === b.posture;
+  sameLayout(a, b) && a.hingeAngle === b.hingeAngle;
 
 export type RecordingWriter = {
   add(sample: { data: Buffer; isKey: boolean; timestamp: number; duration: number }): Promise<void>;
@@ -316,20 +321,27 @@ export class ScreenRecording {
     return this.#followsFold;
   }
 
-  /** How the hinge stands from now on. The next recorded frame shows it. */
-  observePose(pose: RecordingPose): void {
-    this.#poses.push({
-      atUs: this.#clock.monotonicUs(),
-      pose: {
-        ...(pose.hingeAngle !== undefined ? { hingeAngle: pose.hingeAngle } : {}),
-        ...(pose.posture !== undefined ? { posture: pose.posture } : {}),
-      },
-    });
+  /**
+   * How the device stands from now on. Each field updates the last reading, and an absent field
+   * keeps its value. Frames captured from now on show it.
+   */
+  observePose(update: RecordingPose): void {
+    const last = this.#poses.at(-1)?.pose ?? {};
+    const pose: RecordingPose = {
+      ...((update.hingeAngle ?? last.hingeAngle) !== undefined
+        ? { hingeAngle: update.hingeAngle ?? last.hingeAngle }
+        : {}),
+      ...((update.orientation ?? last.orientation) !== undefined
+        ? { orientation: update.orientation ?? last.orientation }
+        : {}),
+    };
+    if (pose.hingeAngle === last.hingeAngle && pose.orientation === last.orientation) return;
+    this.#poses.push({ atUs: this.#clock.monotonicUs(), pose });
     if (this.#poses.length > MAX_POSE_HISTORY) this.#poses.shift();
   }
 
   /**
-   * The last hinge reading before a frame was captured. A fold canvas frame's PTS is the host
+   * The last reading before a frame was captured. A fold canvas frame's PTS is the host
    * monotonic time at which serve-emu submitted its image, on the same clock as the readings.
    */
   #poseAt(ptsUs: bigint): RecordingPose {
@@ -359,7 +371,11 @@ export class ScreenRecording {
         ? {
             ...geometry,
             contentRect: { ...geometry.contentRect },
-            ...poseForGeometry(geometry, this.#poseAt(packet.pts)),
+            ...poseForGeometry(
+              geometry,
+              this.#poseAt(packet.pts),
+              this.#foldCanvas?.displays.closedHinge,
+            ),
           }
         : undefined;
     try {
@@ -542,7 +558,7 @@ export class ScreenRecording {
   }
 
   // @ref LLP 0018#device-state-timeline — the timeline follows serve-sim's recording manifest
-  /** Adds a written frame's state to the timeline: geometry at once, a pose-only change coalesced. */
+  /** Adds a written frame's state to the timeline: a layout change at once, a hinge change coalesced. */
   #recordState(timeUs: bigint, state: RecordingDeviceState): void {
     const written = {
       timeMs: Math.round(Number(timeUs) / 1000),
@@ -558,7 +574,7 @@ export class ScreenRecording {
       this.#heldState = null;
       return;
     }
-    if (sameGeometry(last.state, state) && written.timeMs - last.timeMs < POSE_COALESCE_MS) {
+    if (sameLayout(last.state, state) && written.timeMs - last.timeMs < POSE_COALESCE_MS) {
       this.#heldState = written;
       return;
     }

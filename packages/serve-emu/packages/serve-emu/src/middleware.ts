@@ -34,10 +34,12 @@ import { getAccessibilitySnapshot } from "./accessibility.ts";
 import {
   applyFoldRequest,
   getFoldStatus,
+  openHingeSensor,
   readFoldableDisplays,
   readFoldState,
   type FoldState,
 } from "./fold.ts";
+import { startFoldRecordingFeed, type FoldRecordingFeed } from "./fold-recording-feed.ts";
 import type { GrpcRecordingOutput } from "./grpc-recording-encoder.ts";
 import {
   captureBox,
@@ -377,20 +379,16 @@ export type CreateAppDependencies = {
   applyRotation?: DeviceSessionStateOptions["applyRotation"];
   /** Read a foldable's two displays for its recording canvas; the emulator's config by default. */
   readFoldableDisplays?: typeof readFoldableDisplays;
-  /** Read the hinge while a foldable records; adb by default. */
+  /** Read the hinge and posture over adb, at a foldable recording's start and as a fallback. */
   readFoldState?: typeof readFoldState;
+  /** Open the hinge over gRPC while a foldable records; the emulator's controller by default. */
+  openHingeSensor?: typeof openHingeSensor;
   /** Read the shown display's size for a native-size MMAP fold recording; adb by default. */
   readDisplaySize?: typeof getDeviceSize;
 };
 
-/** How often a foldable's recording reads the hinge, which a fold from outside serve-emu also moves. */
-const RECORDING_FOLD_POLL_MS = 1_000;
-
 function recordingPose(state: FoldState): RecordingPose {
-  return {
-    ...(state.hingeAngle !== null ? { hingeAngle: state.hingeAngle } : {}),
-    ...(state.posture !== null ? { posture: state.posture } : {}),
-  };
+  return state.hingeAngle !== null ? { hingeAngle: state.hingeAngle } : {};
 }
 
 async function createAppInternal(opts: AppOptions, dependencies: CreateAppDependencies = {}) {
@@ -436,7 +434,9 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       : startEmuSession);
   const recorder = opts.screenRecording;
   const readFold = dependencies.readFoldState ?? readFoldState;
-  // Set once the app polls the hinge for its recording.
+  const readOrientation =
+    dependencies.readOrientation ?? ((serial: string) => getDisplayOrientation(serial));
+  // Set once the app reads the hinge for its recording.
   let readFoldNow: () => void = () => {};
   // @ref LLP 0018#fold-canvas — a foldable records on a fixed canvas, so a fold does not end the recording
   let foldRecording: GrpcRecordingOutput | undefined;
@@ -445,8 +445,14 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       opts.serial,
     ).catch(() => null);
     if (displays) {
-      const pose = await readFold(opts.serial).catch(() => null);
-      if (pose) recorder.observePose(recordingPose(pose));
+      const [pose, orientation] = await Promise.all([
+        readFold(opts.serial).catch(() => null),
+        readOrientation(opts.serial).catch(() => null),
+      ]);
+      recorder.observePose({
+        ...(pose ? recordingPose(pose) : {}),
+        ...(orientation ? { orientation } : {}),
+      });
       // Native-size MMAP capture sizes its box from the startup display. The shown size names it
       // even in rear display mode, where an open device shows its outer display.
       const nativeMmap = streamEncoderSettings.maxDimension === 0 && grpcImageMode === "mmap";
@@ -512,33 +518,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   }
   if (!openedSession) throw new Error("stream source did not start");
   let session: EmuSession = openedSession;
-  // The hinge also moves through adb or the emulator's own controls, so the recording reads it.
-  let foldPollTimer: ReturnType<typeof setTimeout> | null = null;
-  let foldPollRunning = false;
-  let foldPollStopped = false;
-  if (recorder && session.feedsRecording) {
-    recorder.followFold();
-    const pollFold = () => {
-      if (foldPollTimer) clearTimeout(foldPollTimer);
-      foldPollTimer = null;
-      if (foldPollStopped || foldPollRunning || !recorder.active) return;
-      foldPollRunning = true;
-      void readFold(opts.serial)
-        .then((state) => {
-          if (!foldPollStopped) recorder.observePose(recordingPose(state));
-        })
-        .catch(() => {})
-        .finally(() => {
-          foldPollRunning = false;
-          if (foldPollStopped || !recorder.active) return;
-          foldPollTimer = setTimeout(pollFold, RECORDING_FOLD_POLL_MS);
-          foldPollTimer.unref?.();
-        });
-    };
-    readFoldNow = pollFold;
-    foldPollTimer = setTimeout(pollFold, RECORDING_FOLD_POLL_MS);
-    foldPollTimer.unref?.();
-  }
+  if (recorder && session.feedsRecording) recorder.followFold();
 
   const clients = new Set<Client>();
   const screen: Screen = { width: session.meta.width, height: session.meta.height };
@@ -596,6 +576,19 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   }
   const sessionRecorder = deviceState.recorder;
   const routePlayback = deviceState.route;
+  // The hinge also moves through adb or the emulator's own controls, so the recording reads it.
+  let foldFeed: FoldRecordingFeed | null = null;
+  if (recorder && session.feedsRecording) {
+    foldFeed = startFoldRecordingFeed({
+      openSensor: (signal) =>
+        (dependencies.openHingeSensor ?? openHingeSensor)(opts.serial, signal),
+      readHingeOverAdb: async () => (await readFold(opts.serial)).hingeAngle,
+      orientation: () => deviceState.orientation.current(),
+      observe: (pose) => recorder.observePose(pose),
+      active: () => recorder.active,
+    });
+    readFoldNow = foldFeed.readNow;
+  }
 
   const health = () => ({
     ok: status === "streaming",
@@ -2183,9 +2176,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   const stop = (): Promise<void> => {
     if (stopTask) return stopTask;
     stopRequested = true;
-    foldPollStopped = true;
-    if (foldPollTimer) clearTimeout(foldPollTimer);
-    foldPollTimer = null;
+    foldFeed?.stop();
     captureRestarting = false;
     captureRestartController?.abort(new Error("server stopping"));
     captureRestartController = null;

@@ -146,8 +146,10 @@ On success, `recordings.json` in the output directory lists a subdirectory conta
 A foldable emulator, such as the Pixel 9 Pro Fold, can fold and unfold while it records with
 the default gRPC capture. The Hub records it on one fixed canvas that fits both displays and
 centers the shown display on it. `session.json` then has a `deviceStates` timeline with the
-display (`inner` or `outer`), its place on the canvas, the hinge angle, and the posture at each
-change. The recording status that `/api` reports has `followsFold: true`. With scrcpy capture,
+display (`inner` or `outer`), its place on the canvas, the hinge angle, and the UI orientation at
+each change, and the video has a keyframe at least once a second. The Hub reads the hinge over the
+emulator's gRPC controller every 100 ms. The recording status that `/api` reports has
+`followsFold: true`. With scrcpy capture,
 a fold still ends the recording, and the Hub refuses fold commands while it records. LLP 0018
 in the repository's `llp/` folder describes the canvas and the timeline.
 
