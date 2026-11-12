@@ -167,6 +167,17 @@ describe("selectResourceFilePath", () => {
     expect(selectResourceFilePath(block)).toBe("res/kb.png");
   });
 
+  test("prefers the newest API level within the same density", () => {
+    // Android shows the highest version a device supports; `aapt2 dump badging` also resolves the icon
+    // entry for the newest API, so this keeps both steps on the same choice.
+    const block = [
+      "      (xxxhdpi-v26) (file) res/old.png type=PNG",
+      "      (xxxhdpi-v33) (file) res/new.png type=PNG",
+      "      (xxhdpi-v35) (file) res/lower-density.png type=PNG",
+    ].join("\n");
+    expect(selectResourceFilePath(block)).toBe("res/new.png");
+  });
+
   test("treats an API level alone as the default config", () => {
     expect(selectResourceFilePath("      (v26) (file) res/ic.png type=PNG")).toBe("res/ic.png");
   });
