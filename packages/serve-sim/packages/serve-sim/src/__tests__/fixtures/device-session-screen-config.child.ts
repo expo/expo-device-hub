@@ -475,6 +475,59 @@ beforeEach(() => {
   hingeEligibilityGate = undefined;
 });
 
+describe("independent native device pose", () => {
+  test("outside observations replace commanded framing without changing a portrait-only screen", async () => {
+    const { configs } = await start({ width: 1170, height: 2532, orientation: "portrait" }, false);
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x07]),
+        Buffer.from(JSON.stringify({ orientation: "landscape_right" })),
+      ]),
+    );
+    await waitUntil(() => session!.screenConfig().orientation === "landscape_right");
+    await deviceStateChanged!({
+      generation: 1,
+      revision: 1,
+      orientationObserved: true,
+      state: { physicalOrientation: "portrait" },
+    });
+    expect(session!.screenConfig()).toMatchObject({
+      orientation: "landscape_right",
+      screenOrientation: "portrait",
+      deviceOrientation: "portrait",
+    });
+    await deviceStateChanged!({
+      generation: 1,
+      revision: 2,
+      orientationObserved: true,
+      state: { physicalOrientation: "landscape-left" },
+    });
+    expect(session!.screenConfig()).toMatchObject({
+      screenOrientation: "portrait",
+      deviceOrientation: "landscape-left",
+    });
+    await waitUntil(() => configs.at(-1)?.deviceOrientation === "landscape-left");
+    screen = { ...screen, orientation: "landscape_right" };
+    await screenChanged!();
+    await waitUntil(() => configs.at(-1)?.screenOrientation === "landscape_right");
+    expect(configs.at(-1)?.deviceOrientation).toBe("landscape-left");
+    await deviceStateChanged!({ generation: 1, revision: 3, orientationObserved: true, state: {} });
+    expect(session!.screenConfig().deviceOrientation).toBeNull();
+    await waitUntil(() => configs.at(-1)?.deviceOrientation === null);
+    expect(configs.at(-1)).toMatchObject({
+      screenOrientation: "landscape_right",
+      deviceOrientation: null,
+    });
+    await deviceStateChanged!({
+      generation: 1,
+      revision: 2,
+      orientationObserved: true,
+      state: { physicalOrientation: "portrait" },
+    });
+    expect(session!.screenConfig().deviceOrientation).toBeNull();
+  });
+});
+
 describe("native device state", () => {
   const send = (requestId: number, command: unknown) =>
     ws!.send(
@@ -3131,6 +3184,115 @@ describe("native active screen config", () => {
       release();
     }
   });
+
+  test("cardinal physical rotations bypass panel-relative orientation on both panels", async () => {
+    const { configs } = await start(
+      { width: 1398, height: 2034, screenId: 1 },
+      /* supportsHingeAngle */ true,
+    );
+    await waitUntil(() => configs.at(-1)?.supportsPhysicalOrientation === true);
+    const poses = ["portrait", "pud", "landscape-left", "landscape-right"];
+    for (const screenId of [1, 3]) {
+      screen = { ...screen, screenId };
+      await screenChanged!();
+      for (const deviceOrientation of poses) {
+        ws!.send(
+          Buffer.concat([
+            Buffer.from([0x07]),
+            Buffer.from(JSON.stringify({ orientation: "portrait", deviceOrientation })),
+          ]),
+        );
+      }
+    }
+    await waitUntil(() => physicalOrientations.length === 8);
+    expect(physicalOrientations).toEqual([...poses, ...poses]);
+    expect(inputCalls).not.toContain("orientation");
+  });
+
+  test("a physical rotation keeps its pose for Table Mode eligibility; a legacy one clears it", async () => {
+    const { configs, controlResults } = await start(
+      { width: 1398, height: 2034, screenId: 1 },
+      /* supportsHingeAngle */ true,
+    );
+    await waitUntil(() => configs.at(-1)?.supportsPhysicalOrientation === true);
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x10]),
+        Buffer.from(
+          JSON.stringify({ requestId: 1, command: { control: "pose", value: "closed" } }),
+        ),
+      ]),
+    );
+    await waitUntil(() => controlResults.length === 1);
+    const rotate = (body: object) =>
+      ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify(body))]));
+    rotate({ orientation: "portrait", deviceOrientation: "landscape-left" });
+    await waitUntil(() => session!.screenConfig().physicalOrientation === "landscape-left");
+    expect(session!.screenConfig()).toMatchObject({
+      hingeAngle: 0,
+      hingePose: null,
+      tableMode: false,
+      tableModeAvailable: true,
+    });
+    rotate({ orientation: "landscape_left" });
+    await waitUntil(() => inputCalls.includes("orientation"));
+    await waitUntil(() => session!.screenConfig().physicalOrientation === undefined);
+    expect(session!.screenConfig().tableModeAvailable).toBe(false);
+  });
+
+  test("a hinge command after a physical rotation keeps the pose when no angle was read", async () => {
+    const { configs, controlResults } = await start(
+      { width: 1398, height: 2034, screenId: 1 },
+      /* supportsHingeAngle */ true,
+    );
+    await waitUntil(() => configs.at(-1)?.supportsPhysicalOrientation === true);
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x07]),
+        Buffer.from(
+          JSON.stringify({ orientation: "portrait", deviceOrientation: "landscape-left" }),
+        ),
+      ]),
+    );
+    await waitUntil(() => session!.screenConfig().physicalOrientation === "landscape-left");
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x10]),
+        Buffer.from(JSON.stringify({ requestId: 1, command: { control: "angle", value: 0 } })),
+      ]),
+    );
+    await waitUntil(() => controlResults.length === 1);
+    expect(session!.screenConfig().physicalOrientation).toBe("landscape-left");
+  });
+
+  for (const supported of [true, false]) {
+    test(`physical rotation refuses ${supported ? "invalid values" : "unsupported controls"} without legacy fallback`, async () => {
+      const { configs, controlResults } = await start(
+        { width: 1398, height: 2034 },
+        /* supportsHingeAngle */ true,
+        undefined,
+        supported,
+      );
+      await waitUntil(() => configs.at(-1)?.supportsPhysicalOrientation === supported);
+      for (const deviceOrientation of supported ? ["faceup", "invalid", null, 4] : ["portrait"]) {
+        ws!.send(
+          Buffer.concat([
+            Buffer.from([0x07]),
+            Buffer.from(JSON.stringify({ orientation: "portrait", deviceOrientation })),
+          ]),
+        );
+      }
+      ws!.send(
+        Buffer.concat([
+          Buffer.from([0x10]),
+          Buffer.from(JSON.stringify({ requestId: 1, command: { control: "table", value: true } })),
+        ]),
+      );
+      await waitUntil(() => controlResults.length === 1);
+      expect(physicalOrientations).toEqual([]);
+      expect(inputCalls).not.toContain("orientation");
+    });
+  }
 
   test("forwards hinge degrees and acknowledges native success", async () => {
     const { hingeResults, configs } = await start({ width: 2007, height: 2853 });

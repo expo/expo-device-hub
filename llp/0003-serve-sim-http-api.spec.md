@@ -419,6 +419,16 @@ keyboard that serve-sim automatically hid; it does not undo a manual toggle
 ### Rotation readback
 
 The helper HID socket accepts a `0x07` frame carrying `{ orientation }`.
+New observed-pose helpers also accept an optional cardinal `deviceOrientation`
+(`portrait`, `pud`, `landscape-left`, `landscape-right`) on that frame. On a Duo
+advertising `supportsPhysicalOrientation: true`, this uses native physical control,
+independent of the active panel's mounting, and records that pose as the
+config's `physicalOrientation`, so Table Mode eligibility stays known. A rotation
+clears the named pose and Table Mode either way; a legacy panel-relative rotation
+leaves `physicalOrientation` unknown. Invalid or unsupported physical values
+are refused without running the legacy alternative. The command shares the existing
+hinge/input serial queue and send-as-answer behavior. Older packets retain their
+panel-relative semantics [observed: `src/device-session.ts` case `0x07`].
 Successful native delivery does not mean that the foreground app accepted the
 requested interface orientation. For regular devices, config `orientation`
 starts from native screen readback, then retains the last successfully delivered
@@ -434,6 +444,27 @@ Foldable devices retain native interface-orientation readback because their
 physical framing is controlled separately by the Duo view. That remains true
 when hinge capability discovery completes after an early rotation request
 [observed: `src/device-session.ts` `readScreenFromNative`, `src/client/client.tsx` `rotateDevice`].
+
+New native state snapshots also expose `screenOrientation` and
+`deviceOrientation` in screen config. The first is the observed CoreSimulator
+interface orientation; the second is the independent physical pose from the
+native state stream, using the existing physical names (`portrait`, `pud`,
+`landscape-left`, `landscape-right`, `faceup`, `facedown`). Unknown values are
+null. The legacy `orientation` field retains the requested-framing policy above
+for older clients; new consumers must not treat it as a native observation.
+Older addons without the snapshot marker omit the new fields.
+[observed: `src/device-session.ts`, `src/native.ts`,
+`Sources/SimNative/CoreDeviceState.swift`]
+
+Persistent ordinary iOS sessions with one integrated display observe the same
+deduplicated native state stream as Duo. The startup profile/runtime snapshot
+gates this capability before subscribing; unknown profiles and ordinary tvOS,
+watchOS, or other runtimes do not start this pose observer. Temporary screenshot sessions skip pose observation; a persistent
+consumer retaining one starts observation once. Screen orientation changes are
+broadcast independently of the legacy requested framing, even if dimensions and
+physical pose stay unchanged. This adds no per-screenshot pose query.
+[observed: `src/device-session.ts` `observeDeviceState`, `retainDeviceSession`,
+`readScreenFromNative`; `Sources/SimNative/CaptureEngine.swift`]
 
 The standalone preview advances Rotate from requested poses, so rapid clicks or
 an app-declined pose do not repeat the same request. It ignores mismatched

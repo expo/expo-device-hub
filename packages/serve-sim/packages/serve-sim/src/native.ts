@@ -148,6 +148,8 @@ export type NativeHingeState = {
 export type NativeHingeReadback = NativeHingeState & { tableModeActive?: boolean };
 
 export type NativeDeviceStateSnapshot = {
+  /** Native protocol supports independent device-pose observations; false is not a command fallback. */
+  orientationObserved?: boolean;
   generation: number;
   revision: number;
   state: NativeHingeState;
