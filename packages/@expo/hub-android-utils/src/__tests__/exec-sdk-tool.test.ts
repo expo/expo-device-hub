@@ -97,6 +97,16 @@ describe("execSdkTool", () => {
       );
     });
 
+    test("keeps a failing wrapper's output on the error", async () => {
+      const failing = join(directory, "failing.bat");
+      writeFileSync(failing, "@echo off\r\necho out\r\necho err 1>&2\r\nexit /b 3\r\n");
+
+      const failure = await execSdkTool(failing, []).catch((error: unknown) => error);
+      expect(failure).toMatchObject({ code: 3 });
+      expect((failure as { stdout: string }).stdout.trim()).toBe("out");
+      expect((failure as { stderr: string }).stderr.trim()).toBe("err");
+    });
+
     test("kills the wrapper's child process when the signal aborts", async () => {
       // Like avdmanager.bat starting a JVM: the wrapper's child holds the
       // output pipes and outlives cmd.exe unless the whole tree is killed.

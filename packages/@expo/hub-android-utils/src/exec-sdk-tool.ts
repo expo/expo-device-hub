@@ -39,7 +39,8 @@ function execBatch(
     };
     const child = execFile(command, [], { shell: true }, (error, stdout, stderr) => {
       signal?.removeEventListener("abort", killTree);
-      if (error) reject(error);
+      // Match promisified execFile, which keeps the output on the error.
+      if (error) reject(Object.assign(error, { stdout, stderr }));
       else resolve({ stdout, stderr });
     });
     if (signal?.aborted) killTree();
