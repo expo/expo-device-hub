@@ -10,6 +10,9 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ## Unreleased
 
+- `GET /api/apps/icon` now finds the bitmap of an adaptive icon whose resource configs carry an
+  API level, such as `xxxhdpi-v26`. Apps with a minSdk below 26, for example Expo Go, returned
+  `icon: null` before.
 - `GET /api/apps/icon` also returns `label`, the app's user-visible name, read with
   `aapt2 dump badging` from the same pulled APK, with aapt2's `\\`, `\"`, and `\n`
   escapes decoded. `GET /api/foreground` now always reports `label: null`: its

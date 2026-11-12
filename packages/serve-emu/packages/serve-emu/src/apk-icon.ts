@@ -133,22 +133,52 @@ export function parseAdaptiveForegroundId(xmltree: string): string | null {
   return null;
 }
 
+const VERSION_QUALIFIER = /^v\d+$/;
+const NUMERIC_DENSITY = /^(\d+)dpi$/;
+
+/**
+ * Reads a resource config such as `xxxhdpi-v26`. `density` is null when the config names none: ``,
+ * `v26`, `nodpi` or `anydpi`. An API level (`-v26`) does not change the look: an APK whose minSdk is
+ * below 26 keeps it on its adaptive icon bitmaps. `plain` is false when the config has any other
+ * qualifier, such as `night` or `round`, so it is not the launcher's default look.
+ */
+export function readResourceConfig(qualifier: string): { density: number | null; plain: boolean } {
+  let density: number | null = null;
+  let plain = true;
+  for (const part of qualifier.split("-")) {
+    if (!part || VERSION_QUALIFIER.test(part) || part === "nodpi" || part === "anydpi") continue;
+    const value = DENSITY_BY_QUALIFIER[part] ?? Number(NUMERIC_DENSITY.exec(part)?.[1] ?? NaN);
+    if (Number.isFinite(value)) density = value;
+    else plain = false;
+  }
+  return { density, plain };
+}
+
+/**
+ * The densest plain bitmap, else the default-config bitmap, else the densest variant (for example a
+ * night one) when the resource has nothing else.
+ */
 export function selectResourceFilePath(block: string): string | null {
   let best: { density: number; path: string } | null = null;
   let defaultConfig: string | null = null;
+  let variant: { density: number; path: string } | null = null;
   for (const line of block.split("\n")) {
     const match = /^\((.*?)\)\s+\(file\)\s+(\S+)(?:\s+type=(\S+))?/.exec(line.trim());
     if (!match) continue;
     const [, qualifier = "", path = "", type] = match;
     if (type === "XML" || path.endsWith(".xml")) continue;
-    const density = DENSITY_BY_QUALIFIER[qualifier];
-    if (density === undefined) {
-      if (qualifier === "") defaultConfig ??= path;
+    const { density, plain } = readResourceConfig(qualifier);
+    if (!plain) {
+      if (!variant || (density ?? 0) > variant.density) variant = { density: density ?? 0, path };
+      continue;
+    }
+    if (density === null) {
+      defaultConfig ??= path;
       continue;
     }
     if (!best || density > best.density) best = { density, path };
   }
-  return best?.path ?? defaultConfig;
+  return best?.path ?? defaultConfig ?? variant?.path ?? null;
 }
 
 export function iconMimeType(bytes: Uint8Array): AppIconMimeType | null {
