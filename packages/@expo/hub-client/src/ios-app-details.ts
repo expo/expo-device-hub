@@ -87,6 +87,48 @@ export async function fetchIosAppDetails(
   };
 }
 
+/** One event of serve-sim's `/appstate` stream. `label` is absent from servers before it was added. */
+export type IosAppStateEvent = {
+  bundleId?: string;
+  pid?: number;
+  isReactNative?: boolean;
+  label?: string | null;
+};
+
+/**
+ * Applies one `/appstate` event. serve-sim reads `label` from the bundle path simctl reports, so it
+ * also names Apple's own apps on hosts where `app.infoPlist` refuses their runtime path. A repeat
+ * event for the same app (a relaunch with a new pid) keeps the details already filled in, and an
+ * unchanged event returns `prev`, so it does not re-render.
+ */
+export function applyIosAppState(
+  prev: ForegroundApp | null,
+  event: IosAppStateEvent,
+): ForegroundApp | null {
+  const id = event.bundleId;
+  if (!id) return prev;
+  const label = typeof event.label === "string" && event.label ? event.label : undefined;
+  if (!prev || prev.id !== id) {
+    return { id, pid: event.pid, isReactNative: event.isReactNative, ...(label && { label }) };
+  }
+  if (
+    prev.pid === event.pid &&
+    prev.isReactNative === event.isReactNative &&
+    (label === undefined || label === prev.label)
+  ) {
+    return prev;
+  }
+  return { ...prev, pid: event.pid, isReactNative: event.isReactNative, ...(label && { label }) };
+}
+
+/**
+ * Merges the bundle details read over exec-ws. When that read finds no name, for example because
+ * `app.infoPlist` refused the path, the label from `/appstate` stays.
+ */
+export function mergeIosAppDetails(prev: ForegroundApp, details: IosAppDetails): ForegroundApp {
+  return { ...prev, ...details, label: details.label ?? prev.label };
+}
+
 type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
 
 /** Waits before each retry of the icon request. */
