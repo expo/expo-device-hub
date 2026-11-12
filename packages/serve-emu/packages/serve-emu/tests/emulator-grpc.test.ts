@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
   decodeEmulatorImage,
+  decodePhysicalModelValue,
+  decodePostureNotification,
   EmulatorGrpcClient,
   encodeImageFormat,
   encodeKeyboardEvent,
@@ -16,6 +18,7 @@ import {
   IMAGE_TRANSPORT_MMAP,
   IMG_FORMAT_RGB888,
   parseEmulatorGrpcPort,
+  PHYSICAL_MODEL_HINGE_ANGLE0,
   GrpcReadScheduler,
 } from "../src/emulator-grpc.ts";
 import type { ExecResult } from "../src/exec.ts";
@@ -408,6 +411,56 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
     }
   });
 
+  test("reads the hinge angle and streams posture changes", async () => {
+    const requests: Array<{ path: string; body: Buffer }> = [];
+    const server = http2.createServer();
+    server.on("stream", (stream: ServerHttp2Stream, headers) => {
+      const path = String(headers[":path"]);
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream.on("end", () => requests.push({ path, body: Buffer.concat(chunks) }));
+      stream.respond(
+        { ":status": 200, "content-type": "application/grpc" },
+        {
+          waitForTrailers: true,
+        },
+      );
+      stream.on("wantTrailers", () => stream.sendTrailers({ "grpc-status": "0" }));
+      if (path.endsWith("/getPhysicalModel")) {
+        stream.end(grpcFrame(physicalModelValue(0, [42])));
+      } else {
+        stream.write(grpcFrame(notification(null)));
+        stream.write(grpcFrame(notification(2)));
+        stream.end(grpcFrame(notification(1)));
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing test port");
+    const client = new EmulatorGrpcClient({ port: address.port, token: null, avdName: null });
+    try {
+      expect(await client.getPhysicalModel(PHYSICAL_MODEL_HINGE_ANGLE0)).toEqual([42]);
+      const postures: string[] = [];
+      await client.streamPostures(
+        (posture) => postures.push(posture),
+        new AbortController().signal,
+      );
+      expect(postures).toEqual(["half_opened", "closed"]);
+      expect(requests.map(({ path }) => path)).toEqual([
+        "/android.emulation.control.EmulatorController/getPhysicalModel",
+        "/android.emulation.control.EmulatorController/streamNotification",
+      ]);
+      // target: HINGE_ANGLE0, and an empty request for the stream.
+      expect(requests[0]!.body).toEqual(grpcFrame(Buffer.from([0x08, 10])));
+      expect(requests[1]!.body).toEqual(grpcFrame(Buffer.alloc(0)));
+    } finally {
+      client.close();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
   test("fails a screenshot stream that stalls after a decoded image", async () => {
     const imageBody = encodeEmulatorImage({
       format: IMG_FORMAT_RGB888,
@@ -518,6 +571,51 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
         server.close((error) => (error ? reject(error) : resolve())),
       );
     }
+  });
+});
+
+/** A PhysicalModelValue with a status and packed floats, as the emulator returns it. */
+function physicalModelValue(status: number, data: number[]): Buffer {
+  const floats = Buffer.alloc(data.length * 4);
+  data.forEach((value, index) => floats.writeFloatLE(value, index * 4));
+  const parameter = Buffer.concat([Buffer.from([0x0a, floats.length]), floats]);
+  // A negative int32 enum is the ten-byte varint of its 64-bit two's complement.
+  const statusBytes: number[] = [];
+  for (let rest = BigInt.asUintN(64, BigInt(status)); rest; rest >>= 7n) {
+    statusBytes.push(Number(rest & 0x7fn) | (rest > 0x7fn ? 0x80 : 0));
+  }
+  return Buffer.concat([
+    Buffer.from([0x08, 10]),
+    Buffer.from(status ? [0x10, ...statusBytes] : []),
+    Buffer.from([0x1a, parameter.length]),
+    parameter,
+  ]);
+}
+
+/** A Notification with a posture, or with a boot notification when `posture` is null. */
+function notification(posture: number | null): Buffer {
+  if (posture === null) return Buffer.from([0x2a, 0x02, 0x08, 0x05]);
+  const value = posture ? Buffer.from([0x18, posture]) : Buffer.alloc(0);
+  return Buffer.concat([Buffer.from([0x22, value.length]), value]);
+}
+
+describe("emulator physical model protobuf", () => {
+  test("decodes the hinge angle, and a disabled or unknown sensor as null", () => {
+    expect(decodePhysicalModelValue(physicalModelValue(0, [87.5]))).toEqual([87.5]);
+    expect(decodePhysicalModelValue(physicalModelValue(0, []))).toEqual([]);
+    expect(decodePhysicalModelValue(physicalModelValue(-2, []))).toBeNull();
+    expect(decodePhysicalModelValue(physicalModelValue(-3, []))).toBeNull();
+    expect(() => decodePhysicalModelValue(Buffer.from([0x10, 0x07]))).toThrow(
+      "physical model status 7",
+    );
+  });
+
+  test("decodes pushed postures and ignores other notifications", () => {
+    expect(decodePostureNotification(notification(1))).toBe("closed");
+    expect(decodePostureNotification(notification(2))).toBe("half_opened");
+    expect(decodePostureNotification(notification(3))).toBe("opened");
+    expect(decodePostureNotification(notification(0))).toBeNull();
+    expect(decodePostureNotification(notification(null))).toBeNull();
   });
 });
 

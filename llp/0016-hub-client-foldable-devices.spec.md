@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-11-04 (Android fold adapter, Codex gpt-6.1-sol); 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command); 2026-11-09 (ordinary-device screen/physical observations, Codex directed by Gabe Debes); 2026-11-10 (unknown interface orientation follows the raw frame shape; Claude Code, directed by Gabe Debes)
+**Revised:** 2026-11-04 (Android fold adapter, Codex gpt-6.1-sol); 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command); 2026-11-09 (ordinary-device screen/physical observations, Codex directed by Gabe Debes); 2026-11-10 (unknown interface orientation follows the raw frame shape; Claude Code, directed by Gabe Debes); 2026-11-11 (`unavailable`, and folds during a recording that follows them; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0004, LLP 0013
 
 ## Summary
@@ -24,16 +24,17 @@
 
 `DeviceClient.fold` is `null` for a device that does not fold. For a foldable it has [observed: `DeviceFold` in `types.ts`]:
 
-| Field        | Meaning                                                                                                                                                                                                 |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `angle`      | Hinge angle in degrees, between the display sides of the two halves: 180 is flat, a smaller angle folds the displays inward (0 is shut), and a fold-out hinge goes past 180. Undefined until reported.  |
-| `pose`       | The named pose in effect; `null` for a custom angle; undefined until reported.                                                                                                                          |
-| `pending`    | A command waits for the device's acknowledgement. `angle` and `pose` show the request until the device confirms it.                                                                                     |
-| `error`      | The last failed command. The next command clears it.                                                                                                                                                    |
-| `tableMode`  | Optional group `{ enabled, available }`. Present only when `capabilities.fold.tableMode` is true.                                                                                                       |
-| `physical`   | Optional group `{ pose, faceDown }`: how the device is held, apart from the hinge. Present only when the backend reports it. `faceDown` is undefined while the backend has not reported enough to tell. |
-| `setControl` | Sends a `FoldControlCommand`: `angle`, `pose`, or `tableMode`.                                                                                                                                          |
-| `observe`    | Optional. Reports each command as `FoldCommandEvent`s: `requested`, `sent`, `acknowledged`, `confirmed`, `failed`, `rejected`, `reset`, and `rotated`.                                                  |
+| Field         | Meaning                                                                                                                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `angle`       | Hinge angle in degrees, between the display sides of the two halves: 180 is flat, a smaller angle folds the displays inward (0 is shut), and a fold-out hinge goes past 180. Undefined until reported.  |
+| `pose`        | The named pose in effect; `null` for a custom angle; undefined until reported.                                                                                                                          |
+| `pending`     | A command waits for the device's acknowledgement. `angle` and `pose` show the request until the device confirms it.                                                                                     |
+| `error`       | The last failed command. The next command clears it.                                                                                                                                                    |
+| `unavailable` | Optional. Why commands are unavailable now, as a `DeviceRecordingLockReason`; absent while they are available. Only Android sets it, while a recording could end with a fold.                           |
+| `tableMode`   | Optional group `{ enabled, available }`. Present only when `capabilities.fold.tableMode` is true.                                                                                                       |
+| `physical`    | Optional group `{ pose, faceDown }`: how the device is held, apart from the hinge. Present only when the backend reports it. `faceDown` is undefined while the backend has not reported enough to tell. |
+| `setControl`  | Sends a `FoldControlCommand`: `angle`, `pose`, or `tableMode`.                                                                                                                                          |
+| `observe`     | Optional. Reports each command as `FoldCommandEvent`s: `requested`, `sent`, `acknowledged`, `confirmed`, `failed`, `rejected`, `reset`, and `rotated`.                                                  |
 
 An optional group is absent when the device does not have the feature. Inside a group, an unknown value stays undefined; it never becomes `false`. A consumer can then keep what it last knew. For example, the 3D model keeps its face-down framing while `physical.faceDown` is undefined, as serve-sim's client does when Table Mode or the physical orientation is unknown [observed: `useDuoFraming.ts`; `knownNotFaceDown` in serve-sim's `src/client/hooks/use-duo-framing.ts`]. A device never fills a group with placeholder values. `tableMode` is present exactly when `capabilities.fold.tableMode` is true. The iOS adapter adds both groups together with `capabilities.fold`, so before the helper reports its hinge the iPhone Duo's `fold` has neither [observed: `fold` in `useIosDevice.ts`].
 
@@ -147,7 +148,7 @@ One latest-choice writer per device URL serializes HTTP writes, including across
 
 An unknown hinge range offers no controls, because it cannot distinguish an inward-folding device from a fold-out profile. Fold-out ranges are also not offered in this iteration: serve-emu's angle request contract is limited to 0–180°. Existing posture-only REST commands still work with an unknown range [observed: `androidFoldCapabilities` in `android-fold.ts`; `setHingeAngle`, `setFoldPosture` in ServeEmu `src/fold.ts`].
 
-The shared dashboard and keyboard hook use capabilities to show the slider and only the offered pose choices and shortcuts. There are no Android 3D preview controls, and Android's flat preview sizing stays unchanged. Native fold controls are disabled while the recording lock is set; the adapter also rejects commands then and rechecks a queued choice before sending it [observed: `FoldSettings.tsx`, `DeviceOptionsSection.tsx`, `useDeviceKeyboard.ts`, `PhoneFrame.tsx` in HubComponents; `useAndroidFold.ts`].
+The shared dashboard and keyboard hook use capabilities to show the slider and only the offered pose choices and shortcuts. There are no Android 3D preview controls, and Android's flat preview sizing stays unchanged. Native fold controls are disabled while `fold.unavailable` is set: the recording lock, unless the recording reports that it follows folds ([LLP 0018](0018-serve-emu-fold-recording.spec.md#fold-during-a-recording)). The adapter also rejects commands then and rechecks a queued choice before sending it [observed: `FoldSettings.tsx`, `DeviceOptionsSection.tsx`, `useDeviceKeyboard.ts`, `PhoneFrame.tsx` in HubComponents; `useAndroidFold.ts`; `foldRecordingLock` in `screen-recording.ts`].
 
 Krystof Woldrich chose to close #256 and resume #352 with the shared APIs on main [confirmed: Krystof Woldrich, 2026-11-04]. The old `DeviceHinge` and optional `controls` API from #352 are replaced by this mapping.
 
