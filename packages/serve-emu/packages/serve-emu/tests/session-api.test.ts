@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_SESSION_PAGE_LIMIT,
+  isSessionPageQuery,
   MAX_SESSION_PAGE_LIMIT,
   parseSessionPageQuery,
 } from "../src/session-api.ts";
@@ -8,6 +9,16 @@ import {
 function query(value: string): URLSearchParams {
   return new URLSearchParams(value);
 }
+
+describe("isSessionPageQuery", () => {
+  test("only limit and before ask for a page", () => {
+    expect(isSessionPageQuery(query(""))).toBe(false);
+    expect(isSessionPageQuery(query("device=emulator-5554"))).toBe(false);
+    expect(isSessionPageQuery(query("limit=1"))).toBe(true);
+    expect(isSessionPageQuery(query("before=4"))).toBe(true);
+    expect(isSessionPageQuery(query("device=emulator-5554&limit="))).toBe(true);
+  });
+});
 
 describe("parseSessionPageQuery", () => {
   test("uses a bounded default and accepts an exclusive cursor", () => {

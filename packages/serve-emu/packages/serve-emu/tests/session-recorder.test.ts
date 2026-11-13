@@ -228,6 +228,10 @@ describe("SessionRecorder paging", () => {
 
     const latest = recorder.page({ limit: 2 });
     expect(latest.events.map((event) => event.id)).toEqual([7, 8]);
+    // A page carries the snapshot's replay state at the top level too.
+    const { events: _events, ...state } = recorder.snapshot();
+    expect(latest).toMatchObject(state);
+    expect(latest.session).toMatchObject({ eventCount: 5, newestEventId: 8, replaying: false });
     expect(latest.hasMore).toBe(true);
     expect(latest.nextBefore).toBe(7);
 
