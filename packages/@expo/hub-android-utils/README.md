@@ -80,17 +80,28 @@ if (created) {
   `device` throws. Its result `value` is `true` on success and `false` on
   operational failure.
 - `bootDevice(options)` launches the AVD headlessly via the `emulator` binary
-  (`-no-window -no-audio -no-metrics -gpu auto -no-boot-anim`), with usage metrics
-  collection disabled to avoid the consent warning or prompt. The emulator is
+  (`-no-window -no-audio -no-metrics -gpu <mode> -no-boot-anim`), with usage metrics
+  collection disabled to avoid the consent warning or prompt. `options.gpu` sets
+  the mode. Without it, the mode is `host` on an Apple silicon Mac that is not a
+  virtual machine, where a headless `auto` picks a software renderer, and `auto`
+  everywhere else (`defaultEmulatorGpu()`). The emulator is
   detached so it keeps running after the parent exits. Returns as soon as the
   process is spawned — not once Android has finished booting — so wait for boot
   with adb using the returned `value.serial` (`emulator-<port>`).
   `extraArgs` appends emulator flags after `-port`, verbatim.
   `EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS` appends more, with quotes or backslashes
   preserving spaces within one argument (for example, `-data "/tmp/my data.img"`).
-  `-gpu host` overrides the built-in `-gpu auto`. Don't pass `-avd` or
+  A `-gpu` there overrides the built-in one, for example `-gpu auto` to keep
+  software rendering on an Apple silicon Mac. Don't pass `-avd` or
   `-port`; `bootDevice` sets those.
 
 All four resolve their binaries the same way as `listDevices()` and return
 `{ value, error }`: the listers use `[]`, `createDevice` uses `false`, and
 `bootDevice` uses `null` as the failure value.
+
+One helper tells whether an emulator could render on the host's GPU:
+
+- `detectBareMetalAppleSilicon()` resolves `true` on an Apple silicon Mac that
+  is not a virtual machine (`sysctl` `hw.optional.arm64` or
+  `sysctl.proc_translated` is `1`, and `kern.hv_vmm_present` is `0`), read once
+  per process. Anything else, and any failure, is `false`.
