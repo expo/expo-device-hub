@@ -52,7 +52,7 @@ const LIBRARY_DIRECTORIES = [
   "/usr/lib",
 ];
 
-// @ref LLP 0018#encoder — the system's x264 build 165; the Hub checks for it before a boot
+// @ref LLP 0021#encoder — the system's x264 build 165; the Hub checks for it before a boot
 /**
  * Why the agent cannot encode on this host, or null. The Linux agent loads x264 from the
  * system and reports a missing library itself; this check lets the Hub say so before it boots
@@ -231,7 +231,7 @@ export function emulatorCaptureArgs(platform: EmulatorCapture["platform"]): stri
     ? // @ref LLP 0020#frame-paths — the GPU frame path needs host rendering
       // `-gpu auto` picks a software renderer on a headless Mac.
       ["-gpu", "host"]
-    : // @ref LLP 0018#renderer — lavapipe kept 60 fps with the readback on the render thread
+    : // @ref LLP 0021#renderer — lavapipe kept 60 fps with the readback on the render thread
       ["-gpu", "lavapipe"];
 }
 

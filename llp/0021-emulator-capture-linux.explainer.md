@@ -1,4 +1,4 @@
-# LLP 0018: Emulator capture on Linux (x86-64)
+# LLP 0021: Emulator capture on Linux (x86-64)
 
 **Type:** Explainer
 **Status:** Draft
@@ -6,13 +6,13 @@
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-04
 **Revised:** 2026-11-06 (x264 build 165 from the system instead of OpenH264; rotation; `-gpu lavapipe`; the EAS emulator step; the release job; fixes from a deep review; the frame rate compared with the gRPC stream); all by Claude Code, directed by Krystof Woldrich
-**Related:** LLP 0000, LLP 0017
+**Related:** LLP 0000, LLP 0020
 
 > File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
 
 ## Summary
 
-`expo-emulator-capture` also runs on Linux x86-64. The agent is the one that [LLP 0017](0017-emulator-capture-macos.explainer.md) describes for macOS: it hooks gfxstream's display post, serves the GPC1 socket protocol with the same records and commands, keeps one consumer, follows folds, and turns the picture upright for the display rotation. On Linux, the agent reads each frame back into memory and encodes it with the x264 library of the host system, build 165. While the capture is on, the Hub boots emulators with `-gpu lavapipe`.
+`expo-emulator-capture` also runs on Linux x86-64. The agent is the one that [LLP 0020](0020-emulator-capture-macos.explainer.md) describes for macOS: it hooks gfxstream's display post, serves the GPC1 socket protocol with the same records and commands, keeps one consumer, follows folds, and turns the picture upright for the display rotation. On Linux, the agent reads each frame back into memory and encodes it with the x264 library of the host system, build 165. While the capture is on, the Hub boots emulators with `-gpu lavapipe`.
 
 Krystof Woldrich asked for the Linux work in a branch on top of the macOS work. He decided that the agent uses the x264 that the host has installed, as the macOS agent uses VideoToolbox, that it supports only the x264 build that EAS has, and that it fails with the install command elsewhere. He also decided on `-gpu lavapipe`, confirmed with a frame check [confirmed: Krystof Woldrich, 2026-11-05].
 
@@ -20,7 +20,7 @@ Krystof Woldrich asked for the Linux work in a branch on top of the macOS work. 
 
 The agent core is portable C++: hook, encoder thread, socket server and protocol [observed: `src/native/agent.cpp`, `src/native/protocol.h`]. Each platform supplies a frame source and an H.264 encoder behind two interfaces [observed: `src/native/frame-source.h`, `src/native/encoder.h`]:
 
-| Part         | macOS (LLP 0017)                                | Linux                                                     |
+| Part         | macOS (LLP 0020)                                | Linux                                                     |
 | ------------ | ----------------------------------------------- | --------------------------------------------------------- |
 | Preload      | `DYLD_INSERT_LIBRARIES`                         | `LD_PRELOAD`                                              |
 | Frame source | GPU copy into IOSurfaces; CPU readback fallback | CPU readback (`frame-source-linux.cpp`)                   |
@@ -69,7 +69,7 @@ This keeps `g++`, which the EAS image and most Linux hosts have, as the only com
 
 ## Rotation
 
-At Android's display rotation N, the panel-sized color buffer holds the picture N quarter turns clockwise ([LLP 0017](0017-emulator-capture-macos.explainer.md#rotation)). The x264 encoder scales the RGBA frame into I420 planes in the panel's orientation, then turns the planes N quarter turns counter-clockwise into the upright stream size, in 32×32 tiles [observed: `encode` in `src/native/encoder-x264.cpp`, `rotateI420` in `src/native/yuv.h`]. Turning after scaling moves 1.5 bytes for each stream pixel, not 4 bytes for each native pixel.
+At Android's display rotation N, the panel-sized color buffer holds the picture N quarter turns clockwise ([LLP 0020](0020-emulator-capture-macos.explainer.md#rotation)). The x264 encoder scales the RGBA frame into I420 planes in the panel's orientation, then turns the planes N quarter turns counter-clockwise into the upright stream size, in 32×32 tiles [observed: `encode` in `src/native/encoder-x264.cpp`, `rotateI420` in `src/native/yuv.h`]. Turning after scaling moves 1.5 bytes for each stream pixel, not 4 bytes for each native pixel.
 
 - A unit test turns a picture clockwise for each rotation, as the panel holds it, and checks that the turn brings it back upright, also for sizes that are not a multiple of the tile and with padded rows [observed: `tests/yuv.test.cpp`].
 - On EAS, for each display rotation set with `adb shell settings put system user_rotation`, the last decoded frame of a capture with that rotation matched `screencap`: a mean difference of 0.9 to 1.2 (of 255) on a 96×43 grayscale thumbnail, and 8.7 to 13.3 for the same frame turned half a turn [observed: EAS runs, 2026-11-05 and 2026-11-06].
@@ -103,7 +103,7 @@ The frame check records a page that paints each animation frame in the next of e
 
 Without the capture, the Hub streams an emulator from the emulator's gRPC screenshot stream, and it boots emulators with `-no-window -gpu auto` [observed: `buildEmulatorArgs` in `packages/@expo/hub-android-utils/src/emulator.ts`]. One EAS run compared that stream with the capture on one VM. Every recording used the same app-action script (Settings, Display settings, Chrome with an animated page, recents, home and the notification shade) and the Pixel 10 profile [observed: EAS run, 2026-11-06]. The Mac rows come from the same script on the Mac mini M2 [observed: research runs, 2026-11-05].
 
-![Bar chart of changed frames per second for the Hub's gRPC stream and the emulator capture, at the Hub's default size and at full size, on an EAS Linux VM and on a Mac mini M2](assets/0018/frame-rates.png)
+![Bar chart of changed frames per second for the Hub's gRPC stream and the emulator capture, at the Hub's default size and at full size, on an EAS Linux VM and on a Mac mini M2](assets/0021/frame-rates.png)
 
 | Host         | Source           | `-gpu`     | 570×1280     | 1080×2424 |
 | ------------ | ---------------- | ---------- | ------------ | --------- |
@@ -116,7 +116,7 @@ Without the capture, the Hub streams an emulator from the emulator's gRPC screen
 
 - Each value is the mean of the three busiest seconds, in changed frames per second. A frame that equals the frame before does not count (ffmpeg `mpdecimate` on copies scaled to 570 pixels wide). The gRPC recordings come from the Hub's serve-emu with the Hub's default `rgb888` image mode. The capture recordings come from the agent's socket, with the time of each frame.
 - On the EAS VM, at full size, the gRPC stream reached 41.0 with `-gpu auto` and 49.7 with `-gpu lavapipe`, and the capture reached 59.7. At the Hub's default size, all three Linux setups reached 56.7 to 60.0.
-- With `-gpu auto`, the EAS VM used the SwiftShader translator for GLES, and the Mac used SwANGLE ([LLP 0017](0017-emulator-capture-macos.explainer.md#frame-paths)). Both are software renderers [observed: emulator logs of these recordings, 2026-11-05 and 2026-11-06].
+- With `-gpu auto`, the EAS VM used the SwiftShader translator for GLES, and the Mac used SwANGLE ([LLP 0020](0020-emulator-capture-macos.explainer.md#frame-paths)). Both are software renderers [observed: emulator logs of these recordings, 2026-11-05 and 2026-11-06].
 - Each setup ran once. The Linux and the Mac rows used different emulator versions and system images: 37.1.11 with API 36 on Linux, 37.2.7 with Android 37.0 on the Mac.
 
 ## Integration
@@ -137,7 +137,7 @@ Without the capture, the Hub streams an emulator from the emulator's gRPC screen
 - Only x264 build 165. Hosts with another build fail with the install command.
 - No hardware encoder: VAAPI and NVENC are not used.
 - One socket path serves one emulator. `eas/start_android_emulator` with `count` above 1 starts every emulator with the same environment, so only one of them can serve the socket [inferred: from `listen` in `src/native/agent.cpp`, which refuses a socket that another agent serves; not tested].
-- Where `TMPDIR` is not set, all users of a host share `/tmp/expo-emulator-capture`. The agent and the Hub refuse a socket directory that another user owns or can write ([LLP 0017](0017-emulator-capture-macos.explainer.md#loading)), so the first user's directory blocks the others; each user then needs a private `TMPDIR` [observed: `listen` in `src/native/agent.cpp`; README].
+- Where `TMPDIR` is not set, all users of a host share `/tmp/expo-emulator-capture`. The agent and the Hub refuse a socket directory that another user owns or can write ([LLP 0020](0020-emulator-capture-macos.explainer.md#loading)), so the first user's directory blocks the others; each user then needs a private `TMPDIR` [observed: `listen` in `src/native/agent.cpp`; README].
 
 ## Open questions for the maintainer
 

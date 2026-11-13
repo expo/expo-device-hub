@@ -71,7 +71,7 @@ if (target === "darwin-arm64") {
 } else {
   // CXX may carry arguments, such as "ccache g++".
   const [compiler, ...compilerArgs] = (process.env.CXX || "g++").trim().split(/\s+/);
-  // @ref LLP 0018#encoder — x264 build 165 from the host, not bundled
+  // @ref LLP 0021#encoder — x264 build 165 from the host, not bundled
   // The agent includes x264's header from the build host (libx264-dev) and loads the
   // library at run time, so the header must be build 165, the build that the agent loads.
   const probe = await $`${compiler} ${compilerArgs} -E -P -x c++ - < ${new Response(
@@ -127,7 +127,7 @@ if (target === "darwin-arm64") {
     "-lrt",
     "-lresolv",
   ];
-  // @ref LLP 0018#c-runtime — any C++ library works; only findColorBuffer's result is a libc++ object
+  // @ref LLP 0021#c-runtime — any C++ library works; only findColorBuffer's result is a libc++ object
   await $`${compiler} ${compilerArgs} ${args}`;
   // GNU strip -x keeps the debug sections; --strip-unneeded removes them and the local symbols,
   // and keeps the dynamic export.
