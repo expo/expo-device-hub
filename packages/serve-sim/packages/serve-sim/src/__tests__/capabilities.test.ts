@@ -9,7 +9,8 @@ import {
   UnknownCapabilityError,
 } from "../capabilities";
 import type { CapabilityDefinition } from "../capabilities";
-import { applyDefaultCapabilities } from "../launch-manager";
+import * as runtime from "../capabilities/index";
+import { applyDefaultCapabilities } from "../capabilities/runtime/manager";
 
 function register(name: string, defaultEnabled: boolean): void {
   registerCapability({
@@ -61,6 +62,29 @@ describe("capabilitiesToApply", () => {
 });
 
 describe("registeredCapabilities", () => {
+  test("compatibility exports and runtime share registration, replacement, and clearing", () => {
+    expect(runtime.registeredCapabilities()).toEqual(registeredCapabilities());
+    runtime.registerCapability({
+      name: "on-by-default",
+      defaultEnabled: false,
+      scope: "allApps",
+      setEnabled: async () => null,
+    });
+    expect(registeredCapabilities().find(({ name }) => name === "on-by-default")?.scope).toBe(
+      "allApps",
+    );
+    expect(names({})).toEqual([]);
+    expect(runtime.UnknownCapabilityError).toBe(UnknownCapabilityError);
+    runtime.clearRegisteredCapabilities();
+    expect(registeredCapabilities()).toEqual([]);
+    register("registered-through-compatibility", true);
+    expect(runtime.capabilitiesToApply({}).map(({ name }) => name)).toEqual([
+      "registered-through-compatibility",
+    ]);
+    clearRegisteredCapabilities();
+    expect(runtime.registeredCapabilities()).toEqual([]);
+  });
+
   test("registering the same name twice replaces the first", () => {
     register("on-by-default", false);
     const matches = registeredCapabilities().filter((d) => d.name === "on-by-default");

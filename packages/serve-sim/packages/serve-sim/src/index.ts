@@ -53,7 +53,7 @@ import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
 import { runRecordingShutdown, runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
-import { validatedAdditionalDylibs } from "./additional-dylibs";
+import { validatedAdditionalDylibs } from "./capabilities/runtime/additional-dylibs";
 import {
   assertKnownCapabilities,
   capabilitiesToApply,
@@ -72,8 +72,8 @@ import {
   reserveDeviceSession,
   stopLaunchSession,
   waitForLaunchUpdates,
-} from "./launch-manager";
-import { LaunchStateLockTimeoutError } from "./launch-state-lock";
+} from "./capabilities/runtime/manager";
+import { LaunchStateLockTimeoutError } from "./capabilities/runtime/lock";
 import { parseCaptureFields } from "./capture/fields";
 import { parseCaptureProxy } from "./capture/upstream";
 import { killOwnListeners } from "./ports";

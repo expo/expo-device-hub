@@ -19,7 +19,7 @@ mock.module("../../device-session", () => ({
   },
 }));
 mock.module("../../capture", () => ({ captureRuntime: { disableForDevice: async () => {} } }));
-mock.module("../../launch-manager", () => ({
+mock.module("../../capabilities/runtime/manager", () => ({
   releaseSession: async (udid: string) => {
     if (udid === failStop) throw new Error("shutdown failed");
     calls.push(`shutdown ${udid}`);

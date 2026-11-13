@@ -5,8 +5,8 @@ import { setTimeout as sleep } from "timers/promises";
 import type { CapabilityDefinition } from "./capabilities";
 import { debugPasteboard } from "./debug";
 import { frontmostAppOf } from "./foreground-tracker";
-import { isCapabilityEnabled } from "./launch-manager";
-import { readLaunchState } from "./launch-state";
+import { isCapabilityEnabled } from "./capabilities/runtime/manager";
+import { readLaunchState } from "./capabilities/runtime/state";
 import { simctl } from "./simctl";
 import { withStateLock } from "./state-lock";
 import {

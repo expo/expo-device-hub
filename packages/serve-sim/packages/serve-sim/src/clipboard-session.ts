@@ -6,8 +6,8 @@ import {
   rearmCapabilityLoader,
   releaseSession,
   releaseSessionSync,
-} from "./launch-manager";
-import { LaunchStateLockedError } from "./launch-state-lock";
+} from "./capabilities/runtime/manager";
+import { LaunchStateLockedError } from "./capabilities/runtime/lock";
 import { CLIPBOARD_CAPABILITY, clipboardCapability } from "./sim-pasteboard-reader";
 
 const RETRY_MIN_MS = 5_000;

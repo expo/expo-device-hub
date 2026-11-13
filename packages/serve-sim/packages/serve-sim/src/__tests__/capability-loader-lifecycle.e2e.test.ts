@@ -14,7 +14,7 @@ import {
   removeCapabilityLoader,
   removeCapabilityLoaderSync,
   capabilityLoaderDir,
-} from "../launch-manager";
+} from "../capabilities/runtime/manager";
 
 // The insert is device-wide state, so every test here asserts it is gone again.
 
@@ -100,7 +100,7 @@ describe.skipIf(!ready)("capability loader lifecycle", () => {
   test("one idle session can exit without disarming another", async () => {
     const temp = useTempStateDir();
     const sessions: ChildProcess[] = [];
-    const manager = join(import.meta.dir, "../launch-manager.ts");
+    const manager = join(import.meta.dir, "../capabilities/runtime/manager.ts");
     const startSession = async (): Promise<ChildProcess> => {
       const child = spawn(
         process.execPath,

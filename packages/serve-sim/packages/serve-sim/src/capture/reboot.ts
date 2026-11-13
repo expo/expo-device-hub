@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { bootDevice, shutdownDevice } from "../device";
-import { devicesArmedHere, rearmCapabilityLoader } from "../launch-manager";
+import { devicesArmedHere, rearmCapabilityLoader } from "../capabilities/runtime/manager";
 import { stateDir } from "../state";
 import { CaptureEnableError, captureRuntime, type CaptureRuntime } from "./runtime";
 import { type CaptureField } from "./fields";

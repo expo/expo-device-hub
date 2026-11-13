@@ -6,7 +6,7 @@ import { readStagedUploadAsync } from "./upload-store";
 import { z } from "zod";
 import { ConfinedPath } from "./host-paths";
 import { ok, redactHostPaths, runInvocation, type HostActionResult } from "./host-actions-utils";
-import { withLaunchStateLock } from "./launch-state-lock";
+import { withLaunchStateLock } from "./capabilities/runtime/lock";
 
 export const AppRelativePath = z
   .string()

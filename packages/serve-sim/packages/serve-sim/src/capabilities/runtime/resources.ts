@@ -1,5 +1,5 @@
-import type { CapabilityContext, CapabilityDefinition, PreparedCapability } from "./capabilities";
-import type { Capability } from "./launch-state";
+import type { CapabilityContext, CapabilityDefinition, PreparedCapability } from "./capability";
+import type { Capability } from "./state";
 
 export interface CapabilityPreparation {
   capability: Capability;

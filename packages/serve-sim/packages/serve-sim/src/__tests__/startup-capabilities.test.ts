@@ -4,7 +4,7 @@ import {
   applyDefaultCapabilities,
   CapabilityRollbackError,
   setCapabilityEnabled,
-} from "../launch-manager";
+} from "../capabilities/runtime/manager";
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ import {
   capabilityConfigPath,
   managedStartupDylibs,
   writeManagedStartupDylibs,
-} from "../capability-config";
+} from "../capabilities/runtime/config";
 import {
   configureCapability,
   enableCapabilities,
@@ -24,11 +24,11 @@ import {
   armCapabilityLoader,
   rearmCapabilityLoader,
   isCapabilityArmed,
-} from "../launch-manager";
+} from "../capabilities/runtime/manager";
 import { installShims, useTempStateDir } from "./helpers";
 import { timeStartup } from "../startup-timing";
-import { withLaunchStateLock } from "../launch-state-lock";
-import { readLaunchState } from "../launch-state";
+import { withLaunchStateLock } from "../capabilities/runtime/lock";
+import { readLaunchState } from "../capabilities/runtime/state";
 
 const UDID = "startup-capabilities-test";
 let state: ReturnType<typeof useTempStateDir>;

@@ -3,7 +3,7 @@ import * as childProcess from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { stateDir } from "../../state";
-import { withLaunchStateLock } from "../../launch-state-lock";
+import { withLaunchStateLock } from "../../capabilities/runtime/lock";
 
 // Two warm devices in one orphan: the default (first) and an extra one that warms in the
 // background. WARM_FAILURE selects a failure on the extra device: "none", "retire", "warmup"
@@ -41,8 +41,8 @@ mock.module("../../simctl", () => ({
 }));
 const simulatorHost = await import("../../simulator-host");
 mock.module("../../simulator-host", () => ({ ...simulatorHost, openSimulatorHost: () => {} }));
-const launchManager = await import("../../launch-manager");
-mock.module("../../launch-manager", () => ({
+const launchManager = await import("../../capabilities/runtime/manager");
+mock.module("../../capabilities/runtime/manager", () => ({
   ...launchManager,
   applyDefaultCapabilities: async () => [],
   disarmStaleCapabilityLoader: async () => {},

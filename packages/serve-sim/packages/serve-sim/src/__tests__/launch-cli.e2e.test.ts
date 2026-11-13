@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
-import { readLaunchState } from "../launch-state";
+import { readLaunchState } from "../capabilities/runtime/state";
 import { parseDetachState } from "./detach-state";
 import { freePortAsync, killHelpersForDevice } from "./helpers";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";

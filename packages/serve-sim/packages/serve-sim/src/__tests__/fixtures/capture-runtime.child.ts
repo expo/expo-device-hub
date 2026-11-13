@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { managedStartupDylibs } from "../../capability-config";
+import { managedStartupDylibs } from "../../capabilities/runtime/config";
 import {
   createCaptureRuntime,
   CaptureEnableError,

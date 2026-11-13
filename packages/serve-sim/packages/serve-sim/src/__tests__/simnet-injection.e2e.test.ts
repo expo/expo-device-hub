@@ -6,7 +6,11 @@ import { join, resolve } from "node:path";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 
-import { enableCapabilities, disableCapability, releaseSessionSync } from "../launch-manager";
+import {
+  enableCapabilities,
+  disableCapability,
+  releaseSessionSync,
+} from "../capabilities/runtime/manager";
 import { useTempStateDir } from "./helpers";
 import { e2eDevice, requireE2E, readInsert } from "./e2e-preconditions";
 

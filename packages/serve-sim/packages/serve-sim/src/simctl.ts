@@ -1,6 +1,6 @@
 import { execFile, execFileSync } from "child_process";
 import { promisify } from "util";
-import { simulatorBootEnv } from "./additional-dylibs";
+import { simulatorBootEnv } from "./capabilities/runtime/additional-dylibs";
 
 const execFileAsync = promisify(execFile);
 

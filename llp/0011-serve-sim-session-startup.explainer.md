@@ -5,6 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-10-06
+**Revised:** 2026-11-10 (direct capability-module imports and host launch boundary)
 **Related:** [LLP 0007](0007-serve-sim-capability-loader.explainer.md), [LLP 0005](0005-serve-sim-network-capture.explainer.md)
 
 ## Scope
@@ -52,7 +53,7 @@ CLI and middleware startup validate each caller entry as an absolute path to an
 existing regular file before device operations. Boot environment construction checks
 the same rule. `--quiet` CLI failures use the startup JSON error format. This checks
 paths, not Mach-O compatibility or whether the file remains available afterward
-[observed: `src/additional-dylibs.ts` `validatedAdditionalDylibs`, `src/index.ts`
+[observed: `src/capabilities/runtime/additional-dylibs.ts` `validatedAdditionalDylibs`, `src/index.ts`
 CLI action and camera injection, `src/middleware.ts` `simMiddleware`]. Camera status,
 source switching, and cleanup remain available when a caller file disappears.
 The camera command forwards the global quiet option into its dedicated parser.
@@ -61,7 +62,7 @@ file removed during the boot wait produces one JSON error under `--quiet`
 [observed: `src/index.ts` `camera` and `serve`;
 `src/__tests__/caller-dylib-cli.test.ts` Node regressions]. Cleanup uses the unvalidated parser,
 so a caller file removed after startup cannot prevent managed-library teardown
-[observed: `src/launch-manager.ts` cleanup calls to `additionalDylibs`].
+[observed: `src/capabilities/runtime/manager.ts` cleanup calls to `additionalDylibs`].
 
 If a caller file disappears before a later grid start or between boot and bootstatus,
 the start route returns a JSON error with HTTP 500 and leaves the preview process alive
@@ -71,7 +72,7 @@ the start route returns a JSON error with HTTP 500 and leaves the preview proces
 Entries retain their path characters, including whitespace; only empty entries
 are discarded. Cleanup preserves explicitly requested caller paths even when
 they overlap a managed startup image or share the capability loader's filename
-[observed: `src/additional-dylibs.ts`, `src/simctl.ts`, `src/launch-manager.ts`
+[observed: `src/capabilities/runtime/additional-dylibs.ts`, `src/simctl.ts`, `src/capabilities/runtime/manager.ts`
 `withoutOurs` and `removeReleasedStartupSync`].
 
 The host passes these paths through `SIMCTL_CHILD_DYLD_INSERT_LIBRARIES` for boot
@@ -79,14 +80,14 @@ and `bootstatus -b`, preserving any existing child insert and including the capa
 loader, its config path, and the built network-capture startup image. This applies
 to foreground startup, sidebar startup, and capture reboot. After boot, loader
 arming and explicit capability/camera launches retain the additional paths
-[observed: `src/additional-dylibs.ts`, `src/simctl.ts`, `src/index.ts`,
-`src/middleware.ts`, `src/launch-manager.ts`].
+[observed: `src/capabilities/runtime/additional-dylibs.ts`, `src/simctl.ts`, `src/index.ts`,
+`src/middleware.ts`, `src/capabilities/runtime/manager.ts`].
 
 Boot-time insertion also needs the loader and capture startup image: a launchd boot
 insert can remain inherited by apps instead of the later `launchctl` value. The
 capture image consults the capability config before activating, so inserting it does
 not enable capture by itself. Supplying the image at boot preserves capture of pre-main
-requests when capture is enabled before app launch [observed: `src/additional-dylibs.ts`,
+requests when capture is enabled before app launch [observed: `src/capabilities/runtime/additional-dylibs.ts`,
 `Sources/ServeSimCapabilityLoader/startup-capability.h`, local Simulator app image and
 startup-request readback, 2026-10-07].
 
@@ -99,7 +100,7 @@ failed. An unavailable fallback counts as not armed, so a shutdown during the
 probe still contributes to capture's consecutive misses. Runtime values remain
 preferred: on a normal session, `simctl getenv` can truncate the insert even though
 `launchctl` and fresh processes have the full list
-[observed: `src/launch-manager.ts` `isCapabilityArmed`; isolated Tart iOS 26.4 runs
+[observed: `src/capabilities/runtime/manager.ts` `isCapabilityArmed`; isolated Tart iOS 26.4 runs
 `run-guarded-x4bh4Q` and `run-normal-SbDfWN`, native process environment/image
 readback and capture stream, 2026-10-07].
 
@@ -108,7 +109,7 @@ shut-down simulator. An already-running process does not receive new images.
 These paths remain outside capability ownership, so session cleanup preserves them;
 shutting down the simulator clears the boot environment. This interface supplies
 libraries, not proof that they loaded or that an egress policy is effective
-[observed: `src/launch-manager.ts` insertion and cleanup; dyld loads inserts at exec].
+[observed: `src/capabilities/runtime/manager.ts` insertion and cleanup; dyld loads inserts at exec].
 
 ## Startup order
 
@@ -139,7 +140,7 @@ default initialization. A stop signal prevents fallback, and lock timeouts and
 uncertain rollback stop startup. The startup error then lists the failed update and the
 failed restore, so a log shows which calls failed. The late live insert
 read and ordered environment writes are unchanged [observed: `src/index.ts`
-`combineInitialDefaults`; `src/launch-manager.ts` `applyDefaultCapabilities`].
+`combineInitialDefaults`; `src/capabilities/runtime/manager.ts` `applyDefaultCapabilities`].
 
 The private preview `serve` function receives the resolved targets from this
 foreground caller, after its successful boot wait and stale-loader cleanup. It
@@ -152,14 +153,14 @@ and cannot add it to an already-running process. See [LLP 0007, The
 problem](0007-serve-sim-capability-loader.explainer.md#the-problem). Capture is
 attempted before the launch so supported startup requests can use it. Loader
 arming and capture startup have best-effort paths that log failures; readiness
-does not prove that capture is active [observed: `src/launch-manager.ts`
+does not prove that capture is active [observed: `src/capabilities/runtime/manager.ts`
 `armCapabilityLoader`; `src/index.ts` `startNetworkCapture`].
 
 Capability preparation failures during an app launch can also log a diagnostic
 and continue: `launchAppAsync` does not check the returned list of applied
 capabilities. Without a launch identifier, a missing explicitly requested
 capability stops startup. Readiness therefore does not guarantee that every
-requested capability was enabled [observed: `src/launch-manager.ts`
+requested capability was enabled [observed: `src/capabilities/runtime/manager.ts`
 `applyDefaultCapabilities`; `src/launch-app.ts`; `src/index.ts` `missingCapabilities` check].
 
 Installation uses the same invocation builder as the authenticated `app.install`
@@ -187,14 +188,14 @@ non-zero, the session stop joins this work, and the launcher's terminal stop con
 every shutdown
 [confirmed: Gabe Debes, 2026-10-29, hand over warm devices without repeated preparation]. Ownership and
 capability configuration stay unchanged if shutdown fails or cannot be confirmed
-[observed: `src/launch-manager.ts` `releaseSession`].
+[observed: `src/capabilities/runtime/manager.ts` `releaseSession`].
 Before preparing another target, adoption checks its preview and capability owners
 and reserves it under the device lock. Preview publication honors this reservation,
 which survives discovery unpublication until shutdown or session cleanup
-[observed: `src/launch-manager.ts` `reserveDeviceSession`, `src/state.ts`].
+[observed: `src/capabilities/runtime/manager.ts` `reserveDeviceSession`, `src/state.ts`].
 Cancellation is checked again after taking the reservation lock. Preview publication
 waits at most one lock poll, so another process's native work cannot freeze adoption
-or input for the other devices [observed: `src/launch-manager.ts`, `src/state.ts`].
+or input for the other devices [observed: `src/capabilities/runtime/manager.ts`, `src/state.ts`].
 Adoption refuses foreign live or persistent ownership. The UI grid retains its
 explicit user shutdown contract, including a separate detached helper, and its
 legacy `Booted` readback recovery after failed bootstatus. Adoption requires a
@@ -265,7 +266,7 @@ and signal/exit handlers release its capability ownership. It releases only the
 devices it armed; another live session's insert remains owned by that session.
 Stopping the host does not uninstall the app or shut down the simulator
 [observed: `src/index.ts` startup
-signal handlers and `disarmDevicesArmedHere`; `src/launch-manager.ts` `releaseSession`].
+signal handlers and `disarmDevicesArmedHere`; `src/capabilities/runtime/manager.ts` `releaseSession`].
 
 ## Startup diagnostics
 
@@ -286,7 +287,7 @@ its process-error cause), reports a failed phase, and still lets startup continu
 For best-effort loader arming, completion means the function returned,
 not that every capability applied. Phases can overlap; their durations are not an end-to-end sum
 [observed: `src/startup-timing.ts`, `src/index.ts`, `src/device-session.ts`,
-`src/host-actions.ts`, `src/launch-manager.ts`].
+`src/host-actions.ts`, `src/capabilities/runtime/manager.ts`].
 
 `/readyz` keeps its response contract and logs readiness transitions on stderr.
 An unavailable response identifies no usable booted session (`session-unavailable`,

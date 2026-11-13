@@ -1,6 +1,6 @@
 import { join } from "path";
-import { stateDir } from "./state";
-import { STATE_LOCK_POLL_MS, withStateLock, withStateLockSync } from "./state-lock";
+import { stateDir } from "../../state";
+import { STATE_LOCK_POLL_MS, withStateLock, withStateLockSync } from "../../state-lock";
 
 // Allow time for the holder to build, terminate, and relaunch an app.
 const LOCK_TIMEOUT_MS = 90_000;
