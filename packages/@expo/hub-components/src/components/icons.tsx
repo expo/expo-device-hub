@@ -443,21 +443,29 @@ export function WarningIcon({
   );
 }
 
-/** Lucide `info` — marks a status that has details, as a cue besides its color. */
-export function InfoIcon({ size = 14, color = "currentColor", strokeWidth = 2, style }: IconProps) {
+/**
+ * A down chevron drawn on a 12-unit grid, so its 1.5 px lines stay sharp at
+ * 12 px, unlike a 24-unit Lucide drawing scaled down. Marks a status that
+ * opens details.
+ */
+export function SmallChevronDownIcon({
+  size = 12,
+  color = "currentColor",
+  strokeWidth = 1.5,
+  style,
+}: IconProps) {
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 24 24"
+      viewBox="0 0 12 12"
       fill="none"
       aria-hidden="true"
       focusable="false"
       style={style}
     >
-      <circle cx="12" cy="12" r="10" stroke={color} strokeWidth={strokeWidth} />
       <path
-        d="M12 16v-4M12 8h.01"
+        d="M3 4.5 6 7.5l3-3"
         stroke={color}
         strokeWidth={strokeWidth}
         strokeLinecap="round"

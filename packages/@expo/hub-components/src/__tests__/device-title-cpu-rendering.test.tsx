@@ -15,6 +15,8 @@ import { createGlobalStubs } from "./test-globals";
 
 const DEVICE = { id: "emulator-5554", name: "Medium Phone" };
 const RENDERER_NAMES = /swiftshader|lavapipe|llvmpipe/i;
+/** The 12-unit chevron after "Live", which marks the status as something that opens details. */
+const CHEVRON = /<svg[^>]*viewBox="0 0 12 12"[^>]*><path d="M3 4.5 6 7.5l3-3"/;
 
 function markup(props: Partial<Parameters<typeof DeviceTitle>[0]> = {}) {
   return renderToStaticMarkup(
@@ -23,15 +25,22 @@ function markup(props: Partial<Parameters<typeof DeviceTitle>[0]> = {}) {
 }
 
 describe("the status pill of an emulator that renders on the CPU", () => {
-  test("keeps the Live label in the warning colors, with an info icon besides the color", () => {
+  test("keeps the Live label in the warning colors, with a chevron besides the color", () => {
     const html = markup();
     expect(html).toContain(">Live</span>");
     expect(html).toContain(`background-color:${icon.warning}`);
     expect(html).toContain(`border:2px solid ${border.warning}`);
     expect(html).toContain(`color:${text.warning}">Live</span>`);
     expect(html).not.toContain(text.success);
-    // The info icon follows the label.
-    expect(html).toMatch(/>Live<\/span><svg[^>]*aria-hidden="true"/);
+    // A sharp 12 px chevron follows the label, pointing down while the details are closed.
+    expect(html).toMatch(/>Live<\/span><svg width="12" height="12" viewBox="0 0 12 12"/);
+    expect(html).toMatch(CHEVRON);
+    const chevron = html.slice(html.indexOf('viewBox="0 0 12 12"'));
+    expect(chevron).toMatch(/^[^>]*aria-hidden="true"/);
+    expect(chevron).toMatch(/^[^>]*transform:rotate\(0deg\)/);
+    expect(chevron).toContain(
+      `stroke="${icon.warning}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"`,
+    );
     expect(html).not.toMatch(RENDERER_NAMES);
   });
 
@@ -61,6 +70,7 @@ describe("the status pill of an emulator that renders on the CPU", () => {
       expect(html.match(/<button/g)).toHaveLength(1);
       expect(html).not.toContain("aria-haspopup");
       expect(html).not.toContain(text.warning);
+      expect(html).not.toMatch(CHEVRON);
     },
   );
 
@@ -69,6 +79,7 @@ describe("the status pill of an emulator that renders on the CPU", () => {
     expect(html.match(/<button/g)).toHaveLength(1);
     expect(html).not.toContain("aria-haspopup");
     expect(html).toContain(`color:${text.success}">Live</span>`);
+    expect(html).not.toMatch(CHEVRON);
   });
 });
 
@@ -84,8 +95,14 @@ afterEach(async () => {
   restoreGlobals();
 });
 
-async function renderPill() {
+async function renderPill({ reducedMotion = false } = {}) {
   dom = new Window();
+  const prefersReducedMotion = (query: string) => ({
+    matches: reducedMotion && query === "(prefers-reduced-motion: reduce)",
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  });
+  (dom as unknown as { matchMedia: typeof prefersReducedMotion }).matchMedia = prefersReducedMotion;
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("window", dom);
   stubGlobal("document", dom.document);
@@ -120,10 +137,35 @@ async function renderPill() {
   const name = container.querySelector("button:not([aria-haspopup])") as unknown as HTMLElement;
   const dialog = () =>
     dom!.document.querySelector('[role="dialog"]') as unknown as HTMLElement | null;
-  return { dom, container, outside, status, name, dialog };
+  const chevron = () => status.querySelector("svg") as unknown as SVGElement;
+  return { dom, container, outside, status, name, dialog, chevron };
 }
 
 describe("the CPU rendering popover", () => {
+  test("turns the chevron up while the details are open, and down again when they close", async () => {
+    const { dom, status, dialog, chevron } = await renderPill();
+    expect(chevron().style.transform).toBe("rotate(0deg)");
+    expect(chevron().style.transition).toContain("transform");
+
+    await act(async () => status.click());
+    expect(dialog()).not.toBeNull();
+    expect(chevron().style.transform).toBe("rotate(180deg)");
+
+    await act(async () => {
+      dom.document.activeElement!.dispatchEvent(
+        new dom.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+    });
+    expect(chevron().style.transform).toBe("rotate(0deg)");
+  });
+
+  test("turns the chevron without a transition when the user prefers reduced motion", async () => {
+    const { status, chevron } = await renderPill({ reducedMotion: true });
+    await act(async () => status.click());
+    expect(chevron().style.transform).toBe("rotate(180deg)");
+    expect(chevron().style.transition).toBe("");
+  });
+
   test("opens from the status button as a non-modal dialog with the exact text", async () => {
     const { status, dialog } = await renderPill();
     expect(dialog()).toBeNull();

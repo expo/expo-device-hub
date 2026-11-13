@@ -5,7 +5,7 @@
 **Systems:** Hub, HubComponents, AndroidUtils
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-13
-**Revised:** 2026-11-13 (the warning moved to the status pill; the Rendering row moved to Stream options)
+**Revised:** 2026-11-13 (the warning moved to the status pill; the Rendering row moved to Stream options; a chevron replaced the info icon)
 **Related:** LLP 0000
 
 ## Summary
@@ -17,7 +17,7 @@ The Hub boots Android emulators with `-gpu host` on an Apple silicon Mac that is
 ## Direction
 
 - The Hub warns when an emulator does not render on the GPU although GPU rendering should be available. For now, the warning is only for a Mac with Apple silicon that is not a virtual machine, and it recommends a restart with GPU rendering [confirmed] (Krystof Woldrich, 2026-11-13).
-- The warning is on the stream's status pill, not in Device options. The Live status takes the warning colors and an info icon, and opens a non-modal popover with fixed text that does not name the renderer. Krystof Woldrich based this on the Carbon status indicator pattern, WCAG 2.2 SC 1.4.1 (Use of Color), and the NN/g heuristic "visibility of system status" [confirmed] (Krystof Woldrich, 2026-11-13). A first version put a warning box with the renderer's name in Device options.
+- The warning is on the stream's status pill, not in Device options. The Live status takes the warning colors and a chevron, and opens a non-modal popover with fixed text that does not name the renderer. Krystof Woldrich based this on the Carbon status indicator pattern, WCAG 2.2 SC 1.4.1 (Use of Color), and the NN/g heuristic "visibility of system status" [confirmed] (Krystof Woldrich, 2026-11-13). A first version put a warning box with the renderer's name in Device options.
 - Stream options always has a neutral `Rendering` row for an Android device, emulator or physical, on every host, so the rows do not move. It starts as `Unknown` and then shows `CPU` or `GPU`. iOS has no such row [confirmed] (Krystof Woldrich, 2026-11-13). An earlier version showed the row in Device options, and only where the warning could apply.
 - On the same hosts, the Hub boots emulators with `-gpu host`, because it most likely works there [confirmed] (Krystof Woldrich, 2026-11-13).
 - The emulator's output gives no good way to tell whether `-gpu host` will work. That is why the decision uses host detection, not the emulator's output [confirmed] (Krystof Woldrich, 2026-11-13).
@@ -56,7 +56,8 @@ The Hub server answers `GET /api/devices/gpu?serial=<adb serial>` with `{ gpuAva
 - The route reads only a running Android device that the Hub lists, after its platform and single-device filters (`listDevices` in `index.ts`). In a single-device session it reads only the session's device, and under a session token it is gated like every other Hub route.
 - The dashboard reads the route each time the selected Android device's stream starts, so a restarted emulator is read again (`expo-device-hub/src/dashboard/useAndroidRendering.ts`). A software renderer is `cpu`, any other renderer is `gpu`, and no renderer, a failed request, or no answer within 5 s is `unknown`.
 - **Status pill** (`hub-components/src/dashboard/DeviceTitle.tsx`). While the stream is Live, and an emulator (not a physical device) renders on the CPU on a host where `gpuAvailable` is true (`showsCpuRenderingWarning`):
-  - The label stays "Live", but the dot, its ring, and the label take the warning tokens (`icon.warning`, `border.warning`, `text.warning`). An info icon follows the label, so color is not the only cue. The dot does not pulse. Amber also means Loading and Reconnecting, and the label keeps the states apart.
+  - The label stays "Live", but the dot, its ring, and the label take the warning tokens (`icon.warning`, `border.warning`, `text.warning`). A down chevron in `icon.warning` follows the label. The label and the chevron are the cues besides the color. The dot does not pulse. Amber also means Loading and Reconnecting, and the label keeps the states apart.
+  - The chevron marks the status as something that opens details, and it points up while the popover is open, with a short turn, or none when the user prefers reduced motion. It is drawn on a 12-unit grid at 12 px (`SmallChevronDownIcon`, 1.5 px lines), so it stays sharp. A first version used Lucide's 24-unit `info` icon at 14 px, whose 1.17 px lines rendered blurry; Krystof Woldrich chose the chevron in its place [confirmed] (Krystof Woldrich, 2026-11-13).
   - The pill is two buttons, never nested. The name keeps the toggle between the name and the ID. The status opens a non-modal Radix dialog, whose trigger has `aria-haspopup="dialog"`, `aria-expanded`, and `aria-controls`, and the accessible name "Live, rendering on the CPU. Show details". Enter and Space open it, because it is a native button. Escape closes it and returns the focus to the status button, and a click outside closes it.
   - The popover's title is "Rendering on the CPU". Its text is "This emulator renders on the CPU, so the stream is usually slow: 15 to 30 FPS. Reboot the emulator with GPU rendering (automatic when booting through the Hub) for 60 FPS." [confirmed] (Krystof Woldrich, 2026-11-13).
   - In every other state, the pill is the same single button as before.
