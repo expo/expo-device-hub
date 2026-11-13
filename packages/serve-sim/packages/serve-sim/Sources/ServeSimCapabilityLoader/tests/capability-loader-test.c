@@ -386,6 +386,40 @@ static void test_startup_registration(void) {
   free(saved_tmp); free(saved_config);
 }
 
+
+static void test_process_startup_registration(void) {
+  Dl_info image;
+  CHECK(dladdr((const void *)startup_callback, &image) != 0, "process startup image resolves");
+  const char *old_tmp = getenv("TMPDIR"), *old_config = getenv(CONFIG_VAR);
+  char *saved_tmp = old_tmp ? strdup(old_tmp) : NULL;
+  char *saved_config = old_config ? strdup(old_config) : NULL;
+  char line[4096];
+  snprintf(line, sizeof line, "startup\tprocess\t%s\tSERVE_SIM_STARTUP_TEST=armed;SERVE_SIM_EGRESS_POLICY_FILE=/owned/same-page\t0\n", image.dli_fname);
+  char *path = write_temp("process-startup", line, strlen(line));
+  setenv("TMPDIR", "/non-app/helper/tmp", 1);
+  setenv(CONFIG_VAR, path, 1);
+  unsigned before = startup_calls;
+  serve_sim_startup(startup_callback);
+  CHECK(startup_calls == before, "app entry point cannot activate process scope");
+  serve_sim_startup_all_processes(startup_callback);
+  CHECK(startup_calls == before + 1, "nonapp startup discovers its resident record");
+  CHECK(strcmp(getenv("SERVE_SIM_EGRESS_POLICY_FILE"), "/owned/same-page") == 0, "nonapp gets the immutable page path");
+  serve_sim_startup_all_processes(startup_callback);
+  CHECK(startup_calls == before + 2, "a later nonapp callback finds the same enrollment");
+  CHECK(strcmp(getenv("SERVE_SIM_EGRESS_POLICY_FILE"), "/owned/same-page") == 0, "later nonapp gets the same page");
+  char deferred[] = "process\t/owned/guard.dylib\t";
+  char *dylib, *env;
+  unsigned delay;
+  CHECK(!capability_applies(deferred, "/helper", &dylib, &env, &delay), "process scope cannot load through deferred parser");
+  unlink(path);
+  serve_sim_startup_all_processes(startup_callback);
+  CHECK(startup_calls == before + 2, "missing resident startup record cannot initialize");
+  if (saved_tmp) setenv("TMPDIR", saved_tmp, 1); else unsetenv("TMPDIR");
+  if (saved_config) setenv(CONFIG_VAR, saved_config, 1); else unsetenv(CONFIG_VAR);
+  unsetenv("SERVE_SIM_EGRESS_POLICY_FILE");
+  free(saved_tmp); free(saved_config);
+}
+
 int main(void) {
   test_read_config();
   test_capability_applies();
@@ -393,6 +427,7 @@ int main(void) {
   test_load_capabilities();
   test_delayed_reload();
   test_startup_registration();
+  test_process_startup_registration();
   remove_temps();
   if (failures == 0) fprintf(stdout, "ok\n");
   return failures == 0 ? 0 : 1;
