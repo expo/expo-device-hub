@@ -3,14 +3,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeLaunchState } from "../launch-state";
-import { deviceSessionPid } from "../time-zone-capability";
+import { deviceSessionPid } from "../capability-files";
 
 const UDID = "0F4E3A48-8F26-4A5D-9C7A-1B2C3D4E5F60";
 let directory = "";
 const previous = process.env.SERVE_SIM_STATE_DIR;
 
 beforeEach(() => {
-  directory = mkdtempSync(join(tmpdir(), "time-zone-owner-"));
+  directory = mkdtempSync(join(tmpdir(), "capability-owner-"));
   process.env.SERVE_SIM_STATE_DIR = directory;
 });
 

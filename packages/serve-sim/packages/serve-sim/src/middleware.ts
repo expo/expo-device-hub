@@ -106,6 +106,7 @@ import { writeWebSocketAccept } from "./socket/server-upgrade";
 import { claimHelperHidSocket, isHidWebSocketPath, rawHidSocket } from "./socket/server-input";
 import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
+import { UiInputError } from "./ui-input-error";
 import {
   readRequestBodyAsync,
   RequestBodyTooLargeError,
@@ -2036,6 +2037,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     try {
       return await work;
     } catch (err) {
+      if (err instanceof UiInputError) throw err;
       console.error("serve-sim ui request failed:", err);
       throw new Error("the simulator rejected this UI request");
     }
