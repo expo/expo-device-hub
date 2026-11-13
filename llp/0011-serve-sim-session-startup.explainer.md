@@ -42,6 +42,30 @@ without an app launch flag; continuing could attempt installation or advertise a
 server against a device that is not ready [observed: `src/index.ts` `ensureBooted`;
 `src/device.ts` `BOOT_TIMEOUT_MS`].
 
+`bootstatus` returning does not mean the device starts processes quickly. After an
+iOS 27 boot, the host had no idle CPU for more than a minute, and `simctl spawn`
+calls took several seconds each. With no serve-sim running, they took 2 to 11 s
+while `simctl list` took about 0.2 s [observed: plain reboot loop on a 6-CPU Tart
+VM, iOS 27.0, 2026-11-12]. On EAS 5-CPU 20 GB runners, the first spawn after a
+capture reboot took 6.8 s at the median over 34 reboots. The slowest one that
+completed took 12.2 s, and one stopped at the 15-second limit [observed: EAS
+diagnostic run `01a1cdae`, 2026-11-12]. That limit made rearming fail. In the
+Xcode 27 runtime jobs of the serve-sim workflow, from 2026-10-18 to 2026-11-12,
+this failure happened in 5 of 5 jobs on 3-CPU 7 GB runners, 2 of 22 on 10 GB
+runners and 3 of 89 on 20 GB runners. It did not happen in any of the 77 Xcode 26
+runtime jobs [observed: EAS job logs]. It also happened in jobs without native pose
+observation. The busy services are probably the simulator's own post-boot work, not
+serve-sim [inferred: the in-simulator processes were at the top of `top`].
+
+So the `launchctl` calls that arm the capability loader, or roll an arm back, wait up
+to 30 seconds. The limit is not longer, so that a customer does not wait a long time
+when a simulator is stuck [confirmed: Gabe Debes, 2026-11-12]. These calls run right
+after a boot, for example when a capture reboot rearms the loader. A rearm can make 5 such calls, and the device lock is held during
+them. Cleanup calls, such as stale-loader removal and session release, keep their
+15-second limit, so a stalled simulator cannot hold them for long [observed:
+`src/launch-manager.ts` `ARMING_TIMEOUT_MS`]. No data shows how long a spawn takes
+on a 3-CPU runner, because the old limit stopped every slow sample there.
+
 ## Additional boot dylibs
 
 `SERVE_SIM_ADDITIONAL_DYLIBS` is a colon-separated list of caller-owned dylib paths,
