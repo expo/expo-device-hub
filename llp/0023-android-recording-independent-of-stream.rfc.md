@@ -6,7 +6,7 @@
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-13
 **Revised:** 2026-11-13 (decisions confirmed; the implementation in [As built](#as-built); device test results); 2026-11-14 (on Linux, one read on the capture thread for both roles; the Linux timing matrix in [Test plan and results](#test-plan-and-results)); by Claude Code, directed by Krystof Woldrich; 2026-11-14 (restack preserves inherited native failure guards, bounded socket reads and tail retry ownership; tail delivery shares each role's FPS budget), by Codex (gpt-6.1-sol), directed by Krystof Woldrich; 2026-11-14 (the timeline's orientation follows the pose that the screen shows; run 6 in [Test plan and results](#test-plan-and-results)), by Claude Code (Claude Opus 5.5), after an agent found the fault in the media run
-**Related:** LLP 0001, LLP 0013, LLP 0018, LLP 0020, LLP 0021, LLP 0022 (attach to a running emulator, in a later PR of the stack)
+**Related:** LLP 0001, LLP 0013, LLP 0018, LLP 0020, LLP 0021, LLP 0022
 
 > File paths in `src/` are relative to the package that the text names. serve-emu is `packages/serve-emu/packages/serve-emu`, the agent is `packages/expo-emulator-capture`, and the Hub is `packages/expo-device-hub`.
 
@@ -98,7 +98,7 @@ Option A, which Krystof Woldrich chose [confirmed: Krystof Woldrich, 2026-11-13]
 
 ## Decision 2: a recording without the agent
 
-The capture is off, the agent is missing, or the attach failed (LLP 0022, in a later PR of the stack). The recording then cannot use the agent.
+The capture is off, the agent is missing, or the attach failed ([LLP 0022](0022-emulator-capture-attach.explainer.md)). The recording then cannot use the agent.
 
 - **2a. Its own gRPC screenshot stream at native size and its own libx264 encoder in serve-emu.** This extends PR 607's recording encoder to every device. It costs a second gRPC stream; at native size without a GPU, gRPC reaches only 38 to 50 fps on EAS Linux [observed: findings]. The two gRPC streams together are not measured.
 - **2b. The recording encoder takes the stream's gRPC images (as PR 607 does) and scales them to its fixed canvas.** Stream setting changes no longer end the recording, but its sharpness follows the stream size, and a switch to scrcpy still ends it.
