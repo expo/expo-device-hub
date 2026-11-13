@@ -338,6 +338,19 @@ console.log("dist/simpb/serve-sim-pasteboard");
 console.log("dist/simpb/ServeSimPasteboard.app");
 console.log("dist/simpb/libSimPasteboardReader.dylib");
 
+// ─── 8b. keychain dylib (loaded inside user apps) ─────────────────────────
+
+const keychainBuild = spawnSync(
+  "bash",
+  [resolve(root, "Sources/SimKeychain/build.sh"), resolve(distDir, "simkc")],
+  { stdio: "inherit" },
+);
+if (keychainBuild.status !== 0) {
+  console.error("SimKeychain dylib build failed.");
+  process.exit(keychainBuild.status ?? 1);
+}
+console.log("dist/simkc/libSimKeychain.dylib");
+
 // ─── 9. serve-sim-native.node — in-process N-API addon ───────────────────
 // Replaces the spawned serve-sim-bin helper. Arm64 macOS binary; loaded by
 // path from both the node bundle (createRequire) and the bun-compiled executable.
