@@ -6,6 +6,7 @@
 #include <dlfcn.h>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -188,6 +189,7 @@ class X264Encoder final : public H264Encoder {
       return false;
     }
     const RgbaImage& image = *frame.pixels;
+    auto convertStart = std::chrono::steady_clock::now();
     I420Planes upright = planesIn(planes_, width_, height_);
     if (rotation_ == 0) {
       converter_.convert(image.data.data(), image.width, image.height, size_t(image.width) * 4,
@@ -200,6 +202,9 @@ class X264Encoder final : public H264Encoder {
                          panel);
       rotateI420(panel, rotation_, upright);
     }
+    lastConvertMs_ =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - convertStart)
+            .count();
     x264_picture_t picture;
     x264_picture_t output;
     x264_.pictureInit(&picture);
@@ -252,6 +257,7 @@ class X264Encoder final : public H264Encoder {
 
   bool hardware() const override { return false; }
   const std::string& encoderId() const override { return encoderId_; }
+  double lastConvertMs() const override { return lastConvertMs_; }
 
  private:
   Sink sink_;
@@ -262,6 +268,7 @@ class X264Encoder final : public H264Encoder {
   std::vector<uint8_t> planes_, panelPlanes_;
   RgbaToI420 converter_;
   std::string encoderId_;
+  double lastConvertMs_ = 0;
 };
 
 }  // namespace

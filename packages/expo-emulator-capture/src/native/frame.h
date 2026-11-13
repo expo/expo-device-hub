@@ -60,6 +60,9 @@ struct CapturedFrame {
   int height = 0;
   FramePath path = FramePath::Cpu;
   double captureMs = 0;
+  // Parts of captureMs on the Linux readback: the 1x1 read that waits for the renderer (only
+  // with the probe on) and the full read.
+  double waitMs = 0, readMs = 0;
 };
 
 }  // namespace expo_capture
