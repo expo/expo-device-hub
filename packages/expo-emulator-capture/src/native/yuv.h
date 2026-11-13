@@ -103,7 +103,7 @@ inline void rotatePlane(const uint8_t* source, int width, int height, size_t sou
   }
 }
 
-// @ref LLP 0018#rotation — turned after scaling, on the smaller I420 planes
+// @ref LLP 0021#rotation — turned after scaling, on the smaller I420 planes
 // Turns I420 planes upright for Android's display rotation N: N quarter turns
 // counter-clockwise, because at rotation N the panel holds the picture N quarter turns
 // clockwise. `out` is in.height x in.width for rotations 1 and 3.

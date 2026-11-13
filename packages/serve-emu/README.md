@@ -235,7 +235,7 @@ with scrcpy kept for input:
 
 The standalone server and CLI do not offer the mode. See
 [LLP 0020](https://github.com/expo/expo-device-hub/blob/main/llp/0020-emulator-capture-macos.explainer.md) (macOS) and
-[LLP 0018](https://github.com/expo/expo-device-hub/blob/main/llp/0018-emulator-capture-linux.explainer.md) (Linux).
+[LLP 0021](https://github.com/expo/expo-device-hub/blob/main/llp/0021-emulator-capture-linux.explainer.md) (Linux).
 
 ## Browser UI
 
