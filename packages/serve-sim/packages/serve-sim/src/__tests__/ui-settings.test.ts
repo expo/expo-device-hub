@@ -4,6 +4,7 @@ import { HOST_TIME_ZONE } from "../time-zone";
 import {
   CONTENT_SIZE_CATEGORIES,
   UI_OPTIONS,
+  getUiStatus,
   normalizeUiValue,
   parseUiArgs,
   readClock,
@@ -20,6 +21,11 @@ const launchctl = (...args: string[]) => ["simctl", "spawn", UDID, "launchctl", 
 const GETENV = launchctl("getenv", "TZ");
 const UNSETENV = launchctl("unsetenv", "TZ");
 const setenv = (zone: string) => launchctl("setenv", "TZ", zone);
+
+test("status reports the host's actual time zone for host-default clock displays", async () => {
+  const status = await getUiStatus(UDID);
+  expect(status["host-time-zone"]).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+});
 
 type Scripted = Array<[argv: string[], reply: string | Error]>;
 

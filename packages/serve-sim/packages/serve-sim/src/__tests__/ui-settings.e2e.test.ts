@@ -207,6 +207,7 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
       "clock",
       "color-filter",
       "hardware-keyboard",
+      "host-time-zone",
       "increase-contrast",
       "liquid-glass",
       "reduce-motion",
@@ -216,6 +217,7 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
       "time-zone",
       "voiceover",
     ]);
+    expect(status["host-time-zone"]).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
   });
 
   // Only the clock capability's dylib can shift an app's clock, and no session owns this device.
