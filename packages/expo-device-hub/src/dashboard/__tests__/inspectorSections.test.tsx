@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { type DeviceClient, type DevicePlatform } from "@expo/hub-client";
 import {
   type Device,
@@ -12,6 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ClipboardSection } from "../../../../@expo/hub-components/src/dashboard/ClipboardSection";
 import { LocationSection } from "../../../../@expo/hub-components/src/dashboard/LocationSection";
 import { InspectorSections } from "../../../../@expo/hub-components/src/dashboard/InspectorSections";
+import { DeviceOptionsSection } from "../../../../@expo/hub-components/src/dashboard/DeviceOptionsSection";
 import { PermissionsSection } from "../../../../@expo/hub-components/src/dashboard/PermissionsSection";
 import { StreamOptionsSection } from "../../../../@expo/hub-components/src/dashboard/StreamOptionsSection";
 import { StreamStatistics } from "../../../../@expo/hub-components/src/dashboard/StreamStatistics";
@@ -2124,4 +2125,72 @@ test("Android fold capabilities show the shared pose controls without Duo-only c
   );
   const unsupported = renderToStaticMarkup(<InspectorSections client={base} />);
   expect(unsupported).not.toContain('aria-label="Fold pose"');
+});
+
+describe("the Rendering row", () => {
+  const RENDERING_ROW = /Rendering<\/span><\/span><span[^>]*>(Unknown|CPU|GPU)<\/span>/;
+
+  test.each([
+    ["unknown", "Unknown"],
+    ["cpu", "CPU"],
+    ["gpu", "GPU"],
+  ] as const)("shows %s rendering in Stream options", (rendering, value) => {
+    const html = renderToStaticMarkup(
+      <StreamOptionsSection
+        client={inspectorClient("android")}
+        rendering={rendering}
+        defaultOpen
+      />,
+    );
+    expect(html.match(RENDERING_ROW)?.[1]).toBe(value);
+    // The first row, so a new value never moves the rows below it.
+    expect(html.indexOf(">Rendering<")).toBeLessThan(html.indexOf(">Source<"));
+    expect(html).not.toMatch(/swiftshader|lavapipe|llvmpipe/i);
+  });
+
+  /** The `rendering` that the inspector gives Stream options, which starts collapsed. */
+  function streamOptionsRendering(props: Parameters<typeof InspectorSections>[0]): unknown {
+    let found: unknown = "no Stream options";
+    const visit = (node: unknown) => {
+      if (Array.isArray(node)) node.forEach(visit);
+      else if (isValidElement<{ children?: unknown; rendering?: unknown }>(node)) {
+        if (node.type === StreamOptionsSection) found = node.props.rendering;
+        else visit(node.props.children);
+      }
+    };
+    function Probe() {
+      visit(InspectorSections(props));
+      return null;
+    }
+    renderToStaticMarkup(<Probe />);
+    return found;
+  }
+
+  test("starts as Unknown for every Android device before the Hub answers", () => {
+    for (const physical of [false, true]) {
+      const android = { ...device("android"), physical };
+      expect(streamOptionsRendering({ client: inspectorClient("android"), device: android })).toBe(
+        "unknown",
+      );
+    }
+  });
+
+  test("gives the Hub's answer to Stream options, not to Device options", () => {
+    const props = { client: inspectorClient("android"), device: device("android") } as const;
+    expect(streamOptionsRendering({ ...props, rendering: "cpu" })).toBe("cpu");
+    expect(streamOptionsRendering({ ...props, rendering: "gpu" })).toBe("gpu");
+    expect(renderToStaticMarkup(<DeviceOptionsSection client={props.client} />)).not.toContain(
+      ">Rendering<",
+    );
+  });
+
+  test("never shows the row for iOS", () => {
+    const ios = {
+      client: inspectorClient("ios"),
+      device: device("ios"),
+      rendering: "gpu",
+    } as const;
+    expect(streamOptionsRendering(ios)).toBeUndefined();
+    expect(renderToStaticMarkup(<InspectorSections {...ios} />)).not.toContain(">Rendering<");
+  });
 });

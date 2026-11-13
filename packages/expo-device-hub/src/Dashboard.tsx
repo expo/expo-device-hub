@@ -50,7 +50,7 @@ import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from "./dashboard/dashboardS
 import { useDeviceScreenShape } from "./dashboard/useDeviceScreenShape";
 import { useColorScheme } from "./dashboard/useColorScheme";
 import { useDashboardDevices } from "./dashboard/useDashboardDevices";
-import { useEmulatorRendering } from "./dashboard/useEmulatorRendering";
+import { showsCpuRenderingWarning, useAndroidRendering } from "./dashboard/useAndroidRendering";
 import {
   FloatingSidebarToggle,
   floatingSidebarToggleVisible,
@@ -240,8 +240,9 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     client,
     selected,
   );
-  const rendering = useEmulatorRendering(
-    selected?.platform === "android" && !selected.physical && selected.booted ? selected.id : null,
+  // Every Android device shows its renderer in Stream options, `unknown` until the Hub answers.
+  const renderingAnswer = useAndroidRendering(
+    selected?.platform === "android" && selected.booted ? selected.id : null,
     client.status === "streaming",
   );
   // The 3D choices apply only to a device with a model that its client can feed.
@@ -268,7 +269,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   const inspector = (
     <InspectorSections
       device={selected}
-      rendering={rendering}
+      rendering={renderingAnswer?.rendering}
       client={client}
       showScreenShape={showScreenShape}
       onShowScreenShapeChange={setShowScreenShape}
@@ -384,7 +385,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           showScreenShape={showScreenShape}
           deviceModelAssets={DEVICE_MODEL_ASSETS}
           screenShape={screenShape}
-          renderingOnCpu={rendering === "cpu"}
+          renderingOnCpu={showsCpuRenderingWarning(selected, renderingAnswer)}
           onClipboardFallback={handleClipboardFallback}
         />
       ) : (

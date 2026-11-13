@@ -81,7 +81,6 @@ export {
   NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
-  type EmulatorRendering,
   type ScreenShapeOption,
 } from "./dashboard/DeviceOptionsSection";
 export { ActivityCharts } from "./dashboard/ActivityCharts";
@@ -120,6 +119,7 @@ export { FoldSettings, type FoldPreviewOption } from "./dashboard/FoldSettings";
 export { FOLD_POSE_OPTIONS, selectedFoldPose } from "./dashboard/foldPoses";
 export { useModelPreviewMode } from "./dashboard/useModelPreviewMode";
 export {
+  type DeviceRendering,
   StreamOptionsSection,
   type StreamOptionsSectionProps,
 } from "./dashboard/StreamOptionsSection";

@@ -5,19 +5,20 @@
 **Systems:** Hub, HubComponents, AndroidUtils
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-13
-**Revised:** 2026-11-13 (the warning moved to the status pill)
+**Revised:** 2026-11-13 (the warning moved to the status pill; the Rendering row moved to Stream options)
 **Related:** LLP 0000
 
 ## Summary
 
-The Hub boots Android emulators with `-gpu host` on an Apple silicon Mac that is not a virtual machine, and with `-gpu auto` everywhere else. On that same host, the stream's status pill warns when the selected emulator renders on the CPU, and Device options shows whether it renders on the CPU or the GPU.
+The Hub boots Android emulators with `-gpu host` on an Apple silicon Mac that is not a virtual machine, and with `-gpu auto` everywhere else. On that same host, the stream's status pill warns when the selected emulator renders on the CPU. On every host, Stream options shows whether an Android device renders on the CPU or the GPU.
 
 > **Provenance.** Claude Code wrote this draft while it implemented the change. `[observed]` claims give their source. `[confirmed]` claims name a human and a date. `[inferred]` claims are guesses that a maintainer must confirm or delete, so this document stays `Draft`. File paths are relative to `packages/`.
 
 ## Direction
 
 - The Hub warns when an emulator does not render on the GPU although GPU rendering should be available. For now, the warning is only for a Mac with Apple silicon that is not a virtual machine, and it recommends a restart with GPU rendering [confirmed] (Krystof Woldrich, 2026-11-13).
-- The warning is on the stream's status pill, not in Device options. The Live status takes the warning colors and an info icon, and opens a non-modal popover with fixed text that does not name the renderer. Device options shows a neutral `Rendering` row with `CPU` or `GPU`. Krystof Woldrich based this on the Carbon status indicator pattern, WCAG 2.2 SC 1.4.1 (Use of Color), and the NN/g heuristic "visibility of system status" [confirmed] (Krystof Woldrich, 2026-11-13). A first version put a warning box with the renderer's name in Device options.
+- The warning is on the stream's status pill, not in Device options. The Live status takes the warning colors and an info icon, and opens a non-modal popover with fixed text that does not name the renderer. Krystof Woldrich based this on the Carbon status indicator pattern, WCAG 2.2 SC 1.4.1 (Use of Color), and the NN/g heuristic "visibility of system status" [confirmed] (Krystof Woldrich, 2026-11-13). A first version put a warning box with the renderer's name in Device options.
+- Stream options always has a neutral `Rendering` row for an Android device, emulator or physical, on every host, so the rows do not move. It starts as `Unknown` and then shows `CPU` or `GPU`. iOS has no such row [confirmed] (Krystof Woldrich, 2026-11-13). An earlier version showed the row in Device options, and only where the warning could apply.
 - On the same hosts, the Hub boots emulators with `-gpu host`, because it most likely works there [confirmed] (Krystof Woldrich, 2026-11-13).
 - The emulator's output gives no good way to tell whether `-gpu host` will work. That is why the decision uses host detection, not the emulator's output [confirmed] (Krystof Woldrich, 2026-11-13).
 
@@ -48,20 +49,20 @@ The Hub boots Android emulators with `-gpu host` on an Apple silicon Mac that is
 
 ## Warning
 
-The Hub server answers `GET /api/devices/gpu?serial=emulator-<port>` with `{ gpuAvailable, renderer }` (`expo-device-hub/src/server/emulator-gpu.ts`).
+The Hub server answers `GET /api/devices/gpu?serial=<adb serial>` with `{ gpuAvailable, renderer }` (`expo-device-hub/src/server/android-gpu.ts`).
 
-- `gpuAvailable` is the [detection](#detection). Only when it is `true` does the server read the renderer, so other hosts never run adb for this.
-- `renderer` comes from the `GLES:` line of `adb shell dumpsys SurfaceFlinger`, bounded to 3 s, which https://github.com/expo/expo-device-hub/pull/117 introduced to show the GPU backend. A renderer that names SwiftShader, lavapipe, or llvmpipe is software. The read tells what the guest actually renders with, also for an emulator that the Hub did not start, such as one from Android Studio. A failed read is `null`, and `null` shows no warning.
-- The route takes only an emulator serial. In a single-device session it reads only the session's emulator, and under a session token it is gated like every other Hub route.
-- The dashboard reads the route each time the selected emulator's stream starts, so a restarted emulator is read again (`expo-device-hub/src/dashboard/useEmulatorRendering.ts`). A software renderer is `cpu`, any other renderer is `gpu`, and an answer without a renderer is nothing.
-- **Status pill** (`hub-components/src/dashboard/DeviceTitle.tsx`). While the stream is Live and the emulator renders on the CPU:
+- `gpuAvailable` is the [detection](#detection). The server reads the renderer on every host, so the `Rendering` row is real everywhere; only the warning needs `gpuAvailable`.
+- `renderer` comes from the `GLES:` line of `adb shell dumpsys SurfaceFlinger`, bounded to 3 s, which https://github.com/expo/expo-device-hub/pull/117 introduced to show the GPU backend. A renderer that names SwiftShader, lavapipe, or llvmpipe is software. The read tells what the guest actually renders with, also for an emulator that the Hub did not start, such as one from Android Studio. It also works for a physical device. A failed or timed-out read is `null`, which shows `Unknown` and no warning.
+- The route reads only a running Android device that the Hub lists, after its platform and single-device filters (`listDevices` in `index.ts`). In a single-device session it reads only the session's device, and under a session token it is gated like every other Hub route.
+- The dashboard reads the route each time the selected Android device's stream starts, so a restarted emulator is read again (`expo-device-hub/src/dashboard/useAndroidRendering.ts`). A software renderer is `cpu`, any other renderer is `gpu`, and no renderer, a failed request, or no answer within 5 s is `unknown`.
+- **Status pill** (`hub-components/src/dashboard/DeviceTitle.tsx`). While the stream is Live, and an emulator (not a physical device) renders on the CPU on a host where `gpuAvailable` is true (`showsCpuRenderingWarning`):
   - The label stays "Live", but the dot, its ring, and the label take the warning tokens (`icon.warning`, `border.warning`, `text.warning`). An info icon follows the label, so color is not the only cue. The dot does not pulse. Amber also means Loading and Reconnecting, and the label keeps the states apart.
   - The pill is two buttons, never nested. The name keeps the toggle between the name and the ID. The status opens a non-modal Radix dialog, whose trigger has `aria-haspopup="dialog"`, `aria-expanded`, and `aria-controls`, and the accessible name "Live, rendering on the CPU. Show details". Enter and Space open it, because it is a native button. Escape closes it and returns the focus to the status button, and a click outside closes it.
   - The popover's title is "Rendering on the CPU". Its text is "This emulator renders on the CPU, so the stream is usually slow: 15 to 30 FPS. Reboot the emulator with GPU rendering (automatic when booting through the Hub) for 60 FPS." [confirmed] (Krystof Woldrich, 2026-11-13).
   - In every other state, the pill is the same single button as before.
   - The popover content mounts only while it is open, because it has no exit animation. Radix's `Presence` would mount it from a layout effect, and `@radix-ui/react-use-layout-effect` replaces that effect with a no-op when `document` is missing at import time, as in the unit tests [observed: its `dist/index.mjs`, 2026-11-13].
   - The title's wrapper in `StreamPanel` has `zIndex: 3`, so the popover opens over the frame's own layers, such as the agent overlay at `zIndex: 2` [observed: `PhoneFrame.tsx`].
-- **Device options** (`hub-components/src/dashboard/DeviceOptionsSection.tsx`). A read-only `Rendering` row shows `CPU` or `GPU`, for an emulator only, and only when the route read a renderer. It is also the only place on the mobile layout, which hides the status pill [observed: `StreamPanel.tsx`].
+- **Stream options** (`hub-components/src/dashboard/StreamOptionsSection.tsx`). The first row is a read-only `Rendering` row with `Unknown`, `CPU`, or `GPU`, for every Android device, and never for iOS. As the first row, a new value does not move the rows below it. Stream options starts collapsed, as before, and the read does not wait for it to open. On the mobile layout, which hides the status pill, the row is the only signal [observed: `StreamPanel.tsx`].
 - The warning is a recommendation only. The Hub does not restart the emulator itself.
 
 ## iOS

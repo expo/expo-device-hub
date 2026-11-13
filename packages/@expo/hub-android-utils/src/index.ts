@@ -1,7 +1,7 @@
 export { bootDevice } from "./boot-device";
 export { createDevice } from "./create-device";
 export { emulatorSerial } from "./emulator";
-export { readEmulatorRenderer, type EmulatorRenderer } from "./emulator-renderer";
+export { readAndroidRenderer, type AndroidRenderer } from "./android-renderer";
 export { freeEmulatorPort } from "./free-emulator-port";
 export { defaultEmulatorGpu, detectBareMetalAppleSilicon } from "./host-gpu";
 export { listDeviceProfiles } from "./list-device-profiles";
