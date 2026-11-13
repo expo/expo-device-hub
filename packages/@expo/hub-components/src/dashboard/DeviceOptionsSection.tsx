@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 
 import { type DeviceClient, type DeviceOrientation, type DeviceSettingKey } from "@expo/hub-client";
-import { Select, text, textSize, type SelectOption } from "../primitives";
+import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { rotationUnavailableText } from "./rotation-availability";
 import { FoldSettings, type FoldPreviewOption } from "./FoldSettings";
@@ -100,9 +100,6 @@ export const NO_HARDWARE_KEYBOARD_DESCRIPTION =
 export const ONSCREEN_KEYBOARD_DESCRIPTION =
   "Keeps the on-screen keyboard visible while a hardware keyboard is attached. A device with no hardware keyboard always shows it.";
 
-/** What a running emulator renders with: the host's CPU (a software renderer) or its GPU. */
-export type EmulatorRendering = "cpu" | "gpu";
-
 /** The viewer-local screen shape option: the device shape, or the whole video rectangle. */
 export type ScreenShapeOption = {
   /** Whether the selected device has a known shape. Without one, the option is off and disabled. */
@@ -119,7 +116,6 @@ export type ScreenShapeOption = {
  */
 export function DeviceOptionsSection({
   client,
-  rendering,
   screenShape,
   foldPreview,
   showDeviceSettings = true,
@@ -127,11 +123,6 @@ export function DeviceOptionsSection({
   onRemove,
 }: {
   client?: DeviceClient;
-  /**
-   * What the emulator renders with, read only on a host whose GPU an emulator
-   * can use. Omit or `null` to hide the row.
-   */
-  rendering?: EmulatorRendering | null;
   screenShape?: ScreenShapeOption;
   /** Viewer-local 2D/3D choices for a foldable that the 3D model can show. */
   foldPreview?: FoldPreviewOption;
@@ -221,14 +212,6 @@ export function DeviceOptionsSection({
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
-      {rendering && (
-        <SidebarRow label="Rendering">
-          <span style={{ ...textSize.sm, flexShrink: 0, color: text.secondary }}>
-            {rendering === "cpu" ? "CPU" : "GPU"}
-          </span>
-        </SidebarRow>
-      )}
-
       {client?.fold && client.capabilities.fold && (
         <FoldSettings
           fold={client.fold}

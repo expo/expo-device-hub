@@ -22,6 +22,7 @@ import {
   shutdownHubDevice,
 } from "./device-actions";
 import { configureClientShell } from "./client-shell";
+import { ANDROID_GPU_ROUTE, handleAndroidGpuRequest } from "./android-gpu";
 import { argentInteractionWebSocketHandler } from "./argent-interaction-websocket";
 import { deviceListWebSocketHandler, refreshDeviceList } from "./device-list-websocket";
 import { type HubDeviceList, listDevices } from "./devices";
@@ -31,7 +32,6 @@ import {
   HEALTH_ROUTE,
   READY_ROUTE,
 } from "./eas-endpoints";
-import { EMULATOR_GPU_ROUTE, handleEmulatorGpuRequest } from "./emulator-gpu";
 import { MOUNT_PATH } from "./mount";
 import { SERVER_PLATFORM_FILTER } from "./platform-filter";
 import {
@@ -238,8 +238,11 @@ async function routeRequest(request: Request): Promise<Response | null> {
     return jsonResponse(bootedOnly ? filterBooted(devices) : devices);
   }
 
-  if (pathname === EMULATOR_GPU_ROUTE) {
-    return handleEmulatorGpuRequest(request, { singleDevice: SERVER_SINGLE_DEVICE });
+  if (pathname === ANDROID_GPU_ROUTE) {
+    return handleAndroidGpuRequest(request, {
+      listSerials: listRunningAndroidSerials,
+      singleDevice: SERVER_SINGLE_DEVICE,
+    });
   }
 
   const actionKind =
@@ -339,6 +342,12 @@ export const webSocketHandlers = {
   [`${SIM_PREFIX}/helper/ws`]: gatedSocket(simWebSocketHandler),
   [`${EMU_PREFIX}/ws`]: gatedSocket(emuWebSocketHandler),
 };
+
+/** The running Android devices that the Hub lists, after its platform and session filters. */
+async function listRunningAndroidSerials(): Promise<string[]> {
+  const { emulators } = await listDevices(SERVER_PLATFORM_FILTER);
+  return emulators.filter((device) => device.booted).map((device) => device.id);
+}
 
 function filterBooted(list: HubDeviceList): HubDeviceList {
   return {

@@ -7,12 +7,12 @@ import { type ClipboardRequest } from "./ClipboardToast";
 import { PermissionsSection } from "./PermissionsSection";
 import { SIDEBAR_SECTION_INSET } from "./CollapsibleSection";
 import { CurrentAppSection } from "./CurrentAppSection";
-import { DeviceOptionsSection, type EmulatorRendering } from "./DeviceOptionsSection";
+import { DeviceOptionsSection } from "./DeviceOptionsSection";
 import { type FoldPreviewOption } from "./FoldSettings";
 import { EventsSection } from "./EventsSection";
 import { LocationSection } from "./LocationSection";
 import { LogsSection } from "./LogsSection";
-import { StreamOptionsSection } from "./StreamOptionsSection";
+import { type DeviceRendering, StreamOptionsSection } from "./StreamOptionsSection";
 import { type Device } from "./data";
 import { type StreamModeAvailability } from "./StreamSection";
 
@@ -24,10 +24,10 @@ export type LogSidebarProps = {
   /** Selected device metadata used by viewer-local options. */
   device?: Device;
   /**
-   * What the selected emulator renders with, on a host whose GPU an emulator
-   * can use. Shown in Device options; ignored for simulators and physical devices.
+   * What the selected Android device renders with, shown in Stream options;
+   * `unknown` until the Hub answers. Ignored for iOS.
    */
-  rendering?: EmulatorRendering | null;
+  rendering?: DeviceRendering;
   /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
   showScreenShape?: boolean;
   /** Change the viewer-local screen shape preference. */
@@ -96,8 +96,7 @@ export function InspectorSections({
     : undefined;
   // Physical devices cannot be deleted from the host.
   const onRemoveDevice = device?.physical ? undefined : onRemove;
-  const emulatorRendering =
-    device?.platform === "android" && !device.physical ? rendering : undefined;
+  const androidRendering = device?.platform === "android" ? (rendering ?? "unknown") : undefined;
 
   return (
     <>
@@ -106,11 +105,9 @@ export function InspectorSections({
         client?.capabilities.fold ||
         client?.platform === "android" ||
         screenShape ||
-        emulatorRendering ||
         (client && (onShutdown || onRemoveDevice))) && (
         <DeviceOptionsSection
           client={client}
-          rendering={emulatorRendering}
           screenShape={screenShape}
           foldPreview={foldPreview}
           showDeviceSettings={client?.capabilities.deviceSettings ?? false}
@@ -126,6 +123,7 @@ export function InspectorSections({
           streamModeAvailability={streamModeAvailability}
           onStreamModeChange={onStreamModeChange}
           onHttpCodecChange={onHttpCodecChange}
+          rendering={androidRendering}
         />
       )}
       {client?.capabilities.camera && <CameraSection client={client} />}

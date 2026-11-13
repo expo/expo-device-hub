@@ -94,7 +94,6 @@ export {
   NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
-  type EmulatorRendering,
   type ScreenShapeOption,
 } from "./dashboard/DeviceOptionsSection";
 export { ActivityCharts, ActivitySection } from "./dashboard/ActivitySection";
@@ -137,6 +136,7 @@ export {
 export { FOLD_POSE_OPTIONS, selectedFoldPose } from "./dashboard/foldPoses";
 export { StreamSection, type StreamModeAvailability } from "./dashboard/StreamSection";
 export {
+  type DeviceRendering,
   StreamOptionsSection,
   type StreamOptionsSectionProps,
 } from "./dashboard/StreamOptionsSection";

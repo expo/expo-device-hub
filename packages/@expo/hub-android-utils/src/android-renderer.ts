@@ -6,11 +6,11 @@ import { resolveAdbPath } from "./sdk-paths";
 
 const execFileAsync = promisify(execFile);
 
-/** The OpenGL ES renderer that a running emulator draws its frames with. */
-export interface EmulatorRenderer {
+/** The OpenGL ES renderer that a running Android device or emulator draws its frames with. */
+export interface AndroidRenderer {
   /** The `GL_RENDERER` string that SurfaceFlinger reports, unchanged. */
   renderer: string;
-  /** A short name: the software renderer, or what the emulator's translator names. */
+  /** A short name: the software renderer, what the emulator's translator names, or the renderer. */
   name: string;
   /** Whether a software renderer draws the frames on the host's CPU. */
   software: boolean;
@@ -45,7 +45,7 @@ function splitTopLevel(value: string): string[] {
  * `dumpsys SurfaceFlinger`. Returns `null` when the line is missing or has no
  * renderer.
  */
-export function parseEmulatorRenderer(dump: string): EmulatorRenderer | null {
+export function parseAndroidRenderer(dump: string): AndroidRenderer | null {
   const line = /^[\t ]*GLES:[\t ]*([^\r\n]*)/m.exec(dump)?.[1];
   if (!line) return null;
   const renderer = splitTopLevel(line)[1];
@@ -56,14 +56,15 @@ export function parseEmulatorRenderer(dump: string): EmulatorRenderer | null {
 }
 
 /**
- * Read the renderer of a running emulator with `adb shell dumpsys SurfaceFlinger`.
+ * Read the renderer of a running Android device or emulator with
+ * `adb shell dumpsys SurfaceFlinger`.
  *
  * The emulator's own output cannot tell whether `-gpu host` would work, so this
  * reads what the guest actually renders with. Bounded by `timeoutMs`; a command
  * failure, a timeout, or a cancellation returns `null` with the failure in
  * `error`, and output without a renderer returns `null`. Never throws.
  */
-export async function readEmulatorRenderer(
+export async function readAndroidRenderer(
   serial: string,
   {
     timeoutMs = 3_000,
@@ -75,14 +76,14 @@ export async function readEmulatorRenderer(
     /** Override SDK resolution, e.g. for a custom adb installation. */
     adbPath?: string;
   } = {},
-): Promise<AndroidUtilsResult<EmulatorRenderer | null>> {
+): Promise<AndroidUtilsResult<AndroidRenderer | null>> {
   try {
     const { stdout } = await execFileAsync(
       adbPath ?? resolveAdbPath(process.env, homedir()),
       ["-s", serial, "shell", "dumpsys", "SurfaceFlinger"],
       { timeout: timeoutMs, signal, maxBuffer: 4 * 1024 * 1024 },
     );
-    return result(parseEmulatorRenderer(stdout));
+    return result(parseAndroidRenderer(stdout));
   } catch (error) {
     return result(
       null,
