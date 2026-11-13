@@ -18,7 +18,7 @@ constexpr size_t kMaxPooledImages = 4;
 
 using Clock = std::chrono::steady_clock;
 
-// @ref LLP 0018#frame-path — CPU readback only; the encoder converts and scales
+// @ref LLP 0021#frame-path — CPU readback only; the encoder converts and scales
 class ReadbackFrameSource final : public FrameSource {
  public:
   explicit ReadbackFrameSource(const Gfxstream& gfxstream) : g_(gfxstream) {}

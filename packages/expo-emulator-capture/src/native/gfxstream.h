@@ -15,7 +15,7 @@ namespace expo_capture {
 // The agent and the renderer both use libc++, so the types match.
 using ColorBufferRef = std::shared_ptr<void>;
 #else
-// @ref LLP 0018#c-runtime — the renderer's libc++ std::shared_ptr, held by its layout
+// @ref LLP 0021#c-runtime — the renderer's libc++ std::shared_ptr, held by its layout
 // The renderer returns std::shared_ptr<ColorBuffer> from libc++, and this agent is
 // built against another C++ library. This class has the same layout (element,
 // control block) and, like it, is returned through a hidden pointer, because its

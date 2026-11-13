@@ -15,7 +15,7 @@ experimental emulator capture.
 This package is separate from the Hub, not a dependency of it. The Hub installs it when
 you turn the capture on. The design is in
 [LLP 0020](../../llp/0020-emulator-capture-macos.explainer.md) (macOS) and
-[LLP 0018](../../llp/0018-emulator-capture-linux.explainer.md) (Linux).
+[LLP 0021](../../llp/0021-emulator-capture-linux.explainer.md) (Linux).
 
 ## Requirements
 

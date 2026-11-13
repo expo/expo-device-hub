@@ -115,7 +115,7 @@ I420Planes planesIn(std::vector<uint8_t>& buffer, int width, int height) {
   return planes;
 }
 
-// @ref LLP 0018#encoder — ultrafast and zerolatency, with sliced threads
+// @ref LLP 0021#encoder — ultrafast and zerolatency, with sliced threads
 class X264Encoder final : public H264Encoder {
  public:
   // Errors return from configure and encode, so the error sink is not needed.
