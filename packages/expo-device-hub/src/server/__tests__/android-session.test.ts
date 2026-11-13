@@ -61,6 +61,21 @@ describe("Android session ownership", () => {
     await expect(session.startRecording(directory)).rejects.toThrow("must start once");
   });
 
+  test("passes the limits and the recording's encode settings to the router", async () => {
+    const { directory, router, session } = await setup();
+    await session.startRecording(directory, {
+      maxDurationMs: 1_000,
+      encoding: { maxSize: 1280, fps: 30, bitRate: 4_000_000 },
+    });
+    expect(router.startScreenRecording).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maxDurationMs: 1_000,
+        encoding: { maxSize: 1280, fps: 30, bitRate: 4_000_000 },
+        udid: device.id,
+      }),
+    );
+  });
+
   test("shutdown waits for recording startup before publishing", async () => {
     const { directory, router, session } = await setup();
     const ready = Promise.withResolvers<void>();

@@ -1,6 +1,10 @@
 import { EventEmitter } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { createApp } from "../src/middleware.ts";
+import { ScreenRecording } from "../src/screen-recording.ts";
 import { SCRCPY_DEFAULTS, type ScrcpySession, type StartOpts } from "../src/scrcpy.ts";
 import type { StreamSocket } from "../src/stream-socket.ts";
 import { readNoOrientation } from "./fixtures/orientation.ts";
@@ -493,6 +497,69 @@ describe("stream settings HTTP API", () => {
       expect(starts).toBe(3);
     } finally {
       app.stop();
+    }
+  });
+
+  test("PATCH applies during an independent recording, and /api reports it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "stream-settings-independent-"));
+    const recorder = await ScreenRecording.create({
+      directory: join(root, "session"),
+      udid: "emulator-test",
+      deviceName: "Pixel",
+      runtimeDisplayName: "Android 37",
+    });
+    recorder.markIndependent();
+    let starts = 0;
+    const app = await createApp(
+      { serial: "emulator-test", screenRecording: recorder },
+      {
+        readOrientation: readNoOrientation,
+        startScrcpy: async () => {
+          starts++;
+          return fakeSession();
+        },
+      },
+    );
+    try {
+      const response = await app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
+      expect(response.status).toBe(200);
+      expect(starts).toBe(2);
+      const api = await (await app.handleRequest(new Request("http://localhost/api"))).json();
+      expect(api.screenRecording).toEqual({ status: "waiting", independent: true });
+    } finally {
+      await app.stop();
+      recorder.fail(new Error("test over"));
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("PATCH returns a conflict while a recording takes the stream's packets", async () => {
+    const root = await mkdtemp(join(tmpdir(), "stream-settings-recording-"));
+    const recorder = await ScreenRecording.create({
+      directory: join(root, "session"),
+      udid: "emulator-test",
+      deviceName: "Pixel",
+      runtimeDisplayName: "Android 37",
+    });
+    let starts = 0;
+    const app = await createApp(
+      { serial: "emulator-test", screenRecording: recorder },
+      {
+        readOrientation: readNoOrientation,
+        startScrcpy: async () => {
+          starts++;
+          return fakeSession();
+        },
+      },
+    );
+    try {
+      const response = await app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
+      expect(response.status).toBe(409);
+      expect(starts).toBe(1);
+    } finally {
+      await app.stop();
+      recorder.fail(new Error("test over"));
+      await rm(root, { recursive: true, force: true });
     }
   });
 

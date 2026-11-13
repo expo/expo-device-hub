@@ -385,7 +385,8 @@ client.setOrientation("landscape_left");
 // framesUpright means the backend already sends upright frames (serve-emu).
 // While an Android recording could break, client.recordingLock is "status-unknown" or
 // "recording" and rotate, setOrientation and the stream setters are silently ignored. Disable
-// those controls from it. Fold has its own reason, client.fold.unavailable. client.orientationUnavailable gives the reason orientation cannot
+// those controls from it. A recording that the server reports as independent (its own encode in
+// the emulator capture agent) never locks them. Fold has its own reason, client.fold.unavailable. client.orientationUnavailable gives the reason orientation cannot
 // change now, also while the iOS input socket cannot take input.
 client.reload(); // reload the running React Native bundle
 client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance

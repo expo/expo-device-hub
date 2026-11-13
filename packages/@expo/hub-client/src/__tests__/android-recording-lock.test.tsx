@@ -72,7 +72,7 @@ const CONTROLS: Array<[string, (client: DeviceClient) => void, string]> = [
   ],
 ];
 
-type Recording = { status: string; followsFold?: boolean };
+type Recording = { status: string; followsFold?: boolean; independent?: boolean };
 
 async function mount(initialRecording: Recording | null | "unanswered") {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -176,6 +176,19 @@ for (const [name, control, request] of CONTROLS) {
   });
 
   test.each(["waiting", "recording", "finalizing"])(
+    `Android sends ${name} while an independent recording is %s`,
+    async (status) => {
+      const harness = await mount({ status, followsFold: true, independent: true });
+      expect(harness.client().screenRecording).toBe(status);
+      expect(harness.client().recordingLock).toBeNull();
+      expect(harness.client().recordingControlsLocked).toBe(false);
+      expect(harness.client().orientationUnavailable).toBeNull();
+      await use(harness, control);
+      expect(harness.writes).toEqual([request]);
+    },
+  );
+
+  test.each(["waiting", "recording", "finalizing"])(
     `Android ignores ${name} while a recording is %s`,
     async (status) => {
       const harness = await mount({ status });
@@ -277,4 +290,15 @@ test("Android locks fold again when the recording no longer follows folds", asyn
   expect(harness.client().fold?.unavailable).toBe("recording");
   await harness.record(null);
   expect(harness.client().fold?.unavailable).toBeUndefined();
+});
+
+test("Android folds during an independent recording, and locks again for one of the stream's packets", async () => {
+  const harness = await mount({ status: "recording", independent: true });
+  expect(harness.client().fold?.unavailable).toBeUndefined();
+  await use(harness, (client) => client.fold!.setControl({ control: "pose", value: "closed" }));
+  expect(harness.writes).toEqual(['POST /api/fold {"hingeAngle":0}']);
+  // An older server, or a recording without the capture agent, has no `independent`.
+  await harness.record({ status: "recording" });
+  expect(harness.client().recordingLock).toBe("recording");
+  expect(harness.client().fold?.unavailable).toBe("recording");
 });
