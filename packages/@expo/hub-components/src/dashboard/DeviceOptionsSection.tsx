@@ -7,6 +7,7 @@ import { type Platform } from "./data";
 import { recordingLockText } from "./recording-lock";
 import { rotationUnavailableText } from "./rotation-availability";
 import { FoldSettings, ModelPreviewSettings, type FoldPreviewOption } from "./FoldSettings";
+import { GpuWarning, type GpuWarningInfo } from "./GpuWarning";
 import { KeyboardSection } from "./KeyboardSection";
 import { SidebarActionButton } from "./SidebarActionButton";
 import { SidebarRow } from "./SidebarRow";
@@ -157,6 +158,7 @@ export function DeviceOptionsSection({
   client,
   platform = client?.platform,
   stale = NOTHING_STALE,
+  gpuWarning,
   screenShape,
   foldPreview,
   onShutdown,
@@ -168,6 +170,8 @@ export function DeviceOptionsSection({
   platform?: Platform;
   /** The fields of `client` that hold a kept value. Their rows lock. */
   stale?: ReadonlySet<SteadyField>;
+  /** An emulator that renders on the CPU although the host has a usable GPU. */
+  gpuWarning?: GpuWarningInfo | null;
   screenShape?: ScreenShapeOption;
   /** Viewer-local 2D/3D choices for a device that the 3D model can show. */
   foldPreview?: FoldPreviewOption;
@@ -256,6 +260,8 @@ export function DeviceOptionsSection({
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
+      {gpuWarning && <GpuWarning renderer={gpuWarning.renderer} />}
+
       {client?.fold && client.capabilities.fold ? (
         <FoldSettings
           fold={client.fold}

@@ -99,9 +99,12 @@ All four resolve their binaries the same way as `listDevices()` and return
 `{ value, error }`: the listers use `[]`, `createDevice` uses `false`, and
 `bootDevice` uses `null` as the failure value.
 
-One helper tells whether an emulator could render on the host's GPU:
+Two helpers tell whether an emulator could render on the host's GPU:
 
 - `detectBareMetalAppleSilicon()` resolves `true` on an Apple silicon Mac that
   is not a virtual machine (`sysctl` `hw.optional.arm64` or
   `sysctl.proc_translated` is `1`, and `kern.hv_vmm_present` is `0`), read once
   per process. Anything else, and any failure, is `false`.
+- `readEmulatorRenderer(serial)` reads the `GLES:` renderer from
+  `adb shell dumpsys SurfaceFlinger`, bounded to 3 s, and reports whether it is
+  a software renderer (SwiftShader, lavapipe, llvmpipe). A failure gives `null`.

@@ -9,6 +9,7 @@ import { PermissionsSection } from "./PermissionsSection";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { CurrentAppSection } from "./CurrentAppSection";
 import { DeviceOptionsSection } from "./DeviceOptionsSection";
+import { type GpuWarningInfo } from "./GpuWarning";
 import { type FoldPreviewOption } from "./FoldSettings";
 import { EventsSection } from "./EventsSection";
 import { LocationSection } from "./LocationSection";
@@ -25,6 +26,11 @@ export type InspectorSectionsProps = {
   client?: DeviceClient;
   /** Selected device metadata used by viewer-local options. */
   device?: Device;
+  /**
+   * The selected emulator renders on the CPU although the host has a usable
+   * GPU. Shown in Device options; ignored for simulators and physical devices.
+   */
+  gpuWarning?: GpuWarningInfo | null;
   /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
   showScreenShape?: boolean;
   /** Change the viewer-local screen shape preference. */
@@ -107,6 +113,7 @@ function UnavailableSection({ title }: { title: string }) {
 export function InspectorSections({
   client: liveClient,
   device,
+  gpuWarning,
   showScreenShape = true,
   onShowScreenShapeChange,
   screenShapeAvailable = false,
@@ -135,6 +142,8 @@ export function InspectorSections({
     : undefined;
   // Physical devices cannot be deleted from the host.
   const onRemoveDevice = device?.physical ? undefined : onRemove;
+  const emulatorGpuWarning =
+    device?.platform === "android" && !device.physical ? gpuWarning : undefined;
 
   // A section shows for a capability of the device's platform, or one that the device reported.
   const section = (name: CapabilitySection, content: (client: DeviceClient) => ReactNode) => {
@@ -156,6 +165,7 @@ export function InspectorSections({
           client={client}
           platform={platform}
           stale={stale}
+          gpuWarning={emulatorGpuWarning}
           screenShape={screenShape}
           foldPreview={foldPreview}
           onShutdown={onShutdown}
