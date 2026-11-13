@@ -19,6 +19,8 @@ export async function fetchAppDetails(
   udid: string,
   bundleId: string,
 ): Promise<Partial<AppDetails>> {
+  // SpringBoard is the home screen and may not have an ordinary app container.
+  if (bundleId === "com.apple.springboard") return { displayName: "Home screen" };
   const ctn = await runHostAction("app.container", { udid, bundleId });
   if (ctn.exitCode !== 0) {
     return { error: ctn.stderr.trim() || "App not found on simulator" };
