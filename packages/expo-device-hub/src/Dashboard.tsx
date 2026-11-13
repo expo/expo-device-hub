@@ -40,7 +40,7 @@ import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from "./dashboard/dashboardS
 import { useDeviceScreenShape } from "./dashboard/useDeviceScreenShape";
 import { useColorScheme } from "./dashboard/useColorScheme";
 import { useDashboardDevices } from "./dashboard/useDashboardDevices";
-import { useEmulatorGpuWarning } from "./dashboard/useEmulatorGpuWarning";
+import { useEmulatorRendering } from "./dashboard/useEmulatorRendering";
 import {
   FloatingSidebarToggle,
   floatingSidebarToggleVisible,
@@ -219,7 +219,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     client,
     selected,
   );
-  const gpuWarning = useEmulatorGpuWarning(
+  const rendering = useEmulatorRendering(
     selected?.platform === "android" && !selected.physical && selected.booted ? selected.id : null,
     client.status === "streaming",
   );
@@ -248,7 +248,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   const inspector = (
     <InspectorSections
       device={selected}
-      gpuWarning={gpuWarning}
+      rendering={rendering}
       client={client}
       showScreenShape={showScreenShape}
       onShowScreenShapeChange={setShowScreenShape}
@@ -362,6 +362,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           framed={framed}
           showScreenShape={showScreenShape}
           screenShape={screenShape}
+          renderingOnCpu={rendering === "cpu"}
           onClipboardFallback={handleClipboardFallback}
         />
       ) : (

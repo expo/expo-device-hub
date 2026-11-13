@@ -110,6 +110,7 @@
         "@types/react-dom": "~19.2.0",
         "@types/react-test-renderer": "19.1.0",
         "@types/three": "^0.186.0",
+        "happy-dom": "^20.14.5",
         "oxfmt": "^0.56.0",
         "oxlint": "^1.71.0",
         "react-test-renderer": "19.2.3",
