@@ -34,8 +34,11 @@ import { fakeProcessTable } from "./fixtures/boot-admission-fake-host";
 
 const SIM_START = "/vendor/serve-sim/grid/api/start";
 const EMU_START = "/vendor/serve-emu/api/avds/start";
-const simRoute = serveSimStartRoute("/vendor/serve-sim");
-const emuRoute = serveEmuStartRoute("/vendor/serve-emu");
+const PAGE = "https://page.example";
+const OTHER_PAGE = "https://elsewhere.example";
+const allowsPage = (origin: URL): boolean => origin.origin === PAGE;
+const simRoute = serveSimStartRoute("/vendor/serve-sim", allowsPage);
+const emuRoute = serveEmuStartRoute("/vendor/serve-emu", allowsPage);
 
 const X = "11111111-1111-1111-1111-111111111111";
 const Y = "22222222-2222-2222-2222-222222222222";
@@ -92,12 +95,19 @@ function server(answer: () => Response = () => Response.json({ ok: true })) {
   };
 }
 
-function start(path: string, body: string): Request {
+function start(path: string, body: string, origin?: string): Request {
   return new Request(`http://localhost${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(origin ? { origin } : {}) },
     body,
   });
+}
+
+function cors(response: Response | null) {
+  return {
+    allowOrigin: response?.headers.get("access-control-allow-origin") ?? null,
+    vary: response?.headers.get("vary") ?? null,
+  };
 }
 
 function records(): Record<string, unknown>[] {
@@ -260,6 +270,39 @@ describe("with a host policy of one", () => {
     expect(response?.status).toBe(413);
     expect(received).toEqual([]);
   });
+
+  // A page the server lets read its answers reads the Hub's refusal too, not a network error.
+  test.each([
+    ["serve-sim", simRoute, SIM_START, { udid: Y }, 500],
+    ["serve-emu", emuRoute, EMU_START, { avd: "Pixel_8" }, 400],
+  ] as const)(
+    "a %s capacity refusal carries the server's CORS headers",
+    async (_, route, path, body, status) => {
+      const full = host({ simulators: [{ udid: X, name: "iPhone", state: "Booted" }] });
+
+      const allowed = await gate(route, start(path, JSON.stringify(body), PAGE), full);
+      const other = await gate(route, start(path, JSON.stringify(body), OTHER_PAGE), full);
+
+      expect(allowed.response?.status).toBe(status);
+      expect(cors(allowed.response)).toEqual({ allowOrigin: PAGE, vary: "Origin" });
+      expect(other.response?.status).toBe(status);
+      expect(cors(other.response)).toEqual({ allowOrigin: null, vary: "Origin" });
+    },
+  );
+
+  test.each([
+    ["serve-sim", simRoute, SIM_START],
+    ["serve-emu", emuRoute, EMU_START],
+  ] as const)("a %s 413 carries the server's CORS headers", async (_, route, path) => {
+    const oversized = JSON.stringify({ pad: "x".repeat(70_000) });
+
+    const allowed = await gate(route, start(path, oversized, PAGE));
+    const other = await gate(route, start(path, oversized, OTHER_PAGE));
+
+    expect(allowed.response?.status).toBe(413);
+    expect(cors(allowed.response)).toEqual({ allowOrigin: PAGE, vary: "Origin" });
+    expect(cors(other.response)).toEqual({ allowOrigin: null, vary: "Origin" });
+  });
 });
 
 test("the Hub's serve-sim and serve-emu handlers gate their start routes", async () => {
@@ -273,6 +316,6 @@ test("the Hub's serve-sim and serve-emu handlers gate their start routes", async
     new Response(child.stderr).text(),
   ]);
   expect(`${stdout}\n${stderr}`).toContain(" 0 fail");
-  expect(`${stdout}\n${stderr}`).toContain(" 4 pass");
+  expect(`${stdout}\n${stderr}`).toContain(" 5 pass");
   expect(exitCode).toBe(0);
 });

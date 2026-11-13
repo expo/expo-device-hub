@@ -75,8 +75,8 @@ const REMOVE_DEVICE_ROUTE = "/api/devices/remove";
 const BOOT_DEVICE_ROUTE = "/api/devices/boot";
 const CREATE_DEVICE_ROUTE = "/api/devices/create";
 const NEW_DEVICE_OPTIONS_ROUTE = "/api/new-device-options";
-const SIM_START_ROUTE = serveSimStartRoute(SIM_PREFIX);
-const EMU_START_ROUTE = serveEmuStartRoute(EMU_PREFIX);
+const SIM_START_ROUTE = serveSimStartRoute(SIM_PREFIX, simAllowsOrigin);
+const EMU_START_ROUTE = serveEmuStartRoute(EMU_PREFIX, emuAllowsOrigin);
 const DEVICES_WEBSOCKET_ROUTE = "/api/devices/ws";
 const ARGENT_INTERACTIONS_WEBSOCKET_ROUTE = "/api/argent-interactions/ws";
 

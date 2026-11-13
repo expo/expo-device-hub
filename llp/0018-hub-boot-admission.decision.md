@@ -47,6 +47,7 @@ The last two routes belong to the vendored servers. serve-sim's `grid/api/start`
 - Without a policy file, the request is forwarded untouched and its body is not read.
 - With one, the Hub reads the body (at most 64 KiB; a larger body gets a 413), admits the device it names, and forwards a request rebuilt from the same bytes. A body without a UDID or AVD name is forwarded, and the server rejects it.
 - The Hub answers a refusal itself, in the server's failure shape `{ok: false, error}` and with the status the server uses for a failed start: 500 for serve-sim, 400 for serve-emu. The server never sees the request.
+- A refusal and a 413 carry the server's CORS headers: `Access-Control-Allow-Origin` for a page that server's `--cors-origin` rule allows, and `Vary: Origin` always. An allowed cross-origin page reads the refusal instead of a network error [observed: `admitVendorStart` in `src/server/vendor-boot-gate.ts`; tests "a serve-sim capacity refusal carries the server's CORS headers" and "a serve-emu 413 carries the server's CORS headers" in `src/server/__tests__/boot-admission-routes.test.ts`].
 - A device that already counts, such as a booted simulator T3 attaches to, passes as a [reopen](#reopen).
 - After the server answers, the attempt is finished. For serve-emu, the `serial` from a successful answer is recorded first.
 

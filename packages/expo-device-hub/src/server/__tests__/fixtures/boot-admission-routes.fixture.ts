@@ -80,6 +80,9 @@ mock.module("../../boot-admission", () => ({
 }));
 
 process.env.EXPO_DEVICE_HUB_BASE_PATH = "";
+const PAGE = "https://page.example";
+process.env.EXPO_DEVICE_HUB_SERVE_SIM_OPTIONS = JSON.stringify({ corsOrigins: [PAGE] });
+process.env.EXPO_DEVICE_HUB_SERVE_EMU_OPTIONS = JSON.stringify({ allowedOrigins: [PAGE] });
 const { MOUNT_PATH } = await import("../../mount");
 const server = await import("../../index");
 const hub = async (request: Request): Promise<Response> => (await server.default(request))!;
@@ -88,8 +91,13 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function post(path: string, body: unknown): Request {
-  return new Request(`http://localhost${path}`, { method: "POST", body: JSON.stringify(body) });
+function post(path: string, body: unknown, origin?: string): Request {
+  const headers: Record<string, string> = origin ? { origin } : {};
+  return new Request(`http://localhost${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
 }
 
 test("without a policy both start routes reach their servers", async () => {
@@ -133,4 +141,17 @@ test("at capacity a start of a counted device reaches its server", async () => {
     `${MOUNT_PATH}/vendor/serve-sim/grid/api/start`,
     "/api/avds/start",
   ]);
+});
+
+test("at capacity each refusal names the pages its server's --cors-origin allows", async () => {
+  const sim = await hub(post("/vendor/serve-sim/grid/api/start", { udid: Y }, PAGE));
+  const emu = await hub(post("/vendor/serve-emu/api/avds/start", { avd: "Pixel_8" }, PAGE));
+  const other = await hub(
+    post("/vendor/serve-emu/api/avds/start", { avd: "Pixel_8" }, "https://elsewhere.example"),
+  );
+
+  expect([sim.status, sim.headers.get("access-control-allow-origin")]).toEqual([500, PAGE]);
+  expect([emu.status, emu.headers.get("access-control-allow-origin")]).toEqual([400, PAGE]);
+  expect([other.status, other.headers.get("access-control-allow-origin")]).toEqual([400, null]);
+  expect(other.headers.get("vary")).toBe("Origin");
 });
