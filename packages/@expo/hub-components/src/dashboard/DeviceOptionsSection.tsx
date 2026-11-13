@@ -1,13 +1,12 @@
 import { useEffect, useId, useState } from "react";
 
 import { type DeviceClient, type DeviceOrientation, type DeviceSettingKey } from "@expo/hub-client";
-import { Select, type SelectOption } from "../primitives";
+import { Select, text, textSize, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { type Platform } from "./data";
 import { recordingLockText } from "./recording-lock";
 import { rotationUnavailableText } from "./rotation-availability";
 import { FoldSettings, ModelPreviewSettings, type FoldPreviewOption } from "./FoldSettings";
-import { GpuWarning, type GpuWarningInfo } from "./GpuWarning";
 import { KeyboardSection } from "./KeyboardSection";
 import { SidebarActionButton } from "./SidebarActionButton";
 import { SidebarRow } from "./SidebarRow";
@@ -136,6 +135,9 @@ export const NO_HARDWARE_KEYBOARD_DESCRIPTION =
 export const ONSCREEN_KEYBOARD_DESCRIPTION =
   "Keeps the on-screen keyboard visible while a hardware keyboard is attached. A device with no hardware keyboard always shows it.";
 
+/** What a running emulator renders with: the host's CPU (a software renderer) or its GPU. */
+export type EmulatorRendering = "cpu" | "gpu";
+
 /** The viewer-local screen shape option: the device shape, or the whole video rectangle. */
 export type ScreenShapeOption = {
   /** Whether the selected device has a known shape. Without one, the option is off and disabled. */
@@ -158,7 +160,7 @@ export function DeviceOptionsSection({
   client,
   platform = client?.platform,
   stale = NOTHING_STALE,
-  gpuWarning,
+  rendering,
   screenShape,
   foldPreview,
   onShutdown,
@@ -170,8 +172,11 @@ export function DeviceOptionsSection({
   platform?: Platform;
   /** The fields of `client` that hold a kept value. Their rows lock. */
   stale?: ReadonlySet<SteadyField>;
-  /** An emulator that renders on the CPU although the host has a usable GPU. */
-  gpuWarning?: GpuWarningInfo | null;
+  /**
+   * What the emulator renders with, read only on a host whose GPU an emulator
+   * can use. Omit or `null` to hide the row.
+   */
+  rendering?: EmulatorRendering | null;
   screenShape?: ScreenShapeOption;
   /** Viewer-local 2D/3D choices for a device that the 3D model can show. */
   foldPreview?: FoldPreviewOption;
@@ -260,7 +265,13 @@ export function DeviceOptionsSection({
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
-      {gpuWarning && <GpuWarning renderer={gpuWarning.renderer} />}
+      {rendering && (
+        <SidebarRow label="Rendering">
+          <span style={{ ...textSize.sm, flexShrink: 0, color: text.secondary }}>
+            {rendering === "cpu" ? "CPU" : "GPU"}
+          </span>
+        </SidebarRow>
+      )}
 
       {client?.fold && client.capabilities.fold ? (
         <FoldSettings

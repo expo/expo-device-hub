@@ -61,6 +61,7 @@ export function StreamPanel({
   showScreenShape = true,
   deviceModelAssets,
   screenShape,
+  renderingOnCpu = false,
   onClipboardFallback,
 }: {
   device: Device;
@@ -86,6 +87,8 @@ export function StreamPanel({
   deviceModelAssets?: DeviceModelAssets;
   /** The device's screen shape from `useScreenShape`: the frame's proportions before the stream connects. */
   screenShape?: ScreenShape | null;
+  /** The emulator renders on the CPU although the host has a usable GPU; the live status warns. */
+  renderingOnCpu?: boolean;
   /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
   onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
@@ -352,6 +355,8 @@ export function StreamPanel({
                 // viewport container, so long names keep the panel's width.
                 maxWidth: "100cqw",
                 transform: "translateX(-50%)",
+                // The status popover opens over the screen, above the frame's own layers.
+                zIndex: 3,
               }}
             >
               <DeviceTitle
@@ -359,6 +364,7 @@ export function StreamPanel({
                 device={device}
                 status={screenLoading ? "connecting" : client.status}
                 recording={client.screenRecording}
+                renderingOnCpu={renderingOnCpu}
               />
             </div>
           )}
