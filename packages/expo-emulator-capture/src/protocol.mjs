@@ -1,5 +1,5 @@
 // GPC1 capture socket protocol (consumer side).
-// @ref LLP 0017#socket-protocol — record and command meanings
+// @ref LLP 0020#socket-protocol — record and command meanings
 export const HEADER_BYTES = 32;
 export const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
 export const FLAGS = Object.freeze({

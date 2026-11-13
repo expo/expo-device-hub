@@ -1,4 +1,4 @@
-# LLP 0017: Emulator capture on macOS (Apple silicon)
+# LLP 0020: Emulator capture on macOS (Apple silicon)
 
 **Type:** Explainer
 **Status:** Draft

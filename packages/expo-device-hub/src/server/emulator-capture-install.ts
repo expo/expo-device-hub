@@ -40,7 +40,7 @@ export function defaultToolsDirectory(): string {
   return join(homedir(), ".cache", "expo-device-hub");
 }
 
-// @ref LLP 0017#integration — the Hub installs a pinned agent package into its own cache
+// @ref LLP 0020#integration — the Hub installs a pinned agent package into its own cache
 /**
  * Installs the pinned `expo-emulator-capture` with npm into a folder of its own and returns the
  * agent library path. A finished install is reused. Like T3 Code's device tools, it installs

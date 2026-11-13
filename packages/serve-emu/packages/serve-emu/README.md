@@ -232,7 +232,7 @@ offers it as a third stream mode, `emulator-capture`, with scrcpy kept for input
   diagnostics. Folding and rotation change the stream size, and clients resync from a keyframe.
 
 The standalone server and CLI do not offer the mode. See
-[LLP 0017](https://github.com/expo/expo-device-hub/blob/main/llp/0017-emulator-capture-macos.explainer.md).
+[LLP 0020](https://github.com/expo/expo-device-hub/blob/main/llp/0020-emulator-capture-macos.explainer.md).
 
 ## Browser UI
 

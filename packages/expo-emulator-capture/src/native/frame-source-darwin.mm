@@ -263,7 +263,7 @@ bool IOSurfaceFrameSource::blit(void* colorBufferGl, const BorrowedImageInfoGl& 
   glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
   glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-  // @ref LLP 0017#synchronization — flush here, wait on the encoder thread
+  // @ref LLP 0020#synchronization — flush here, wait on the encoder thread
   // Submit without waiting: glFinish here held the guest's render thread for
   // about 1.2 ms per frame instead of 0.1 ms. The encoder thread waits for the
   // copy with IOSurfaceLock (waitForGpuCopy) before VideoToolbox reads it.

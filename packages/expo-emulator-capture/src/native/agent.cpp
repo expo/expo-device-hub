@@ -238,7 +238,7 @@ void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
   posts_++;
   if (!active_.load(std::memory_order_relaxed)) return;
   if (!needLockAndBind) {
-    // @ref LLP 0017#hook-point — the caller already holds the non-recursive FrameBuffer lock
+    // @ref LLP 0020#hook-point — the caller already holds the non-recursive FrameBuffer lock
     skippedLocked_++;
     return;
   }
@@ -490,7 +490,7 @@ bool Agent::listen(const std::string& path, std::string& error) {
   snprintf(address.sun_path, sizeof(address.sun_path), "%s", path.c_str());
   std::string directory = path.substr(0, path.rfind('/'));
   if (!directory.empty()) {
-    // @ref LLP 0017#loading — the socket directory must belong to this user alone
+    // @ref LLP 0020#loading — the socket directory must belong to this user alone
     // On a shared /tmp, another user could otherwise create the directory first and replace
     // the socket.
     mkdir(directory.c_str(), 0700);
@@ -719,7 +719,7 @@ void Agent::flushOutput() {
   }
 }
 
-// @ref LLP 0017#socket-protocol — a replaced consumer learns why it closes
+// @ref LLP 0020#socket-protocol — a replaced consumer learns why it closes
 // Tells the current consumer that a new one replaces it, so that it does not take the agent
 // back at once: two consumers would otherwise replace each other in a loop. Best effort on the
 // non-blocking socket: it finishes a partly sent record first, and a consumer that stopped
@@ -839,7 +839,7 @@ void runAgent(std::string socketPath) {
 }  // namespace
 }  // namespace expo_capture
 
-// @ref LLP 0017#loading — preloaded at launch; only QEMU runs the agent, and its children do not inherit it
+// @ref LLP 0020#loading — preloaded at launch; only QEMU runs the agent, and its children do not inherit it
 __attribute__((constructor)) static void expoEmulatorCaptureInit() {
   const char* name = expo_capture::programName();
   if (!name || strncmp(name, "qemu-system", 11) != 0) return;
