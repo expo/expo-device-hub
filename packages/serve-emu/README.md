@@ -606,7 +606,11 @@ curl -X DELETE "$BASE/api/session"
 ```
 
 Session pages are returned in chronological order with an exclusive
-`nextBefore` cursor and `hasMore` flag. The bounded full history is serialized
+`nextBefore` cursor and `hasMore` flag. A page also carries the replay state
+(`replaying`, `replayStartedAt`, and the other snapshot fields) at the top
+level, and again in `session`. The embedded middleware returns the whole
+snapshot when a request has neither `limit` nor `before`, and a page when it
+has either one. The bounded full history is serialized
 only by the explicit export endpoint (and by the UI's Copy action), rather than
 on every poll. The UI requests only its six visible recent events and pauses
 polling while the Session panel or browser tab is hidden. `/health` exposes the

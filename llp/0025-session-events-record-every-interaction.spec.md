@@ -91,8 +91,20 @@ These interactions add no entry:
 | `DELETE /api/session`, `POST /api/session/replay`, `POST /api/session/replay/stop`                                             | They act on the recording itself. Replay state shows a replay.                            |
 | `GET` routes and the logcat and metrics streams                                                                                | They are reads.                                                                           |
 
+## Paging
+
+<a id="paging"></a>`GET /api/session` returns one of two bodies [observed: `src/middleware.ts`, `src/server.ts`]:
+
+- **Snapshot**: `events` (all retained events) and the replay state at the top level: `recording`, `replaying`, `replayStatus`, `replayStartedAt`, `replayCompletedAt`, `replayCancelledAt`, `lastError`.
+- **Page**: the newest `limit` events before the exclusive `before` cursor, the same top-level replay state, `session` (the summary, which repeats the replay state), `nextBefore`, and `hasMore`. `limit` is 50 by default and at most 200 [observed: `src/session-api.ts`].
+
+The middleware, which the Hub mounts at `/vendor/serve-emu`, returns the snapshot when the request has neither `limit` nor `before`. Another parameter, such as `device`, does not ask for a page. The Hub client polls without them and reads the whole snapshot, so its response stays the same [observed: `useAndroidDevice.ts` in `packages/@expo/hub-client/src`]. With `limit` or `before`, the middleware returns a page. The standalone server always returns a page, as before.
+
+A page carries the replay state at both levels, so a reader of the snapshot and a reader of the page both work. eas-cli reads `session` when it is present and the top level when it is not, and polls `?limit=1` every 5 seconds [observed: `readExpoDeviceHubInputLogAsync` and `POLL_INTERVAL_MS` in expo/eas-cli#4890]. Before this change, the middleware ignored `limit`, so that response held the whole recording, up to 1 MiB, on every poll [observed: `src/middleware.ts` on `main`, 2026-11-13]. An invalid `limit` or `before` now answers `400` on the middleware.
+
 ## Open questions
 
 - Should replay apply rotation, fold, and device settings? Gestures recorded in landscape are replayed in the current orientation [inferred].
 - serve-sim's event log was not checked against [the rule](#rule) in this change.
 - A running route moves the location without input, so it does not count as activity after its start entry.
+- The Hub client could poll pages instead of the whole snapshot. Its clear watermark reads the whole snapshot today.

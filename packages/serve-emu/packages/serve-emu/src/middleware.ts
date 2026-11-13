@@ -102,6 +102,7 @@ import {
 import { createWebRtcPublisher, type WebRtcPublisher } from "./webrtc-publisher.ts";
 import { HttpBodyError, readBodyLimited, readJsonLimited } from "./request-body.ts";
 import { createMiddlewareUploader } from "./middleware-upload.ts";
+import { isSessionPageQuery, parseSessionPageQuery } from "./session-api.ts";
 import {
   appSessionAction,
   sessionRecordMode,
@@ -1844,7 +1845,17 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     }
 
     if (url.pathname === "/api/session") {
-      if (req.method === "GET") return Response.json(sessionRecorder.snapshot());
+      if (req.method === "GET") {
+        // @ref LLP 0025#paging — without `limit` or `before`, keep the full snapshot the Hub reads
+        if (!isSessionPageQuery(url.searchParams)) {
+          return Response.json(sessionRecorder.snapshot());
+        }
+        try {
+          return Response.json(sessionRecorder.page(parseSessionPageQuery(url.searchParams)));
+        } catch (err) {
+          return Response.json({ ok: false, error: errMsg(err) }, { status: 400 });
+        }
+      }
       if (req.method === "DELETE")
         return Response.json({ ok: true, session: sessionRecorder.clear() });
       return new Response("method not allowed", { status: 405 });

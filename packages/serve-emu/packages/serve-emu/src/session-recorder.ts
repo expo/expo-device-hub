@@ -114,7 +114,15 @@ export type SessionSummary = {
   lastError: string | null;
 };
 
-export type SessionPage = {
+/** A snapshot's replay state, without its events. */
+export type SessionState = Omit<SessionSnapshot, "events">;
+
+// @ref LLP 0025#paging — a page also carries the snapshot's top-level replay state
+/**
+ * The newest events before a cursor. A page carries the replay state at the top level, as a
+ * snapshot does, and again in `session`, so a reader of either shape can read it.
+ */
+export type SessionPage = SessionState & {
   session: SessionSummary;
   events: RecordedEvent[];
   nextBefore: number | null;
@@ -358,8 +366,11 @@ export class SessionRecorder {
   }
 
   snapshot(): SessionSnapshot {
+    return { events: this.#events.map(cloneEvent), ...this.#state() };
+  }
+
+  #state(): SessionState {
     return {
-      events: this.#events.map(cloneEvent),
       recording: this.#recording,
       replaying: this.#replaying,
       replayStatus: this.#replayStatus,
@@ -371,8 +382,9 @@ export class SessionRecorder {
   }
 
   summary(): SessionSummary {
-    const snapshot = this.snapshot();
-    const { events } = snapshot;
+    // Read the retained events in place: a summary must not copy the whole recording.
+    const events = this.#events;
+    const snapshot = this.#state();
     const oldest = events[0] ?? null;
     const newest = events.at(-1) ?? null;
     return {
@@ -404,6 +416,7 @@ export class SessionRecorder {
     const events = eligible.slice(-limit).map(cloneEvent);
     const hasMore = eligible.length > events.length;
     return {
+      ...this.#state(),
       session: this.summary(),
       events,
       nextBefore: hasMore ? (events[0]?.id ?? null) : null,

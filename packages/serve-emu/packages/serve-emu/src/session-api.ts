@@ -12,6 +12,14 @@ function positiveSafeInteger(value: string, name: string): number {
   return parsed;
 }
 
+/**
+ * Whether a `GET /api/session` asks for a page. Only `limit` and `before` do; another
+ * parameter, such as the router's `device`, does not.
+ */
+export function isSessionPageQuery(searchParams: URLSearchParams): boolean {
+  return searchParams.has("limit") || searchParams.has("before");
+}
+
 export function parseSessionPageQuery(searchParams: URLSearchParams): {
   limit: number;
   before?: number;
