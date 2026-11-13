@@ -8,13 +8,13 @@ import { type ClipboardRequest } from "./ClipboardToast";
 import { PermissionsSection } from "./PermissionsSection";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { CurrentAppSection } from "./CurrentAppSection";
-import { DeviceOptionsSection, type EmulatorRendering } from "./DeviceOptionsSection";
+import { DeviceOptionsSection } from "./DeviceOptionsSection";
 import { type FoldPreviewOption } from "./FoldSettings";
 import { EventsSection } from "./EventsSection";
 import { LocationSection } from "./LocationSection";
 import { LogsSection } from "./LogsSection";
 import { SectionNote } from "./SectionNote";
-import { StreamOptionsSection } from "./StreamOptionsSection";
+import { type DeviceRendering, StreamOptionsSection } from "./StreamOptionsSection";
 import { type Device, type Platform, type StreamModeAvailability } from "./data";
 import { type SteadyField, useSteadyClient } from "./useSteadyClient";
 
@@ -26,10 +26,10 @@ export type InspectorSectionsProps = {
   /** Selected device metadata used by viewer-local options. */
   device?: Device;
   /**
-   * What the selected emulator renders with, on a host whose GPU an emulator
-   * can use. Shown in Device options; ignored for simulators and physical devices.
+   * What the selected Android device renders with, shown in Stream options;
+   * `unknown` until the Hub answers. Ignored for iOS.
    */
-  rendering?: EmulatorRendering | null;
+  rendering?: DeviceRendering;
   /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
   showScreenShape?: boolean;
   /** Change the viewer-local screen shape preference. */
@@ -141,8 +141,7 @@ export function InspectorSections({
     : undefined;
   // Physical devices cannot be deleted from the host.
   const onRemoveDevice = device?.physical ? undefined : onRemove;
-  const emulatorRendering =
-    device?.platform === "android" && !device.physical ? rendering : undefined;
+  const androidRendering = device?.platform === "android" ? (rendering ?? "unknown") : undefined;
 
   // A section shows for a capability of the device's platform, or one that the device reported.
   const section = (name: CapabilitySection, content: (client: DeviceClient) => ReactNode) => {
@@ -164,7 +163,6 @@ export function InspectorSections({
           client={client}
           platform={platform}
           stale={stale}
-          rendering={emulatorRendering}
           screenShape={screenShape}
           foldPreview={foldPreview}
           onShutdown={onShutdown}
@@ -180,6 +178,7 @@ export function InspectorSections({
           streamModeAvailability={streamModeAvailability}
           onStreamModeChange={onStreamModeChange}
           onHttpCodecChange={onHttpCodecChange}
+          rendering={androidRendering}
         />
       )}
       {section("camera", (client) => (
