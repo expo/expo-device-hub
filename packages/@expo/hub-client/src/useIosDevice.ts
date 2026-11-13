@@ -103,7 +103,13 @@ import {
   mergeIosEventLogPayload,
 } from "./ios-events";
 import { hostUiRequest, runHostAction } from "./exec-ws";
-import { fetchIosAppIcon, getIosAppDetails } from "./ios-app-details";
+import {
+  applyIosAppState,
+  fetchIosAppIcon,
+  getIosAppDetails,
+  type IosAppStateEvent,
+  mergeIosAppDetails,
+} from "./ios-app-details";
 import { clearIosLocation, setIosLocation } from "./ios-location";
 import { fetchScreenshot } from "./screenshot";
 import { iosMessageForKeyboardInput } from "./keyboard";
@@ -2928,22 +2934,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
     source.onmessage = (event) => {
       try {
-        const data = JSON.parse(String(event.data)) as {
-          bundleId?: string;
-          pid?: number;
-          isReactNative?: boolean;
-        };
-        if (data.bundleId) {
-          // Merge repeat events for the same app so a relaunch (new pid)
-          // doesn't wipe the bundle details filled in below.
-          setForegroundApp((prev) =>
-            prev && prev.id === data.bundleId
-              ? prev.pid === data.pid && prev.isReactNative === data.isReactNative
-                ? prev
-                : { ...prev, pid: data.pid, isReactNative: data.isReactNative }
-              : { id: data.bundleId!, pid: data.pid, isReactNative: data.isReactNative },
-          );
-        }
+        const data = JSON.parse(String(event.data)) as IosAppStateEvent;
+        if (data.bundleId) setForegroundApp((prev) => applyIosAppState(prev, data));
       } catch {}
     };
     return () => source?.close();
@@ -2953,7 +2945,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   //    app bundle on the host over exec-ws whenever the foreground bundle id
   //    changes. Cached per udid:bundleId, so revisits apply instantly. A server
   //    with the icon route serves the icon over plain HTTP instead, fetched
-  //    again on every foreground change. ──
+  //    again on every foreground change. A current serve-sim already sends the
+  //    name with the /appstate event; a read that finds no name keeps it. ──
   const foregroundAppId = foregroundApp?.id ?? null;
   const appIconUrl = config?.appIconUrl ?? null;
   useEffect(() => {
@@ -2963,7 +2956,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       .then((details) => {
         if (cancelled || !details) return;
         setForegroundApp((prev) =>
-          prev && prev.id === foregroundAppId ? { ...prev, ...details } : prev,
+          prev && prev.id === foregroundAppId ? mergeIosAppDetails(prev, details) : prev,
         );
       })
       .catch(() => {

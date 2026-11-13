@@ -51,6 +51,7 @@ import {
   type MetricsSamplerCache,
 } from "./metrics-sampler";
 import { handleAppIconRequest } from "./app-icon";
+import { foregroundAppEvents } from "./foreground-app-details";
 import {
   foregroundTracker,
   type ForegroundApp,
@@ -250,21 +251,6 @@ function recordScreenshotEvent(udid: string, outcome: ScreenshotOutcome): void {
   }
 }
 
-// Known bundle IDs that are always React Native shells (used as a fallback
-// before the app-container path resolves, since simctl can lag after launch).
-const RN_BUNDLE_IDS = new Set<string>([
-  "host.exp.Exponent", // Expo Go (App Store)
-  "dev.expo.Exponent", // Expo Go dev builds
-]);
-
-const RN_MARKERS = [
-  "Frameworks/React.framework",
-  "Frameworks/hermes.framework",
-  "Frameworks/Hermes.framework",
-  "Frameworks/ExpoModulesCore.framework",
-  "main.jsbundle",
-];
-
 function isSimulatorUdid(value: string): boolean {
   return /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(value);
 }
@@ -293,26 +279,6 @@ function classifyStaleState(
     return state.pid === selfPid ? "recycle-self" : "recycle-helper";
   }
   return "keep";
-}
-
-function detectReactNative(udid: string, bundleId: string): Promise<boolean> {
-  if (RN_BUNDLE_IDS.has(bundleId)) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    execFile(
-      "xcrun",
-      ["simctl", "get_app_container", udid, bundleId, "app"],
-      { timeout: 2000 },
-      (err, stdout) => {
-        if (err) return resolve(false);
-        const appPath = stdout.trim();
-        if (!appPath) return resolve(false);
-        for (const marker of RN_MARKERS) {
-          if (existsSync(join(appPath, marker))) return resolve(true);
-        }
-        resolve(false);
-      },
-    );
-  });
 }
 
 type InstalledApp = {
@@ -3367,10 +3333,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
-    // SSE: foreground-app change stream. Emits `{bundleId, pid}` events
+    // SSE: foreground-app change stream. Emits `{bundleId, pid, isReactNative, label}` events
     // parsed from SpringBoard's "Setting process visibility to: Foreground"
     // log line. Filtering is done here (not in the browser) so the SSE stream
-    // stays narrow and the client can listen without rate-limit concerns.
+    // stays narrow and the client can listen without rate-limit concerns. `label` is read here,
+    // from the bundle path simctl reports: a client-sent path (`app.infoPlist`) must pass
+    // ConfinedPath, which refuses the runtime root on some hosts.
     if (url === base + "/appstate") {
       const states = await readServeSimStates(policy?.device);
       // The client may have left during that await; its close event has already fired.
@@ -3401,16 +3369,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         if (res.writableEnded || (app.bundleId === lastApp?.bundleId && app.pid === lastApp.pid))
           return;
         lastApp = app;
-        // detectReactNative is awaited, so a later switch can resolve first; only write if no newer
-        // emit has started, otherwise a slow lookup could overwrite the client with a stale app.
+        // The bundle lookup is awaited, so a later switch can resolve first; only write while no
+        // newer emit has started, otherwise a slow lookup could overwrite the client with a stale app.
         const generationAtStart = ++generation;
-        const isReactNative = await detectReactNative(udid, app.bundleId);
-        if (!res.writableEnded && generationAtStart === generation) {
-          res.write(
-            "data: " +
-              JSON.stringify({ bundleId: app.bundleId, pid: app.pid, isReactNative }) +
-              "\n\n",
-          );
+        for await (const event of foregroundAppEvents(udid, app)) {
+          if (res.writableEnded || generationAtStart !== generation) return;
+          res.write("data: " + JSON.stringify(event) + "\n\n");
         }
       };
       const subscription = foregroundTracker.subscribe(udid, (app) => void emit(app));
