@@ -4,6 +4,7 @@ import {
   applyDefaultCapabilities,
   CapabilityRollbackError,
   setCapabilityEnabled,
+  launchApp,
 } from "../launch-manager";
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -28,7 +29,7 @@ import {
 import { installShims, useTempStateDir } from "./helpers";
 import { timeStartup } from "../startup-timing";
 import { withLaunchStateLock } from "../launch-state-lock";
-import { readLaunchState } from "../launch-state";
+import { readLaunchState, writeLaunchState } from "../launch-state";
 
 const UDID = "startup-capabilities-test";
 let state: ReturnType<typeof useTempStateDir>;
@@ -58,6 +59,10 @@ if (fs.existsSync(${JSON.stringify(shutdownPath)})) {
   process.exit(1);
 }
 const env = JSON.parse(fs.readFileSync(path, 'utf8'));
+if (fs.existsSync(failure + '.observe')) {
+  const config = env.SERVE_SIM_CAPABILITIES_CONFIG;
+  fs.appendFileSync(failure + '.observed', JSON.stringify(config && fs.existsSync(config) ? fs.readFileSync(config, 'utf8') : null) + '\\n');
+}
 fs.appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify(process.argv.slice(2)) + '\\n');
 const [,,,, command, name, value] = process.argv.slice(2);
 if (command === 'getenv' && name === 'SERVE_SIM_CAPABILITIES_CONFIG' && fs.existsSync(failure + '.foreign')) {
@@ -127,7 +132,7 @@ test("initial defaults publish one owned session and retain a fresh foreign inse
       "clipboard",
     ]);
     expect(readLaunchState(UDID)?.sessionPids).toEqual([process.pid]);
-    expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPid).toBe(process.pid);
+    expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPids).toEqual([process.pid]);
     expect(env().DYLD_INSERT_LIBRARIES?.split(":")).toEqual([
       "/other.dylib",
       "/late.dylib",
@@ -198,7 +203,7 @@ test("initial defaults release only their own ownership", async () => {
   );
   await applyDefaultCapabilities(UDID, null, {}, { armSession: true });
   releaseSessionSync(UDID, process.pid, () => {});
-  expect(readLaunchState(UDID)?.capabilities.foreign?.ownerPid).toBeNull();
+  expect(readLaunchState(UDID)?.capabilities.foreign?.ownerPids).toEqual([]);
   expect(env().DYLD_INSERT_LIBRARIES).toContain(capabilityLoaderPath());
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain("/foreign.dylib");
 });
@@ -380,6 +385,97 @@ test("failed publication restores actual config and launchd values", async () =>
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(previous);
   expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
   expect(managedStartupDylibs(UDID)).toEqual([]);
+});
+
+test("failed last-capability removal restores the launch environment before retry", async () => {
+  await enable();
+  const previousEnv = env();
+  const previousState = readLaunchState(UDID);
+  const previousConfig = readFileSync(capabilityConfigPath(UDID), "utf8");
+  writeFileSync(failurePath, "");
+  await expect(disableCapability(UDID, null, "capture", { relaunch: false })).rejects.toThrow();
+  expect(env()).toEqual(previousEnv);
+  expect(readLaunchState(UDID)).toEqual(previousState);
+  expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(previousConfig);
+  expect(managedStartupDylibs(UDID)).toEqual([dylib]);
+
+  await disableCapability(UDID, null, "capture", { relaunch: false });
+  expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
+  expect(readLaunchState(UDID)).toBeNull();
+});
+
+test.each([false, true])(
+  "explicit disable respects idle session liveness (alive: %s)",
+  async (alive) => {
+    await rearmCapabilityLoader(UDID);
+    writeLaunchState(UDID, {
+      bundleId: "com.example.app",
+      launchArgs: ["--demo"],
+      capabilities: {},
+      sessionPids: [alive ? process.pid : 2_147_483_647],
+    });
+    expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe("");
+    await disableCapability(UDID, null, "clipboard", { relaunch: false });
+    expect(env().DYLD_INSERT_LIBRARIES).toBe(
+      alive ? `/other.dylib:${capabilityLoaderPath()}` : "/other.dylib",
+    );
+    expect(existsSync(capabilityConfigPath(UDID))).toBe(alive);
+    expect(readLaunchState(UDID)).toMatchObject({
+      bundleId: "com.example.app",
+      launchArgs: ["--demo"],
+      capabilities: {},
+    });
+    expect(readLaunchState(UDID)?.sessionPids).toEqual(alive ? [process.pid] : undefined);
+  },
+);
+
+test.each([false, true])(
+  "disabling a capability preserves remembered app details (enabled: %s)",
+  async (enabled) => {
+    if (enabled) await enable();
+    await launchApp(UDID, { bundleId: "com.example.app", launchArgs: ["--demo"] });
+    writeFileSync(callsPath, "");
+    await disableCapability(UDID, null, "capture", { relaunch: false });
+    expect(readLaunchState(UDID)).toMatchObject({
+      bundleId: "com.example.app",
+      launchArgs: ["--demo"],
+      capabilities: {},
+    });
+    expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
+    if (!enabled) expect(readFileSync(callsPath, "utf8")).toBe("");
+    else {
+      await enableCapabilities(UDID, null, [{ name: "capture", scope: "userApps", dylib }]);
+      const calls: string[][] = readFileSync(callsPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(calls).toContainEqual(["simctl", "launch", UDID, "com.example.app", "--demo"]);
+    }
+  },
+);
+
+test("joining an unchanged startup capability keeps its config published throughout", async () => {
+  const capability = {
+    name: "shared",
+    scope: "userApps" as const,
+    loadPhase: "startupAndDeferred" as const,
+    dylib,
+  };
+  await enableCapabilities(UDID, null, [capability], { relaunch: false, ownerPid: process.ppid });
+  const config = readFileSync(capabilityConfigPath(UDID), "utf8");
+  writeFileSync(`${failurePath}.observe`, "");
+  await enableCapabilities(UDID, null, [capability], { relaunch: false, ownerPid: process.pid });
+  const observed: string[] = readFileSync(`${failurePath}.observed`, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(observed.length).toBeGreaterThan(0);
+  expect(observed.every((value) => value === config)).toBe(true);
+  expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(config);
+  expect(readLaunchState(UDID)?.capabilities.shared?.ownerPids).toEqual([
+    process.ppid,
+    process.pid,
+  ]);
 });
 
 test("a failed publication never shows running apps its deferred load", async () => {
@@ -583,7 +679,7 @@ test("a failed capability restores the owner it replaced", async () => {
       },
     ),
   ).rejects.toThrow("proxy exited");
-  expect(readLaunchState(UDID)?.capabilities.shared?.ownerPid).toBe(process.ppid);
+  expect(readLaunchState(UDID)?.capabilities.shared?.ownerPids).toEqual([process.ppid]);
   expect(env().DYLD_INSERT_LIBRARIES).toContain(dylib);
 });
 
@@ -607,6 +703,7 @@ test("failed capability removal keeps resources alive for a retry", async () => 
   expect(env().DYLD_INSERT_LIBRARIES).toContain(dylib);
   await configureCapability(UDID, definition, { enabled: false });
   expect(stopped).toBe(true);
+  expect(env().DYLD_INSERT_LIBRARIES ?? "").not.toContain(capabilityLoaderPath());
 });
 
 test("registry capture prepares, publishes, reuses, and removes the same runtime session", async () => {

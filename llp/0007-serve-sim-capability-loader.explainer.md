@@ -161,10 +161,18 @@ something that reliably removes it:
   longer exists is cleaned up.
 - Live session PIDs are recorded independently of capabilities, so an idle
   session still owns the insert. State updates and teardown share a device lock.
-- Capability records carry the pid that enabled them. A record with no owner
-  (`null`) outlives the command that created it; a record owned by a session is
-  released when that session exits, including its host helper. The insert is
-  removed only when no live session or capability needs it.
+- Capability records list the session pids that own them (`ownerPids`). An empty
+  list, from a one-shot enable, outlives the command that created it. A record
+  owned by sessions is released, with its host helper, when its last owner exits.
+  The insert is removed only when no live session or capability needs it.
+
+Ownership-only updates keep the loader configuration published. A failed final
+removal restores the previous launch environment before reporting the error.
+Disarming preserves remembered app details without keeping the loader owned
+[observed: `src/launch-manager.ts` publication and final capability removal].
+Explicit disable also disarms an idle loader once all its recorded sessions have
+exited, then drops the empty session record from remembered app state
+[observed: `src/launch-manager.ts` final capability removal].
 
 For the CLI's boot/install/launch ordering and readiness boundary, see
 [LLP 0011](0011-serve-sim-session-startup.explainer.md) (Draft).
