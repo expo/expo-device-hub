@@ -9,7 +9,7 @@
 
 ## Summary
 
-The Hub boots Android emulators with `-gpu host` on an Apple silicon Mac that is not a virtual machine, and with `-gpu auto` everywhere else.
+The Hub boots Android emulators with `-gpu host` on an Apple silicon Mac that is not a virtual machine, and with `-gpu auto` everywhere else. On that same host, Device options warns when the selected emulator renders on the CPU, and tells the user to restart it with `-gpu host`.
 
 > **Provenance.** Claude Code wrote this draft while it implemented the change. `[observed]` claims give their source. `[confirmed]` claims name a human and a date. `[inferred]` claims are guesses that a maintainer must confirm or delete, so this document stays `Draft`. File paths are relative to `packages/`.
 
@@ -44,6 +44,16 @@ The Hub boots Android emulators with `-gpu host` on an Apple silicon Mac that is
 - The Hub does not retry with another mode when an emulator exits early, as https://github.com/expo/expo-device-hub/pull/12 did. An early exit has many causes, and the output does not say which (see [Direction](#direction)).
 - The experimental emulator capture (https://github.com/expo/expo-device-hub/pull/570, not merged) adds `-gpu host` through `extraArgs` on macOS while it is on. That flag comes after the built-in one, so it wins either way.
 
+## Warning
+
+The Hub server answers `GET /api/devices/gpu?serial=emulator-<port>` with `{ gpuAvailable, renderer }` (`expo-device-hub/src/server/emulator-gpu.ts`).
+
+- `gpuAvailable` is the [detection](#detection). Only when it is `true` does the server read the renderer, so other hosts never run adb for this.
+- `renderer` comes from the `GLES:` line of `adb shell dumpsys SurfaceFlinger`, bounded to 3 s, which https://github.com/expo/expo-device-hub/pull/117 introduced to show the GPU backend. A renderer that names SwiftShader, lavapipe, or llvmpipe is software. The read tells what the guest actually renders with, also for an emulator that the Hub did not start, such as one from Android Studio. A failed read is `null`, and `null` shows no warning.
+- The route takes only an emulator serial. In a single-device session it reads only the session's emulator, and under a session token it is gated like every other Hub route.
+- The dashboard reads the route each time the selected emulator's stream starts, so a restarted emulator is read again (`expo-device-hub/src/dashboard/useEmulatorGpuWarning.ts`). Device options shows the warning at its top, for an emulator only (`hub-components/src/dashboard/GpuWarning.tsx`).
+- The warning is a recommendation only: it names the software renderer and tells the user to restart the emulator with `-gpu host`. The Hub does not restart the emulator itself.
+
 ## iOS
 
 A simulator has no GPU mode to choose: the Hub boots it with `simctl boot` and no rendering option [observed: `@expo/hub-apple-utils`]. So this decision has no iOS part, and [constraint 10 of LLP 0000](0000-expo-device-hub.explainer.md#same-behavior) does not apply to it [inferred].
@@ -51,4 +61,6 @@ A simulator has no GPU mode to choose: the Hub boots it with `simctl boot` and n
 ## Open questions
 
 - Is the [Background](#background) reason for `-gpu auto` correct?
+- Should Device options have a restart button that boots the emulator again with `-gpu host`, in place of the text?
+- Should the warning stay when the user asked for a software renderer with `EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS`?
 - Should Linux hosts with a usable GPU get the same default? https://github.com/expo/expo-device-hub/pull/174 measured `-gpu host` on an NVIDIA GPU with a headless X server, but the Hub cannot yet tell such a host from a Linux VM without a GPU.

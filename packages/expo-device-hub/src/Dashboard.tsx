@@ -40,6 +40,7 @@ import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from "./dashboard/dashboardS
 import { useDeviceScreenShape } from "./dashboard/useDeviceScreenShape";
 import { useColorScheme } from "./dashboard/useColorScheme";
 import { useDashboardDevices } from "./dashboard/useDashboardDevices";
+import { useEmulatorGpuWarning } from "./dashboard/useEmulatorGpuWarning";
 import {
   FloatingSidebarToggle,
   floatingSidebarToggleVisible,
@@ -218,6 +219,10 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     client,
     selected,
   );
+  const gpuWarning = useEmulatorGpuWarning(
+    selected?.platform === "android" && !selected.physical && selected.booted ? selected.id : null,
+    client.status === "streaming",
+  );
   // The 3D choices apply only to a device that can feed the model.
   const modelAvailable = !!client.fold && !!client.displays && !!client.deviceModelUrl;
   const foldPreview: FoldPreviewOption = {
@@ -243,6 +248,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   const inspector = (
     <InspectorSections
       device={selected}
+      gpuWarning={gpuWarning}
       client={client}
       showScreenShape={showScreenShape}
       onShowScreenShapeChange={setShowScreenShape}

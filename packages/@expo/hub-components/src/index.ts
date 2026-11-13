@@ -77,6 +77,7 @@ export {
   type ScreenShapeOption,
 } from "./dashboard/DeviceOptionsSection";
 export { ActivityCharts } from "./dashboard/ActivityCharts";
+export { GPU_WARNING_TITLE, type GpuWarningInfo } from "./dashboard/GpuWarning";
 export { AccessibilitySection } from "./dashboard/AccessibilitySection";
 export { CameraSection } from "./dashboard/CameraSection";
 export { ClipboardSection } from "./dashboard/ClipboardSection";
