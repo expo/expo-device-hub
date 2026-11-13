@@ -1,6 +1,7 @@
 import { NO_PENDING_PERMISSION_WRITES } from "./app-permissions";
 import { NO_PENDING_CAMERA_WRITES } from "./device-camera";
 import { NO_CLIPBOARD } from "./device-clipboard";
+import { NO_KEYCHAIN } from "./device-keychain";
 import { DeviceClient } from "./types";
 
 /** Inert client returned while no device is selected — module-level so its
@@ -56,6 +57,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   resetPermissions: () => {},
   refreshPermissions: () => {},
   ...NO_CLIPBOARD,
+  ...NO_KEYCHAIN,
   streamCapabilities: null,
   screenRecording: null,
   recordingLock: null,
@@ -86,6 +88,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
     permissions: false,
     clipboard: false,
     orientation: false,
+    keychain: false,
   },
   foregroundApp: null,
   videoKind: "img",

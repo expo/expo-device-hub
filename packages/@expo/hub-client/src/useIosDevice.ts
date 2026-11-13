@@ -102,7 +102,7 @@ import {
   createIosEventLogState,
   mergeIosEventLogPayload,
 } from "./ios-events";
-import { hostUiRequest, runHostAction } from "./exec-ws";
+import { type HostActionOptions, hostUiRequest, runHostAction } from "./exec-ws";
 import { fetchIosAppIcon, getIosAppDetails } from "./ios-app-details";
 import { clearIosLocation, setIosLocation } from "./ios-location";
 import { fetchScreenshot } from "./screenshot";
@@ -132,6 +132,8 @@ import {
   type HardwareButton,
   type HidKeyEvent,
   type KeyboardInput,
+  type KeychainOptions,
+  type KeychainWriteOptions,
   type MultiTouchSample,
   type RunningDevice,
   type ScreenSize,
@@ -169,6 +171,8 @@ import { normalizeDeviceStreamSettings } from "./stream-settings";
 import { resolveDeviceStreamMode } from "./stream-mode";
 import { useAccessibility } from "./useAccessibility";
 import { useAppPermissions } from "./useAppPermissions";
+import { NO_KEYCHAIN } from "./device-keychain";
+import { deleteIosKeychainValues, listIosKeychainKeys, setIosKeychainValues } from "./ios-keychain";
 import { useAvccStream } from "./useAvccStream";
 import { type DeviceLocationBackend, useDeviceLocation } from "./useDeviceLocation";
 import { useStreamSettingsResource } from "./useStreamSettingsResource";
@@ -376,6 +380,8 @@ interface ResolvedConfig {
   inputPaste: boolean;
   /** The helper answers `WS_MSG_INPUT_BARRIER` by request ID; an older one only without one. */
   inputCopy: boolean;
+  /** serve-sim answers `keychain.*` actions for this device. */
+  keychain: boolean;
   device: string | null;
   pid: number | null;
   /** Middleware exec-ws URL used for logs, events, metrics, and UI requests. */
@@ -415,6 +421,7 @@ interface PreviewApi {
   inputAdmission?: boolean;
   inputPaste?: boolean;
   inputCopy?: boolean;
+  keychain?: boolean;
   device?: string;
   pid?: number;
   basePath?: string;
@@ -1523,6 +1530,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         inputAdmission: c.inputAdmission === true,
         inputPaste: c.inputPaste === true,
         inputCopy: c.inputCopy === true,
+        keychain: c.keychain === true,
         device: c.device ?? null,
         pid: c.pid ?? null,
         configEventsPath: `${basePath}/api/events${targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ""}`,
@@ -2589,7 +2597,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const runAction = useMemo(
     () =>
       execWsUrl && execToken
-        ? (action: string, params?: Parameters<typeof runHostAction>[3]) =>
+        ? (
+            action: string,
+            params?: Parameters<typeof runHostAction>[3],
+            options?: HostActionOptions,
+          ) =>
             runHostAction(
               execWsUrl,
               execToken,
@@ -2597,6 +2609,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
               params,
               socketProtocols,
               controlSocket ?? undefined,
+              options?.timeoutMs,
             )
         : null,
     [execWsUrl, execToken, socketProtocols, controlSocket],
@@ -2617,6 +2630,29 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     clearLocation,
     locationCapabilities,
   } = useDeviceLocation(locationBackend);
+
+  // Off unless serve-sim offers keychain, so a call rejects here instead of reaching the server.
+  const keychainOffered = config?.keychain ?? false;
+  const keychainActions = useMemo(
+    () =>
+      keychainOffered && runAction && deviceUdid
+        ? {
+            listKeychainKeys: (appId: string, options?: KeychainOptions) =>
+              listIosKeychainKeys(runAction, deviceUdid, appId, options),
+            setKeychainValues: (
+              appId: string,
+              values: Readonly<Record<string, string>>,
+              options?: KeychainWriteOptions,
+            ) => setIosKeychainValues(runAction, deviceUdid, appId, values, options),
+            deleteKeychainValues: (
+              appId: string,
+              keys: readonly string[],
+              options?: KeychainWriteOptions,
+            ) => deleteIosKeychainValues(runAction, deviceUdid, appId, keys, options),
+          }
+        : NO_KEYCHAIN,
+    [keychainOffered, runAction, deviceUdid],
+  );
 
   // serve-sim exposes permissions over its CLI channel only, so the Hub has no
   // route to read them. The section stays hidden until serve-sim serves them.
@@ -3030,6 +3066,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const streamSettingsAvailable = !!streamSettingsUrl;
   const clipboardPaste = config?.inputPaste ?? false;
   const clipboardCopy = config?.inputCopy ?? false;
+  const keychainAvailable = keychainActions !== NO_KEYCHAIN;
   const capabilities = useMemo<DeviceCapabilities>(
     () => ({
       deviceSettings: deviceSettingsAvailable,
@@ -3044,6 +3081,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         clipboardPaste || clipboardCopy ? { paste: clipboardPaste, copy: clipboardCopy } : false,
       orientation: orientationCapabilities,
       fold: foldCapabilities,
+      keychain: keychainAvailable,
     }),
     [
       deviceSettingsAvailable,
@@ -3056,6 +3094,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       clipboardCopy,
       orientationCapabilities,
       foldCapabilities,
+      keychainAvailable,
     ],
   );
 
@@ -3125,6 +3164,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setLocation,
     clearLocation,
     ...appPermissions,
+    ...keychainActions,
     pasteText,
     copyText,
     clipboardActionId: clipboardState.actionId,
