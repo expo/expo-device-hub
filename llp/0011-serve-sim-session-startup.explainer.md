@@ -58,8 +58,9 @@ observation. The busy services are probably the simulator's own post-boot work, 
 serve-sim [inferred: the in-simulator processes were at the top of `top`].
 
 So the `launchctl` calls that arm the capability loader, or roll an arm back, wait up
-to 60 seconds. These calls run right after a boot, for example when a capture reboot
-rearms the loader. A rearm can make 5 such calls, and the device lock is held during
+to 30 seconds. The limit is not longer, so that a customer does not wait a long time
+when a simulator is stuck [confirmed: Gabe Debes, 2026-11-12]. These calls run right
+after a boot, for example when a capture reboot rearms the loader. A rearm can make 5 such calls, and the device lock is held during
 them. Cleanup calls, such as stale-loader removal and session release, keep their
 15-second limit, so a stalled simulator cannot hold them for long [observed:
 `src/launch-manager.ts` `ARMING_TIMEOUT_MS`]. No data shows how long a spawn takes

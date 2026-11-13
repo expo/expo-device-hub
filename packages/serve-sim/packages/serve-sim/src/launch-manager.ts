@@ -63,7 +63,7 @@ const INSERT = "DYLD_INSERT_LIBRARIES";
 const CONFIG_VAR = "SERVE_SIM_CAPABILITIES_CONFIG";
 const TERMINATE_TIMEOUT_MS = 15_000;
 // @ref LLP 0011#boot-is-a-readiness-barrier — a just-booted iOS 27 simulator can take more than 15 s per spawn.
-const ARMING_TIMEOUT_MS = 60_000;
+const ARMING_TIMEOUT_MS = 30_000;
 
 function releaseLaunchStateUnlocked(
   udid: string,
