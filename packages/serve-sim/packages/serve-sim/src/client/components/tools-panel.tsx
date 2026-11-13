@@ -99,7 +99,7 @@ export function ToolsPanel({
             hingeControls={hingeControls}
           />
           <AxTreeTool overlayEnabled={axOverlayEnabled} onToggleOverlay={onToggleAxOverlay} />
-          <CameraTool udid={udid} bundleId={currentApp?.bundleId ?? null} />
+          <CameraTool udid={udid} />
           <LocationEmulationTool udid={udid} />
           <AppPermissionsTool udid={udid} bundleId={currentApp?.bundleId ?? null} />
           {hasChrome && onChromeEnabledChange && (

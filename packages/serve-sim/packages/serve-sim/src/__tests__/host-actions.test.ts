@@ -506,7 +506,7 @@ describe("action catalog", () => {
     expect(catalog["app.install"]).toMatchObject({ args: ["path"], upload: "path" });
     expect(catalog["media.add"]).toMatchObject({ args: ["path"], upload: "path" });
     expect(catalog["camera.inject"]).toMatchObject({
-      args: ["bundleId", "mirror", "source", "target"],
+      args: ["mirror", "source", "target"],
       upload: "target",
       uploadWhen: { source: "file" },
       keepUpload: true,
