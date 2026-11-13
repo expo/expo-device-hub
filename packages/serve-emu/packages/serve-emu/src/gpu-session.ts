@@ -20,7 +20,7 @@ import type { EmuSession, StartEmuSessionOptions, StreamFailure } from "./stream
 
 const STARTUP_TIMEOUT_MS = 15_000;
 const DEFAULT_BIT_RATE = 12_000_000;
-// @ref LLP 0017#rotation — serve-emu reads the display rotation and passes it to the agent
+// @ref LLP 0020#rotation — serve-emu reads the display rotation and passes it to the agent
 /** How often a session reads Android's display rotation, for turns that apps start. */
 const ROTATION_POLL_MS = 1_000;
 const ROTATION_READ_TIMEOUT_MS = 3_000;
@@ -53,7 +53,7 @@ export class GpuCaptureUnavailableError extends Error {}
 /** The failure code of a session that another consumer of the agent replaced. */
 export const GPU_CAPTURE_REPLACED_CODE = "gpu-capture-replaced";
 
-// @ref LLP 0017#integration — a replaced session does not take the agent back
+// @ref LLP 0020#integration — a replaced session does not take the agent back
 /**
  * Another consumer, such as a second Hub, connected to the agent, and the agent closed this
  * one. A default capture then uses gRPC, so the two do not replace each other in a loop.

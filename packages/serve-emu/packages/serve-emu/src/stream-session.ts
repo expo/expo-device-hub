@@ -86,7 +86,7 @@ export type StartEmuSessionOptions = StartOpts & {
 };
 
 export async function startEmuSession(options: StartEmuSessionOptions): Promise<EmuSession> {
-  // @ref LLP 0017#integration — only the middleware passes the socket; the agent serves one consumer
+  // @ref LLP 0020#integration — only the middleware passes the socket; the agent serves one consumer
   if (options.mode === "emulator-capture") {
     if (!options.emulatorCaptureSocket) {
       throw new Error(`emulator capture has no agent socket for ${options.serial}`);

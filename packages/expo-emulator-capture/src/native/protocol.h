@@ -12,7 +12,7 @@ namespace expo_capture {
 // Every record is a 32-byte big-endian header followed by `length` payload bytes:
 // magic "GPC1", length u32, pts u64 (microseconds), flags u32, width u32,
 // height u32, fps u32.
-// @ref LLP 0017#socket-protocol — record and command meanings
+// @ref LLP 0020#socket-protocol — record and command meanings
 constexpr size_t kHeaderBytes = 32;
 constexpr uint32_t kMaxPayloadBytes = 8 * 1024 * 1024;
 constexpr int kMaxEdge = 4096;
@@ -98,7 +98,7 @@ inline bool parseRotation(const uint8_t* command, int& out) {
   return true;
 }
 
-// @ref LLP 0017#rotation — the panel-sized color buffer holds the turned picture
+// @ref LLP 0020#rotation — the panel-sized color buffer holds the turned picture
 // The upright size of a native color buffer at an Android display rotation: the
 // color buffer keeps the panel's orientation, so rotations 1 and 3 swap the edges.
 inline std::pair<int, int> uprightSize(int width, int height, int rotation) {

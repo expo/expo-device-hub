@@ -187,7 +187,7 @@ bool VideoToolboxEncoder::configure(int width, int height, int fps, int bitRate,
         error = osStatus("creating the pixel rotation session", status);
         return false;
       }
-      // @ref LLP 0017#rotation — rotation N drew the picture N quarter turns clockwise
+      // @ref LLP 0020#rotation — rotation N drew the picture N quarter turns clockwise
       CFStringRef turn = rotation == 1   ? kVTRotation_CCW90
                          : rotation == 2 ? kVTRotation_180
                                          : kVTRotation_CW90;
@@ -249,7 +249,7 @@ bool VideoToolboxEncoder::encode(const CapturedFrame& frame, uint64_t ptsUs, boo
     return false;
   }
   CVPixelBufferRef pixels = frame.pixels.get();
-  // @ref LLP 0017#synchronization — the render thread flushed the copy; wait for it here
+  // @ref LLP 0020#synchronization — the render thread flushed the copy; wait for it here
   if (frame.path == FramePath::Gpu) waitForGpuCopy(pixels);
   CVPixelBufferPoolRef pool = VTCompressionSessionGetPixelBufferPool(session_);
   CVPixelBufferRef input = nullptr;

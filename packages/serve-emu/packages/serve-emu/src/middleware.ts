@@ -2455,7 +2455,7 @@ export function createRouter(
 
   const defaultStreamModeFor = (serial: string): StreamMode => {
     const configured = isEmulatorSerial(serial) ? defaults.streamMode : undefined;
-    // @ref LLP 0017#integration — the capture default needs an agent; other emulators use gRPC
+    // @ref LLP 0020#integration — the capture default needs an agent; other emulators use gRPC
     if (configured === "emulator-capture") {
       if (!emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory)) {
         captureTakenOver.delete(serial); // A new emulator on this serial starts fresh.

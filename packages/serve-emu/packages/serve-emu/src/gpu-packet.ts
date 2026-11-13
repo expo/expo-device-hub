@@ -1,4 +1,4 @@
-// @ref LLP 0017#socket-protocol — the GPC1 records the expo-emulator-capture agent writes
+// @ref LLP 0020#socket-protocol — the GPC1 records the expo-emulator-capture agent writes
 /** GPC1 capture socket records; all integers are big-endian. */
 export const GPU_HEADER_BYTES = 32;
 export const MAX_GPU_PACKET_BYTES = 8 * 1024 * 1024;

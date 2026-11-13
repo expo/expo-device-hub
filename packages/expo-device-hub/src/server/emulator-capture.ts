@@ -148,7 +148,7 @@ function readTail(path: string): string {
   }
 }
 
-// @ref LLP 0017#integration — the agent's own reason when it turned itself off
+// @ref LLP 0020#integration — the agent's own reason when it turned itself off
 /**
  * Why an emulator has no agent socket, shown below the stream source select: the install state
  * when it is the cause; else the reason from the agent's log when the agent turned itself off,
@@ -176,7 +176,7 @@ export function emulatorCaptureMissingAgentReason(
  * EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS comes later and can still override them.
  */
 export function emulatorCaptureArgs(platform: EmulatorCapture["platform"]): string[] {
-  // @ref LLP 0017#frame-paths — the GPU frame path needs host rendering
+  // @ref LLP 0020#frame-paths — the GPU frame path needs host rendering
   // `-gpu auto` picks a software renderer on a headless Mac.
   return platform === "darwin" ? ["-gpu", "host"] : [];
 }

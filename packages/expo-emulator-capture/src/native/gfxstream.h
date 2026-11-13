@@ -43,7 +43,7 @@ struct Gfxstream {
   int (*frameBufferHeight)(const void* fb) = nullptr;
   void (*createSharedTrivialContext)(void* fb, void** context, void** surface) = nullptr;
   void* (*getDisplay)(const void* fb) = nullptr;
-  // @ref LLP 0017#locking — takes the FrameBuffer lock itself; never call it while holding lock()
+  // @ref LLP 0020#locking — takes the FrameBuffer lock itself; never call it while holding lock()
   void (*readColorBuffer)(void* fb, uint32_t handle, int x, int y, int width, int height,
                           uint32_t format, uint32_t type, void* pixels, uint64_t size) = nullptr;
 
