@@ -443,6 +443,30 @@ export function WarningIcon({
   );
 }
 
+/** Lucide `info` — marks a status that has details, as a cue besides its color. */
+export function InfoIcon({ size = 14, color = "currentColor", strokeWidth = 2, style }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+      style={style}
+    >
+      <circle cx="12" cy="12" r="10" stroke={color} strokeWidth={strokeWidth} />
+      <path
+        d="M12 16v-4M12 8h.01"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Lucide `check` — trailing mark on the selected recent row. */
 export function CheckIcon({
   size = 17,

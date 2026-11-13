@@ -77,7 +77,13 @@ export {
   useScreenshotToast,
   type ScreenshotToastState,
 } from "./dashboard/ScreenshotToast";
-export { DeviceTitle, type DeviceTitleProps } from "./dashboard/DeviceTitle";
+export {
+  CPU_RENDERING_STATUS_LABEL,
+  CPU_RENDERING_TEXT,
+  CPU_RENDERING_TITLE,
+  DeviceTitle,
+  type DeviceTitleProps,
+} from "./dashboard/DeviceTitle";
 export { EmptyState } from "./dashboard/EmptyState";
 export { DeviceSection, type DeviceSectionProps } from "./dashboard/DeviceSection";
 export { OutputSection } from "./dashboard/OutputSection";
@@ -88,9 +94,9 @@ export {
   NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
+  type EmulatorRendering,
   type ScreenShapeOption,
 } from "./dashboard/DeviceOptionsSection";
-export { GPU_WARNING_TITLE, type GpuWarningInfo } from "./dashboard/GpuWarning";
 export { ActivityCharts, ActivitySection } from "./dashboard/ActivitySection";
 export { AccessibilitySection } from "./dashboard/AccessibilitySection";
 export { CameraSection } from "./dashboard/CameraSection";
