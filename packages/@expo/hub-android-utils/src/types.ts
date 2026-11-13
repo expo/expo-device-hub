@@ -106,6 +106,13 @@ export interface BootDeviceOptions {
   name: string;
   /** Console port → `emulator -port <port>`; the serial becomes `emulator-<port>`. */
   port: number;
+  /**
+   * GPU mode → `emulator -gpu <mode>`. When omitted, {@link bootDevice} uses
+   * `host` on an Apple silicon Mac that is not a virtual machine and `auto`
+   * elsewhere, and `buildEmulatorArgs` uses `auto`. A `-gpu` in
+   * `extraArgs` or `EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS` comes later and wins.
+   */
+  gpu?: string;
   /** Extra `emulator` flags appended after `-port <port>`, passed through verbatim. */
   extraArgs?: readonly string[];
   /**
