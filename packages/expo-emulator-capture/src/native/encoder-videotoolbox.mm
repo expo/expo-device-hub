@@ -2,6 +2,7 @@
 // H.264 through VideoToolbox, on the hardware encoder when the Mac has one.
 #include "encoder.h"
 #include "callback.h"
+#include "protocol.h"
 #import <Foundation/Foundation.h>
 #include <CoreVideo/CoreVideo.h>
 #include <IOSurface/IOSurface.h>
@@ -39,7 +40,8 @@ void waitForGpuCopy(CVPixelBufferRef pixels) {
 }
 
 // Frames of any size are turned upright by a VTPixelRotationSession when the display
-// is rotated, then scaled and converted to NV12 by a VTPixelTransferSession.
+// is rotated, then scaled and converted to NV12 by a VTPixelTransferSession. A letterboxing
+// encoder places each frame on its canvas with a second transfer session instead.
 class VideoToolboxEncoder final : public H264Encoder {
  public:
   VideoToolboxEncoder(Sink sink, ErrorSink onError)
@@ -48,8 +50,7 @@ class VideoToolboxEncoder final : public H264Encoder {
   VideoToolboxEncoder(const VideoToolboxEncoder&) = delete;
   VideoToolboxEncoder& operator=(const VideoToolboxEncoder&) = delete;
 
-  bool configure(int width, int height, int fps, int bitRate, int rotation,
-                 std::string& error) override;
+  bool configure(const EncoderConfig& config, std::string& error) override;
   bool encode(const CapturedFrame& frame, uint64_t ptsUs, bool forceKey,
               std::string& error) override;
   void invalidate() override;
@@ -61,12 +62,20 @@ class VideoToolboxEncoder final : public H264Encoder {
                         CMSampleBufferRef sample);
   void emit(CMSampleBufferRef sample);
   CVPixelBufferRef rotate(CVPixelBufferRef pixels, std::string& error);
+  VTPixelTransferSessionRef placedTransfer(int sourceWidth, int sourceHeight, const Rect& rect,
+                                           std::string& error);
 
   Sink sink_;
   ErrorSink onError_;
   VTCompressionSessionRef session_ = nullptr;
   VTPixelTransferSessionRef transfer_ = nullptr;
   VTPixelRotationSessionRef rotation_ = nullptr;  // Only when the display is rotated.
+  // Letterboxing: the frame size and canvas rectangle that placed_ is set up for.
+  VTPixelTransferSessionRef placed_ = nullptr;
+  int placedSourceWidth_ = 0, placedSourceHeight_ = 0;
+  Rect placedRect_;
+  bool letterbox_ = false;
+  int width_ = 0, height_ = 0;
   CVPixelBufferPoolRef rotatedPool_ = nullptr;
   int rotatedWidth_ = 0, rotatedHeight_ = 0;
   int quarterTurns_ = 0;
@@ -84,9 +93,11 @@ std::unique_ptr<H264Encoder> createH264Encoder(H264Encoder::Sink sink,
 // VideoToolbox is part of macOS, and a Mac without a hardware encoder gets its software one.
 std::string h264EncoderProblem() { return {}; }
 
-bool VideoToolboxEncoder::configure(int width, int height, int fps, int bitRate, int rotation,
-                                    std::string& error) {
+bool VideoToolboxEncoder::configure(const EncoderConfig& config, std::string& error) {
   invalidate();
+  const int width = config.width, height = config.height, fps = config.fps,
+            bitRate = config.bitRate, rotation = config.rotation;
+  const int keyInterval = std::max(1, config.keyFrameIntervalSeconds);
   if (rotation < 0 || rotation > 3) {
     error = "invalid display rotation";
     return false;
@@ -139,9 +150,11 @@ bool VideoToolboxEncoder::configure(int width, int height, int fps, int bitRate,
       set(kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_Baseline_AutoLevel);
     set(kVTCompressionPropertyKey_AverageBitRate, (__bridge CFNumberRef) @(bitRate));
     set(kVTCompressionPropertyKey_ExpectedFrameRate, (__bridge CFNumberRef) @(fps));
-    // Late joiners request keyframes, so periodic ones can be rare (as with scrcpy).
-    set(kVTCompressionPropertyKey_MaxKeyFrameInterval, (__bridge CFNumberRef) @(fps * 10));
-    set(kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, (__bridge CFNumberRef) @10);
+    // The stream's late joiners request keyframes, so periodic ones can be rare (as with scrcpy).
+    // The recording asks for one each second.
+    set(kVTCompressionPropertyKey_MaxKeyFrameInterval, (__bridge CFNumberRef) @(fps * keyInterval));
+    set(kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration,
+        (__bridge CFNumberRef) @(keyInterval));
     set(kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_ITU_R_709_2);
     set(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_ITU_R_709_2);
     set(kVTCompressionPropertyKey_YCbCrMatrix, kCVImageBufferYCbCrMatrix_ITU_R_709_2);
@@ -204,7 +217,73 @@ bool VideoToolboxEncoder::configure(int width, int height, int fps, int bitRate,
       quarterTurns_ = rotation;
     }
   }
+  letterbox_ = config.letterbox;
+  width_ = width;
+  height_ = height;
   return true;
+}
+
+// @ref LLP 0001#session-recording — letterboxed by a pixel transfer, as serve-sim's recorder
+// A transfer session that scales a frame into `rect` of the canvas and fills the rest black. The
+// destination clean aperture places the picture, and the pixel aspect ratio stretches it to fill
+// the rectangle exactly, as in serve-sim's PixelBufferLetterboxer.
+VTPixelTransferSessionRef VideoToolboxEncoder::placedTransfer(int sourceWidth, int sourceHeight,
+                                                              const Rect& rect,
+                                                              std::string& error) {
+  if (placed_ && placedSourceWidth_ == sourceWidth && placedSourceHeight_ == sourceHeight &&
+      placedRect_ == rect)
+    return placed_;
+  if (!placed_) {
+    OSStatus status = VTPixelTransferSessionCreate(kCFAllocatorDefault, &placed_);
+    if (status != noErr) {
+      placed_ = nullptr;
+      error = osStatus("creating the letterbox transfer session", status);
+      return nullptr;
+    }
+    VTSessionSetProperty(placed_, kVTPixelTransferPropertyKey_DestinationColorPrimaries,
+                         kCVImageBufferColorPrimaries_ITU_R_709_2);
+    VTSessionSetProperty(placed_, kVTPixelTransferPropertyKey_DestinationTransferFunction,
+                         kCVImageBufferTransferFunction_ITU_R_709_2);
+    VTSessionSetProperty(placed_, kVTPixelTransferPropertyKey_DestinationYCbCrMatrix,
+                         kCVImageBufferYCbCrMatrix_ITU_R_709_2);
+  }
+  OSStatus status = noErr;
+  @autoreleasepool {
+    NSDictionary* aperture = @{
+      (id)kCVImageBufferCleanApertureWidthKey : @(rect.width),
+      (id)kCVImageBufferCleanApertureHeightKey : @(rect.height),
+      // Offsets from the center of the canvas to the center of the rectangle.
+      (id)kCVImageBufferCleanApertureHorizontalOffsetKey :
+          @(double(rect.x) + double(rect.width - width_) / 2),
+      (id)kCVImageBufferCleanApertureVerticalOffsetKey :
+          @(double(rect.y) + double(rect.height - height_) / 2),
+    };
+    NSDictionary* aspect = @{
+      (id)kCVImageBufferPixelAspectRatioHorizontalSpacingKey : @(sourceWidth * rect.height),
+      (id)kCVImageBufferPixelAspectRatioVerticalSpacingKey : @(sourceHeight * rect.width),
+    };
+    for (NSArray* property in @[
+           @[ (__bridge id)kVTPixelTransferPropertyKey_ScalingMode,
+              (__bridge id)kVTScalingMode_Letterbox ],
+           @[ (__bridge id)kVTPixelTransferPropertyKey_DestinationCleanAperture, aperture ],
+           @[ (__bridge id)kVTPixelTransferPropertyKey_DestinationPixelAspectRatio, aspect ],
+         ]) {
+      status = VTSessionSetProperty(placed_, (__bridge CFStringRef)property[0],
+                                    (__bridge CFTypeRef)property[1]);
+      if (status != noErr) break;
+    }
+  }
+  if (status != noErr) {
+    VTPixelTransferSessionInvalidate(placed_);
+    CFRelease(placed_);
+    placed_ = nullptr;
+    error = osStatus("placing the frame on the recording canvas", status);
+    return nullptr;
+  }
+  placedSourceWidth_ = sourceWidth;
+  placedSourceHeight_ = sourceHeight;
+  placedRect_ = rect;
+  return placed_;
 }
 
 // Turns a captured frame upright into a pool buffer; the caller releases it.
@@ -261,11 +340,8 @@ bool VideoToolboxEncoder::encode(const CapturedFrame& frame, uint64_t ptsUs, boo
     error = "encoder input pool is exhausted";
     return false;
   }
-  // The capture is sRGB; tag it so the transfer converts it with BT.709 terms.
-  CVBufferSetAttachment(pixels, kCVImageBufferColorPrimariesKey,
-                        kCVImageBufferColorPrimaries_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
-  CVBufferSetAttachment(pixels, kCVImageBufferTransferFunctionKey,
-                        kCVImageBufferTransferFunction_sRGB, kCVAttachmentMode_ShouldPropagate);
+  // The frame source tagged the capture as sRGB, so the transfer converts it with BT.709 terms.
+  // The stream and the recording share the frame on two threads, so neither changes it here.
   CVPixelBufferRef upright = pixels;
   if (rotation_) {
     upright = rotate(pixels, error);
@@ -275,8 +351,28 @@ bool VideoToolboxEncoder::encode(const CapturedFrame& frame, uint64_t ptsUs, boo
     }
     CVBufferPropagateAttachments(pixels, upright);
   }
-  OSStatus status = VTPixelTransferSessionTransferImage(transfer_, upright, input);
+  VTPixelTransferSessionRef transfer = transfer_;
+  int frameWidth = int(CVPixelBufferGetWidth(upright)),
+      frameHeight = int(CVPixelBufferGetHeight(upright));
+  bool placed = letterbox_ && (frameWidth - frameWidth % 2 != width_ ||
+                               frameHeight - frameHeight % 2 != height_);
+  if (placed) {
+    transfer = placedTransfer(frameWidth, frameHeight,
+                              placeOnCanvas(frameWidth, frameHeight, width_, height_), error);
+    if (!transfer) {
+      if (upright != pixels) CVPixelBufferRelease(upright);
+      CVPixelBufferRelease(input);
+      return false;
+    }
+  }
+  OSStatus status = VTPixelTransferSessionTransferImage(transfer, upright, input);
   if (upright != pixels) CVPixelBufferRelease(upright);
+  if (placed) {
+    // The file keeps the full canvas and square pixels; the timeline names the picture's place.
+    for (CFStringRef key : {kCVImageBufferCleanApertureKey, kCVImageBufferPreferredCleanApertureKey,
+                            kCVImageBufferPixelAspectRatioKey})
+      CVBufferRemoveAttachment(input, key);
+  }
   if (status != noErr) {
     CVPixelBufferRelease(input);
     error = osStatus("scaling the frame", status);
@@ -313,6 +409,15 @@ void VideoToolboxEncoder::invalidate() {
     CFRelease(rotation_);
     rotation_ = nullptr;
   }
+  if (placed_) {
+    VTPixelTransferSessionInvalidate(placed_);
+    CFRelease(placed_);
+    placed_ = nullptr;
+  }
+  placedSourceWidth_ = placedSourceHeight_ = 0;
+  placedRect_ = Rect{};
+  letterbox_ = false;
+  width_ = height_ = 0;
   if (rotatedPool_) {
     CVPixelBufferPoolRelease(rotatedPool_);
     rotatedPool_ = nullptr;

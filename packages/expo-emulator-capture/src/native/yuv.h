@@ -57,6 +57,29 @@ inline void convertRowPair(const uint8_t* top, const uint8_t* bottom, int width,
   }
 }
 
+// Fills planes with one color, such as black (16, 128) in limited range.
+inline void fillI420(const I420Planes& planes, uint8_t luma, uint8_t chroma) {
+  for (int y = 0; y < planes.height; y++)
+    std::memset(planes.y + size_t(y) * size_t(planes.yStride), luma, size_t(planes.width));
+  for (int y = 0; y < planes.height / 2; y++) {
+    std::memset(planes.u + size_t(y) * size_t(planes.uvStride), chroma, size_t(planes.width / 2));
+    std::memset(planes.v + size_t(y) * size_t(planes.uvStride), chroma, size_t(planes.width / 2));
+  }
+}
+
+// The part of the planes inside an even rectangle, with the same strides, so a conversion
+// writes into it and leaves the rest as it is.
+template <typename Rectangle>
+inline I420Planes subPlanes(const I420Planes& planes, const Rectangle& rect) {
+  I420Planes out = planes;
+  out.y = planes.y + size_t(rect.y) * size_t(planes.yStride) + size_t(rect.x);
+  out.u = planes.u + size_t(rect.y / 2) * size_t(planes.uvStride) + size_t(rect.x / 2);
+  out.v = planes.v + size_t(rect.y / 2) * size_t(planes.uvStride) + size_t(rect.x / 2);
+  out.width = rect.width;
+  out.height = rect.height;
+  return out;
+}
+
 // One output pixel of a turn: the source pixel that lands at (x, y). Rotation N turns the
 // picture N quarter turns counter-clockwise, so rotations 1 and 3 swap the edges.
 template <int Rotation>

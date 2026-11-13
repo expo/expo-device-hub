@@ -57,6 +57,11 @@ then:  Unix socket → serve-emu → Device Hub (WebCodecs or WebRTC)
   the first record says so, and a later connection tries again.
 - A consumer connects to the agent's socket, sets the stream size, frame rate and bit
   rate, and receives H.264. Consumers can disconnect and reconnect at any time.
+- The agent serves two consumers at once, each with its own encoder and settings: the live
+  stream and the recording. The agent copies each frame once for both. The recording keeps
+  the panel orientation and one canvas size, places each frame on it with black borders, and
+  has a keyframe at least once a second. Expo Device Hub records Android this way, so stream
+  changes, rotations and folds do not end its recording.
 - When a foldable folds or unfolds, the display size changes. The agent reconfigures
   the encoder and tells the consumer the new size.
 - When Android turns the display, the consumer sends the display rotation, and the agent
@@ -187,7 +192,9 @@ npx expo-emulator-capture record --socket "$(npx expo-emulator-capture socket-pa
 ```
 
 `--rotation 1` (0 to 3, Android's display rotation) asks the agent to turn the picture
-upright for a rotated display. Set `EXPO_EMULATOR_CAPTURE_LOG=/path/to/file` to write the
+upright for a rotated display. `--role recording` takes the recording consumer instead of
+the stream, so a Hub that streams the same emulator does not replace it; `--canvas
+1200x2424` sets its fixed canvas. Set `EXPO_EMULATOR_CAPTURE_LOG=/path/to/file` to write the
 agent's log to a file. It logs to the emulator's standard error otherwise.
 
 ## Build and test
@@ -260,10 +267,10 @@ encoding took 9.5 to 9.8 ms per 576×1280 frame on the agent's encoder thread.
   missing.
 - The agent loads only when the emulator starts with it. Attaching to an emulator that is
   already running is not implemented.
-- Only the main display is captured. One consumer at a time: a new one replaces the old,
-  which gets a `replaced` record first. The Hub then streams that emulator with gRPC until
-  you select "Emulator capture" again, so two Hubs do not take the capture from each other
-  in a loop.
+- Only the main display is captured. One consumer for each role, the stream and the
+  recording: a new consumer replaces the one of its role, which gets a `replaced` record
+  first. The Hub then streams that emulator with gRPC until you select "Emulator capture"
+  again, so two Hubs do not take the capture from each other in a loop.
 - The EAS macOS VMs cannot run the Android Emulator (Hypervisor.framework reports
   `HV_UNSUPPORTED` there), so the macOS agent was tested only on a physical Mac.
 - The Linux agent was tested only on EAS Linux VMs without a GPU. It reads every frame

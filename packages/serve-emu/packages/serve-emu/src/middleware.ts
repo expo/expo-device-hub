@@ -37,10 +37,18 @@ import {
   applyFoldRequest,
   getFoldStatus,
   openHingeSensor,
+  parseFoldableDisplays,
   readFoldableDisplays,
   readFoldState,
+  readHardwareConfig,
   type FoldState,
 } from "./fold.ts";
+import {
+  captureRecordingEncoding,
+  startCaptureRecordingSource,
+  type CaptureRecordingSource,
+} from "./capture-recording-source.ts";
+import { createDisplayOrientationReader } from "./display-orientation.ts";
 import { startFoldRecordingFeed, type FoldRecordingFeed } from "./fold-recording-feed.ts";
 import type { GrpcRecordingOutput } from "./grpc-recording-encoder.ts";
 import {
@@ -162,6 +170,7 @@ import {
   type GrpcImageMode,
   type GrpcEncoder,
   type InputSource,
+  type ScreenOrientation,
   type StreamMode,
   type StreamModeResponse,
 } from "./shared/api-contracts.ts";
@@ -256,6 +265,11 @@ export type AppOptions = {
    * never records; `startScreenRecording` refuses to start once an app or pending app exists.
    */
   screenRecording?: ScreenRecording;
+  /**
+   * @internal Called after the app turns the display, so the router's independent recording
+   * reads the new orientation at once.
+   */
+  onDisplayChanged?: () => void;
 } & BrowserOriginPolicy;
 
 export type AppClock = {
@@ -470,7 +484,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     (dependencies.startScrcpy
       ? async (options) => adaptScrcpySession(await dependencies.startScrcpy!(options))
       : startEmuSession);
-  const recorder = opts.screenRecording;
+  // @ref LLP 0023#recording-source-in-serve-emu — apps never feed an independent recording
+  // An independent recording has its own source in the router; an app feeds only a recording
+  // that takes the stream's packets, and only that one refuses stream changes.
+  const recorder = opts.screenRecording?.independent ? undefined : opts.screenRecording;
   const readFold = dependencies.readFoldState ?? readFoldState;
   const readOrientation =
     dependencies.readOrientation ?? ((serial: string) => getDisplayOrientation(serial));
@@ -521,7 +538,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         accept: (packet, geometry) => {
           // A new display means a fold, so read the hinge now instead of at the next poll.
           if (recordedScreen !== null && geometry.screen !== recordedScreen) readFoldNow();
-          recordedScreen = geometry.screen;
+          recordedScreen = geometry.screen ?? null;
           recorder.accept(packet, layout.canvas, "grpc-screenshot", geometry);
         },
         fail: (error) => recorder.fail(error),
@@ -1119,7 +1136,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           }
           // A session that encodes the recording itself sends these packets to viewers only.
           if (!activeSession.feedsRecording) {
-            opts.screenRecording?.accept(f, screen, activeSession.mode);
+            recorder?.accept(f, screen, activeSession.mode);
           }
           if (f.type === "session") {
             // The encoder restarted with a new size (device rotation). Adopt it so
@@ -1286,7 +1303,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       if (streamEncoderSettingsEqual(previousSettings, nextSettings)) {
         return { ...previousSettings };
       }
-      if (opts.screenRecording?.active) {
+      if (recorder?.active) {
         throw new ScreenRecordingConflictError(
           "Cannot change stream settings during screen recording.",
         );
@@ -1913,6 +1930,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           const result = await deviceState.setOrientation(orientation);
           // A source that follows the display (emulator capture) re-reads it now.
           session.displayChanged?.();
+          opts.onDisplayChanged?.();
           return Response.json({ ok: true, orientation: result });
         } catch (err) {
           return Response.json(
@@ -1937,7 +1955,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       }
       if (req.method === "POST") {
         // A recording that takes the viewers' packets ends when the display size changes.
-        if (opts.screenRecording?.active && !session.feedsRecording) {
+        if (recorder?.active && !session.feedsRecording) {
           return Response.json(
             { ok: false, error: "Cannot fold during this screen recording." },
             { status: 409 },
@@ -1950,7 +1968,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           }
           const fold = parseFoldRequest(payload as Record<string, unknown>);
           const status = await applyFoldRequest(opts.serial, fold);
-          if (session.feedsRecording) opts.screenRecording?.observePose(recordingPose(status));
+          if (session.feedsRecording || opts.screenRecording?.independent)
+            opts.screenRecording?.observePose(recordingPose(status));
           return Response.json({ ok: true, fold: status });
         } catch (err) {
           return Response.json(
@@ -2423,6 +2442,14 @@ export type RouterDependencies = {
   readCameraWiring?: typeof readCameraWiring;
   createApp?: (opts: AppOptions) => Promise<EmuApp>;
   getHardwareEncoderError?: typeof getHardwareEncoderError;
+  /** The emulator capture agent's recording consumer, for an independent recording. */
+  startCaptureRecording?: typeof startCaptureRecordingSource;
+  /** The emulator's hardware config, for the recording's canvas and frame rate. */
+  readHardwareConfig?: (serial: string) => Promise<string | null>;
+  /** The display pose, for an independent recording's timeline; adb by default. */
+  readOrientation?: (serial: string) => Promise<ScreenOrientation>;
+  readFoldState?: typeof readFoldState;
+  openHingeSensor?: typeof openHingeSensor;
 };
 
 /**
@@ -2479,8 +2506,24 @@ export function createRouter(
   let selectionRevision = 0;
   let stopped = false;
   let stopAllTask: Promise<void> | null = null;
-  let screenRecording: { serial: string; recorder: ScreenRecording } | null = null;
+  /**
+   * The recording and, for an independent one, the agent consumer and the pose feed that the
+   * router owns apart from every app.
+   */
+  type RouterRecording = {
+    serial: string;
+    recorder: ScreenRecording;
+    source: CaptureRecordingSource | null;
+    feed: FoldRecordingFeed | null;
+  };
+  let screenRecording: RouterRecording | null = null;
   let recordingStartTask: Promise<void> | null = null;
+  const startCaptureRecording = dependencies.startCaptureRecording ?? startCaptureRecordingSource;
+  const readConfig = dependencies.readHardwareConfig ?? readHardwareConfig;
+  const readRecordingOrientation =
+    dependencies.readOrientation ?? ((serial: string) => getDisplayOrientation(serial));
+  const readRecordingFold = dependencies.readFoldState ?? readFoldState;
+  const openRecordingHinge = dependencies.openHingeSensor ?? openHingeSensor;
 
   const beginOperation = (
     serial: string,
@@ -2627,6 +2670,9 @@ export function createRouter(
         inputSource,
         deviceState,
         screenRecording: screenRecording?.serial === serial ? screenRecording.recorder : undefined,
+        onDisplayChanged: () => {
+          if (screenRecording?.serial === serial) screenRecording.feed?.readNow();
+        },
         signal: combineAbortSignals(defaults.signal, operation.signal),
       });
       throwIfAborted(operation.signal, `app startup for ${serial} was aborted`);
@@ -2770,7 +2816,12 @@ export function createRouter(
     requestedEncoder: GrpcEncoder | undefined,
     signal: AbortSignal,
   ): Promise<EmuApp> => {
-    if (screenRecording?.serial === serial && screenRecording.recorder.active) {
+    // An independent recording has its own source, so a switch does not reach it.
+    if (
+      screenRecording?.serial === serial &&
+      screenRecording.recorder.active &&
+      !screenRecording.recorder.independent
+    ) {
       throw new ScreenRecordingConflictError(
         "Cannot change capture source during screen recording.",
       );
@@ -2917,6 +2968,80 @@ export function createRouter(
     return { serial, app: await getApp(serial) };
   };
 
+  // @ref LLP 0023#recording-source-in-serve-emu — the router owns the agent's recording consumer
+  /**
+   * Gives the recording its own encode in the emulator capture agent, when the emulator has an
+   * agent with the recording role. Returns null otherwise, and the recording takes the stream's
+   * packets as before (LLP 0023, Decision 2c).
+   */
+  const startIndependentRecording = async (
+    serial: string,
+    recorder: ScreenRecording,
+    options: RecordingOptions,
+  ): Promise<Pick<RouterRecording, "source" | "feed"> | null> => {
+    const socketPath = emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory);
+    if (!socketPath) return null;
+    const config = await readConfig(serial).catch(() => null);
+    const displays = config ? parseFoldableDisplays(config) : null;
+    // The timeline names the UI's orientation, and a foldable's hinge, for every part. Read them
+    // before the agent sends frames, so the first frame has them; a frame takes the last reading
+    // from before it.
+    const own = createDisplayOrientationReader({ read: () => readRecordingOrientation(serial) });
+    const [fold, orientation] = await Promise.all([
+      displays ? readRecordingFold(serial).catch(() => null) : null,
+      own.reader.observe().catch(() => null),
+    ]);
+    recorder.observePose({
+      ...(fold ? recordingPose(fold) : {}),
+      ...(orientation ? { orientation: orientation.orientation } : {}),
+    });
+    let feed: FoldRecordingFeed | null = null;
+    let source: CaptureRecordingSource;
+    try {
+      source = await startCaptureRecording({
+        serial,
+        socketPath,
+        recorder,
+        encoding: captureRecordingEncoding(options.encoding, config),
+        displays,
+        deviceOnline: async () =>
+          (await readOnlineDevices()).some((device) => device.serial === serial),
+        // A new display means a fold, so read the hinge now instead of at the next poll.
+        onScreenChange: () => feed?.readNow(),
+      });
+    } catch (error) {
+      console.warn(
+        `[emulator capture] ${serial}: the recording takes the stream's packets (${errMsg(error)})`,
+      );
+      return null;
+    }
+    recorder.markIndependent();
+    const orientationNow = () => {
+      const app = apps.get(serial);
+      const state = app ? deviceStateForApp(app) : undefined;
+      // An app's reader learns a turn through the Hub at once; without an app, adb tells.
+      return (state?.orientation ?? own.reader).current();
+    };
+    feed = startFoldRecordingFeed({
+      openSensor: displays
+        ? (signal) => openRecordingHinge(serial, signal)
+        : () => Promise.reject(new Error("The device has no hinge")),
+      readHingeOverAdb: displays
+        ? async () => (await readRecordingFold(serial)).hingeAngle
+        : async () => null,
+      orientation: orientationNow,
+      observe: (pose) => recorder.observePose(pose),
+      active: () => recorder.active,
+    });
+    return { source, feed };
+  };
+
+  /** Stops what the router owns for a recording that ended. */
+  const releaseRecording = (recording: RouterRecording | null) => {
+    recording?.source?.close();
+    recording?.feed?.stop();
+  };
+
   const startScreenRecording = (options: RecordingOptions): Promise<void> => {
     if (recordingStartTask) return recordingStartTask;
     recordingStartTask = (async () => {
@@ -2925,12 +3050,18 @@ export function createRouter(
         throw new Error("Screen recording must start before device capture.");
       const serial = await resolveSerial(options.udid);
       const recorder = await ScreenRecording.create(options);
-      screenRecording = { serial, recorder };
+      let recording: RouterRecording = { serial, recorder, source: null, feed: null };
       try {
-        // A viewer could have created the app during the awaits above; that app has no recorder.
-        if (apps.size || pending.size)
-          throw new Error("Screen recording must start before device capture.");
-        await ensure(serial);
+        const independent = await startIndependentRecording(serial, recorder, options);
+        recording = { ...recording, ...independent };
+        screenRecording = recording;
+        if (!independent) {
+          // A viewer could have created the app during the awaits above; that app has no
+          // recorder, and a recording of the stream's packets needs it.
+          if (apps.size || pending.size)
+            throw new Error("Screen recording must start before device capture.");
+          await ensure(serial);
+        }
         await Promise.race([
           recorder.ready,
           new Promise<never>((_, reject) => {
@@ -2944,10 +3075,21 @@ export function createRouter(
         ]);
       } catch (error) {
         recorder.fail(error);
+        releaseRecording(recording);
         throw error;
       }
     })();
     return recordingStartTask;
+  };
+
+  const finishScreenRecording = async () => {
+    const recording = screenRecording;
+    if (!recording) return null;
+    try {
+      return await recording.recorder.finish();
+    } finally {
+      releaseRecording(recording);
+    }
   };
 
   const devicesResponse = async (): Promise<Response> => {
@@ -3409,7 +3551,11 @@ export function createRouter(
   const stopAll = (): Promise<void> => {
     if (stopAllTask) return stopAllTask;
     stopped = true;
-    const recordingFinish = screenRecording?.recorder.finish().catch(() => {});
+    const recording = screenRecording;
+    const recordingFinish = recording?.recorder
+      .finish()
+      .catch(() => {})
+      .finally(() => releaseRecording(recording));
     abortAllOperations(new Error("serve-emu router is stopping"));
 
     // Invoke every live stop synchronously before waiting for startup/source
@@ -3449,7 +3595,7 @@ export function createRouter(
     getApp,
     ensure,
     startScreenRecording,
-    finishScreenRecording: () => screenRecording?.recorder.finish() ?? Promise.resolve(null),
+    finishScreenRecording,
     handleRequest,
     authorizeUpgrade,
     attachWebSocket,

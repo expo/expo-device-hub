@@ -5,7 +5,7 @@
 **Systems:** ServeEmu, HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-11
-**Related:** LLP 0001, LLP 0013, LLP 0016
+**Related:** LLP 0001, LLP 0013, LLP 0016, LLP 0023
 
 > File paths such as `src/…` are relative to `packages/serve-emu/packages/serve-emu`, unless the text gives a path from the repository root.
 
@@ -105,6 +105,10 @@ As in serve-sim, a state enters the timeline only after the muxer accepts its fr
 The recording status that `/api` reports has `followsFold: true` once the gRPC session encodes the fold canvas [observed: `ScreenRecording.snapshot`]. HubClient then leaves the fold commands free: `DeviceFold.unavailable` is absent, and only rotation and stream changes stay locked ([LLP 0013](0013-hub-client-input-and-control.explainer.md#recording-lock)) [observed: `foldRecordingLock` in `packages/@expo/hub-client/src/screen-recording.ts`]. Without `followsFold`, `DeviceFold.unavailable` is the recording lock's reason, and the Hub dashboard disables Fold settings with it [observed: `DeviceOptionsSection.tsx` in `packages/@expo/hub-components/src/dashboard`].
 
 serve-emu also answers `POST /api/fold` with 409 while a recording runs that takes the stream's packets, so a direct API call cannot end it [observed: the `/api/fold` route in `src/middleware.ts`].
+
+## With the emulator capture agent
+
+When the emulator capture agent records the device, the recording is independent ([LLP 0023](0023-android-recording-independent-of-stream.rfc.md#recording-source-in-serve-emu)): the agent places each frame on the canvas and encodes it, and the gRPC recording encoder above is not used. The canvas is the same bounding box, in the agent's integer size steps, which can differ by two pixels from `captureSize`; the placement, the `deviceStates` timeline, the hinge feed and the one-second keyframes are the same. The frame times come from the agent's clock, moved onto the host's monotonic clock, so the pose readings apply to them as described here [observed: `startCaptureRecordingSource` in `src/capture-recording-source.ts`].
 
 ## Limits
 

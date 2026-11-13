@@ -29,6 +29,17 @@ export function screenRecordingFollowsFold(value: unknown): boolean {
 }
 
 /**
+ * Whether the recording reported in a status has its own encode, apart from the live stream, so
+ * that no rotation, stream change or fold ends it. Only an Android recording that the emulator
+ * capture agent encodes reports it; an older server without the field keeps the lock.
+ */
+export function screenRecordingIndependent(value: unknown): boolean {
+  return (
+    !!value && typeof value === "object" && "independent" in value && value.independent === true
+  );
+}
+
+/**
  * Why a fold could end the recording, or null: the recording lock, unless the recording reports
  * that it follows folds.
  */
@@ -39,9 +50,13 @@ export function foldRecordingLock(
   return lock === "recording" && followsFold ? null : lock;
 }
 
-/** Why a rotation or stream change could end a recording with this status, or null. */
+/**
+ * Why a rotation or stream change could end a recording with this status, or null. An
+ * independent recording has its own encode, so nothing that the client changes can end it.
+ */
 export function recordingLockReason(
   status: DeviceScreenRecordingStatus | null,
+  independent = false,
 ): DeviceRecordingLockReason | null {
   switch (status) {
     case "unknown":
@@ -49,7 +64,7 @@ export function recordingLockReason(
     case "waiting":
     case "recording":
     case "finalizing":
-      return "recording";
+      return independent ? null : "recording";
     default:
       return null;
   }

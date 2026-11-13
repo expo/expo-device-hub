@@ -23,7 +23,7 @@ import {
   readEmulatorCapture,
 } from "./emulator-capture";
 import { AndroidSession, type RecordingFinish, type RecordingStart } from "./android-session";
-import { recordingLimitsFromEnv } from "./recording-limits";
+import { recordingEncodingFromEnv, recordingLimitsFromEnv } from "./recording-limits";
 import {
   readStandaloneServeEmuOptions,
   SERVE_EMU_OPTIONS_ENV,
@@ -77,7 +77,11 @@ const androidSession = new AndroidSession(router, async () => {
 });
 
 export const startAndroidScreenRecording = async (directory: string): Promise<RecordingStart> =>
-  await androidSession.startRecording(directory, recordingLimitsFromEnv(process.env));
+  // Both throw before any disk write, naming the variable to fix.
+  await androidSession.startRecording(directory, {
+    ...recordingLimitsFromEnv(process.env),
+    encoding: recordingEncodingFromEnv(process.env),
+  });
 
 export const finishAndroidScreenRecording = (): Promise<RecordingFinish> =>
   androidSession.finishRecording();

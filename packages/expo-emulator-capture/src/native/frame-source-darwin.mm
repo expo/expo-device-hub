@@ -23,7 +23,9 @@ constexpr int kEglDraw = 0x3059;
 constexpr int kEglRead = 0x305A;
 constexpr uint32_t kGlRgba = 0x1908;
 constexpr uint32_t kGlUnsignedByte = 0x1401;
-constexpr size_t kMaxTargets = 8;
+// Cached IOSurface targets. The stream and the recording each hold up to three frames (two
+// pending, one encoding), and one more is being captured.
+constexpr size_t kMaxTargets = 12;
 
 using Clock = std::chrono::steady_clock;
 double msSince(Clock::time_point start) {
@@ -134,6 +136,15 @@ bool IOSurfaceFrameSource::capture(uint32_t handle, CapturedFrame& out, std::str
     if (!ok && !gpuUnavailable_) return false;  // A transient GPU error; do not mask it.
   }
   if (!ok) ok = captureCpu(fb, handle, out, error);
+  if (ok) {
+    // The capture is sRGB; tag it so that the encoders' transfers convert it with BT.709 terms.
+    // Tagged here, before the stream and the recording read the buffer on their own threads.
+    CVBufferSetAttachment(out.pixels.get(), kCVImageBufferColorPrimariesKey,
+                          kCVImageBufferColorPrimaries_ITU_R_709_2,
+                          kCVAttachmentMode_ShouldPropagate);
+    CVBufferSetAttachment(out.pixels.get(), kCVImageBufferTransferFunctionKey,
+                          kCVImageBufferTransferFunction_sRGB, kCVAttachmentMode_ShouldPropagate);
+  }
   out.captureMs = msSince(start);
   return ok;
 }

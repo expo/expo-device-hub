@@ -23,7 +23,7 @@ export class ScreenRecordingConflictError extends Error {}
 export type ScreenRecordingResult = RecordingMetadata & { directory: string };
 
 export type ScreenRecordingStatus =
-  | { status: "waiting"; followsFold?: true }
+  | { status: "waiting"; followsFold?: true; independent?: true }
   | {
       status: "recording";
       firstFrameAt: string;
@@ -31,10 +31,40 @@ export type ScreenRecordingStatus =
       queuedBytes: number;
       /** The recording keeps going when a foldable folds or unfolds. */
       followsFold?: true;
+      /**
+       * The recording has its own encode, apart from the live stream, so no stream setting,
+       * source, rotation or fold ends it.
+       */
+      independent?: true;
     }
-  | { status: "finalizing" }
+  | { status: "finalizing"; independent?: true }
   | { status: "complete" }
   | { status: "failed"; error: string };
+
+/** Why a recording ended: the stop request, the duration limit, or the end of the device. */
+export type ScreenRecordingStopReason = "session-stop" | "duration-limit" | "device-ended";
+
+/**
+ * Where a recording's packets come from. `capture-recording` is the emulator capture agent's
+ * recording consumer, whose timestamps the source moved onto this host's monotonic clock.
+ */
+export type ScreenRecordingSource = StreamMode | "capture-recording";
+
+/** The recording's own encode settings; absent fields take the recording source's defaults. */
+export type RecordingEncodingRequest = {
+  /** The longest edge of the canvas; 0 keeps the native size. */
+  maxSize?: number;
+  fps?: number;
+  bitRate?: number;
+};
+
+const ENCODING_BOUNDS = {
+  maxSize: { min: 0, max: 4096 },
+  fps: { min: 1, max: 120 },
+  bitRate: { min: 100_000, max: 50_000_000 },
+} as const;
+/** The smallest longest edge besides 0, as the capture agent accepts it. */
+const MIN_RECORDING_MAX_SIZE = 16;
 
 type Sample = {
   data: Buffer;
@@ -104,6 +134,8 @@ type WriterOptions = {
 
 export type RecordingOptions = RecordingMetadata & {
   directory: string;
+  /** Used when the recording has its own encode; a recording of the stream's packets ignores it. */
+  encoding?: RecordingEncodingRequest;
   maxQueuedBytes?: number;
   maxFileBytes?: number;
   maxDurationMs?: number;
@@ -222,7 +254,7 @@ export class ScreenRecording {
   #queuedBytes = 0;
   #frames = 0;
   #durationTimer: ReturnType<typeof setTimeout> | null = null;
-  #stopReason: "session-stop" | "duration-limit" = "session-stop";
+  #stopReason: ScreenRecordingStopReason = "session-stop";
   #outputName = "recording.mp4.partial";
   readonly #limits: typeof DEFAULT_RECORDING_LIMITS;
   #finishTask: Promise<ScreenRecordingResult> | null = null;
@@ -233,6 +265,7 @@ export class ScreenRecording {
   readonly ready: Promise<void>;
   #foldCanvas: RecordingCanvas | null = null;
   #followsFold = false;
+  #independent = false;
   /** Hinge readings by the monotonic time they arrived, oldest first. */
   #poses: { atUs: bigint; pose: RecordingPose }[] = [];
   /** How many timeline entries the last partial manifest published. */
@@ -275,6 +308,18 @@ export class ScreenRecording {
         throw new Error(`Invalid recording limit ${name}.`);
       }
     }
+    for (const [name, { min, max }] of Object.entries(ENCODING_BOUNDS)) {
+      const value = options.encoding?.[name as keyof RecordingEncodingRequest];
+      if (
+        value !== undefined &&
+        (!Number.isSafeInteger(value) ||
+          value < min ||
+          value > max ||
+          (name === "maxSize" && value > 0 && value < MIN_RECORDING_MAX_SIZE))
+      ) {
+        throw new Error(`Invalid recording encoding ${name}.`);
+      }
+    }
     // The caller supplies a fresh session directory. Never overwrite another recording.
     await mkdir(options.directory, { recursive: false });
     const recording = new ScreenRecording(options);
@@ -288,6 +333,7 @@ export class ScreenRecording {
 
   snapshot(): ScreenRecordingStatus {
     const followsFold = this.#followsFold ? ({ followsFold: true } as const) : {};
+    const independent = this.#independent ? ({ independent: true } as const) : {};
     if (this.#status.status === "recording" && this.#first) {
       return {
         status: "recording",
@@ -295,10 +341,40 @@ export class ScreenRecording {
         frames: this.#frames,
         queuedBytes: this.#queuedBytes,
         ...followsFold,
+        ...independent,
       };
     }
-    if (this.#status.status === "waiting") return { status: "waiting", ...followsFold };
+    if (this.#status.status === "waiting")
+      return { status: "waiting", ...followsFold, ...independent };
+    if (this.#status.status === "finalizing") return { status: "finalizing", ...independent };
     return { ...this.#status };
+  }
+
+  // @ref LLP 0023#recording-source-in-serve-emu — the status says that nothing in the UI ends it
+  /**
+   * The recording has its own encode from the emulator capture agent, apart from every app and
+   * capture generation. Apps then neither feed it nor refuse stream changes for it.
+   */
+  markIndependent(): void {
+    this.#independent = true;
+  }
+
+  get independent(): boolean {
+    return this.#independent;
+  }
+
+  /** The clock that frame timestamps from this host and pose readings use, in microseconds. */
+  monotonicUs(): bigint {
+    return this.#clock.monotonicUs();
+  }
+
+  /**
+   * The device shut down or went away: finish at once with what the recording has, so that a
+   * later stop request publishes it.
+   */
+  endWithDevice(): Promise<ScreenRecordingResult> {
+    if (this.active) this.#stopReason = "device-ended";
+    return this.finish();
   }
 
   /**
@@ -362,7 +438,7 @@ export class ScreenRecording {
   accept(
     packet: VideoPacket,
     size: { width: number; height: number },
-    source: StreamMode,
+    source: ScreenRecordingSource,
     geometry?: RecordingGeometry,
   ): void {
     if (!this.active) return;
@@ -407,9 +483,12 @@ export class ScreenRecording {
         if (this.#sps.length < 4 || size.width <= 0 || size.height <= 0)
           throw new Error("Invalid recording codec configuration.");
         const monotonicUs = this.#clock.monotonicUs();
-        // gRPC packets use this process's encoder-submission clock, including idle repeats.
+        // gRPC packets use this process's encoder-submission clock, including idle repeats, and
+        // the capture recording source moves the agent's capture times onto that clock.
         const captureDelayMs =
-          source === "grpc-screenshot" ? Number(monotonicUs - packet.pts) / 1000 : 0;
+          source === "grpc-screenshot" || source === "capture-recording"
+            ? Number(monotonicUs - packet.pts) / 1000
+            : 0;
         this.#first = {
           pts: packet.pts,
           monotonicUs: monotonicUs - BigInt(Math.round(captureDelayMs * 1000)),
