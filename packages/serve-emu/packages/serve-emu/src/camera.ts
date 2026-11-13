@@ -22,6 +22,7 @@ import {
   type CameraFacing,
   type CameraFeedStatus,
   type CameraStatus,
+  type SessionAction,
 } from "./shared/api-contracts.ts";
 
 export type { CameraFacing, CameraFeedStatus, CameraStatus };
@@ -469,6 +470,8 @@ export type CameraRequestContext = {
    * refuse a mutation whose device session moved on while the body streamed in.
    */
   beforeMutation?: () => void;
+  /** Runs after the feed file changed, so the host can add it to the device's session events. */
+  recordAction?: (action: SessionAction) => void;
   errorResponse?: (error: unknown) => Response;
 };
 
@@ -553,9 +556,11 @@ export async function handleCameraRequest(
       const png = await readBodyLimited(request, MAX_CAMERA_IMAGE_BYTES);
       context.beforeMutation?.();
       await setCameraImage(serial, facing, png);
+      context.recordAction?.({ type: "camera", action: "set-image", facing });
     } else {
       context.beforeMutation?.();
       await clearCameraImage(serial, facing);
+      context.recordAction?.({ type: "camera", action: "clear-image", facing });
     }
     return await statusResponse();
   } catch (error) {

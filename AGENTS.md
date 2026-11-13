@@ -10,7 +10,7 @@ Write PR descriptions for reviewers, not as chat transcripts. Summarize meaningf
 
 # Device interactions
 
-Every user or API interaction with a device must be recorded in that device's session events: serve-emu's session recording on Android, and serve-sim's event log on iOS. This applies to each new route, WebSocket message, and Hub control that changes or captures a device. A read adds no entry. EAS counts these entries as activity, so an interaction that is not recorded lets an idle timeout stop a session that a person uses. In serve-emu, add each new mutating route to `SESSION_EVENT_POLICY` in `packages/serve-emu/packages/serve-emu/src/session-actions.ts`; typecheck fails until you do. [LLP 0025](llp/0025-session-events-record-every-interaction.spec.md) has the rules, including what replay skips.
+Every user or API interaction with a device must be recorded in that device's session events: serve-emu's session recording on Android, and serve-sim's event log on iOS. This applies to each new route, WebSocket message, and Hub control that changes or captures a device. A read adds no entry. EAS counts these entries as activity, so an interaction that is not recorded lets an idle timeout stop a session that a person uses. In serve-emu, a handler that changes or captures the device calls `recordAction` after the device call succeeds, in both `middleware.ts` and `server.ts`, and the route gets a row in `ACTION_CASES` in `packages/serve-emu/packages/serve-emu/tests/middleware-session-events.test.ts`. [LLP 0025](llp/0025-session-events-record-every-interaction.spec.md) has the rules, including what replay skips.
 
 # Linked Literate Programming (LLP)
 

@@ -1,8 +1,25 @@
 import { normalizeTextForControl, type Gesture } from "./input.ts";
 import type { GeoFix } from "./location.ts";
-import type { SessionAction } from "./shared/api-contracts.ts";
+import type { SessionAction, SessionAppAction } from "./shared/api-contracts.ts";
 
-export type { SessionAction } from "./shared/api-contracts.ts";
+export type { SessionAction, SessionAppAction } from "./shared/api-contracts.ts";
+
+/** The action entry for an app route. It copies the package and permission the route accepted. */
+export function appSessionAction(
+  action: SessionAppAction,
+  payload: Record<string, unknown>,
+): SessionAction {
+  const text = (value: unknown) =>
+    typeof value === "string" && value.trim() ? value.trim() : undefined;
+  const packageName = text(payload.packageName);
+  const permission = text(payload.permission);
+  return {
+    type: "app",
+    action,
+    ...(packageName ? { packageName } : {}),
+    ...(permission ? { permission } : {}),
+  };
+}
 
 type RecordedEventBase = {
   id: number;

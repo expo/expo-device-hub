@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  SESSION_EVENT_POLICY,
-  sessionEventPolicy,
-  withSessionAction,
-  type SessionEventPolicy,
-} from "../src/session-actions.ts";
-import {
+  appSessionAction,
   replayPlan,
   sessionRecordMode,
   SessionRecorder,
@@ -272,189 +267,23 @@ describe("session snapshot contract", () => {
   });
 });
 
-describe("session event policy", () => {
-  const url = (path: string) => new URL(`http://device.test${path}`);
-  const action = (key: keyof typeof SESSION_EVENT_POLICY, payload?: unknown, path = "") => {
-    const policy: SessionEventPolicy = SESSION_EVENT_POLICY[key];
-    if (policy.record !== "action") throw new Error(`${key} records no action`);
-    return policy.action({ payload, url: url(`${key.split(" ")[1]}${path}`) });
-  };
-
-  test("looks up mutating routes only", () => {
-    expect(sessionEventPolicy("post", "/api/screenshot")).toMatchObject({ record: "action" });
-    expect(sessionEventPolicy("POST", "/api/tap")).toEqual({ record: "input" });
-    expect(sessionEventPolicy("PUT", "/api/stream-mode")).toMatchObject({ record: "none" });
-    expect(sessionEventPolicy("GET", "/api/orientation")).toBeNull();
-    expect(sessionEventPolicy("GET", "/api/session")).toBeNull();
-    expect(sessionEventPolicy("POST", "/api/unknown")).toBeNull();
-    expect(sessionEventPolicy("POST", "/api/toString")).toBeNull();
-  });
-
-  test("every exempt route says why", () => {
-    for (const [route, policy] of Object.entries(SESSION_EVENT_POLICY)) {
-      if (policy.record === "none") expect(policy.reason.length, route).toBeGreaterThan(0);
-    }
-  });
-
-  test("builds each action from the accepted request", () => {
-    expect(action("POST /api/screenshot")).toEqual({ type: "screenshot" });
-    expect(action("POST /api/orientation", { orientation: "landscape_left" })).toEqual({
-      type: "orientation",
-      orientation: "landscape_left",
-    });
-    expect(action("POST /api/fold", { posture: "closed" })).toEqual({
-      type: "fold",
-      posture: "closed",
-    });
-    expect(action("POST /api/fold", { hingeAngle: 45 })).toEqual({ type: "fold", hingeAngle: 45 });
-    expect(action("POST /api/uimode", { night: "yes" })).toEqual({
-      type: "setting",
-      setting: "night-mode",
-      value: "dark",
-    });
-    expect(action("POST /api/night-mode", { mode: "light" })).toEqual({
-      type: "setting",
-      setting: "night-mode",
-      value: "light",
-    });
-    expect(action("POST /api/font-scale", { scale: 1.3 })).toEqual({
-      type: "setting",
-      setting: "font-scale",
-      value: 1.3,
-    });
-    expect(action("POST /api/software-keyboard", { enabled: false })).toEqual({
-      type: "setting",
-      setting: "software-keyboard",
-      value: false,
-    });
-    expect(action("POST /api/apps/install")).toEqual({ type: "app", action: "install" });
+describe("appSessionAction", () => {
+  test("copies the package and permission the route accepted", () => {
     expect(
-      action("POST /api/apps/grant", { packageName: " com.example ", permission: "CAMERA" }),
-    ).toEqual({ type: "app", action: "grant", packageName: "com.example", permission: "CAMERA" });
-    expect(action("POST /api/files/import")).toEqual({ type: "file-import" });
-    expect(action("POST /api/route")).toEqual({ type: "route", action: "start" });
-    expect(action("DELETE /api/route")).toEqual({ type: "route", action: "stop" });
-    expect(action("POST /api/route/control", { action: "pause" })).toEqual({
-      type: "route",
-      action: "pause",
+      appSessionAction("grant", {
+        packageName: " com.example.app ",
+        permission: "android.permission.CAMERA",
+        other: "ignored",
+      }),
+    ).toEqual({
+      type: "app",
+      action: "grant",
+      packageName: "com.example.app",
+      permission: "android.permission.CAMERA",
     });
-    expect(action("POST /api/camera/image", undefined, "?facing=front")).toEqual({
-      type: "camera",
-      action: "set-image",
-      facing: "front",
+    expect(appSessionAction("launch", { packageName: "", permission: 7 })).toEqual({
+      type: "app",
+      action: "launch",
     });
-    expect(action("DELETE /api/camera/image", undefined, "?facing=back")).toEqual({
-      type: "camera",
-      action: "clear-image",
-      facing: "back",
-    });
-  });
-
-  test("an unexpected payload builds no action", () => {
-    expect(action("POST /api/orientation", { orientation: "sideways" })).toBeNull();
-    expect(action("POST /api/uimode", { night: "toString" })).toBeNull();
-    expect(action("POST /api/font-scale", { scale: "big" })).toBeNull();
-    expect(action("POST /api/camera/image", undefined, "?facing=side")).toBeNull();
-  });
-});
-
-describe("withSessionAction", () => {
-  function jsonRequest(path: string, body: unknown, method = "POST") {
-    return new Request(`http://device.test${path}`, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  }
-
-  async function readStream(request: Request): Promise<string> {
-    const reader = request.body!.getReader();
-    const chunks: Uint8Array[] = [];
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-    return Buffer.concat(chunks).toString("utf8");
-  }
-
-  test("records the action after a success, and the route still reads the body", async () => {
-    const recorded: [SessionAction, string][] = [];
-    let seen = "";
-    const response = await withSessionAction(
-      jsonRequest("/api/orientation", { orientation: "portrait" }),
-      async (request) => {
-        seen = await readStream(request);
-        return Response.json({ ok: true });
-      },
-      (action, source) => recorded.push([action, source]),
-    );
-    expect(response.status).toBe(200);
-    expect(seen).toBe('{"orientation":"portrait"}');
-    expect(recorded).toEqual([
-      [{ type: "orientation", orientation: "portrait" }, "rest:orientation"],
-    ]);
-  });
-
-  test("records nothing when the route fails", async () => {
-    const recorded: unknown[] = [];
-    for (const status of [400, 409, 500, 503]) {
-      await withSessionAction(
-        jsonRequest("/api/orientation", { orientation: "portrait" }),
-        () => Response.json({ ok: false }, { status }),
-        (action) => recorded.push(action),
-      );
-    }
-    await withSessionAction(
-      new Request("http://device.test/api/screenshot", { method: "POST" }),
-      () => {
-        throw new Error("adb failed");
-      },
-      (action) => recorded.push(action),
-    ).catch(() => {});
-    expect(recorded).toEqual([]);
-  });
-
-  test("leaves input, exempt, read, and upgrade requests to the route", async () => {
-    const recorded: unknown[] = [];
-    const record = (action: SessionAction) => recorded.push(action);
-    await withSessionAction(
-      jsonRequest("/api/tap", { x: 0.5, y: 0.5 }),
-      () => Response.json({}),
-      record,
-    );
-    await withSessionAction(
-      jsonRequest("/api/stream-settings", {}, "PATCH"),
-      () => Response.json({}),
-      record,
-    );
-    await withSessionAction(
-      new Request("http://device.test/api/session"),
-      () => Response.json({}),
-      record,
-    );
-    expect(
-      await withSessionAction(new Request("http://device.test/ws"), () => undefined, record),
-    ).toBeUndefined();
-    expect(recorded).toEqual([]);
-  });
-
-  test("records with a path-based source and without a body", async () => {
-    const recorded: [SessionAction, string][] = [];
-    await withSessionAction(
-      new Request("http://device.test/api/route", { method: "DELETE" }),
-      () => Response.json({ ok: true }),
-      (action, source) => recorded.push([action, source]),
-    );
-    expect(recorded).toEqual([[{ type: "route", action: "stop" }, "rest:route"]]);
-  });
-
-  test("runs the route alone when no session can record", async () => {
-    const response = await withSessionAction(
-      new Request("http://device.test/api/screenshot", { method: "POST" }),
-      () => new Response("png"),
-      undefined,
-    );
-    expect(await response.text()).toBe("png");
   });
 });

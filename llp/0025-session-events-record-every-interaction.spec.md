@@ -74,11 +74,13 @@ Actions are not replayed, for these reasons:
 - `apps/install` and `files/import` need the uploaded file, which the entry does not keep. `apps/clear` deletes app data.
 - Replay sent only input before this change. Keeping that scope keeps the behavior of existing replays.
 
-## Policy
+## Where entries are recorded
 
-<a id="policy"></a>`SESSION_EVENT_POLICY` in `src/session-actions.ts` says what each mutating route adds: `input` (the route records its own gesture or location), `action`, or `none` with a reason. Its type lists every route of the API contract that is not a `GET`, plus the middleware's `POST /api/uimode`. A new contract route therefore does not typecheck until it is classified [observed: `MutatingContractRoute` in `src/session-actions.ts`]. A route outside `ApiContractMap` in `src/shared/api-contracts.ts`, such as `/api/uimode`, has no such check: add it to the contract or to `MiddlewareOnlyRoute` by hand.
+<a id="recording"></a>Each handler records its own entry right after the device call succeeds, with the values it already validated, so a request that fails adds no entry [observed: `src/middleware.ts`, `src/server.ts`]. Input records in `enqueueGesture` and `applyLocation`. A device action calls `recordAction(action, source)` on the device's recorder. The app routes build their entry with `appSessionAction` in `src/session-recorder.ts`, and the upload routes record after the upload succeeds. `handleCameraRequest` in `src/camera.ts`, which both servers share, records through its `recordAction` hook. The router records a camera change only when the device already has an app, because the device has no session events before that.
 
-Both servers wrap their routing in `withSessionAction`. It records the action after a `2xx` response, so a rejected request adds no entry. The middleware wraps each device app's `handleRequest`; the standalone server wraps its `fetch`. The router answers the camera routes itself, so it wraps them too, and records only when the device already has an app, because the device has no session events before that [observed: `src/middleware.ts`, `src/server.ts`].
+serve-emu has two copies of each route: `src/middleware.ts`, which the Hub mounts, and `src/server.ts`, the standalone server. A new route that changes or captures the device must record in both. `tests/middleware-session-events.test.ts` sends every action route to both servers against a fake `adb` and checks that each one adds its entry. Add a row to `ACTION_CASES` for each new route.
+
+An earlier draft of this change recorded actions from one table of routes, applied after each response. Krystof Woldrich chose calls in each handler instead [confirmed] (Krystof Woldrich, 2026-11-13).
 
 These interactions add no entry:
 

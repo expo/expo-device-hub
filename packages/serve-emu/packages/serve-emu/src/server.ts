@@ -84,11 +84,13 @@ import { ControlInputError, ControlInputQueue } from "./control-input-queue.ts";
 import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
-import { withSessionAction } from "./session-actions.ts";
 import {
+  appSessionAction,
   parseSessionReplayMultiplier,
   sessionRecordMode,
   SessionReplayConflictError,
+  type SessionAction,
+  type SessionAppAction,
   type SessionRecordMode,
 } from "./session-recorder.ts";
 import {
@@ -1110,6 +1112,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
   const appJsonEndpoint = async (
     context: DeviceContext,
     req: Request,
+    appAction: SessionAppAction,
     action: (payload: Record<string, unknown>) => unknown | Promise<unknown>,
   ) => {
     try {
@@ -1119,6 +1122,10 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       }
       const result = await action(payload as Record<string, unknown>);
       sessions.assertCurrent(context);
+      context.recorder.recordAction(
+        appSessionAction(appAction, payload as Record<string, unknown>),
+        `rest:apps/${appAction}`,
+      );
       return Response.json(result);
     } catch (err) {
       return errorResponse(err);
@@ -1131,6 +1138,8 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     options: {
       fieldName: "apk" | "file";
       maxFileBytes: number;
+      /** The session entry for an accepted upload, and its source. */
+      record: { action: SessionAction; source: string };
       action: (
         serial: string,
         file: Awaited<ReturnType<typeof stageUpload>>,
@@ -1182,6 +1191,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           }
         },
       );
+      context.recorder.recordAction(options.record.action, options.record.source);
       return Response.json(result);
     } catch (error) {
       if (req.body && !req.body.locked) {
@@ -1195,6 +1205,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     uploadEndpoint(context, req, {
       fieldName: "apk",
       maxFileBytes: maxApkUploadBytes,
+      record: { action: { type: "app", action: "install" }, source: "rest:apps/install" },
       action: (serial, file, signal) => installStagedApk(serial, file, signal),
     });
 
@@ -1202,6 +1213,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     uploadEndpoint(context, req, {
       fieldName: "file",
       maxFileBytes: maxMediaUploadBytes,
+      record: { action: { type: "file-import" }, source: "rest:files/import" },
       action: (serial, file, signal) => importStagedMedia(serial, file, signal),
     });
 
@@ -2171,12 +2183,14 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             }
             const orientation = (payload as Record<string, unknown>).orientation;
             if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
-            return Response.json({
-              ok: true,
-              orientation: await runForContext(requestContext, (context) =>
-                context.deviceState.setOrientation(orientation),
-              ),
-            });
+            const status = await runForContext(requestContext, (context) =>
+              context.deviceState.setOrientation(orientation),
+            );
+            requestContext.recorder.recordAction(
+              { type: "orientation", orientation },
+              "rest:orientation",
+            );
+            return Response.json({ ok: true, orientation: status });
           } catch (err) {
             return errorResponse(err);
           }
@@ -2202,12 +2216,11 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               throw new Error("fold payload must be an object");
             }
             const fold = parseFoldRequest(payload as Record<string, unknown>);
-            return Response.json({
-              ok: true,
-              fold: await runForContext(requestContext, (context) =>
-                applyFoldRequest(context.serial, fold),
-              ),
-            });
+            const status = await runForContext(requestContext, (context) =>
+              applyFoldRequest(context.serial, fold),
+            );
+            requestContext.recorder.recordAction({ type: "fold", ...fold }, "rest:fold");
+            return Response.json({ ok: true, fold: status });
           } catch (err) {
             return errorResponse(err);
           }
@@ -2238,12 +2251,14 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             if (mode !== "dark" && mode !== "light" && mode !== "auto") {
               throw new Error("mode must be dark, light, or auto");
             }
-            return Response.json({
-              ok: true,
-              nightMode: await runForContext(requestContext, (context) =>
-                setNightMode(context.serial, mode as NightMode),
-              ),
-            });
+            const nightMode = await runForContext(requestContext, (context) =>
+              setNightMode(context.serial, mode as NightMode),
+            );
+            requestContext.recorder.recordAction(
+              { type: "setting", setting: "night-mode", value: mode as NightMode },
+              "rest:night-mode",
+            );
+            return Response.json({ ok: true, nightMode });
           } catch (err) {
             return errorResponse(err);
           }
@@ -2271,12 +2286,14 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               throw new Error("font scale payload must be an object");
             }
             const scale = parseFontScale((payload as Record<string, unknown>).scale);
-            return Response.json({
-              ok: true,
-              fontScale: await runForContext(requestContext, (context) =>
-                setFontScale(context.serial, scale),
-              ),
-            });
+            const fontScale = await runForContext(requestContext, (context) =>
+              setFontScale(context.serial, scale),
+            );
+            requestContext.recorder.recordAction(
+              { type: "setting", setting: "font-scale", value: scale },
+              "rest:font-scale",
+            );
+            return Response.json({ ok: true, fontScale });
           } catch (err) {
             return errorResponse(err);
           }
@@ -2307,12 +2324,14 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             if (typeof enabled !== "boolean") {
               throw new Error("enabled must be a boolean");
             }
-            return Response.json({
-              ok: true,
-              network: await runForContext(requestContext, (context) =>
-                setNetworkEnabled(context.serial, enabled),
-              ),
-            });
+            const network = await runForContext(requestContext, (context) =>
+              setNetworkEnabled(context.serial, enabled),
+            );
+            requestContext.recorder.recordAction(
+              { type: "setting", setting: "network", value: enabled },
+              "rest:network",
+            );
+            return Response.json({ ok: true, network });
           } catch (err) {
             return errorResponse(err);
           }
@@ -2343,12 +2362,14 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             if (typeof enabled !== "boolean") {
               throw new Error("enabled must be a boolean");
             }
-            return Response.json({
-              ok: true,
-              reduceMotion: await runForContext(requestContext, (context) =>
-                setReduceMotion(context.serial, enabled),
-              ),
-            });
+            const reduceMotion = await runForContext(requestContext, (context) =>
+              setReduceMotion(context.serial, enabled),
+            );
+            requestContext.recorder.recordAction(
+              { type: "setting", setting: "reduce-motion", value: enabled },
+              "rest:reduce-motion",
+            );
+            return Response.json({ ok: true, reduceMotion });
           } catch (err) {
             return errorResponse(err);
           }
@@ -2379,12 +2400,14 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             if (typeof enabled !== "boolean") {
               throw new Error("enabled must be a boolean");
             }
-            return Response.json({
-              ok: true,
-              highTextContrast: await runForContext(requestContext, (context) =>
-                setHighTextContrast(context.serial, enabled),
-              ),
-            });
+            const highTextContrast = await runForContext(requestContext, (context) =>
+              setHighTextContrast(context.serial, enabled),
+            );
+            requestContext.recorder.recordAction(
+              { type: "setting", setting: "high-text-contrast", value: enabled },
+              "rest:high-text-contrast",
+            );
+            return Response.json({ ok: true, highTextContrast });
           } catch (err) {
             return errorResponse(err);
           }
@@ -2415,12 +2438,14 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             if (typeof enabled !== "boolean") {
               throw new Error("enabled must be a boolean");
             }
-            return Response.json({
-              ok: true,
-              fontWeight: await runForContext(requestContext, (context) =>
-                setFontWeight(context.serial, enabled),
-              ),
-            });
+            const fontWeight = await runForContext(requestContext, (context) =>
+              setFontWeight(context.serial, enabled),
+            );
+            requestContext.recorder.recordAction(
+              { type: "setting", setting: "font-weight", value: enabled },
+              "rest:font-weight",
+            );
+            return Response.json({ ok: true, fontWeight });
           } catch (err) {
             return errorResponse(err);
           }
@@ -2451,12 +2476,14 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             if (typeof enabled !== "boolean") {
               throw new Error("enabled must be a boolean");
             }
-            return Response.json({
-              ok: true,
-              softwareKeyboard: await runForContext(requestContext, (context) =>
-                setSoftwareKeyboard(context.serial, enabled),
-              ),
-            });
+            const softwareKeyboard = await runForContext(requestContext, (context) =>
+              setSoftwareKeyboard(context.serial, enabled),
+            );
+            requestContext.recorder.recordAction(
+              { type: "setting", setting: "software-keyboard", value: enabled },
+              "rest:software-keyboard",
+            );
+            return Response.json({ ok: true, softwareKeyboard });
           } catch (err) {
             return errorResponse(err);
           }
@@ -2484,12 +2511,14 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               throw new Error("display density payload must be an object");
             }
             const scale = parseDisplayDensityScale((payload as Record<string, unknown>).scale);
-            return Response.json({
-              ok: true,
-              displayDensity: await runForContext(requestContext, (context) =>
-                setDisplayDensity(context.serial, scale),
-              ),
-            });
+            const displayDensity = await runForContext(requestContext, (context) =>
+              setDisplayDensity(context.serial, scale),
+            );
+            requestContext.recorder.recordAction(
+              { type: "setting", setting: "display-density", value: scale },
+              "rest:display-density",
+            );
+            return Response.json({ ok: true, displayDensity });
           } catch (err) {
             return errorResponse(err);
           }
@@ -2533,7 +2562,11 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           const shot = await runForContext(requestContext, (context) =>
             captureScreenshot(() => screencapPng(context.serial), context.deviceState.orientation),
           );
-          return await screenshotResponse(shot.png, url, shot.metadata);
+          const response = await screenshotResponse(shot.png, url, shot.metadata);
+          if (response.ok) {
+            requestContext.recorder.recordAction({ type: "screenshot" }, "rest:screenshot");
+          }
+          return response;
         } catch (err) {
           return errorResponse(err);
         }
@@ -2666,7 +2699,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
 
       if (url.pathname === "/api/apps/launch") {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-        return appJsonEndpoint(requestContext, req, (payload) =>
+        return appJsonEndpoint(requestContext, req, "launch", (payload) =>
           launchApp(
             requestContext.serial,
             String(payload.packageName ?? ""),
@@ -2679,21 +2712,21 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
 
       if (url.pathname === "/api/apps/clear") {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-        return appJsonEndpoint(requestContext, req, (payload) =>
+        return appJsonEndpoint(requestContext, req, "clear", (payload) =>
           clearAppData(requestContext.serial, String(payload.packageName ?? "")),
         );
       }
 
       if (url.pathname === "/api/apps/force-stop") {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-        return appJsonEndpoint(requestContext, req, (payload) =>
+        return appJsonEndpoint(requestContext, req, "force-stop", (payload) =>
           forceStopApp(requestContext.serial, String(payload.packageName ?? "")),
         );
       }
 
       if (url.pathname === "/api/apps/grant") {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-        return appJsonEndpoint(requestContext, req, (payload) =>
+        return appJsonEndpoint(requestContext, req, "grant", (payload) =>
           grantPermission(
             requestContext.serial,
             String(payload.packageName ?? ""),
@@ -2717,7 +2750,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
 
       if (url.pathname === "/api/apps/revoke") {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-        return appJsonEndpoint(requestContext, req, (payload) =>
+        return appJsonEndpoint(requestContext, req, "revoke", (payload) =>
           revokePermission(
             requestContext.serial,
             String(payload.packageName ?? ""),
@@ -2728,7 +2761,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
 
       if (url.pathname === "/api/apps/reset-permissions") {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-        return appJsonEndpoint(requestContext, req, (payload) =>
+        return appJsonEndpoint(requestContext, req, "reset-permissions", (payload) =>
           resetPermissions(requestContext.serial, String(payload.packageName ?? "")),
         );
       }
@@ -2787,6 +2820,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             const start = requestContext.route.start(route);
             const snapshot = await requestContext.trackDrain(start);
             sessions.assertCurrent(requestContext);
+            requestContext.recorder.recordAction({ type: "route", action: "start" }, "rest:route");
             return Response.json({
               ok: true,
               route: snapshot,
@@ -2799,10 +2833,9 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
         }
         if (req.method === "DELETE") {
           sessions.assertCurrent(requestContext);
-          return Response.json({
-            ok: true,
-            route: requestContext.route.stop(),
-          });
+          const snapshot = requestContext.route.stop();
+          requestContext.recorder.recordAction({ type: "route", action: "stop" }, "rest:route");
+          return Response.json({ ok: true, route: snapshot });
         }
         return new Response("method not allowed", { status: 405 });
       }
@@ -2815,22 +2848,12 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             throw new Error("control payload must be an object");
           }
           const action = (payload as Record<string, unknown>).action;
-          if (action === "pause")
-            return Response.json({
-              ok: true,
-              route: requestContext.route.pause(),
-            });
-          if (action === "resume")
-            return Response.json({
-              ok: true,
-              route: requestContext.route.resume(),
-            });
-          if (action === "stop")
-            return Response.json({
-              ok: true,
-              route: requestContext.route.stop(),
-            });
-          throw new Error("action must be pause, resume, or stop");
+          if (action !== "pause" && action !== "resume" && action !== "stop") {
+            throw new Error("action must be pause, resume, or stop");
+          }
+          const snapshot = requestContext.route[action]();
+          requestContext.recorder.recordAction({ type: "route", action }, "rest:route/control");
+          return Response.json({ ok: true, route: snapshot });
         } catch (err) {
           return errorResponse(err);
         }
@@ -2840,6 +2863,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
         serial: requestContext.serial,
         readWiring,
         beforeMutation: () => sessions.assertCurrent(requestContext),
+        recordAction: (action) => requestContext.recorder.recordAction(action, "rest:camera/image"),
         // A camera failure this router cannot classify is a host failure, not
         // the 400 the other routes fall back to.
         errorResponse: (err) => errorResponse(err, 500),
@@ -2976,25 +3000,9 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     },
   };
 
-  // Every device action a route takes is recorded here, after it succeeds, in the session that
-  // the request started on.
-  // @ref LLP 0025#policy — one table decides what each mutating route adds to the session events
-  const routeRequest = serverOptions.fetch;
   let server: ReturnType<typeof Bun.serve<WsData>>;
   try {
-    server = serve<WsData>({
-      ...serverOptions,
-      fetch(req, srv) {
-        const context = sessions.current;
-        return withSessionAction(
-          req,
-          (request) => routeRequest.call(this, request, srv),
-          (action, source) => {
-            if (sessions.isCurrent(context)) context.recorder.recordAction(action, source);
-          },
-        );
-      },
-    });
+    server = serve<WsData>(serverOptions);
   } catch (err) {
     stopRequested = true;
     await sessions.close("server startup failed");
