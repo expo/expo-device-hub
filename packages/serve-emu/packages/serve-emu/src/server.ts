@@ -84,7 +84,13 @@ import { ControlInputError, ControlInputQueue } from "./control-input-queue.ts";
 import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
-import { parseSessionReplayMultiplier, SessionReplayConflictError } from "./session-recorder.ts";
+import { withSessionAction } from "./session-actions.ts";
+import {
+  parseSessionReplayMultiplier,
+  sessionRecordMode,
+  SessionReplayConflictError,
+  type SessionRecordMode,
+} from "./session-recorder.ts";
 import {
   clearSessionReplayResponse,
   sessionReplayErrorResponse,
@@ -941,12 +947,6 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     return result;
   };
 
-  const shouldRecord = (value: unknown) =>
-    typeof value !== "object" ||
-    value === null ||
-    Array.isArray(value) ||
-    (value as Record<string, unknown>).record !== false;
-
   const readAccessibilitySnapshot = async (context: DeviceContext, cacheMs = 2_500) => {
     const snapshot = await context.readAccessibilitySnapshot(loadAccessibility, cacheMs);
     sessions.assertCurrent(context);
@@ -957,21 +957,21 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     context: DeviceContext,
     gesture: Gesture,
     source: string,
-    record = true,
+    record: SessionRecordMode = "replay",
   ) => {
     sessions.assertCurrent(context);
     if (context.status !== "streaming") {
       throw new Error(`session is ${context.status}`);
     }
     const accepted = context.inputQueue.enqueue(gesture, { ...context.screen });
-    if (record) context.recorder.recordGesture(accepted.gesture, source);
+    if (record !== "none") context.recorder.recordGesture(accepted.gesture, source, record);
     return accepted;
   };
 
   const inputTarget = (context: DeviceContext) => ({
     identity: context.inputQueue,
     pointerNamespace: context.deviceState,
-    enqueue: (gesture: Gesture, source: string, record: boolean) =>
+    enqueue: (gesture: Gesture, source: string, record: SessionRecordMode) =>
       enqueueGesture(context, gesture, source, record),
   });
 
@@ -979,7 +979,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     context: DeviceContext,
     gesture: Gesture,
     source: string,
-    record = true,
+    record: SessionRecordMode = "replay",
   ) => enqueueGesture(context, gesture, source, record).completion;
 
   const applyLocation = async (
@@ -1021,7 +1021,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           ? { ...payload, type }
           : payload,
       );
-      const accepted = enqueueGesture(context, gesture, source, shouldRecord(payload));
+      const accepted = enqueueGesture(context, gesture, source, sessionRecordMode(payload));
       try {
         const result = await accepted.completion;
         return Response.json({ ok: true, status: result.status });
@@ -1044,7 +1044,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
         key === "back" || key === "home" || key === "recents" || key === "power"
           ? parseGesture({ type: key })
           : parseGesture({ ...payload, type: "key" });
-      const accepted = enqueueGesture(context, gesture, "rest:key", shouldRecord(payload));
+      const accepted = enqueueGesture(context, gesture, "rest:key", sessionRecordMode(payload));
       try {
         const result = await accepted.completion;
         return Response.json({ ok: true, status: result.status });
@@ -1089,7 +1089,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           y,
         },
         "accessibility:tap",
-        shouldRecord(payload),
+        sessionRecordMode(payload),
       );
       try {
         const result = await accepted.completion;
@@ -2949,7 +2949,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           }
           const msg = parseGesture(payload);
           if (!ws.data.handle) throw new Error("WebSocket client is not open");
-          const accepted = ws.data.handle.touches.enqueue(msg, shouldRecord(payload));
+          const accepted = ws.data.handle.touches.enqueue(msg, sessionRecordMode(payload));
           void accepted.completion
             .then((result) => {
               if (acknowledge) {
@@ -2976,9 +2976,25 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     },
   };
 
+  // Every device action a route takes is recorded here, after it succeeds, in the session that
+  // the request started on.
+  // @ref LLP 0025#policy — one table decides what each mutating route adds to the session events
+  const routeRequest = serverOptions.fetch;
   let server: ReturnType<typeof Bun.serve<WsData>>;
   try {
-    server = serve<WsData>(serverOptions);
+    server = serve<WsData>({
+      ...serverOptions,
+      fetch(req, srv) {
+        const context = sessions.current;
+        return withSessionAction(
+          req,
+          (request) => routeRequest.call(this, request, srv),
+          (action, source) => {
+            if (sessions.isCurrent(context)) context.recorder.recordAction(action, source);
+          },
+        );
+      },
+    });
   } catch (err) {
     stopRequested = true;
     await sessions.close("server startup failed");

@@ -2,7 +2,8 @@ import { parseGesture, type Gesture } from "../../shared/control-contracts.ts";
 import { readJsonBody } from "../body.ts";
 import type { ApiDependencies } from "../dependencies.ts";
 import type { ContractApiRoute } from "./types.ts";
-import { downstream, invalid, isRecord, parseInput, shouldRecord } from "./route-helpers.ts";
+import { downstream, invalid, isRecord, parseInput } from "./route-helpers.ts";
+import { sessionRecordMode } from "../../session-recorder.ts";
 
 function gestureRoute(
   type: Extract<Gesture["type"], "tap" | "swipe" | "text">,
@@ -17,7 +18,7 @@ function gestureRoute(
         parseGesture(isRecord(payload) ? { ...payload, type } : payload),
       );
       await downstream("dispatch input", () =>
-        deps.dispatchGesture(gesture, source, shouldRecord(payload)),
+        deps.dispatchGesture(gesture, source, sessionRecordMode(payload)),
       );
       return Response.json({ ok: true });
     },
@@ -42,7 +43,7 @@ export function inputRoutes(): ContractApiRoute<ApiDependencies>[] {
             : parseGesture({ ...payload, type: "key" }),
         );
         await downstream("dispatch key", () =>
-          deps.dispatchGesture(gesture, "rest:key", shouldRecord(payload)),
+          deps.dispatchGesture(gesture, "rest:key", sessionRecordMode(payload)),
         );
         return Response.json({ ok: true });
       },

@@ -4,6 +4,7 @@ import {
   type ControlInputHandle,
 } from "./control-input-queue.ts";
 import type { Gesture } from "./input.ts";
+import { strongerRecordMode, type SessionRecordMode } from "./session-recorder.ts";
 
 type Touch = Extract<Gesture, { type: "touch" }>;
 
@@ -12,13 +13,13 @@ export type TouchInputTarget = {
   identity: object;
   /** The recording lifetime; IDs must not repeat when its capture is replaced. */
   pointerNamespace: object;
-  enqueue(gesture: Gesture, source: string, record: boolean): ControlInputHandle;
+  enqueue(gesture: Gesture, source: string, record: SessionRecordMode): ControlInputHandle;
 };
 
 type TouchCycle = {
   target: TouchInputTarget;
   gesture: Touch;
-  record: boolean;
+  record: SessionRecordMode;
   down: Promise<ControlInputCompletion>;
   downRejected: boolean;
   up: Promise<ControlInputCompletion> | null;
@@ -51,7 +52,11 @@ export class ClientTouchState {
     this.#source = source;
   }
 
-  enqueue(gesture: Gesture, record = true, skipOrphanTouches = false): ControlInputHandle {
+  enqueue(
+    gesture: Gesture,
+    record: SessionRecordMode = "replay",
+    skipOrphanTouches = false,
+  ): ControlInputHandle {
     if (this.#closed) throw new Error("input client is closed");
     const target = this.#target();
     if (target.identity !== this.#current?.identity) {
@@ -95,7 +100,7 @@ export class ClientTouchState {
           }
         : previous!;
     cycle.gesture = mapped;
-    cycle.record ||= record;
+    cycle.record = strongerRecordMode(cycle.record, record);
     if (gesture.action === "down") {
       this.#touches.set(localId, cycle);
       this.#unreleased.add(cycle);
@@ -227,7 +232,7 @@ export function replayTouchInput(target: () => TouchInputTarget) {
           { once: true },
         );
       }
-      return input.enqueue(gesture, false, true);
+      return input.enqueue(gesture, "none", true);
     },
     finish(signal: AbortSignal): Promise<void> {
       // Keep the signal-keyed entry so repeated finalization shares the result.

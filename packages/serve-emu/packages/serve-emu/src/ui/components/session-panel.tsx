@@ -6,9 +6,12 @@ type SessionEvent = {
   at: string;
   delayMs: number;
   source: string;
-  kind: "gesture" | "location";
+  kind: "gesture" | "location" | "action";
+  /** `false` on an entry that replay skips. */
+  replay?: false;
   gesture?: { type: string };
   location?: { latitude: number; longitude: number };
+  action?: { type: string; action?: string; setting?: string };
 };
 
 type SessionSummary = {
@@ -40,8 +43,13 @@ const RECENT_EVENT_LIMIT = 6;
 const POLL_INTERVAL_MS = 1_000;
 
 function labelForEvent(event: SessionEvent): string {
+  const skipped = event.replay === false ? " • not replayed" : "";
   if (event.kind === "gesture") {
-    return `${event.gesture?.type ?? "gesture"} • ${event.source}`;
+    return `${event.gesture?.type ?? "gesture"} • ${event.source}${skipped}`;
+  }
+  if (event.kind === "action") {
+    const detail = event.action?.setting ?? event.action?.action;
+    return `${event.action?.type ?? "action"}${detail ? ` ${detail}` : ""} • ${event.source}${skipped}`;
   }
   const lat = event.location?.latitude.toFixed(5) ?? "?";
   const lng = event.location?.longitude.toFixed(5) ?? "?";

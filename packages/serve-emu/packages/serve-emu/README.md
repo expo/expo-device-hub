@@ -585,11 +585,16 @@ belongs to an unrelated earlier run.
 
 ### Sessions
 
-REST and WebSocket input events are recorded by default. Add `"record":false`
-to supported input payloads when an event should not be saved. History uses a
-2,000-event, 1 MiB circular retention budget; `/health` contains only its
-compact count/byte/replay summary. Text is normalized to scrcpy's 300-byte
-UTF-8 control limit before both dispatch and recording.
+Every user or API interaction is recorded. REST and WebSocket input is
+recorded for replay. Add `"record":false` to an input payload to keep it out of
+replay: the event is still recorded, with `"replay":false`. Other device actions,
+such as screenshots, rotation, fold, device settings, app and file actions,
+route playback controls, and camera images, are recorded as `"kind":"action"`
+events, which always have `"replay":false`. Replay sends only the events without
+`"replay":false`, and keeps the time between them. Reads are not recorded.
+History uses a 2,000-event, 1 MiB circular retention budget; `/health` contains
+only its compact count/byte/replay summary. Text is normalized to scrcpy's
+300-byte UTF-8 control limit before both dispatch and recording.
 
 ```sh
 curl "$BASE/api/session?limit=6"

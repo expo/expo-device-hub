@@ -755,13 +755,14 @@ describe("server stream source switching", () => {
       route: { status: string };
       session: { eventCount: number };
     };
-    expect(before.session.eventCount).toBe(2);
+    // The tap, the location, and the route start.
+    expect(before.session.eventCount).toBe(3);
     expect(before.route.status).toBe("running");
 
     expect((await putMode(captured, "grpc-screenshot")).status).toBe(200);
 
     const after = (await (await request(captured, "/health")).json()) as typeof before;
-    expect(after.session.eventCount).toBe(2);
+    expect(after.session.eventCount).toBe(3);
     expect(after.location).toEqual(before.location);
     expect(after.route.status).toBe("running");
 

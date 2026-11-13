@@ -102,7 +102,13 @@ import {
 import { createWebRtcPublisher, type WebRtcPublisher } from "./webrtc-publisher.ts";
 import { HttpBodyError, readBodyLimited, readJsonLimited } from "./request-body.ts";
 import { createMiddlewareUploader } from "./middleware-upload.ts";
-import { SessionReplayConflictError, sessionReplayErrorStatus } from "./session-recorder.ts";
+import { withSessionAction } from "./session-actions.ts";
+import {
+  sessionRecordMode,
+  SessionReplayConflictError,
+  sessionReplayErrorStatus,
+  type SessionRecordMode,
+} from "./session-recorder.ts";
 import { adaptScrcpySession, startEmuSession, type EmuSession } from "./stream-session.ts";
 import {
   streamModeConflictResponse,
@@ -677,13 +683,11 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     }
   };
 
-  const shouldRecord = (value: unknown) =>
-    typeof value !== "object" ||
-    value === null ||
-    Array.isArray(value) ||
-    (value as Record<string, unknown>).record !== false;
-
-  const enqueueGesture = (gesture: Gesture, source: string, record = true) => {
+  const enqueueGesture = (
+    gesture: Gesture,
+    source: string,
+    record: SessionRecordMode = "replay",
+  ) => {
     if (status !== "streaming") throw new Error(`session is ${status}`);
     if (captureRestarting) throw new Error("video capture is restarting");
     const generation = sessionGeneration;
@@ -693,7 +697,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         if (generation !== sessionGeneration || captureRestarting) {
           throw new Error("video capture restarted during input");
         }
-        if (record) sessionRecorder.recordGesture(handle.gesture, source);
+        if (record !== "none") sessionRecorder.recordGesture(handle.gesture, source, record);
         return result;
       },
       (error: unknown) => {
@@ -706,7 +710,11 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     return { ...handle, completion };
   };
 
-  const dispatchGesture = async (gesture: Gesture, source: string, record = true) => {
+  const dispatchGesture = async (
+    gesture: Gesture,
+    source: string,
+    record: SessionRecordMode = "replay",
+  ) => {
     await enqueueGesture(gesture, source, record).completion;
   };
 
@@ -715,7 +723,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     return {
       identity: controls,
       pointerNamespace: deviceState,
-      enqueue(gesture: Gesture, source: string, record: boolean) {
+      enqueue(gesture: Gesture, source: string, record: SessionRecordMode) {
         if (session.controls !== controls) throw new Error("input session changed");
         return enqueueGesture(gesture, source, record);
       },
@@ -772,7 +780,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           ? { ...payload, type }
           : payload,
       );
-      await dispatchGesture(gesture, source, shouldRecord(payload));
+      await dispatchGesture(gesture, source, sessionRecordMode(payload));
       return Response.json({ ok: true });
     } catch (err) {
       return Response.json(
@@ -793,7 +801,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         key === "back" || key === "home" || key === "recents" || key === "power"
           ? parseGesture({ type: key })
           : parseGesture({ ...payload, type: "key" });
-      await dispatchGesture(gesture, "rest:key", shouldRecord(payload));
+      await dispatchGesture(gesture, "rest:key", sessionRecordMode(payload));
       return Response.json({ ok: true });
     } catch (err) {
       return Response.json(
@@ -1218,7 +1226,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   });
   const webRtcForbiddenOrigin = (req: Request) => webRtcForbiddenOriginResponse(req, opts);
 
-  const handleRequest = async (req: Request): Promise<Response> => {
+  const routeDeviceRequest = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
 
     if (url.pathname === "/webrtc/stats") {
@@ -1996,6 +2004,13 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     return serveStaticFile(url.pathname) ?? new Response("not found", { status: 404 });
   };
 
+  // Every device action the routes above take is recorded here, after it succeeds.
+  // @ref LLP 0025#policy — one table decides what each mutating route adds to the session events
+  const handleRequest = (req: Request): Promise<Response> =>
+    withSessionAction(req, routeDeviceRequest, (action, source) =>
+      sessionRecorder.recordAction(action, source),
+    );
+
   /**
    * Register a freshly-connected video/gesture client. The caller owns the
    * transport upgrade and passes a {@link StreamSocket} plus the `frame-meta`
@@ -2044,7 +2059,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         }
         const msg = parseGesture(payload);
         void client.touches
-          .enqueue(msg, shouldRecord(payload))
+          .enqueue(msg, sessionRecordMode(payload))
           .completion.then(() => {
             if (acknowledge) sendJson(socket, { ok: true });
           })
@@ -3096,7 +3111,16 @@ export function createRouter(
       } catch (err) {
         return Response.json({ ok: false, error: errMsg(err) }, { status: 503 });
       }
-      const response = await handleCameraRequest(req, url, { serial, readWiring });
+      // A camera change counts as activity only for a device that already has a session.
+      const recorder = (() => {
+        const app = apps.get(serial);
+        return app ? deviceStateForApp(app)?.recorder : undefined;
+      })();
+      const response = await withSessionAction(
+        req,
+        (request) => handleCameraRequest(request, url, { serial, readWiring }),
+        recorder && ((action, source) => recorder.recordAction(action, source)),
+      );
       if (response) return response;
     }
 

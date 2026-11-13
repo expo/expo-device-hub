@@ -513,8 +513,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   // Reload the RN/Expo bundle by injecting a hardware "R" keypress, which React
   // Native listens for as its reload shortcut; serve-emu turns this into an
-  // INJECT_KEYCODE on the scrcpy control socket. Not recorded
-  // into the session; harmless if the foreground app isn't RN.
+  // INJECT_KEYCODE on the scrcpy control socket. `record: false` keeps it out of
+  // session replay, where it would restart the app; serve-emu still lists it in
+  // the session events as activity. Harmless if the foreground app isn't RN.
   const reload = useCallback(() => {
     send({ type: "key", keycode: KEYCODE_R, record: false });
   }, [send]);
@@ -1883,7 +1884,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   // ── Recorded input/session events (polling, best-effort) ──
   // serve-emu records Hub-originated touches, keyboard input, hardware buttons,
-  // and location changes. Its session endpoint is a snapshot rather than SSE.
+  // location changes, and device actions such as screenshots, rotation, and
+  // device settings. Its session endpoint is a snapshot rather than SSE.
   useEffect(() => {
     setEvents([]);
     eventCursorRef.current = createAndroidEventCursor();

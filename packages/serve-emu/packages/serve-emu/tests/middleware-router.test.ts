@@ -1339,7 +1339,8 @@ describe("createRouter stream mode", () => {
     );
     expect(route.status).toBe(200);
     const before = await router.handleRequest(new Request("http://router.test/api/session"));
-    expect((await responseJson(before)).events).toHaveLength(2);
+    // The tap, the location, and the route start.
+    expect((await responseJson(before)).events).toHaveLength(3);
     const healthBefore = await responseJson(
       await router.handleRequest(new Request("http://router.test/health")),
     );
@@ -1350,7 +1351,7 @@ describe("createRouter stream mode", () => {
     ).toBe(200);
 
     const after = await router.handleRequest(new Request("http://router.test/api/session"));
-    expect((await responseJson(after)).events).toHaveLength(2);
+    expect((await responseJson(after)).events).toHaveLength(3);
     const healthAfter = await responseJson(
       await router.handleRequest(new Request("http://router.test/health")),
     );

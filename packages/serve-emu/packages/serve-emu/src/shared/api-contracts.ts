@@ -460,23 +460,57 @@ export type CameraStatus = {
 };
 export type CameraStatusResponse = ApiSuccess<{ camera: CameraStatus }>;
 
-export type GestureSessionEvent = {
+/** The device settings a session `setting` action names. */
+export type SessionSettingName =
+  | "night-mode"
+  | "font-scale"
+  | "network"
+  | "reduce-motion"
+  | "high-text-contrast"
+  | "font-weight"
+  | "software-keyboard"
+  | "display-density";
+export type SessionAppAction =
+  | "install"
+  | "launch"
+  | "clear"
+  | "force-stop"
+  | "grant"
+  | "revoke"
+  | "reset-permissions";
+/** A user or API action that changed or captured the device. Replay skips it. */
+export type SessionAction =
+  | { type: "screenshot" }
+  | { type: "orientation"; orientation: OrientationMode }
+  | { type: "fold"; posture?: "closed" | "opened"; hingeAngle?: number }
+  | { type: "setting"; setting: SessionSettingName; value: string | number | boolean }
+  | { type: "app"; action: SessionAppAction; packageName?: string; permission?: string }
+  | { type: "file-import" }
+  | { type: "route"; action: "start" | "stop" | "pause" | "resume" }
+  | { type: "camera"; action: "set-image" | "clear-image"; facing: CameraFacing };
+
+type SessionEventBase = {
   id: number;
   at: string;
   delayMs: number;
   source: string;
+  /** Present, and `false`, only on an entry that replay skips. */
+  replay?: false;
+};
+export type GestureSessionEvent = SessionEventBase & {
   kind: "gesture";
   gesture: Gesture;
 };
-export type LocationSessionEvent = {
-  id: number;
-  at: string;
-  delayMs: number;
-  source: string;
+export type LocationSessionEvent = SessionEventBase & {
   kind: "location";
   location: GeoFix;
 };
-export type SessionEvent = GestureSessionEvent | LocationSessionEvent;
+export type ActionSessionEvent = SessionEventBase & {
+  kind: "action";
+  replay: false;
+  action: SessionAction;
+};
+export type SessionEvent = GestureSessionEvent | LocationSessionEvent | ActionSessionEvent;
 export type RecordedEvent = SessionEvent;
 export type SessionSnapshot = {
   events: SessionEvent[];
@@ -1619,18 +1653,49 @@ function parseSessionEvent(value: unknown, index: number): SessionEvent {
     delayMs: number(item.delayMs, `session.events[${index}].delayMs`),
     source: string(item.source, `session.events[${index}].source`),
   };
+  if (item.replay !== undefined && item.replay !== false) {
+    fail(`session.events[${index}].replay must be false when present`);
+  }
+  const replay = item.replay === false ? { replay: false as const } : {};
   if (item.kind === "gesture") {
     const gesture = parseGesture(item.gesture);
-    return { ...base, kind: "gesture", gesture };
+    return { ...base, ...replay, kind: "gesture", gesture };
   }
   if (item.kind === "location") {
     return {
       ...base,
+      ...replay,
       kind: "location",
       location: parseGeoFix(item.location, `session.events[${index}].location`),
     };
   }
+  if (item.kind === "action") {
+    return {
+      ...base,
+      kind: "action",
+      replay: false,
+      action: parseSessionAction(item.action, `session.events[${index}].action`),
+    };
+  }
   return fail(`session.events[${index}].kind is invalid`);
+}
+
+/**
+ * Newer servers may add action types and fields, so this accepts any `type` with flat
+ * primitive fields rather than only the actions this version knows.
+ */
+function parseSessionAction(value: unknown, name: string): SessionAction {
+  const item = record(value, name);
+  if (typeof item.type !== "string" || item.type.length === 0) {
+    fail(`${name}.type must be a non-empty string`);
+  }
+  const action: Record<string, string | number | boolean> = {};
+  for (const [key, field] of Object.entries(item)) {
+    if (typeof field === "string" || typeof field === "boolean") action[key] = field;
+    else if (typeof field === "number" && Number.isFinite(field)) action[key] = field;
+    else fail(`${name}.${key} must be a string, a finite number, or a boolean`);
+  }
+  return action as unknown as SessionAction;
 }
 
 export function parseSessionSnapshot(value: unknown): SessionSnapshot {

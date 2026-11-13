@@ -40,6 +40,7 @@ import type {
   StreamModeResponse,
   StreamEncoderSettingsResponse,
 } from "../shared/api-contracts.ts";
+import type { SessionRecordMode } from "../session-recorder.ts";
 import type { StreamEncoderSettingsPatch } from "../stream-settings.ts";
 
 export type { NightMode, OrientationMode } from "../shared/api-contracts.ts";
@@ -95,10 +96,10 @@ export type ApiDependencies = {
   getAccessibility: () => Promise<AccessibilitySnapshot>;
   tapAccessibility: (
     selector: AccessibilitySelector,
-    record: boolean,
+    record: SessionRecordMode,
   ) => Promise<AccessibilityTapResponse>;
 
-  dispatchGesture: (gesture: Gesture, source: string, record: boolean) => Promise<void>;
+  dispatchGesture: (gesture: Gesture, source: string, record: SessionRecordMode) => Promise<void>;
 
   getSession: () => SessionSnapshot;
   clearSession: () => SessionSnapshot;

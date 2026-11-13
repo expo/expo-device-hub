@@ -74,7 +74,7 @@ second byte-layout description here that can drift from the tested reference.
 
 - Keep HTTP API inputs bounded. Follow existing `MAX_*_BYTES` limits and explicit payload validation patterns.
 - Gesture API coordinates are normalized unit values from `0` to `1`; convert to screen pixels only in `dispatch`.
-- Preserve session recording behavior. REST and WebSocket actions should record by default unless payloads explicitly set `record: false`.
+- Record every user or API interaction in the session events ([LLP 0025](../../llp/0025-session-events-record-every-interaction.spec.md)). Input records a replayable entry by default; `record: false` records an entry that replay skips. Other device actions, such as screenshots, rotation, device settings, and app actions, record an `action` entry through `SESSION_EVENT_POLICY` in `packages/serve-emu/src/session-actions.ts`. Add each new mutating route to that table; typecheck fails until you do. Reads record nothing.
 - For slow WebSocket clients, keep the backpressure strategy: drop until the next keyframe, request video reset with cooldown, and close clients with excessive buffered bytes.
 - Maintain `/health` as the best machine-readable snapshot for agents: include status, stream metadata, client metrics, route/session state, and last error details when relevant.
 - Prefer structured JSON errors with `ok: false` for API endpoints rather than throwing raw responses.

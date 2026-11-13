@@ -1,23 +1,74 @@
 import { normalizeTextForControl, type Gesture } from "./input.ts";
 import type { GeoFix } from "./location.ts";
+import type { SessionAction } from "./shared/api-contracts.ts";
+
+export type { SessionAction } from "./shared/api-contracts.ts";
+
+type RecordedEventBase = {
+  id: number;
+  at: string;
+  delayMs: number;
+  source: string;
+  /** Present, and `false`, only on an entry that replay skips. */
+  replay?: false;
+};
 
 export type RecordedEvent =
-  | {
-      id: number;
-      at: string;
-      delayMs: number;
-      source: string;
-      kind: "gesture";
-      gesture: Gesture;
+  | (RecordedEventBase & { kind: "gesture"; gesture: Gesture })
+  | (RecordedEventBase & { kind: "location"; location: GeoFix })
+  | (RecordedEventBase & { kind: "action"; replay: false; action: SessionAction });
+
+// @ref LLP 0025#record-false — `record: false` still records, but replay skips the entry
+/**
+ * How an accepted input enters the session events. `replay` records an entry that replay sends
+ * again. `activity` records an entry that replay skips: the API's `record: false`. `none` records
+ * nothing; replay sends its own input this way, so a replay does not record itself.
+ */
+export type SessionRecordMode = "replay" | "activity" | "none";
+
+const RECORD_MODE_RANK: Record<SessionRecordMode, number> = { none: 0, activity: 1, replay: 2 };
+
+/** The mode that records the most, for a touch whose parts used different modes. */
+export function strongerRecordMode(a: SessionRecordMode, b: SessionRecordMode): SessionRecordMode {
+  return RECORD_MODE_RANK[a] >= RECORD_MODE_RANK[b] ? a : b;
+}
+
+/** The mode a REST or WebSocket payload asks for. Only `record: false` changes the default. */
+export function sessionRecordMode(payload: unknown): SessionRecordMode {
+  return typeof payload === "object" &&
+    payload !== null &&
+    !Array.isArray(payload) &&
+    (payload as Record<string, unknown>).record === false
+    ? "activity"
+    : "replay";
+}
+
+/** One replayable entry and how long replay waits before it. */
+export type ReplayStep = {
+  event: Exclude<RecordedEvent, { kind: "action" }>;
+  delayMs: number;
+};
+
+// @ref LLP 0025#replay — replay skips activity-only entries but keeps the time between inputs
+/**
+ * The entries replay sends, in order. A skipped entry's delay moves to the next replayed entry,
+ * so the time between replayed inputs stays as recorded. Skipped entries before the first
+ * replayed entry or after the last one add no wait.
+ */
+export function replayPlan(events: readonly RecordedEvent[]): ReplayStep[] {
+  const steps: ReplayStep[] = [];
+  let skippedDelayMs = 0;
+  for (const event of events) {
+    // Action entries always carry `replay: false`.
+    if (event.replay === false) {
+      if (steps.length > 0) skippedDelayMs += event.delayMs;
+      continue;
     }
-  | {
-      id: number;
-      at: string;
-      delayMs: number;
-      source: string;
-      kind: "location";
-      location: GeoFix;
-    };
+    steps.push({ event, delayMs: skippedDelayMs + event.delayMs });
+    skippedDelayMs = 0;
+  }
+  return steps;
+}
 
 export type SessionSnapshot = {
   events: RecordedEvent[];
@@ -129,9 +180,14 @@ function cloneGesture(gesture: Gesture): Gesture {
 }
 
 function cloneEvent(event: RecordedEvent): RecordedEvent {
-  return event.kind === "gesture"
-    ? { ...event, gesture: cloneGesture(event.gesture) }
-    : { ...event, location: { ...event.location } };
+  switch (event.kind) {
+    case "gesture":
+      return { ...event, gesture: cloneGesture(event.gesture) };
+    case "location":
+      return { ...event, location: { ...event.location } };
+    case "action":
+      return { ...event, action: { ...event.action } };
+  }
 }
 
 function abortReason(signal: AbortSignal): Error {
@@ -225,12 +281,21 @@ export class SessionRecorder {
     return this.#admissionEpoch;
   }
 
-  recordGesture(gesture: Gesture, source: string): void {
-    this.#record({ kind: "gesture", gesture, source });
+  recordGesture(
+    gesture: Gesture,
+    source: string,
+    mode: Exclude<SessionRecordMode, "none"> = "replay",
+  ): void {
+    this.#record({ kind: "gesture", gesture, source, replay: mode === "replay" });
   }
 
   recordLocation(location: GeoFix, source: string): void {
-    this.#record({ kind: "location", location, source });
+    this.#record({ kind: "location", location, source, replay: true });
+  }
+
+  /** Record a user or API action that is not input. Replay skips it. */
+  recordAction(action: SessionAction, source: string): void {
+    this.#record({ kind: "action", action, source, replay: false });
   }
 
   clear(): SessionSummary {
@@ -346,19 +411,16 @@ export class SessionRecorder {
     if (this.#replaying) {
       throw new SessionReplayConflictError("session replay is already running");
     }
-    if (this.#events.length === 0) {
-      throw new SessionReplayValidationError("session has no recorded events");
-    }
+    const steps = this.#replaySteps();
     validateMultiplier(multiplier);
-    const events = this.#events.map(cloneEvent);
     this.#replaying = true;
     this.#legacyStopReplay = false;
     this.#replayStartedAt = new Date(this.#clock.now()).toISOString();
     this.#replayCompletedAt = null;
     this.#lastError = null;
     try {
-      for (const event of events) {
-        await this.#legacySleep(Math.max(0, event.delayMs / multiplier));
+      for (const { event, delayMs } of steps) {
+        await this.#legacySleep(Math.max(0, delayMs / multiplier));
         if (this.#legacyStopReplay) break;
         if (event.kind === "gesture") {
           await handlers.dispatchGesture(cloneGesture(event.gesture));
@@ -391,12 +453,9 @@ export class SessionRecorder {
     if (this.#activeReplay) {
       throw new SessionReplayConflictError("session replay is already running");
     }
-    if (this.#events.length === 0) {
-      throw new SessionReplayValidationError("session has no recorded events");
-    }
+    const steps = this.#replaySteps();
     validateMultiplier(multiplier);
 
-    const events = this.#events.map(cloneEvent);
     const replay: ActiveReplay = {
       id: this.#nextReplayId++,
       controller: new AbortController(),
@@ -410,22 +469,22 @@ export class SessionRecorder {
     this.#replayCancelledAt = null;
     this.#lastError = null;
     replay.completion = Promise.resolve().then(() =>
-      this.#executeReplay(replay, events, handlers, multiplier),
+      this.#executeReplay(replay, steps, handlers, multiplier),
     );
     return { snapshot: this.snapshot(), completion: replay.completion };
   }
 
   async #executeReplay(
     replay: ActiveReplay,
-    events: RecordedEvent[],
+    steps: ReplayStep[],
     handlers: ReplayHandlers,
     multiplier: number,
   ): Promise<SessionSnapshot> {
     let outcome: "completed" | "cancelled" | "error" = "completed";
     try {
-      for (const event of events) {
+      for (const { event, delayMs } of steps) {
         this.#assertReplayActive(replay);
-        await this.#clock.delay(Math.max(0, event.delayMs / multiplier), replay.controller.signal);
+        await this.#clock.delay(Math.max(0, delayMs / multiplier), replay.controller.signal);
         this.#assertReplayActive(replay);
         if (event.kind === "gesture") {
           await handlers.dispatchGesture(event.gesture, replay.controller.signal);
@@ -465,16 +524,34 @@ export class SessionRecorder {
     return this.snapshot();
   }
 
+  /** Copies of the replayable entries, or a validation error when there are none. */
+  #replaySteps(): ReplayStep[] {
+    if (this.#events.length === 0) {
+      throw new SessionReplayValidationError("session has no recorded events");
+    }
+    const steps = replayPlan(this.#events).map(({ event, delayMs }) => ({
+      event: cloneEvent(event) as ReplayStep["event"],
+      delayMs,
+    }));
+    if (steps.length === 0) {
+      throw new SessionReplayValidationError("session has no replayable events");
+    }
+    return steps;
+  }
+
   #assertReplayActive(replay: ActiveReplay): void {
     if (replay.controller.signal.aborted || this.#activeReplay?.id !== replay.id) {
       throw abortReason(replay.controller.signal);
     }
   }
 
+  // A running replay records nothing, not even actions: `replaying` already shows it as activity.
   #record(
-    event:
-      | { kind: "gesture"; gesture: Gesture; source: string }
-      | { kind: "location"; location: GeoFix; source: string },
+    event: { source: string; replay: boolean } & (
+      | { kind: "gesture"; gesture: Gesture }
+      | { kind: "location"; location: GeoFix }
+      | { kind: "action"; action: SessionAction }
+    ),
   ): void {
     if (this.#closed || !this.#recording || this.#replaying) return;
     const now = this.#clock.now();
@@ -486,10 +563,20 @@ export class SessionRecorder {
       delayMs,
       source: event.source,
     };
-    const recorded: RecordedEvent =
-      event.kind === "gesture"
-        ? { ...base, kind: "gesture", gesture: cloneGesture(event.gesture) }
-        : { ...base, kind: "location", location: { ...event.location } };
+    // Replayable entries keep their earlier shape: `replay` appears only when it is false.
+    const skipped = event.replay ? {} : { replay: false as const };
+    let recorded: RecordedEvent;
+    switch (event.kind) {
+      case "gesture":
+        recorded = { ...base, ...skipped, kind: "gesture", gesture: cloneGesture(event.gesture) };
+        break;
+      case "location":
+        recorded = { ...base, ...skipped, kind: "location", location: { ...event.location } };
+        break;
+      case "action":
+        recorded = { ...base, kind: "action", replay: false, action: { ...event.action } };
+        break;
+    }
     const bytes = Buffer.byteLength(JSON.stringify(recorded), "utf8");
     if (EMPTY_ARRAY_BYTES + bytes > this.#maxBytes) {
       this.#droppedEvents++;
