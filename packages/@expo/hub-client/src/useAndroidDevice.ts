@@ -82,6 +82,8 @@ import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
 import {
   parseScreenRecordingStatus,
+  foldRecordingLock,
+  screenRecordingFollowsFold,
   recordingLockReason,
   recordingOrientationUnavailable,
 } from "./screen-recording";
@@ -364,18 +366,23 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [recordingSnapshot, setRecordingSnapshot] = useState<{
     scope: string;
     status: DeviceScreenRecordingStatus | null;
-  }>({ scope: deviceScope, status: initialRecording });
+    followsFold: boolean;
+  }>({ scope: deviceScope, status: initialRecording, followsFold: false });
   if (recordingSnapshot.scope !== deviceScope) {
-    setRecordingSnapshot({ scope: deviceScope, status: initialRecording });
+    setRecordingSnapshot({ scope: deviceScope, status: initialRecording, followsFold: false });
   }
   const screenRecording =
     recordingSnapshot.scope === deviceScope ? recordingSnapshot.status : initialRecording;
+  const recordingFollowsFold =
+    recordingSnapshot.scope === deviceScope && recordingSnapshot.followsFold;
   // @ref LLP 0013#recording-lock — temporary until recordings survive rotation and stream changes
   // Turning the device or changing the stream can end the host recording, so the three places
   // that send those changes (`putStreamMode`, `updateStreamSettings` and the orientation
   // backend) ignore them while it could break.
   const recordingLock = recordingLockReason(screenRecording);
   const recordingControlsLocked = recordingLock !== null;
+  // @ref LLP 0013#recording-lock — a recording that follows folds leaves fold commands free
+  const foldLock = foldRecordingLock(recordingLock, recordingFollowsFold);
   const recordingLockedRef = useRef(recordingControlsLocked);
   useLayoutEffect(() => {
     recordingLockedRef.current = recordingControlsLocked;
@@ -1012,10 +1019,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         const next = parseServeEmuStreamSettings(info.stream) ?? { transport: "websocket" };
         const nextViewerTransports = parseServeEmuViewerTransports(info.viewerTransports);
         const recordingStatus = parseScreenRecordingStatus(info.screenRecording);
+        const followsFold = screenRecordingFollowsFold(info.screenRecording);
         setRecordingSnapshot((current) =>
-          current.scope === deviceScope && current.status === recordingStatus
+          current.scope === deviceScope &&
+          current.status === recordingStatus &&
+          current.followsFold === followsFold
             ? current
-            : { scope: deviceScope, status: recordingStatus },
+            : { scope: deviceScope, status: recordingStatus, followsFold },
         );
         setServerStreamSettings((current) =>
           JSON.stringify(current) === JSON.stringify(next) ? current : next,
@@ -2233,7 +2243,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const { fold, foldCapabilities } = useAndroidFold(
     active && baseUrl ? deviceApiUrl(baseUrl, "/api/fold", targetDevice) : null,
     sessionFetch,
-    recordingControlsLocked,
+    foldLock,
   );
   const accessibilityAvailable = accessibilityLoader !== null;
   const permissionsAvailable = permissionsBackend !== null;
