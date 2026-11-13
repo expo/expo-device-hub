@@ -5,7 +5,8 @@
 **Systems:** EmulatorCapture, ServeEmu, Hub, HubClient, HubComponents
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-06
-**Related:** LLP 0020, LLP 0021
+**Revised:** 2026-11-13 (the agent serves one consumer for each role, after LLP 0023)
+**Related:** LLP 0020, LLP 0021, LLP 0023
 
 ## Summary
 
@@ -59,4 +60,4 @@ serve-emu's `emulatorCapture` options get `attach` and `attachNote` [observed: `
 
 - The debugger calls `dlopen` in a thread that it interrupted. If another thread holds the dynamic loader's lock at that moment, the call waits for that lock [inferred: from how `dlopen` locks; not observed].
 - The Hub kills a debugger that runs longer than its timeout: 180 seconds on macOS, so that the user can type the password, and 90 seconds on Linux [observed: `DEBUGGER_TIMEOUT_MS` in `src/server/emulator-capture-attach.ts`]. If a call still runs at that moment, QEMU can crash, as it did when gdb gave up a call [inferred].
-- Only one Hub should attach to an emulator at a time; the agent serves one consumer ([LLP 0020](0020-emulator-capture-macos.explainer.md#integration)).
+- Only one Hub should attach to an emulator at a time. The agent serves one stream consumer and one recording consumer ([LLP 0020](0020-emulator-capture-macos.explainer.md#socket-protocol)), so a second Hub replaces the first Hub's stream, and the first Hub's recording goes on [observed: two-Hub test in https://github.com/expo/expo-device-hub/pull/624].
