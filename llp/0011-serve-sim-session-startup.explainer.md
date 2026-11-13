@@ -9,6 +9,12 @@
 
 ## Scope
 
+The preview treats `com.apple.springboard` as the home screen and skips ordinary
+app metadata lookup. It prompts users to install and open their app. Unknown
+foreground identity settles to unavailable details after a short grace period;
+metadata request failures remain visible in the app summary [observed:
+`src/client/components/app-detection-tool.tsx`, `src/client/utils/app-icon.ts`].
+
 The foreground CLI can boot a simulator, install a local `.app`, launch an installed
 app with arguments, and open a deep link before starting the preview server. The caller
 downloads the app and supplies its path; serve-sim owns the simulator operations

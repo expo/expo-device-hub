@@ -9,7 +9,7 @@ export function isSystemBundleId(bundleId: string): boolean {
 }
 
 export function fallbackAppDisplayName(bundleId: string): string {
-  if (bundleId === "com.apple.springboard") return "SpringBoard";
+  if (bundleId === "com.apple.springboard") return "Home screen";
   return bundleId;
 }
 
@@ -71,35 +71,68 @@ export function AppDetectionTool({
   udid: string;
   currentApp: { bundleId: string; isReactNative: boolean; pid?: number } | null;
 }) {
-  const [details, setDetails] = useState<AppDetails | null>(null);
+  const [result, setResult] = useState<{ udid: string; details: AppDetails } | null>(null);
   const [open, setOpen] = useState(false);
+  const bundleId = currentApp?.bundleId;
+  const pid = currentApp?.pid;
+  const isReactNative = currentApp?.isReactNative;
+  const isHomeScreen = bundleId === "com.apple.springboard";
+  const [detection, setDetection] = useState({ udid, bundleId, expired: false });
+  if (detection.udid !== udid || detection.bundleId !== bundleId) {
+    setDetection({ udid, bundleId, expired: false });
+  }
+  const details: AppDetails | null = currentApp
+    ? result?.udid === udid &&
+      result.details.bundleId === bundleId &&
+      result.details.pid === pid &&
+      result.details.isReactNative === isReactNative
+      ? result.details
+      : { ...currentApp, loading: true }
+    : null;
 
   useEffect(() => {
-    if (!currentApp) {
-      setDetails(null);
+    if (bundleId) return;
+    const timer = setTimeout(() => setDetection({ udid, bundleId, expired: true }), 1500);
+    return () => clearTimeout(timer);
+  }, [udid, bundleId]);
+
+  // The app-state stream sends a fresh object after reconnecting, even when
+  // the identity is unchanged. Retry metadata that may have failed offline.
+  useEffect(() => {
+    if (!bundleId || isReactNative === undefined || isHomeScreen) {
       return;
     }
     let cancelled = false;
-    setDetails({
-      bundleId: currentApp.bundleId,
-      isReactNative: currentApp.isReactNative,
-      pid: currentApp.pid,
-      loading: true,
-    });
-    fetchAppDetails(udid, currentApp.bundleId).then((extra) => {
-      if (cancelled) return;
-      setDetails({
-        bundleId: currentApp.bundleId,
-        isReactNative: currentApp.isReactNative,
-        pid: currentApp.pid,
-        loading: false,
-        ...extra,
+    fetchAppDetails(udid, bundleId)
+      .catch((error: unknown) => ({
+        error: error instanceof Error ? error.message : String(error),
+      }))
+      .then((extra) => {
+        if (cancelled) return;
+        setResult({
+          udid,
+          details: { bundleId, isReactNative, pid, loading: false, ...extra },
+        });
       });
-    });
     return () => {
       cancelled = true;
     };
-  }, [udid, currentApp, currentApp?.bundleId, currentApp?.pid, currentApp?.isReactNative]);
+  }, [udid, bundleId, pid, isReactNative, isHomeScreen, currentApp]);
+
+  if (isHomeScreen || (!currentApp && detection.expired)) {
+    return (
+      <div className="bg-panel rounded-[10px] px-3 py-2">
+        <div className="text-[13px] font-semibold text-white/90">
+          {isHomeScreen ? "Home screen" : "App details unavailable"}
+        </div>
+        <p className="m-0 mt-1 text-[11px] text-white/55">
+          {isHomeScreen
+            ? "Install and open your app to see it here."
+            : "Open an app to view its details."}
+        </p>
+      </div>
+    );
+  }
 
   if (!details) {
     return <AppDetectionSkeleton />;
@@ -113,7 +146,12 @@ export function AppDetectionTool({
       summary={
         <>
           <AppIcon bundleId={details.bundleId} iconDataUrl={details.iconDataUrl} />
-          <AppSummaryLabel bundleId={details.bundleId} displayName={details.displayName} />
+          <div className="min-w-0 flex-1">
+            <AppSummaryLabel bundleId={details.bundleId} displayName={details.displayName} />
+            {details.error && (
+              <div className="text-[11px] text-danger-soft">Couldn't load app details</div>
+            )}
+          </div>
         </>
       }
     >
