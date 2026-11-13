@@ -1,0 +1,1 @@
+../0022-emulator-capture-attach.explainer.md
