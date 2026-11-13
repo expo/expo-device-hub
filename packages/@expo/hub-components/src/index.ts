@@ -90,6 +90,7 @@ export {
   ONSCREEN_KEYBOARD_DESCRIPTION,
   type ScreenShapeOption,
 } from "./dashboard/DeviceOptionsSection";
+export { GPU_WARNING_TITLE, type GpuWarningInfo } from "./dashboard/GpuWarning";
 export { ActivityCharts, ActivitySection } from "./dashboard/ActivitySection";
 export { AccessibilitySection } from "./dashboard/AccessibilitySection";
 export { CameraSection } from "./dashboard/CameraSection";

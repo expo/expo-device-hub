@@ -8,6 +8,7 @@ import { PermissionsSection } from "./PermissionsSection";
 import { SIDEBAR_SECTION_INSET } from "./CollapsibleSection";
 import { CurrentAppSection } from "./CurrentAppSection";
 import { DeviceOptionsSection } from "./DeviceOptionsSection";
+import { type GpuWarningInfo } from "./GpuWarning";
 import { type FoldPreviewOption } from "./FoldSettings";
 import { EventsSection } from "./EventsSection";
 import { LocationSection } from "./LocationSection";
@@ -23,6 +24,11 @@ export type LogSidebarProps = {
   client?: DeviceClient;
   /** Selected device metadata used by viewer-local options. */
   device?: Device;
+  /**
+   * The selected emulator renders on the CPU although the host has a usable
+   * GPU. Shown in Device options; ignored for simulators and physical devices.
+   */
+  gpuWarning?: GpuWarningInfo | null;
   /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
   showScreenShape?: boolean;
   /** Change the viewer-local screen shape preference. */
@@ -67,6 +73,7 @@ export type InspectorSectionsProps = Omit<LogSidebarProps, "onToggle" | "width">
 export function InspectorSections({
   client,
   device,
+  gpuWarning,
   showScreenShape = true,
   onShowScreenShapeChange,
   screenShapeAvailable = false,
@@ -90,6 +97,8 @@ export function InspectorSections({
     : undefined;
   // Physical devices cannot be deleted from the host.
   const onRemoveDevice = device?.physical ? undefined : onRemove;
+  const emulatorGpuWarning =
+    device?.platform === "android" && !device.physical ? gpuWarning : undefined;
 
   return (
     <>
@@ -98,9 +107,11 @@ export function InspectorSections({
         client?.capabilities.fold ||
         client?.platform === "android" ||
         screenShape ||
+        emulatorGpuWarning ||
         (client && (onShutdown || onRemoveDevice))) && (
         <DeviceOptionsSection
           client={client}
+          gpuWarning={emulatorGpuWarning}
           screenShape={screenShape}
           foldPreview={foldPreview}
           showDeviceSettings={client?.capabilities.deviceSettings ?? false}

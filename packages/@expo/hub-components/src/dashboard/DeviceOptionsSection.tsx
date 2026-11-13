@@ -5,6 +5,7 @@ import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { rotationUnavailableText } from "./rotation-availability";
 import { FoldSettings, type FoldPreviewOption } from "./FoldSettings";
+import { GpuWarning, type GpuWarningInfo } from "./GpuWarning";
 import { KeyboardSection } from "./KeyboardSection";
 import { SidebarActionButton } from "./SidebarActionButton";
 import { SidebarRow, SidebarSwitch } from "./SidebarRow";
@@ -116,6 +117,7 @@ export type ScreenShapeOption = {
  */
 export function DeviceOptionsSection({
   client,
+  gpuWarning,
   screenShape,
   foldPreview,
   showDeviceSettings = true,
@@ -123,6 +125,8 @@ export function DeviceOptionsSection({
   onRemove,
 }: {
   client?: DeviceClient;
+  /** An emulator that renders on the CPU although the host has a usable GPU. */
+  gpuWarning?: GpuWarningInfo | null;
   screenShape?: ScreenShapeOption;
   /** Viewer-local 2D/3D choices for a foldable that the 3D model can show. */
   foldPreview?: FoldPreviewOption;
@@ -212,6 +216,8 @@ export function DeviceOptionsSection({
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
+      {gpuWarning && <GpuWarning renderer={gpuWarning.renderer} />}
+
       {client?.fold && client.capabilities.fold && (
         <FoldSettings
           fold={client.fold}

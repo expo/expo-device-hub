@@ -31,6 +31,7 @@ import {
   HEALTH_ROUTE,
   READY_ROUTE,
 } from "./eas-endpoints";
+import { EMULATOR_GPU_ROUTE, handleEmulatorGpuRequest } from "./emulator-gpu";
 import { MOUNT_PATH } from "./mount";
 import { SERVER_PLATFORM_FILTER } from "./platform-filter";
 import {
@@ -235,6 +236,10 @@ async function routeRequest(request: Request): Promise<Response | null> {
     const devices = await listDevices(SERVER_PLATFORM_FILTER);
     const bootedOnly = searchParams.get("booted") === "true" || searchParams.get("booted") === "1";
     return jsonResponse(bootedOnly ? filterBooted(devices) : devices);
+  }
+
+  if (pathname === EMULATOR_GPU_ROUTE) {
+    return handleEmulatorGpuRequest(request, { singleDevice: SERVER_SINGLE_DEVICE });
   }
 
   const actionKind =
