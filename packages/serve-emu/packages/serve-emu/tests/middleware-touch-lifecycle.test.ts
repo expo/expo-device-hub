@@ -215,9 +215,11 @@ for (const semantic of [false, true]) {
           await h.settle();
           expect(h.touches.at(-1)).toEqual({ ...h.touches[1]!, action: "up" });
           expect(h.queue.snapshot().reservedReleases).toBe(0);
-          expect(
-            (await h.recorded()).events.filter((event) => event.source === "ws:disconnect"),
-          ).toHaveLength(1);
+          // `record: false` keeps b's release out of replay, but it is still activity.
+          const releases = (await h.recorded()).events.filter(
+            (event) => event.source === "ws:disconnect",
+          );
+          expect(releases.map((event) => event.replay)).toEqual([undefined, false]);
         } finally {
           await h.stop();
         }
@@ -344,7 +346,13 @@ for (const semantic of [false, true]) {
           viewer.close();
           await h.settle();
           expect(h.touches.at(-1)?.pointerId).toBe(downs[1]!.pointerId);
-          expect((await h.recorded()).events).toHaveLength(2);
+          // The `record: false` touch and its release are activity that replay skips.
+          expect((await h.recorded()).events.map((event) => [event.source, event.replay])).toEqual([
+            ["ws", undefined],
+            ["ws", undefined],
+            ["ws", false],
+            ["ws:disconnect", false],
+          ]);
         } finally {
           await h.stop();
         }

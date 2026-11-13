@@ -119,6 +119,87 @@ describe("serve-emu session event mapping", () => {
     });
   });
 
+  test("maps device actions such as screenshots, rotation, and settings", () => {
+    const action = (
+      value: NonNullable<AndroidSessionEvent["action"]>,
+      source: string,
+    ): AndroidSessionEvent => ({
+      id: 11,
+      at: "2026-08-25T10:02:00.000Z",
+      delayMs: 500,
+      source,
+      kind: "action",
+      replay: false,
+      action: value,
+    });
+
+    expect(mapAndroidSessionEvent(action({ type: "screenshot" }, "rest:screenshot"), "e")).toEqual({
+      id: "android:e:11",
+      timestamp: "2026-08-25T10:02:00.000Z",
+      source: "rest:screenshot",
+      kind: "screenshot",
+      message: "Screenshot",
+      details: { delayMs: 500, action: { type: "screenshot" } },
+    });
+    const cases: [NonNullable<AndroidSessionEvent["action"]>, object][] = [
+      [
+        { type: "orientation", orientation: "landscape_right" },
+        { kind: "rotate", action: "landscape_right", message: "Rotate to landscape right" },
+      ],
+      [
+        { type: "fold", posture: "closed" },
+        { kind: "fold", message: "Fold closed" },
+      ],
+      [
+        { type: "fold", hingeAngle: 90 },
+        { kind: "fold", message: "Fold hinge to 90°" },
+      ],
+      [
+        { type: "setting", setting: "font-scale", value: 1.3 },
+        { kind: "settings", action: "font-scale", message: "Set font scale to 1.3" },
+      ],
+      [
+        { type: "setting", setting: "network", value: false },
+        { kind: "settings", action: "network", message: "Set network to off" },
+      ],
+      [
+        { type: "app", action: "force-stop", packageName: "com.example" },
+        { kind: "app", action: "force-stop", message: "Force stop app com.example" },
+      ],
+      [
+        { type: "app", action: "grant", packageName: "com.example", permission: "CAMERA" },
+        { kind: "app", action: "grant", message: "Grant app com.example (CAMERA)" },
+      ],
+      [
+        { type: "app", action: "install" },
+        { kind: "app", message: "Install app" },
+      ],
+      [{ type: "file-import" }, { kind: "media", action: "import", message: "Import file" }],
+      [
+        { type: "route", action: "pause" },
+        { kind: "location", action: "route-pause", message: "Route pause" },
+      ],
+      [
+        { type: "camera", action: "set-image", facing: "back" },
+        { kind: "camera", action: "set-image", message: "Camera set image (back)" },
+      ],
+      [{ type: "future-thing" }, { kind: "action", message: "Action future thing" }],
+    ];
+    for (const [value, expected] of cases) {
+      expect(mapAndroidSessionEvent(action(value, "rest:test"), "e")).toMatchObject(expected);
+    }
+  });
+
+  test("keeps the replay flag of an input that replay skips", () => {
+    expect(
+      mapAndroidSessionEvent(gesture({ type: "key", keycode: 46 }, { replay: false }), "e"),
+    ).toMatchObject({
+      kind: "keyboard",
+      message: "Keycode 46",
+      details: { delayMs: 32, gesture: { type: "key", keycode: 46 }, replay: false },
+    });
+  });
+
   test("keeps future gesture and event kinds visible", () => {
     expect(
       mapAndroidSessionEvent(gesture({ type: "pinch", scale: 1.5 }), "emulator-5554"),

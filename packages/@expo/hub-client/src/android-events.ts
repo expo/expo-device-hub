@@ -75,6 +75,13 @@ export interface AndroidSessionEvent {
     velocity?: number;
     [key: string]: unknown;
   };
+  /** A device action that is not input, such as a screenshot or a rotation. */
+  action?: {
+    type?: string;
+    [key: string]: unknown;
+  };
+  /** `false` on an entry that serve-emu's replay skips. */
+  replay?: boolean;
   [key: string]: unknown;
 }
 
@@ -113,6 +120,93 @@ function redactedGesture(gesture: AndroidSessionEvent["gesture"]): Record<string
   };
 }
 
+function humanize(value: string): string {
+  return value.replace(/[_-]+/g, " ");
+}
+
+function stringField(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function settingValue(value: unknown): string {
+  if (value === true) return "on";
+  if (value === false) return "off";
+  return typeof value === "string" || typeof value === "number" ? String(value) : "?";
+}
+
+/** The Hub kind, action, and message for one serve-emu action entry. */
+function describeAction(action: NonNullable<AndroidSessionEvent["action"]>): {
+  kind: string;
+  action?: string;
+  message: string;
+} {
+  const type = stringField(action.type) ?? "unknown";
+  const verb = stringField(action.action);
+  switch (type) {
+    case "screenshot":
+      return { kind: "screenshot", message: "Screenshot" };
+    case "orientation": {
+      const orientation = stringField(action.orientation);
+      return {
+        kind: "rotate",
+        ...(orientation ? { action: orientation } : {}),
+        message: orientation ? `Rotate to ${humanize(orientation)}` : "Rotate",
+      };
+    }
+    case "fold": {
+      const posture = stringField(action.posture);
+      const angle = finiteNumber(action.hingeAngle);
+      return {
+        kind: "fold",
+        message: posture
+          ? `Fold ${posture}`
+          : angle === null
+            ? "Fold"
+            : `Fold hinge to ${Math.round(angle)}°`,
+      };
+    }
+    case "setting": {
+      const setting = stringField(action.setting);
+      return {
+        kind: "settings",
+        ...(setting ? { action: setting } : {}),
+        message: setting
+          ? `Set ${humanize(setting)} to ${settingValue(action.value)}`
+          : "Device setting changed",
+      };
+    }
+    case "app": {
+      const packageName = stringField(action.packageName);
+      const permission = stringField(action.permission);
+      return {
+        kind: "app",
+        ...(verb ? { action: verb } : {}),
+        message: `${titleCase(verb ? humanize(verb) : "app")} app${packageName ? ` ${packageName}` : ""}${
+          permission ? ` (${permission})` : ""
+        }`,
+      };
+    }
+    case "file-import":
+      return { kind: "media", action: "import", message: "Import file" };
+    case "route":
+      return {
+        kind: "location",
+        action: verb ? `route-${verb}` : "route",
+        message: verb ? `Route ${verb}` : "Route",
+      };
+    case "camera": {
+      const facing = stringField(action.facing);
+      return {
+        kind: "camera",
+        ...(verb ? { action: verb } : {}),
+        message: `Camera ${verb ? humanize(verb) : "change"}${facing ? ` (${facing})` : ""}`,
+      };
+    }
+    default:
+      return { kind: "action", action: type, message: `Action ${humanize(type)}` };
+  }
+}
+
 function mapGesture(event: AndroidSessionEvent, deviceSerial: string): DeviceEvent {
   const gesture = event.gesture;
   const type = typeof gesture?.type === "string" ? gesture.type : "unknown";
@@ -123,6 +217,7 @@ function mapGesture(event: AndroidSessionEvent, deviceSerial: string): DeviceEve
     details: {
       delayMs: event.delayMs,
       gesture: redactedGesture(gesture),
+      ...(event.replay === false ? { replay: false } : {}),
     },
   };
 
@@ -217,6 +312,16 @@ export function mapAndroidSessionEvent(
         delayMs: event.delayMs,
         location: { ...event.location },
       },
+    };
+  }
+
+  if (event.kind === "action" && event.action) {
+    return {
+      id: stableId(deviceSerial, event.id),
+      timestamp: event.at,
+      source: event.source,
+      ...describeAction(event.action),
+      details: { delayMs: event.delayMs, action: { ...event.action } },
     };
   }
 

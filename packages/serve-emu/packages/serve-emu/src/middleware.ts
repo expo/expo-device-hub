@@ -102,7 +102,14 @@ import {
 import { createWebRtcPublisher, type WebRtcPublisher } from "./webrtc-publisher.ts";
 import { HttpBodyError, readBodyLimited, readJsonLimited } from "./request-body.ts";
 import { createMiddlewareUploader } from "./middleware-upload.ts";
-import { SessionReplayConflictError, sessionReplayErrorStatus } from "./session-recorder.ts";
+import {
+  appSessionAction,
+  sessionRecordMode,
+  SessionReplayConflictError,
+  sessionReplayErrorStatus,
+  type SessionAppAction,
+  type SessionRecordMode,
+} from "./session-recorder.ts";
 import { adaptScrcpySession, startEmuSession, type EmuSession } from "./stream-session.ts";
 import {
   streamModeConflictResponse,
@@ -677,13 +684,11 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     }
   };
 
-  const shouldRecord = (value: unknown) =>
-    typeof value !== "object" ||
-    value === null ||
-    Array.isArray(value) ||
-    (value as Record<string, unknown>).record !== false;
-
-  const enqueueGesture = (gesture: Gesture, source: string, record = true) => {
+  const enqueueGesture = (
+    gesture: Gesture,
+    source: string,
+    record: SessionRecordMode = "replay",
+  ) => {
     if (status !== "streaming") throw new Error(`session is ${status}`);
     if (captureRestarting) throw new Error("video capture is restarting");
     const generation = sessionGeneration;
@@ -693,7 +698,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         if (generation !== sessionGeneration || captureRestarting) {
           throw new Error("video capture restarted during input");
         }
-        if (record) sessionRecorder.recordGesture(handle.gesture, source);
+        if (record !== "none") sessionRecorder.recordGesture(handle.gesture, source, record);
         return result;
       },
       (error: unknown) => {
@@ -706,7 +711,11 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     return { ...handle, completion };
   };
 
-  const dispatchGesture = async (gesture: Gesture, source: string, record = true) => {
+  const dispatchGesture = async (
+    gesture: Gesture,
+    source: string,
+    record: SessionRecordMode = "replay",
+  ) => {
     await enqueueGesture(gesture, source, record).completion;
   };
 
@@ -715,7 +724,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     return {
       identity: controls,
       pointerNamespace: deviceState,
-      enqueue(gesture: Gesture, source: string, record: boolean) {
+      enqueue(gesture: Gesture, source: string, record: SessionRecordMode) {
         if (session.controls !== controls) throw new Error("input session changed");
         return enqueueGesture(gesture, source, record);
       },
@@ -772,7 +781,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           ? { ...payload, type }
           : payload,
       );
-      await dispatchGesture(gesture, source, shouldRecord(payload));
+      await dispatchGesture(gesture, source, sessionRecordMode(payload));
       return Response.json({ ok: true });
     } catch (err) {
       return Response.json(
@@ -793,7 +802,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         key === "back" || key === "home" || key === "recents" || key === "power"
           ? parseGesture({ type: key })
           : parseGesture({ ...payload, type: "key" });
-      await dispatchGesture(gesture, "rest:key", shouldRecord(payload));
+      await dispatchGesture(gesture, "rest:key", sessionRecordMode(payload));
       return Response.json({ ok: true });
     } catch (err) {
       return Response.json(
@@ -805,6 +814,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
 
   const appJsonEndpoint = async (
     req: Request,
+    appAction: SessionAppAction,
     action: (payload: Record<string, unknown>) => unknown,
   ) => {
     try {
@@ -813,6 +823,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         throw new Error("payload must be an object");
       }
       const result = await action(payload as Record<string, unknown>);
+      sessionRecorder.recordAction(
+        appSessionAction(appAction, payload as Record<string, unknown>),
+        `rest:apps/${appAction}`,
+      );
       return Response.json(result);
     } catch (err) {
       return Response.json(
@@ -822,9 +836,19 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     }
   };
 
-  const installEndpoint = (req: Request) => uploader.install(req);
+  const installEndpoint = async (req: Request) => {
+    const response = await uploader.install(req);
+    if (response.ok) {
+      sessionRecorder.recordAction({ type: "app", action: "install" }, "rest:apps/install");
+    }
+    return response;
+  };
 
-  const fileImportEndpoint = (req: Request) => uploader.importFile(req);
+  const fileImportEndpoint = async (req: Request) => {
+    const response = await uploader.importFile(req);
+    if (response.ok) sessionRecorder.recordAction({ type: "file-import" }, "rest:files/import");
+    return response;
+  };
 
   const performVideoReset = (reason: string) => {
     if (status !== "streaming" || captureRestarting) return;
@@ -1354,10 +1378,12 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           }
           const enabled = (payload as Record<string, unknown>).enabled;
           if (typeof enabled !== "boolean") throw new Error("enabled must be a boolean");
-          return Response.json({
-            ok: true,
-            network: await setNetworkEnabled(opts.serial, enabled),
-          });
+          const network = await setNetworkEnabled(opts.serial, enabled);
+          sessionRecorder.recordAction(
+            { type: "setting", setting: "network", value: enabled },
+            "rest:network",
+          );
+          return Response.json({ ok: true, network });
         } catch (err) {
           return middlewareRequestFailure(err);
         }
@@ -1383,10 +1409,12 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
             throw new Error("font scale payload must be an object");
           }
           const scale = parseFontScale((payload as Record<string, unknown>).scale);
-          return Response.json({
-            ok: true,
-            fontScale: await setFontScale(opts.serial, scale),
-          });
+          const fontScale = await setFontScale(opts.serial, scale);
+          sessionRecorder.recordAction(
+            { type: "setting", setting: "font-scale", value: scale },
+            "rest:font-scale",
+          );
+          return Response.json({ ok: true, fontScale });
         } catch (err) {
           return middlewareRequestFailure(err);
         }
@@ -1413,10 +1441,12 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           }
           const enabled = (payload as Record<string, unknown>).enabled;
           if (typeof enabled !== "boolean") throw new Error("enabled must be a boolean");
-          return Response.json({
-            ok: true,
-            reduceMotion: await setReduceMotion(opts.serial, enabled),
-          });
+          const reduceMotion = await setReduceMotion(opts.serial, enabled);
+          sessionRecorder.recordAction(
+            { type: "setting", setting: "reduce-motion", value: enabled },
+            "rest:reduce-motion",
+          );
+          return Response.json({ ok: true, reduceMotion });
         } catch (err) {
           return middlewareRequestFailure(err);
         }
@@ -1446,10 +1476,12 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           }
           const enabled = (payload as Record<string, unknown>).enabled;
           if (typeof enabled !== "boolean") throw new Error("enabled must be a boolean");
-          return Response.json({
-            ok: true,
-            highTextContrast: await setHighTextContrast(opts.serial, enabled),
-          });
+          const highTextContrast = await setHighTextContrast(opts.serial, enabled);
+          sessionRecorder.recordAction(
+            { type: "setting", setting: "high-text-contrast", value: enabled },
+            "rest:high-text-contrast",
+          );
+          return Response.json({ ok: true, highTextContrast });
         } catch (err) {
           return middlewareRequestFailure(err);
         }
@@ -1476,10 +1508,12 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           }
           const enabled = (payload as Record<string, unknown>).enabled;
           if (typeof enabled !== "boolean") throw new Error("enabled must be a boolean");
-          return Response.json({
-            ok: true,
-            fontWeight: await setFontWeight(opts.serial, enabled),
-          });
+          const fontWeight = await setFontWeight(opts.serial, enabled);
+          sessionRecorder.recordAction(
+            { type: "setting", setting: "font-weight", value: enabled },
+            "rest:font-weight",
+          );
+          return Response.json({ ok: true, fontWeight });
         } catch (err) {
           return middlewareRequestFailure(err);
         }
@@ -1509,10 +1543,12 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           }
           const enabled = (payload as Record<string, unknown>).enabled;
           if (typeof enabled !== "boolean") throw new Error("enabled must be a boolean");
-          return Response.json({
-            ok: true,
-            softwareKeyboard: await setSoftwareKeyboard(opts.serial, enabled),
-          });
+          const softwareKeyboard = await setSoftwareKeyboard(opts.serial, enabled);
+          sessionRecorder.recordAction(
+            { type: "setting", setting: "software-keyboard", value: enabled },
+            "rest:software-keyboard",
+          );
+          return Response.json({ ok: true, softwareKeyboard });
         } catch (err) {
           return middlewareRequestFailure(err);
         }
@@ -1538,10 +1574,12 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
             throw new Error("display density payload must be an object");
           }
           const scale = parseDisplayDensityScale((payload as Record<string, unknown>).scale);
-          return Response.json({
-            ok: true,
-            displayDensity: await setDisplayDensity(opts.serial, scale),
-          });
+          const displayDensity = await setDisplayDensity(opts.serial, scale);
+          sessionRecorder.recordAction(
+            { type: "setting", setting: "display-density", value: scale },
+            "rest:display-density",
+          );
+          return Response.json({ ok: true, displayDensity });
         } catch (err) {
           return middlewareRequestFailure(err);
         }
@@ -1643,7 +1681,9 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           () => screencapPng(opts.serial),
           deviceState.orientation,
         );
-        return await screenshotResponse(shot.png, url, shot.metadata);
+        const response = await screenshotResponse(shot.png, url, shot.metadata);
+        if (response.ok) sessionRecorder.recordAction({ type: "screenshot" }, "rest:screenshot");
+        return response;
       } catch (err) {
         return Response.json(
           { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -1701,7 +1741,12 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
             throw new Error('night must be one of "yes", "no", or "auto"');
           }
           const mode = night === "yes" ? "dark" : night === "no" ? "light" : "auto";
-          return uiModeResponse(await setNightMode(opts.serial, mode));
+          const status = await setNightMode(opts.serial, mode);
+          sessionRecorder.recordAction(
+            { type: "setting", setting: "night-mode", value: mode },
+            "rest:uimode",
+          );
+          return uiModeResponse(status);
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -1754,10 +1799,9 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           }
           const orientation = (payload as Record<string, unknown>).orientation;
           if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
-          return Response.json({
-            ok: true,
-            orientation: await deviceState.setOrientation(orientation),
-          });
+          const status = await deviceState.setOrientation(orientation);
+          sessionRecorder.recordAction({ type: "orientation", orientation }, "rest:orientation");
+          return Response.json({ ok: true, orientation: status });
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -1786,7 +1830,9 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
             throw new Error("fold payload must be an object");
           }
           const fold = parseFoldRequest(payload as Record<string, unknown>);
-          return Response.json({ ok: true, fold: await applyFoldRequest(opts.serial, fold) });
+          const status = await applyFoldRequest(opts.serial, fold);
+          sessionRecorder.recordAction({ type: "fold", ...fold }, "rest:fold");
+          return Response.json({ ok: true, fold: status });
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -1850,7 +1896,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
 
     if (url.pathname === "/api/apps/launch") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      return appJsonEndpoint(req, (payload) =>
+      return appJsonEndpoint(req, "launch", (payload) =>
         launchApp(
           opts.serial,
           String(payload.packageName ?? ""),
@@ -1863,21 +1909,21 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
 
     if (url.pathname === "/api/apps/clear") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      return appJsonEndpoint(req, (payload) =>
+      return appJsonEndpoint(req, "clear", (payload) =>
         clearAppData(opts.serial, String(payload.packageName ?? "")),
       );
     }
 
     if (url.pathname === "/api/apps/force-stop") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      return appJsonEndpoint(req, (payload) =>
+      return appJsonEndpoint(req, "force-stop", (payload) =>
         forceStopApp(opts.serial, String(payload.packageName ?? "")),
       );
     }
 
     if (url.pathname === "/api/apps/grant") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      return appJsonEndpoint(req, (payload) =>
+      return appJsonEndpoint(req, "grant", (payload) =>
         grantPermission(
           opts.serial,
           String(payload.packageName ?? ""),
@@ -1899,7 +1945,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
 
     if (url.pathname === "/api/apps/revoke") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      return appJsonEndpoint(req, (payload) =>
+      return appJsonEndpoint(req, "revoke", (payload) =>
         revokePermission(
           opts.serial,
           String(payload.packageName ?? ""),
@@ -1910,7 +1956,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
 
     if (url.pathname === "/api/apps/reset-permissions") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      return appJsonEndpoint(req, (payload) =>
+      return appJsonEndpoint(req, "reset-permissions", (payload) =>
         resetPermissions(opts.serial, String(payload.packageName ?? "")),
       );
     }
@@ -1959,7 +2005,9 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       if (req.method === "POST") {
         try {
           const route = parseRoutePlaybackRequest(await readJsonBody(req, MAX_ROUTE_BODY_BYTES));
-          return Response.json({ ok: true, route: await routePlayback.start(route) });
+          const snapshot = await routePlayback.start(route);
+          sessionRecorder.recordAction({ type: "route", action: "start" }, "rest:route");
+          return Response.json({ ok: true, route: snapshot });
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -1968,7 +2016,9 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         }
       }
       if (req.method === "DELETE") {
-        return Response.json({ ok: true, route: routePlayback.stop() });
+        const snapshot = routePlayback.stop();
+        sessionRecorder.recordAction({ type: "route", action: "stop" }, "rest:route");
+        return Response.json({ ok: true, route: snapshot });
       }
       return new Response("method not allowed", { status: 405 });
     }
@@ -1981,10 +2031,12 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           throw new Error("control payload must be an object");
         }
         const action = (payload as Record<string, unknown>).action;
-        if (action === "pause") return Response.json({ ok: true, route: routePlayback.pause() });
-        if (action === "resume") return Response.json({ ok: true, route: routePlayback.resume() });
-        if (action === "stop") return Response.json({ ok: true, route: routePlayback.stop() });
-        throw new Error("action must be pause, resume, or stop");
+        if (action !== "pause" && action !== "resume" && action !== "stop") {
+          throw new Error("action must be pause, resume, or stop");
+        }
+        const snapshot = routePlayback[action]();
+        sessionRecorder.recordAction({ type: "route", action }, "rest:route/control");
+        return Response.json({ ok: true, route: snapshot });
       } catch (err) {
         return Response.json(
           { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -2044,7 +2096,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         }
         const msg = parseGesture(payload);
         void client.touches
-          .enqueue(msg, shouldRecord(payload))
+          .enqueue(msg, sessionRecordMode(payload))
           .completion.then(() => {
             if (acknowledge) sendJson(socket, { ok: true });
           })
@@ -3096,7 +3148,16 @@ export function createRouter(
       } catch (err) {
         return Response.json({ ok: false, error: errMsg(err) }, { status: 503 });
       }
-      const response = await handleCameraRequest(req, url, { serial, readWiring });
+      const response = await handleCameraRequest(req, url, {
+        serial,
+        readWiring,
+        // The device has session events only while its app exists.
+        recordAction: (action) => {
+          const app = apps.get(serial);
+          const recorder = app ? deviceStateForApp(app)?.recorder : undefined;
+          recorder?.recordAction(action, "rest:camera/image");
+        },
+      });
       if (response) return response;
     }
 

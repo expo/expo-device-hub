@@ -7,6 +7,7 @@ import type { Device } from "../src/adb.ts";
 import { cameraFeedPath, placeholderCameraImage } from "../src/camera.ts";
 import type { RunningAvd } from "../src/emulator.ts";
 import { createRouter, type EmuApp, type RouterDependencies } from "../src/middleware.ts";
+import { SessionRecorder } from "../src/session-recorder.ts";
 import {
   parseCameraStatusResponse,
   type CameraFacing,
@@ -223,6 +224,44 @@ describe("createRouter camera routes", () => {
       digest: digestOf(png),
     });
     expect(feed(status, "back").present).toBe(false);
+  });
+
+  test("a camera change is an action in the session of a device that streams", async () => {
+    const state = onlineState();
+    const recorder = new SessionRecorder();
+    const router = createRouter(
+      {},
+      {
+        ...routerDependencies(state),
+        createApp: async ({ serial }) =>
+          ({ ...fakeApp(serial, state.stopped), deviceState: { recorder } }) as EmuApp,
+      },
+    );
+    const png = solidPng(16, 16, [1, 2, 3]);
+
+    // No session yet: the change applies, and nothing records it.
+    expect(
+      (await router.handleRequest(postImage("/api/camera/image?facing=front", png))).status,
+    ).toBe(200);
+    expect((await router.handleRequest(get("/api"))).status).toBe(200);
+    expect(recorder.snapshot().events).toEqual([]);
+
+    expect(
+      (await router.handleRequest(postImage("/api/camera/image?facing=front", png))).status,
+    ).toBe(200);
+    expect((await router.handleRequest(del("/api/camera/image?facing=back"))).status).toBe(200);
+    expect(
+      (await router.handleRequest(postImage("/api/camera/image?facing=side", png))).status,
+    ).toBe(400);
+    expect(recorder.snapshot().events).toMatchObject([
+      {
+        source: "rest:camera/image",
+        kind: "action",
+        replay: false,
+        action: { type: "camera", action: "set-image", facing: "front" },
+      },
+      { action: { type: "camera", action: "clear-image", facing: "back" } },
+    ]);
   });
 
   test("serves the stored PNG back byte for byte and 404s before a feed exists", async () => {

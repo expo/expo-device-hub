@@ -2,7 +2,8 @@ import { screenshotResponse } from "../../screenshot-response.ts";
 import { parseAccessibilitySelector } from "../../accessibility.ts";
 import type { ApiDependencies } from "../dependencies.ts";
 import type { ContractApiRoute } from "./types.ts";
-import { downstream, parseInput, readObject, shouldRecord } from "./route-helpers.ts";
+import { downstream, parseInput, readObject } from "./route-helpers.ts";
+import { sessionRecordMode } from "../../session-recorder.ts";
 
 export function inspectionRoutes(): ContractApiRoute<ApiDependencies>[] {
   const screenshot: ContractApiRoute<ApiDependencies>["handler"] = async ({ url, deps }) => {
@@ -45,7 +46,7 @@ export function inspectionRoutes(): ContractApiRoute<ApiDependencies>[] {
         const selector = parseInput(() => parseAccessibilitySelector(body.selector ?? body));
         return Response.json(
           await downstream("tap accessibility node", () =>
-            deps.tapAccessibility(selector, shouldRecord(body)),
+            deps.tapAccessibility(selector, sessionRecordMode(body)),
           ),
         );
       },

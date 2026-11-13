@@ -8,6 +8,10 @@ The serve-sim Simulator tests run on every push to a PR that is ready for review
 
 Write PR descriptions for reviewers, not as chat transcripts. Summarize meaningful rounds in order: who set or changed the direction, what the LLM made, what review found, and what changed next. Skip minor wording exchanges and distinguish review of an earlier draft from review of the final diff.
 
+# Device interactions
+
+Every user or API interaction with a device must be recorded in that device's session events: serve-emu's session recording on Android, and serve-sim's event log on iOS. This applies to each new route, WebSocket message, and Hub control that changes or captures a device. A read adds no entry. EAS counts these entries as activity, so an interaction that is not recorded lets an idle timeout stop a session that a person uses. In serve-emu, a handler that changes or captures the device calls `recordAction` after the device call succeeds, in both `middleware.ts` and `server.ts`, and the route gets a row in `ACTION_CASES` in `packages/serve-emu/packages/serve-emu/tests/middleware-session-events.test.ts`. [LLP 0025](llp/0025-session-events-record-every-interaction.spec.md) has the rules, including what replay skips.
+
 # Linked Literate Programming (LLP)
 
 This repo uses [LLP v0.5.2](https://github.com/ccheever/llp/tree/v0.5.2). One corpus at the repo root covers all packages, because the packages are tightly coupled. The spec is [LLP 0000](https://github.com/ccheever/llp/blob/v0.5.2/llp/0000-linked-literate-programming.explainer.md).

@@ -37,10 +37,6 @@ export async function downstream<T>(operation: string, action: () => T | Promise
   }
 }
 
-export function shouldRecord(value: unknown): boolean {
-  return !isRecord(value) || value.record !== false;
-}
-
 export function requiredString(value: unknown, name: string, maxLength = 512): string {
   if (typeof value !== "string" || !value.trim()) invalid(`${name} is required`);
   const normalized = value.trim();
