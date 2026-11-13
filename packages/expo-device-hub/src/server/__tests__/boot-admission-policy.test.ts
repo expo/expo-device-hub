@@ -393,6 +393,33 @@ describe("attempt lifecycle", () => {
     expect(attempts()).toHaveLength(1);
   });
 
+  test("an attempt that lost its port to another AVD frees its slot once its emulator exits", async () => {
+    writePolicy(2);
+    const host = fakeHost();
+    // Two Hubs pick port 5560 at once; Pixel_7 wins it.
+    for (const [avdName, pid] of [
+      ["Pixel_7", 4_100_001],
+      ["Pixel_9", 4_100_002],
+    ] as const) {
+      const admitted = await admission(host).admit(android(avdName));
+      if (!admitted.ok) throw new Error(admitted.error);
+      await admitted.ticket.reserveSerial("emulator-5560");
+      host.processes.set(pid, `emulator -avd ${avdName} -port 5560`);
+      await admitted.ticket.spawned(pid);
+      await admitted.ticket.finish();
+    }
+    host.occupancy.androidDevices = [
+      { serial: "emulator-5560", state: "device", avdName: "Pixel_7" },
+    ];
+
+    expect((await admission(host).admit(android("Pixel_8"))).ok).toBe(false);
+
+    // Pixel_9's Hub stopped its emulator; only Pixel_7 runs.
+    host.processes.delete(4_100_002);
+    expect((await admission(host).admit(android("Pixel_8"))).ok).toBe(true);
+    expect(attempts()).toHaveLength(2);
+  });
+
   test("an unfinished attempt of a dead Hub frees its slot only before spawn", async () => {
     writePolicy(1);
     writeRecord("attempt-1-a.json", {

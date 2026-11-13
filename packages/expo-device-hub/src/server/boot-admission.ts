@@ -703,11 +703,12 @@ function isGone(record: AttemptRecord, native: Workload[], processes: HostProces
     return false;
   }
   const emulators = native.filter((device) => device.platform === "android");
-  if (record.serial !== undefined && emulators.some((device) => device.serial === record.serial)) {
+  const { serial, avdName } = record;
+  if (serial !== undefined && emulators.some((device) => atSerial(device, serial, avdName))) {
     return false;
   }
-  const knowsItsEmulator = record.serial !== undefined && record.workloadPid !== undefined;
-  return knowsItsEmulator || !emulators.some((device) => device.avdName === record.avdName);
+  const knowsItsEmulator = serial !== undefined && record.workloadPid !== undefined;
+  return knowsItsEmulator || !emulators.some((device) => device.avdName === avdName);
 }
 
 /**
@@ -720,8 +721,20 @@ function recordMatchesDevice(record: AttemptRecord, device: Workload): boolean {
   if (device.platform !== record.platform) return false;
   if (record.platform === "ios") return sameUdid(device.udid, record.udid);
   return record.serial !== undefined
-    ? device.serial === record.serial
+    ? atSerial(device, record.serial, record.avdName)
     : record.avdName !== undefined && device.avdName === record.avdName;
+}
+
+/**
+ * Whether an emulator is the one at `serial` running `avdName`: the serial
+ * matches and the AVD names do not conflict. adb names a port's AVD only once
+ * it is online, and another emulator may have taken the port.
+ */
+function atSerial(device: Workload, serial: string, avdName: string | undefined): boolean {
+  return (
+    device.serial === serial &&
+    (device.avdName === undefined || avdName === undefined || device.avdName === avdName)
+  );
 }
 
 /**
@@ -756,9 +769,7 @@ function nativeWorkloads(occupancy: NativeOccupancy, processes: HostProcess[]): 
     const listed = emulators.find(
       ({ workload, hasProcess }) =>
         !hasProcess &&
-        (serial === undefined
-          ? workload.avdName === avdName
-          : workload.serial === serial && (workload.avdName ?? avdName) === avdName),
+        (serial === undefined ? workload.avdName === avdName : atSerial(workload, serial, avdName)),
     );
     if (listed) {
       listed.hasProcess = true;

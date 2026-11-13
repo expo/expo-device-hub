@@ -81,7 +81,7 @@ Every emulator instance counts on its own. Two instances never merge because the
 - An emulator process is a command line whose program is `emulator` or `qemu-system-*` and that names an AVD with `-avd <name>` or `@<name>`. `-port <P>` (or `-ports <P>,<adb>`) gives its console port. Processes are one instance only on evidence: the same AVD on the same console port, or a child process of an emulator process for the same AVD (by parent pid, such as the launcher and its qemu child) whose ports do not differ. Two portless processes of one AVD, such as two `-read-only` instances, count as two [observed: `parseEmulatorArgs` in `packages/@expo/hub-android-utils/src/emulator.ts`; `emulatorProcesses` in `src/server/boot-admission.ts`].
 - A process with port `P` is the instance adb lists as `emulator-<P>`, unless adb names a different AVD there. A process without a port joins an adb instance of its AVD that no process has joined yet. Any other process is an instance of its own.
 
-A request names an AVD (`name || id`). A record holds the AVD name, plus the adb serial once the port is allocated. A record joins at most one native instance, and each instance takes at most one record: the instance with the record's serial, or, for a record without a serial, an instance of its AVD. A record that joins no instance counts on its own [observed: `recordMatchesDevice` and `countWorkloads` in `src/server/boot-admission.ts`].
+A request names an AVD (`name || id`). A record holds the AVD name, plus the adb serial once the port is allocated. A record joins at most one native instance, and each instance takes at most one record: the instance with the record's serial, unless adb names a different AVD there, or, for a record without a serial, an instance of its AVD. A record that joins no instance counts on its own [observed: `recordMatchesDevice` and `countWorkloads` in `src/server/boot-admission.ts`].
 
 ### Reopen
 
@@ -89,14 +89,14 @@ A request for a workload that already counts (the same UDID on iOS; the same AVD
 
 ### Rollback
 
-The admitted attempt's record is deleted at once only when the attempt provably started nothing: port allocation failed, the create failed, or the emulator could not be spawned. After an emulator process was spawned, every outcome (online, exited, wait failed, wait gave up) only marks the record finished. An emulator that did not come online may still be running. A failed `simctl boot` is equally uncertain, so iOS also only marks the record finished [observed: `bootAndroidHubDevice`, `bootHubDevice` and `createHubDevice` in `src/server/device-actions.ts`].
+The admitted attempt's record is deleted at once only when the attempt provably started nothing: port allocation failed, the create failed, or the emulator could not be spawned. After an emulator process was spawned, every outcome (online, another AVD online at its port, exited, wait failed, wait gave up) only marks the record finished. An emulator that did not come online may still be running. A failed `simctl boot` is equally uncertain, so iOS also only marks the record finished [observed: `bootAndroidHubDevice`, `bootHubDevice` and `createHubDevice` in `src/server/device-actions.ts`].
 
 ### Absence
 
 A later admission deletes a record only when its device is confirmed gone. The attempt must be over (finished, or its Hub process is not [running](#process-identity)), and:
 
 - **iOS:** its UDID is not a non-`Shutdown` simulator. A record without a UDID (a create that never got one) is gone once the attempt is over.
-- **Android:** its emulator process is not running (or was never recorded), and no native instance has its serial. A record without a serial or without an emulator pid also needs no native instance of its AVD, because missing data cannot prove that nothing was spawned.
+- **Android:** its emulator process is not running (or was never recorded), and no native instance has its serial, except one adb names as a different AVD. A record without a serial or without an emulator pid also needs no native instance of its AVD, because missing data cannot prove that nothing was spawned.
 
 So a Hub that dies before spawning frees its slot. A Hub that dies after spawning, even before it recorded the emulator's pid, keeps the slot while the emulator process runs or adb lists it. serve-emu's `api/avds/start` records no pid, and no serial when the start failed, so its attempt keeps the slot while any emulator of its AVD runs. An ordinary agent session close changes nothing: the device keeps its slot until it is shut down. There is no TTL, reaper or daemon [observed: `isGone` in `src/server/boot-admission.ts`].
 
@@ -134,7 +134,7 @@ There is no overall timeout of its own. A holder waits only for the native listi
 
 - Hosts without the file behave exactly as before.
 - With a policy, each boot runs one extra device listing and a few `ps` listings, under a lock that serializes boots across the account's Hubs.
-- Two Hubs admitted at the same time for different AVDs can still pick the same emulator port. Admission does not change port allocation.
+- Two Hubs admitted at the same time for different AVDs can still pick the same emulator port. Admission does not change port allocation. The boot that loses the port stops its emulator, and its record frees its slot once that emulator exits.
 
 ## Limitations
 
