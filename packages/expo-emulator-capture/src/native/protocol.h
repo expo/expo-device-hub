@@ -34,12 +34,26 @@ enum RecordFlags : uint32_t {
 // 'R' is followed by one big-endian u32: Android's display rotation, 0 to 3
 // (Surface.ROTATION_0 to ROTATION_270). Hello's "protocol" is 2 or more when the
 // agent accepts 'R'.
+// Protocol 3 adds consumer roles. 'U' is followed by one big-endian u32: the role, 0 for the
+// stream and 1 for the recording. 'C' is followed by two big-endian u32 values: the recording's
+// canvas width and height, even, from 2 to 4096. Both come before the consumer's first 'S',
+// which assigns the role; a consumer without 'U' is a stream consumer.
 constexpr uint8_t kCommandKeyFrame = 'K';
 constexpr uint8_t kCommandSettings = 'S';
 constexpr uint8_t kCommandRotation = 'R';
+constexpr uint8_t kCommandRole = 'U';
+constexpr uint8_t kCommandCanvas = 'C';
 constexpr size_t kSettingsCommandBytes = 13;
 constexpr size_t kRotationCommandBytes = 5;
-constexpr int kProtocolVersion = 2;
+constexpr size_t kRoleCommandBytes = 5;
+constexpr size_t kCanvasCommandBytes = 9;
+constexpr int kProtocolVersion = 3;
+
+// @ref LLP 0023#agent-protocol-3 — one consumer per role, one frame copy
+// The live stream and the recording each have their own consumer, encoder and settings.
+enum Role : int { kRoleStream = 0, kRoleRecording = 1 };
+constexpr int kRoleCount = 2;
+inline const char* roleName(int role) { return role == kRoleRecording ? "recording" : "stream"; }
 constexpr uint32_t kMinBitRate = 100'000;
 constexpr uint32_t kMaxBitRate = 50'000'000;
 
@@ -96,6 +110,52 @@ inline bool parseRotation(const uint8_t* command, int& out) {
   if (rotation > 3) return false;
   out = int(rotation);
   return true;
+}
+
+// Returns false unless the command is 'U' with a known role.
+inline bool parseRole(const uint8_t* command, int& out) {
+  if (command[0] != kCommandRole) return false;
+  uint32_t role = readU32(command + 1);
+  if (role >= uint32_t(kRoleCount)) return false;
+  out = int(role);
+  return true;
+}
+
+// Returns false unless the command is 'C' with an even canvas from 2 to kMaxEdge on each edge.
+inline bool parseCanvas(const uint8_t* command, int& width, int& height) {
+  if (command[0] != kCommandCanvas) return false;
+  uint32_t w = readU32(command + 1), h = readU32(command + 5);
+  if (w < 2 || h < 2 || w > uint32_t(kMaxEdge) || h > uint32_t(kMaxEdge) || w % 2 || h % 2)
+    return false;
+  width = int(w);
+  height = int(h);
+  return true;
+}
+
+// A rectangle in output pixels, from the top-left corner.
+struct Rect {
+  int x = 0, y = 0, width = 0, height = 0;
+  bool operator==(const Rect& other) const {
+    return x == other.x && y == other.y && width == other.width && height == other.height;
+  }
+  bool operator!=(const Rect& other) const { return !(*this == other); }
+};
+
+// @ref LLP 0018#fold-canvas — the same placement as serve-emu's placeOnCanvas
+// Where a frame goes on the recording canvas: centered, at its own size when it fits, else
+// scaled down to fit. Every value is even, so chroma stays aligned.
+inline Rect placeOnCanvas(int width, int height, int canvasWidth, int canvasHeight) {
+  if (width < 2 || height < 2 || canvasWidth < 2 || canvasHeight < 2)
+    throw std::runtime_error("invalid canvas placement");
+  auto even = [](int value) { return value - value % 2; };
+  int w = even(width), h = even(height);
+  double scale = std::min({1.0, double(canvasWidth) / w, double(canvasHeight) / h});
+  Rect rect;
+  rect.width = std::max(2, even(int(double(w) * scale)));
+  rect.height = std::max(2, even(int(double(h) * scale)));
+  rect.x = even((canvasWidth - rect.width) / 2);
+  rect.y = even((canvasHeight - rect.height) / 2);
+  return rect;
 }
 
 // @ref LLP 0020#rotation — the panel-sized color buffer holds the turned picture

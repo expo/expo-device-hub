@@ -20,6 +20,7 @@ extern "C" {
 }
 #include "encoder.h"
 #include "log.h"
+#include "protocol.h"
 #include "yuv.h"
 
 static_assert(X264_BUILD == 165, "the agent supports x264 build 165 only; install libx264-dev 165");
@@ -95,10 +96,6 @@ void x264Log(void*, int level, const char* format, va_list args) {
   logLine("x264 %s: %s", level <= X264_LOG_ERROR ? "error" : "warning", line);
 }
 
-// Without frames to encode (a static screen), a frame count is no clock: a keyframe also comes
-// after this time.
-constexpr int64_t kMaxKeyFrameIntervalUs = 10'000'000;
-
 // A quarter of the cores, at most four: the emulator itself needs the rest.
 int encoderThreads() {
   return std::max(1, std::min(4, int(std::thread::hardware_concurrency()) / 4));
@@ -125,9 +122,11 @@ class X264Encoder final : public H264Encoder {
   X264Encoder(const X264Encoder&) = delete;
   X264Encoder& operator=(const X264Encoder&) = delete;
 
-  bool configure(int width, int height, int fps, int bitRate, int rotation,
-                 std::string& error) override {
+  bool configure(const EncoderConfig& config, std::string& error) override {
     invalidate();
+    const int width = config.width, height = config.height, fps = config.fps,
+              bitRate = config.bitRate, rotation = config.rotation;
+    const int keyInterval = std::max(1, config.keyFrameIntervalSeconds);
     if (!loadX264(x264_, error)) return false;
     x264_param_t param;
     // zerolatency: no lookahead and no B-frames, so each call returns its own frame.
@@ -146,8 +145,9 @@ class X264Encoder final : public H264Encoder {
     param.i_timebase_num = 1;
     param.i_timebase_den = 1000000;
     param.b_vfr_input = 0;
-    // Late joiners request keyframes, so periodic ones can be rare (as with scrcpy).
-    param.i_keyint_max = std::max(1, fps) * 10;
+    // The stream's late joiners request keyframes, so periodic ones can be rare (as with
+    // scrcpy). The recording asks for one each second.
+    param.i_keyint_max = std::max(1, fps) * keyInterval;
     param.rc.i_rc_method = X264_RC_ABR;
     param.rc.i_bitrate = std::max(1, bitRate / 1000);
     param.rc.i_vbv_max_bitrate = param.rc.i_bitrate;
@@ -174,6 +174,10 @@ class X264Encoder final : public H264Encoder {
     width_ = width;
     height_ = height;
     rotation_ = rotation;
+    letterbox_ = config.letterbox;
+    // Without frames to encode (a static screen), a frame count is no clock: a keyframe also
+    // comes after this time.
+    maxKeyFrameIntervalUs_ = int64_t(keyInterval) * 1'000'000;
     planes_.resize(size_t(width) * size_t(height) * 3 / 2);
     // Frames are scaled in the panel's orientation, then turned upright.
     if (rotation != 0) panelPlanes_.resize(planes_.size());
@@ -191,7 +195,17 @@ class X264Encoder final : public H264Encoder {
     const RgbaImage& image = *frame.pixels;
     auto convertStart = std::chrono::steady_clock::now();
     I420Planes upright = planesIn(planes_, width_, height_);
-    if (rotation_ == 0) {
+    if (letterbox_) {
+      // @ref LLP 0023#agent-protocol-3 — the recording is scaled into padded I420 planes
+      Rect rect = placeOnCanvas(image.width, image.height, width_, height_);
+      if (rect != placed_) {
+        // The borders stay black; each frame overwrites only its rectangle.
+        fillI420(upright, 16, 128);
+        placed_ = rect;
+      }
+      converter_.convert(image.data.data(), image.width, image.height, size_t(image.width) * 4,
+                         subPlanes(upright, rect));
+    } else if (rotation_ == 0) {
       converter_.convert(image.data.data(), image.width, image.height, size_t(image.width) * 4,
                          upright);
     } else {
@@ -223,7 +237,7 @@ class X264Encoder final : public H264Encoder {
     picture.i_pts = pts;
     // The frame-count interval above counts encoded frames, which a static screen does not
     // post; this keeps at most 10 s between keyframes, as VideoToolbox does on macOS.
-    bool keyDue = lastKeyPts_ < 0 || pts - lastKeyPts_ >= kMaxKeyFrameIntervalUs;
+    bool keyDue = lastKeyPts_ < 0 || pts - lastKeyPts_ >= maxKeyFrameIntervalUs_;
     picture.i_type = forceKey || keyDue ? X264_TYPE_IDR : X264_TYPE_AUTO;
     x264_nal_t* nals = nullptr;
     int count = 0;
@@ -251,6 +265,8 @@ class X264Encoder final : public H264Encoder {
       encoder_ = nullptr;
     }
     width_ = height_ = rotation_ = 0;
+    letterbox_ = false;
+    placed_ = Rect{};
     lastPts_ = lastKeyPts_ = -1;
     encoderId_.clear();
   }
@@ -264,6 +280,9 @@ class X264Encoder final : public H264Encoder {
   X264 x264_;
   x264_t* encoder_ = nullptr;
   int width_ = 0, height_ = 0, rotation_ = 0;
+  bool letterbox_ = false;
+  Rect placed_;  // The rectangle of the last letterboxed frame; empty before the first.
+  int64_t maxKeyFrameIntervalUs_ = 10'000'000;
   int64_t lastPts_ = -1, lastKeyPts_ = -1;
   std::vector<uint8_t> planes_, panelPlanes_;
   RgbaToI420 converter_;

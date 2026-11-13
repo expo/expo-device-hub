@@ -245,9 +245,34 @@ static void rotation() {
   }
 }
 
+// The recording places each frame on a fixed canvas: black borders, the picture inside.
+static void letterbox() {
+  Yuv canvas(8, 8);
+  fillI420(canvas.planes, 16, 128);
+  assert(canvas.uniform(16, 128, 128));
+  struct {
+    int x, y, width, height;
+  } rect{2, 4, 4, 2};
+  Image white(4, 2);
+  white.fill(255, 255, 255);
+  RgbaToI420 converter;
+  converter.convert(white.rgba.data(), 4, 2, 16, subPlanes(canvas.planes, rect));
+  for (int y = 0; y < 8; y++)
+    for (int x = 0; x < 8; x++) {
+      bool inside = x >= 2 && x < 6 && y >= 4 && y < 6;
+      assert(canvas.planes.y[y * canvas.planes.yStride + x] == (inside ? 235 : 16));
+    }
+  for (int y = 0; y < 4; y++)
+    for (int x = 0; x < 4; x++) {
+      assert(canvas.planes.u[y * canvas.planes.uvStride + x] == 128);
+      assert(canvas.planes.v[y * canvas.planes.uvStride + x] == 128);
+    }
+}
+
 int main() {
   colors();
   scaling();
   rotation();
+  letterbox();
   std::cout << "RGBA to I420 conversion, scaling and rotation checks passed\n";
 }

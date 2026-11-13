@@ -13,8 +13,9 @@ namespace {
 
 constexpr uint32_t kGlRgba = 0x1908;
 constexpr uint32_t kGlUnsignedByte = 0x1401;
-// Frames in flight: two pending, one encoding, one capturing.
-constexpr size_t kMaxPooledImages = 4;
+// Frames in flight: two pending and one encoding for each of the stream and the recording, and
+// one capturing. The two often share a frame.
+constexpr size_t kMaxPooledImages = 8;
 
 using Clock = std::chrono::steady_clock;
 

@@ -11,7 +11,7 @@ type RecordingRouter = Pick<
 >;
 type RecordingLimits = Pick<
   Parameters<RecordingRouter["startScreenRecording"]>[0],
-  "maxFileBytes" | "maxDurationMs" | "minFreeBytes"
+  "maxFileBytes" | "maxDurationMs" | "minFreeBytes" | "encoding"
 >;
 
 export type RecordingStart = { started: true } | { started: false; reason: string };
