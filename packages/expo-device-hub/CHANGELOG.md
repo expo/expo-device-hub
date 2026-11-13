@@ -1,5 +1,18 @@
 # expo-device-hub
 
+## 0.23.2
+
+### Patch Changes
+
+- 1e5f890: Show the foreground app's name on Android. serve-emu now reads the label with
+  `aapt2 dump badging` from the APK it already pulls for the icon, and returns it as
+  `label` from `GET /api/apps/icon`. Before, it searched `dumpsys package` output,
+  which has no label, so the name was always missing. The Android client keeps the
+  label and the icon across foreground polls of the same build, reads them again
+  after a reinstall with a new version or build, and retries a failed read.
+- 9ea899f: Android boots no longer reuse the console port of an emulator that is still booting or offline, and a boot that finds a different AVD on its allocated serial now fails, and stops the emulator it spawned, instead of returning that other emulator.
+- ab2ba42: Android: one device that fails its check no longer hides the other devices. An emulator whose `adb emu avd name` fails, such as one connected over the network, now shows by its serial.
+
 ## 0.23.1
 
 ### Patch Changes

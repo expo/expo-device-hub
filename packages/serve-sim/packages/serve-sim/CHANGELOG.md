@@ -1,5 +1,12 @@
 # @expo/serve-sim
 
+## 0.14.3
+
+### Patch Changes
+
+- e169141: Show the name of the foreground iOS app on hosts where the simulator runtime is mounted outside serve-sim's allowed paths, for example Safari and Settings in an EAS simulator session. serve-sim now sends `label` with each `/appstate` event. It reads the name from the bundle path that simctl reports, so the client no longer needs `app.infoPlist` for the name. hub-client uses that label, and a bundle read that finds no name no longer clears it.
+- 913e47c: Report physical device pose separately from app orientation so clients can follow external turns on supported iOS runtimes. Support physical rotations on iPhone Duo independently of the active panel; temporary screenshot captures do not start pose observation.
+
 ## 0.14.2
 
 ### Patch Changes

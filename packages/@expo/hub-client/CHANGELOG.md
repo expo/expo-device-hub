@@ -1,5 +1,22 @@
 # @expo/hub-client
 
+## 1.12.2
+
+### Patch Changes
+
+- 1e5f890: Show the foreground app's name on Android. serve-emu now reads the label with
+  `aapt2 dump badging` from the APK it already pulls for the icon, and returns it as
+  `label` from `GET /api/apps/icon`. Before, it searched `dumpsys package` output,
+  which has no label, so the name was always missing. The Android client keeps the
+  label and the icon across foreground polls of the same build, reads them again
+  after a reinstall with a new version or build, and retries a failed read.
+- 8c9c786: Use observed device pose separately from app orientation on ordinary iOS Simulators. Keep video, touch mapping, and home gestures aligned when an app stays portrait on a landscape device.
+
+  Fix repeated rotations on iPhone Duo when the foreground app stays portrait.
+  Keep the Duo model aligned with rotations made by other controllers.
+
+- e169141: Show the name of the foreground iOS app on hosts where the simulator runtime is mounted outside serve-sim's allowed paths, for example Safari and Settings in an EAS simulator session. serve-sim now sends `label` with each `/appstate` event. It reads the name from the bundle path that simctl reports, so the client no longer needs `app.infoPlist` for the name. hub-client uses that label, and a bundle read that finds no name no longer clears it.
+
 ## 1.12.1
 
 ### Patch Changes
