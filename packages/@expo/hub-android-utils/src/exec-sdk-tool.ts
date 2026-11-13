@@ -9,14 +9,43 @@ const execFileAsync = promisify(execFile);
  * On Windows `avdmanager` and `sdkmanager` are `.bat` wrappers, which Node
  * refuses to spawn directly (`spawn EINVAL` since 18.20 / 20.12). Those run
  * through `cmd.exe` as one pre-quoted command line; native binaries such as
- * `adb` spawn as-is.
+ * `adb` spawn as-is. `signal` kills the child when the caller aborts.
  */
 export async function execSdkTool(
   toolPath: string,
   args: string[],
+  { signal }: { signal?: AbortSignal } = {},
 ): Promise<{ stdout: string; stderr: string }> {
-  if (!isBatchFile(toolPath)) return execFileAsync(toolPath, args);
-  return execFileAsync(buildBatchCommand(toolPath, args), [], { shell: true });
+  if (!isBatchFile(toolPath)) return execFileAsync(toolPath, args, { signal });
+  return execBatch(buildBatchCommand(toolPath, args), signal);
+}
+
+/**
+ * Run a `.bat` command line through `cmd.exe`, and on abort kill its whole
+ * process tree. Killing only `cmd.exe` would leave the wrapper's JVM running,
+ * and every later device-list poll would start another one. The promise
+ * rejects as soon as `signal` aborts, without waiting for the tree to exit.
+ */
+function execBatch(
+  command: string,
+  signal: AbortSignal | undefined,
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const killTree = () => {
+      if (child.pid !== undefined) {
+        execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], () => {});
+      }
+      reject(signal?.reason);
+    };
+    const child = execFile(command, [], { shell: true }, (error, stdout, stderr) => {
+      signal?.removeEventListener("abort", killTree);
+      // Match promisified execFile, which keeps the output on the error.
+      if (error) reject(Object.assign(error, { stdout, stderr }));
+      else resolve({ stdout, stderr });
+    });
+    if (signal?.aborted) killTree();
+    else signal?.addEventListener("abort", killTree, { once: true });
+  });
 }
 
 /** Whether `toolPath` is a Windows batch wrapper rather than a native binary. */
