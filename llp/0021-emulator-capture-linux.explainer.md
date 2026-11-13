@@ -58,7 +58,14 @@ For diagnosis and measurements, the agent reads two options at each `S`. A file 
 | Read   | `<socket>.read`  | `EXPO_EMULATOR_CAPTURE_READ`  | `post` (this post's frame, in the post), `lag` (the frame before, in the post), `lag-async` (the default on Linux) |
 | Probe  | `<socket>.probe` | `EXPO_EMULATOR_CAPTURE_PROBE` | `1`: a 1×1 read before each read, which times the renderer's wait                                                  |
 
-The `stats` line reports the posts per second, the render thread's time per post in the agent, and the read's wait and copy times. A file stays after the session, so remove it after a measurement.
+A file stays after the session, so remove it after a measurement.
+
+While a consumer streams, the agent logs a `stats (capture)` line and a line for each role every 10 seconds [observed: `CaptureStats` and `EncoderStats` in `src/native/agent.cpp`]:
+
+- `stats (capture)`: the read mode; reads per second, with tail reads and replaced requests; the capture time, with the probe's wait and the full read; the capture thread's CPU; and the render thread's ID.
+- `stats (stream)` and `stats (recording)`: encoded frames per second; posts per second; the render thread's time per post in the agent and in the whole post, which includes the FrameBuffer lock and the emulator's own post work; the capture, convert and encode times; the encoder thread's CPU; frames offered to the role, and frames dropped by its pacer, by its full queue, as superseded by a newer pending frame, as older than the last encoded frame, and by its output queue; the encoded bit rate; and the time from the frame's post to the end of its encode.
+
+The agent names its threads `expo-cap-socket`, `expo-cap-read`, `expo-enc-stream` and `expo-enc-record`. On Linux, x264's threads take the name of the encoder thread that starts them, so `/proc/<pid>/task/*/comm` shows each role's encode CPU [observed: `nameThread` in `src/native/agent.cpp`] [inferred: Linux copies a thread's name to the threads that it creates].
 
 The macOS GPU path is not ported, for two reasons:
 
