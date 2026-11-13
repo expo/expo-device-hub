@@ -2681,7 +2681,7 @@ export function createRouter(
     return failure.reason;
   };
 
-  // @ref LLP 0019#router — one attempt per emulator process; opening an emulator never fails for it
+  // @ref LLP 0022#router — one attempt per emulator process; opening an emulator never fails for it
   /** Loads the agent into an emulator that runs without it. Concurrent callers share one try. */
   const attachCapture = (serial: string): Promise<void> => {
     const inFlight = attachesInFlight.get(serial);

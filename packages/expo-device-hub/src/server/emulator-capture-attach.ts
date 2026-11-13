@@ -79,7 +79,7 @@ function cString(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-// @ref LLP 0019#how-the-agent-loads — setenv, then dlopen: the agent reads its socket at load
+// @ref LLP 0022#how-the-agent-loads — setenv, then dlopen: the agent reads its socket at load
 /**
  * The debugger command that loads the agent into a running QEMU process: it sets the socket and
  * log variables in that process, loads the library, reads `dlerror()`, and detaches.
