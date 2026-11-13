@@ -101,6 +101,7 @@ export {
   type ClipboardToastState,
 } from "./dashboard/ClipboardToast";
 export { LocationSection } from "./dashboard/LocationSection";
+export { KeychainSection } from "./dashboard/KeychainSection";
 export { PermissionsSection } from "./dashboard/PermissionsSection";
 export { EventsSection } from "./dashboard/EventsSection";
 export { LogsSection } from "./dashboard/LogsSection";
