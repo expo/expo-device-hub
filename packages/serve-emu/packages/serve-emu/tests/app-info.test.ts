@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { getForegroundApp } from "../src/app-info.ts";
 import type { execText } from "../src/exec.ts";
+import { LAUNCHER_DUMPSYS_PACKAGE } from "./fixtures/android-package-dumps.ts";
 
 type TextResultOptions = {
   status?: number | null;
@@ -27,6 +28,34 @@ function shellCommand(args: string[]): string {
 }
 
 describe("getForegroundApp", () => {
+  test("reads package metadata from real dumpsys output, which has no label", async () => {
+    const runExec = (async (_command, args) => {
+      switch (shellCommand(args)) {
+        case "dumpsys window":
+          return textResult(
+            "mCurrentFocus=Window{909d29c u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}",
+          );
+        case "dumpsys package com.google.android.apps.nexuslauncher":
+          return textResult(LAUNCHER_DUMPSYS_PACKAGE);
+        case "pidof com.google.android.apps.nexuslauncher":
+          return textResult("1310\n");
+        default:
+          throw new Error(`unexpected command: ${shellCommand(args)}`);
+      }
+    }) as typeof execText;
+
+    await expect(getForegroundApp("emulator-5554", runExec)).resolves.toEqual({
+      packageName: "com.google.android.apps.nexuslauncher",
+      activity: "com.google.android.apps.nexuslauncher.NexusLauncherActivity",
+      pid: 1310,
+      label: null,
+      versionName: "16",
+      versionCode: "907",
+      minSdk: 36,
+      debuggable: false,
+    });
+  });
+
   test("reads the focused component, package metadata, and first process id", async () => {
     const calls: Array<{ args: string[]; timeout: number | undefined }> = [];
     const runExec = (async (command, args, options) => {
@@ -39,7 +68,6 @@ describe("getForegroundApp", () => {
           return textResult(`
             versionCode=42 minSdk=23 targetSdk=35
             versionName=1.2.3
-            application-label-en:'Example App'
             pkgFlags=[ HAS_CODE DEBUGGABLE ]
           `);
         case "pidof com.example.app":
@@ -53,7 +81,7 @@ describe("getForegroundApp", () => {
       packageName: "com.example.app",
       activity: "com.example.app.MainActivity",
       pid: 123,
-      label: "Example App",
+      label: null,
       versionName: "1.2.3",
       versionCode: "42",
       minSdk: 23,
@@ -71,7 +99,7 @@ describe("getForegroundApp", () => {
     ).toEqual([5_000, 5_000]);
   });
 
-  test("falls back to resumed activities and non-localized labels", async () => {
+  test("falls back to resumed activities", async () => {
     const commands: string[] = [];
     const runExec = (async (_command, args) => {
       const command = shellCommand(args);
@@ -86,7 +114,6 @@ describe("getForegroundApp", () => {
         return textResult(`
           versionCode=7
           versionName=7.0-beta
-          labelRes=0x7f010001 nonLocalizedLabel=Alternate App
           pkgFlags=[ HAS_CODE ]
         `);
       }
@@ -98,7 +125,7 @@ describe("getForegroundApp", () => {
       packageName: "com.alternate",
       activity: "com.alternate.Home",
       pid: null,
-      label: "Alternate App",
+      label: null,
       versionName: "7.0-beta",
       versionCode: "7",
       minSdk: null,

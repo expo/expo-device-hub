@@ -642,7 +642,7 @@ export type AppPermissionAction = "grant" | "revoke";
 export interface ForegroundApp {
   /** Bundle identifier (iOS) / package name (Android). */
   id: string;
-  /** Human-readable app label (Android `dumpsys`, iOS `CFBundleDisplayName`). */
+  /** Human-readable app label (Android `aapt2 dump badging` of the APK, iOS `CFBundleDisplayName`). */
   label?: string;
   /** Foreground process id, when known. */
   pid?: number;
