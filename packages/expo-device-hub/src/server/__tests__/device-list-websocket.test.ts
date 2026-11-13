@@ -17,6 +17,7 @@ const IOS = {
   physical: false,
   supported: true,
   model: "iPhone 17 Pro",
+  deviceModel: null,
   lastUsedAt: 123,
 };
 
@@ -29,6 +30,7 @@ const ANDROID = {
   physical: false,
   supported: true,
   model: "pixel_10_pro",
+  deviceModel: "android:pixel-9-pro" as const,
   lastUsedAt: 456,
 };
 
@@ -210,6 +212,12 @@ test("deviceListFingerprint includes a model that the server learns later", () =
   // The simulator device type names can load after the first poll, so a known model must broadcast.
   const unknown: HubDeviceList = { ...LIST, simulators: [{ ...IOS, model: null }] };
   expect(deviceListFingerprint(unknown)).not.toBe(deviceListFingerprint(LIST));
+});
+
+test("deviceListFingerprint includes 3D model changes", () => {
+  const changed = { ...LIST, simulators: [{ ...IOS, deviceModel: "ios:iphone-18-pro" as const }] };
+
+  expect(deviceListFingerprint(LIST)).not.toBe(deviceListFingerprint(changed));
 });
 
 test("deviceListFingerprint compares stable error ids instead of volatile details", () => {

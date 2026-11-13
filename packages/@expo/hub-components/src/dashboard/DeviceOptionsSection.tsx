@@ -4,7 +4,7 @@ import { type DeviceClient, type DeviceOrientation, type DeviceSettingKey } from
 import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { rotationUnavailableText } from "./rotation-availability";
-import { FoldSettings, type FoldPreviewOption } from "./FoldSettings";
+import { FoldSettings, ModelPreviewSettings, type FoldPreviewOption } from "./FoldSettings";
 import { KeyboardSection } from "./KeyboardSection";
 import { SidebarActionButton } from "./SidebarActionButton";
 import { SidebarRow, SidebarSwitch } from "./SidebarRow";
@@ -124,7 +124,7 @@ export function DeviceOptionsSection({
 }: {
   client?: DeviceClient;
   screenShape?: ScreenShapeOption;
-  /** Viewer-local 2D/3D choices for a foldable that the 3D model can show. */
+  /** Viewer-local 2D/3D choices for a device that the 3D model can show. */
   foldPreview?: FoldPreviewOption;
   /** Whether backend-controlled appearance and accessibility settings are available. */
   showDeviceSettings?: boolean;
@@ -212,13 +212,20 @@ export function DeviceOptionsSection({
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
-      {client?.fold && client.capabilities.fold && (
+      {client?.fold && client.capabilities.fold ? (
         <FoldSettings
           fold={client.fold}
           controls={client.capabilities.fold}
           disabledReason={recordingDisabledReason}
           preview={foldPreview}
+          separateDisplays={!!client.displays}
         />
+      ) : (
+        foldPreview && (
+          <div role="group" aria-label="3D preview">
+            <ModelPreviewSettings preview={foldPreview} />
+          </div>
+        )
       )}
 
       {showDeviceSettings &&

@@ -8,6 +8,20 @@
 
 export type Platform = "ios" | "android";
 
+/** Exact device model that the 3D preview can draw. */
+export const DEVICE_MODEL_IDS = [
+  "ios:iphone-duo",
+  "ios:iphone-18-pro",
+  "android:pixel-9-pro",
+  "android:pixel-9-pro-fold",
+] as const;
+export type DeviceModelId = (typeof DEVICE_MODEL_IDS)[number];
+
+/** Fail closed when a newer or stale server sends an unknown model id. */
+export function isDeviceModelId(value: unknown): value is DeviceModelId {
+  return DEVICE_MODEL_IDS.some((modelId) => modelId === value);
+}
+
 export type Device = {
   id: string;
   name: string;
@@ -29,6 +43,11 @@ export type Device = {
    * such as for a physical device.
    */
   model?: string | null;
+  /**
+   * The 3D model of this exact device model, or null when the 3D preview has none.
+   * Optional so that a consumer whose devices have no model can leave it out.
+   */
+  deviceModel?: DeviceModelId | null;
   /**
    * Epoch ms the device was last used. Drives the relative "Recents" time in the
    * add-device picker.

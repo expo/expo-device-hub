@@ -12,9 +12,11 @@
  * {@link FragmentedMp4Muxer}), appends it to a `SourceBuffer`, keeps a detached
  * `<video>` pinned to the live edge, and blits decoded frames onto the same
  * `<canvas>` the WebCodecs path paints — so `DeviceScreen` and input mapping are
- * unchanged.
+ * unchanged. The canvas is read on every frame, so a view that replaces it, as
+ * a switch between 2D and 3D does, keeps receiving frames.
  */
 
+import { markCanvasFrame, STREAM_CANVAS_CONTEXT } from "./canvas-frames";
 import { FragmentedMp4Muxer } from "./mp4-muxer";
 
 /** Broadly-supported baseline H.264 type; the floor for the MSE path being usable. */
@@ -57,7 +59,10 @@ export class MsePlayer {
   private readonly muxer = new FragmentedMp4Muxer();
   private readonly video: HTMLVideoElement;
   private readonly mediaSource: MediaSource;
-  private readonly ctx: CanvasRenderingContext2D | null;
+  private canvas: HTMLCanvasElement | null = null;
+  private ctx: CanvasRenderingContext2D | null = null;
+  /** The video time last drawn onto the current canvas; a stalled stream draws nothing new. */
+  private drawnTime = Number.NaN;
   private objectUrl: string;
   private sourceBuffer: SourceBuffer | null = null;
   private readonly queue: Uint8Array[] = [];
@@ -68,10 +73,10 @@ export class MsePlayer {
   private fpsBaseFrames = 0;
 
   constructor(
-    private readonly canvas: HTMLCanvasElement,
+    /** The canvas to draw onto, read on every frame. */
+    private readonly target: () => HTMLCanvasElement | null,
     private readonly callbacks: MsePlayerCallbacks = {},
   ) {
-    this.ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
     const video = document.createElement("video");
     video.muted = true;
     video.defaultMuted = true;
@@ -243,16 +248,30 @@ export class MsePlayer {
     }
 
     if (video.videoWidth === 0) return;
+    const canvas = this.target();
+    if (canvas !== this.canvas) {
+      this.canvas = canvas;
+      this.ctx = canvas?.getContext("2d", STREAM_CANVAS_CONTEXT) ?? null;
+      this.drawnTime = Number.NaN;
+    }
+    if (!canvas) return;
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      this.drawnTime = Number.NaN;
+    }
     if (!this.painted) {
       this.painted = true;
-      this.canvas.width = video.videoWidth;
-      this.canvas.height = video.videoHeight;
       this.callbacks.onResize?.(video.videoWidth, video.videoHeight);
       this.callbacks.onFirstFrame?.();
       this.fpsWindowStart = performance.now();
       this.fpsBaseFrames = video.getVideoPlaybackQuality?.().totalVideoFrames ?? 0;
     }
-    if (this.ctx) this.ctx.drawImage(video, 0, 0);
+    if (this.ctx && video.currentTime !== this.drawnTime) {
+      this.ctx.drawImage(video, 0, 0);
+      this.drawnTime = video.currentTime;
+      markCanvasFrame(canvas);
+    }
 
     this.reportFps();
   };

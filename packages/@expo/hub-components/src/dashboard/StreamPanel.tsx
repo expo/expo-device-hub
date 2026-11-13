@@ -9,7 +9,8 @@ import {
   type ScreenSize,
 } from "@expo/hub-client";
 import type { DeviceShapeProps } from "@expo/hub-client/shapes";
-import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
+import { type DeviceModelAssets } from "../foldable/device-models";
+import type { DeviceModelScreenProps } from "../foldable/DeviceModelScreen";
 import {
   bg,
   border,
@@ -48,12 +49,13 @@ export function StreamPanel({
   client,
   agentInteraction,
   DeviceScreen,
-  FoldableDeviceScreen,
+  DeviceModelScreen,
   DeviceShape,
   foldPreview,
   displayScreen,
   framed = true,
   showScreenShape = true,
+  deviceModelAssets,
   onClipboardFallback,
 }: {
   device: Device;
@@ -61,8 +63,8 @@ export function StreamPanel({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
-  /** iPhone Duo 3D renderer from `@expo/hub-components/foldable`; without it the Duo stays flat. */
-  FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  /** 3D renderer from `@expo/hub-components/foldable`; without it every device stays flat. */
+  DeviceModelScreen?: ComponentType<DeviceModelScreenProps>;
   /** Screen shape clip from `@expo/hub-client/shapes`; without it the screen keeps generic corners. */
   DeviceShape?: ComponentType<DeviceShapeProps>;
   foldPreview?: PhoneFrameFoldPreview;
@@ -75,6 +77,8 @@ export function StreamPanel({
   framed?: boolean;
   /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
   showScreenShape?: boolean;
+  /** Consumer-owned 3D model files; a device whose model has no URL stays flat. */
+  deviceModelAssets?: DeviceModelAssets;
   /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
   onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
@@ -318,11 +322,12 @@ export function StreamPanel({
               if (!client.clipboardPending) await clipboard.copyFromSimulator();
             }}
             DeviceScreen={DeviceScreen}
-            FoldableDeviceScreen={FoldableDeviceScreen}
+            DeviceModelScreen={DeviceModelScreen}
             DeviceShape={DeviceShape}
             foldPreview={foldPreview}
             displayScreen={displayScreen}
             showScreenShape={showScreenShape}
+            deviceModelAssets={deviceModelAssets}
             onLoadingChange={setScreenLoading}
           />
           {!viewport.mobile && (

@@ -190,17 +190,31 @@ export class DeviceListBroadcaster {
 export function deviceListFingerprint(list: HubDeviceList): string {
   const normalize = (devices: HubDevice[]) =>
     devices
-      .map(({ id, name, version, platform, booted, physical, supported, model, lastUsedAt }) => ({
-        id,
-        name,
-        version,
-        platform,
-        booted,
-        physical,
-        supported,
-        model,
-        lastUsedAt,
-      }))
+      .map(
+        ({
+          id,
+          name,
+          version,
+          platform,
+          booted,
+          physical,
+          supported,
+          model,
+          deviceModel,
+          lastUsedAt,
+        }) => ({
+          id,
+          name,
+          version,
+          platform,
+          booted,
+          physical,
+          supported,
+          model,
+          deviceModel,
+          lastUsedAt,
+        }),
+      )
       .sort((a, b) => a.id.localeCompare(b.id));
 
   return JSON.stringify({

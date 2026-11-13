@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { PhoneFrame } from "../dashboard/PhoneFrame";
 import { type Device } from "../dashboard/data";
+import { type DeviceModelAssets } from "../foldable/device-models";
 
 const device: Device = {
   id: "duo-1",
@@ -13,6 +14,13 @@ const device: Device = {
   booted: true,
   physical: false,
   supported: true,
+  deviceModel: "ios:iphone-duo",
+};
+
+const MODEL_ASSETS: DeviceModelAssets = {
+  "ios:iphone-duo": "https://hub.test/assets/iphone-duo.glb",
+  "ios:iphone-18-pro": "https://hub.test/assets/iphone-18-pro.glb",
+  "android:pixel-9-pro-fold": "https://hub.test/assets/pixel-9-pro-fold.glb",
 };
 
 function client(
@@ -31,8 +39,7 @@ function client(
       setControl: () => {},
       ...fold,
     },
-    // A device without separate display streams or Xcode's model, such as an
-    // Android foldable, has a fold but cannot feed the 3D model.
+    // An iPhone Duo client without separate display streams cannot feed its model.
     displays:
       fold && model
         ? [
@@ -40,7 +47,6 @@ function client(
             { id: "inner", active: false, attachVideo: () => {} },
           ]
         : null,
-    deviceModelUrl: fold && model ? "https://hub.test/grid/api/devicekit-model" : null,
   } as unknown as DeviceClient;
 }
 
@@ -81,12 +87,14 @@ describe("PhoneFrame with an iPhone Duo", () => {
         device={device}
         client={client({})}
         DeviceScreen={FlatScreen}
-        FoldableDeviceScreen={ModelScreen}
+        DeviceModelScreen={ModelScreen}
         foldPreview={MODEL_PREVIEW}
         displayScreen={(screen) => screen ?? null}
+        deviceModelAssets={MODEL_ASSETS}
       />,
     );
-    expect(markup).toContain('data-device-frame-kind="duo-model"');
+    expect(markup).toContain('data-device-frame-kind="device-model"');
+    expect(markup).toContain('data-device-model="ios:iphone-duo"');
     expect(markup).toContain('data-testid="model-screen"');
     expect(markup).toContain('data-size-mode="physical"');
     // The preview mode is the frame's choice, not a prop of the model.
@@ -108,15 +116,16 @@ describe("PhoneFrame with an iPhone Duo", () => {
           device={device}
           client={{ ...client({ angle }), screen }}
           DeviceScreen={FlatScreen}
-          FoldableDeviceScreen={ModelScreen}
+          DeviceModelScreen={ModelScreen}
           foldPreview={{ ...MODEL_PREVIEW, sizeMode: "fill" }}
+          deviceModelAssets={MODEL_ASSETS}
           displayScreen={(next) =>
             next && next.orientation?.startsWith("landscape")
               ? { ...next, width: next.height, height: next.width }
               : (next ?? null)
           }
         />,
-      ).match(/data-device-frame-kind="duo-model"[^>]*style="([^"]*)"/)?.[1];
+      ).match(/data-device-frame-kind="device-model"[^>]*style="([^"]*)"/)?.[1];
     const closed = stageStyle({ width: 1398, height: 2034, display: "cover" }, 0);
     expect(closed).toBeTruthy();
     for (const [screen, angle] of [
@@ -130,19 +139,20 @@ describe("PhoneFrame with an iPhone Duo", () => {
   });
 
   test("keeps the flat screen for the 2D preview, for consumers without the model, and for clients that cannot feed it", () => {
+    const shown = { DeviceModelScreen: ModelScreen, deviceModelAssets: MODEL_ASSETS };
     for (const props of [
+      { ...shown, client: client({}), foldPreview: { ...MODEL_PREVIEW, mode: "2d" as const } },
+      { ...shown, client: client({}), DeviceModelScreen: undefined, foldPreview: MODEL_PREVIEW },
+      { ...shown, client: client({}), foldPreview: undefined },
+      { ...shown, client: client(null), foldPreview: MODEL_PREVIEW },
+      { ...shown, client: client({}, null, { model: false }), foldPreview: MODEL_PREVIEW },
+      // A consumer that serves no file for the model, and a device without a model.
+      { ...shown, client: client({}), foldPreview: MODEL_PREVIEW, deviceModelAssets: {} },
       {
+        ...shown,
         client: client({}),
-        FoldableDeviceScreen: ModelScreen,
-        foldPreview: { ...MODEL_PREVIEW, mode: "2d" as const },
-      },
-      { client: client({}), FoldableDeviceScreen: undefined, foldPreview: MODEL_PREVIEW },
-      { client: client({}), FoldableDeviceScreen: ModelScreen, foldPreview: undefined },
-      { client: client(null), FoldableDeviceScreen: ModelScreen, foldPreview: MODEL_PREVIEW },
-      {
-        client: client({}, null, { model: false }),
-        FoldableDeviceScreen: ModelScreen,
         foldPreview: MODEL_PREVIEW,
+        device: { ...device, deviceModel: null },
       },
     ]) {
       const markup = renderToStaticMarkup(
@@ -154,10 +164,61 @@ describe("PhoneFrame with an iPhone Duo", () => {
         />,
       );
       expect(markup).toContain('data-testid="flat-screen"');
-      expect(markup).not.toContain("duo-model");
+      expect(markup).not.toContain("device-model");
       // The cover's own aspect ratio sizes the flat frame.
       expect(markup).toContain(`aspect-ratio:${1398 / 2034}`);
     }
+  });
+});
+
+describe("PhoneFrame with a model whose client streams one screen", () => {
+  const screenClient = (screen: DeviceClient["screen"]) =>
+    ({
+      status: "streaming",
+      framePresented: true,
+      screen,
+      fold: null,
+      displays: null,
+    }) as unknown as DeviceClient;
+
+  test("shows a phone's model without fold state, on a stage capped at its flat size", () => {
+    const markup = renderToStaticMarkup(
+      <PhoneFrame
+        device={{ ...device, id: "iphone-18-pro", deviceModel: "ios:iphone-18-pro" }}
+        client={screenClient({ width: 1206, height: 2622, orientation: "portrait" })}
+        DeviceScreen={FlatScreen}
+        DeviceModelScreen={ModelScreen}
+        foldPreview={MODEL_PREVIEW}
+        displayScreen={(screen) => screen ?? null}
+        deviceModelAssets={MODEL_ASSETS}
+      />,
+    );
+    expect(markup).toContain('data-device-model="ios:iphone-18-pro"');
+    expect(markup).toContain('data-testid="model-screen"');
+    // 480 px wide at the cap, so 2622 / 1206 of that tall, plus the 32 px insets.
+    const side = ((480 * 2622) / 1206 + 64).toFixed(3);
+    expect(markup).toContain(`width:min(${side}px, 100cqw);height:min(${side}px, 100cqh)`);
+  });
+
+  test("shows the Pixel 9 Pro Fold's model while Android reports no fold", () => {
+    const markup = renderToStaticMarkup(
+      <PhoneFrame
+        device={{
+          ...device,
+          id: "emulator-5556",
+          deviceModel: "android:pixel-9-pro-fold",
+          platform: "android",
+        }}
+        client={screenClient({ width: 2076, height: 2152, orientation: "portrait" })}
+        DeviceScreen={FlatScreen}
+        DeviceModelScreen={ModelScreen}
+        foldPreview={MODEL_PREVIEW}
+        displayScreen={(screen) => screen ?? null}
+        deviceModelAssets={MODEL_ASSETS}
+      />,
+    );
+    expect(markup).toContain('data-device-model="android:pixel-9-pro-fold"');
+    expect(markup).not.toContain('data-testid="flat-screen"');
   });
 });
 

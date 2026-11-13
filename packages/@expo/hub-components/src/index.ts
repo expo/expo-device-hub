@@ -58,11 +58,11 @@ export * from "./theme/tokens";
 // read a `DeviceClient` from props and take small helpers from `@expo/hub-client`,
 // a peer dependency, so the host's own copy serves both. The device stream is
 // injected: `StreamPanel` / `PhoneFrame` take the `DeviceScreen` component +
-// `displayScreen` helper as props. The iPhone Duo's 3D preview is the
+// `displayScreen` helper as props. The 3D device preview is the
 // `@expo/hub-components/foldable` entry, injected the same way, so only a
-// consumer that renders it loads three.js. Screen shapes are `DeviceShape`
-// from `@expo/hub-client/shapes`, also injected, so only a consumer that
-// passes it bundles the shape table.
+// consumer that renders it loads three.js. The model descriptions below do
+// not load it. Screen shapes are `DeviceShape` from `@expo/hub-client/shapes`,
+// also injected, so only a consumer that passes it bundles the shape table.
 export { Sidebar } from "./dashboard/Sidebar";
 export {
   InspectorSections,
@@ -128,6 +128,13 @@ export {
   type FoldPreviewOption,
 } from "./dashboard/FoldSettings";
 export { FOLD_POSE_OPTIONS, selectedFoldPose } from "./dashboard/foldPoses";
+export {
+  DEVICE_MODELS,
+  deviceModelFor,
+  deviceModelPreview,
+  type DeviceModelAssets,
+  type DeviceModelDescription,
+} from "./foldable/device-models";
 export { StreamSection, type StreamModeAvailability } from "./dashboard/StreamSection";
 export {
   StreamOptionsSection,

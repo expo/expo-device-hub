@@ -16,7 +16,6 @@ function render(error: string | null) {
       { id: "cover", active: true, attachVideo: () => {} },
       { id: "inner", active: false, attachVideo: () => {} },
     ],
-    deviceModelUrl: "https://hub.test/grid/api/devicekit-model",
     screenRecording: null,
     displayCorners: null,
     capabilities: { clipboard: false },
@@ -31,12 +30,14 @@ function render(error: string | null) {
         booted: true,
         physical: false,
         supported: true,
+        deviceModel: "ios:iphone-duo",
       }}
       client={client}
       DeviceScreen={() => <div data-testid="flat-screen" />}
-      FoldableDeviceScreen={() => <div data-testid="model-screen" />}
+      DeviceModelScreen={() => <div data-testid="model-screen" />}
       foldPreview={{ mode: "3d", sizeMode: "fill" }}
       displayScreen={(screen) => screen ?? null}
+      deviceModelAssets={{ "ios:iphone-duo": "https://hub.test/assets/iphone-duo.glb" }}
     />,
   );
 }
@@ -52,7 +53,7 @@ test("the 3D stage stays inside the stream area between the reserved title and c
     `padding:${DEVICE_TITLE_HEIGHT + 32}px 0 ${STREAM_CONTROLS_HEIGHT + 32}px`,
   );
   expect(viewport).toContain("container-type:size");
-  const stage = markup.match(/data-device-frame-kind="duo-model"[^>]*style="([^"]*)"/)?.[1];
+  const stage = markup.match(/data-device-frame-kind="device-model"[^>]*style="([^"]*)"/)?.[1];
   expect(stage).toStartWith("width:min(762.369px, 100cqw);height:min(762.369px, 100cqh);");
 });
 
@@ -68,7 +69,7 @@ test("a fold error stays inside the measured controls block below the 3D stage",
 test("the loading layer covers the whole 3D stage", () => {
   // Before the model draws, the screen shows its first-load spinner.
   const markup = render(null);
-  const stage = markup.indexOf('data-device-frame-kind="duo-model"');
+  const stage = markup.indexOf('data-device-frame-kind="device-model"');
   const loading = markup.indexOf('data-testid="device-screen-loading"');
   const title = markup.indexOf("bottom:calc(100% + 32px)");
   expect(stage).toBeGreaterThan(-1);

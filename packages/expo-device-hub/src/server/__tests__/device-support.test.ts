@@ -2,6 +2,8 @@ import { type AndroidDevice, type AndroidDeviceProfile } from "@expo/hub-android
 import { describe, expect, test } from "bun:test";
 
 import {
+  androidDevice3DModel,
+  appleDevice3DModel,
   isSupportedAndroidDevice,
   isSupportedAndroidDeviceProfile,
   isSupportedAppleDevice,
@@ -90,6 +92,42 @@ describe("Android device support", () => {
 
   test("treats unknown Android emulators as untested", () => {
     expect(isSupportedAndroidDevice(androidDevice())).toBe(false);
+  });
+});
+
+describe("3D device models", () => {
+  test("picks a simulator's model from its device type identifier", () => {
+    const model = (deviceTypeIdentifier: string | null) =>
+      appleDevice3DModel({ deviceTypeIdentifier });
+    expect(model("com.apple.CoreSimulator.SimDeviceType.iPhone-Duo")).toBe("ios:iphone-duo");
+    expect(model("com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro")).toBe("ios:iphone-18-pro");
+    // Close relatives have no model and keep the flat preview.
+    expect(model("com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro-Max")).toBeNull();
+    expect(model("com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro")).toBeNull();
+    expect(model(null)).toBeNull();
+  });
+
+  test("picks an emulator's model from its hardware profile, not its AVD name", () => {
+    const model = (config: Record<string, string>, name = "Test_Device") =>
+      androidDevice3DModel(androidDevice({ name, config }));
+    expect(model({ "hw.device.name": "pixel_9_pro" })).toBe("android:pixel-9-pro");
+    expect(model({ "hw.device.name": "pixel_9_pro_fold" })).toBe("android:pixel-9-pro-fold");
+    expect(model({ "hw.device.name": "pixel_9_pro_xl" })).toBeNull();
+    expect(model({ "hw.device.name": "pixel_9" })).toBeNull();
+    expect(model({ "hw.device.name": "medium_phone" }, "Pixel_9_Pro_API_36_1")).toBeNull();
+    // Without profile metadata, an AVD named like a model still gets none.
+    expect(model({}, "Pixel_9_Pro")).toBeNull();
+    expect(model({}, "Pixel_9_Pro_Fold")).toBeNull();
+  });
+
+  test("picks a physical Android device's model from its product model", () => {
+    const model = (productModel: string) =>
+      androidDevice3DModel(
+        androidDevice({ type: "device", properties: { "ro.product.model": productModel } }),
+      );
+    expect(model("Pixel 9 Pro")).toBe("android:pixel-9-pro");
+    expect(model("Pixel 9 Pro Fold")).toBe("android:pixel-9-pro-fold");
+    expect(model("Galaxy S25")).toBeNull();
   });
 });
 
