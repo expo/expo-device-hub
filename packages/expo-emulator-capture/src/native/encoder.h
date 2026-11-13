@@ -37,6 +37,9 @@ class H264Encoder {
 
   virtual bool hardware() const = 0;
   virtual const std::string& encoderId() const = 0;
+  // The last encode's pixel work before the encoder: turn, scale and convert. 0 when the
+  // encoder does that work itself (VideoToolbox).
+  virtual double lastConvertMs() const { return 0; }
 };
 
 // macOS: VideoToolbox, on the hardware encoder when the Mac has one.

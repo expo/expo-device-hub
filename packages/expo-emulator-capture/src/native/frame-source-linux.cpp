@@ -23,6 +23,11 @@ class ReadbackFrameSource final : public FrameSource {
  public:
   explicit ReadbackFrameSource(const Gfxstream& gfxstream) : g_(gfxstream) {}
 
+  void setOptions(const CaptureOptions& options) override {
+    std::lock_guard<std::mutex> guard(mutex_);
+    probe_ = options.probe;
+  }
+
   bool capture(uint32_t handle, CapturedFrame& out, std::string& error) override {
     std::lock_guard<std::mutex> guard(mutex_);
     void* fb = g_.getFB();
@@ -36,10 +41,19 @@ class ReadbackFrameSource final : public FrameSource {
       error = "posted color buffer disappeared";
       return false;
     }
+    if (probe_) {
+      // The renderer finishes the frame before it copies any pixel, so a 1x1 read is the wait.
+      uint8_t pixel[4];
+      auto probeStart = Clock::now();
+      g_.readColorBuffer(fb, handle, 0, 0, 1, 1, kGlRgba, kGlUnsignedByte, pixel, sizeof(pixel));
+      out.waitMs = std::chrono::duration<double, std::milli>(Clock::now() - probeStart).count();
+    }
     FramePixels image = takeImage(width, height);
+    auto readStart = Clock::now();
     // Takes the FrameBuffer lock itself, so the caller must not hold it.
     g_.readColorBuffer(fb, handle, 0, 0, width, height, kGlRgba, kGlUnsignedByte,
                        image->data.data(), image->data.size());
+    out.readMs = std::chrono::duration<double, std::milli>(Clock::now() - readStart).count();
     out.pixels = std::move(image);
     out.width = width;
     out.height = height;
@@ -79,6 +93,7 @@ class ReadbackFrameSource final : public FrameSource {
   const Gfxstream& g_;
   std::mutex mutex_;
   std::vector<FramePixels> pool_;
+  bool probe_ = false;
 };
 
 }  // namespace

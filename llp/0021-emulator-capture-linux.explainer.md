@@ -5,7 +5,7 @@
 **Systems:** EmulatorCapture, ServeEmu, Hub, Release
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-04
-**Revised:** 2026-11-06 (x264 build 165 from the system instead of OpenH264; rotation; `-gpu lavapipe`; the EAS emulator step; the release job; fixes from a deep review; the frame rate compared with the gRPC stream); all by Claude Code, directed by Krystof Woldrich
+**Revised:** 2026-11-06 (x264 build 165 from the system instead of OpenH264; rotation; `-gpu lavapipe`; the EAS emulator step; the release job; fixes from a deep review; the frame rate compared with the gRPC stream); 2026-11-14 (the frame of the post before, read on a capture thread); all by Claude Code, directed by Krystof Woldrich
 **Related:** LLP 0000, LLP 0020
 
 > File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
@@ -38,7 +38,27 @@ The agent core is portable C++: hook, encoder thread, socket server and protocol
 
 ## Frame path
 
-The Linux frame source reads each posted color buffer with `FrameBuffer::readColorBufferDeprecated` into a pooled RGBA image; the encoder converts, scales and turns it [observed: `src/native/frame-source-linux.cpp`]. This works with every gfxstream renderer. The readback runs on the render thread, inside the post, as the macOS CPU path does, so the guest waits for each copy [observed: `onPost` in `src/native/agent.cpp`]. With `-gpu lavapipe`, a copy took 5.9 to 6.9 ms on the EAS VM [observed: agent `stats` lines, EAS runs, 2026-11-05 and 2026-11-06].
+The Linux frame source reads a posted color buffer with `FrameBuffer::readColorBufferDeprecated` into a pooled RGBA image; the encoder converts, scales and turns it [observed: `src/native/frame-source-linux.cpp`]. This works with every gfxstream renderer.
+
+The read does not run inside the post [observed: `effectiveReadMode`, `capturePost`, `captureLoop` and `encoderLoop` in `src/native/agent.cpp`]:
+
+- A post stores its color buffer handle and hands the frame of the post before to a capture thread, which reads it. The renderer has finished that frame, so the read does not wait for it, and the guest's render thread waits for neither the renderer nor the copy.
+- The capture thread holds one request. A post replaces a request that the thread has not taken yet. The pacer and the limit of two pending frames work as before.
+- A frame that stays the last one for 50 ms has no post after it, so the encoder thread reads it then (the tail rule). A still screen shows its newest frame.
+- Each frame reaches the encoder one post later: about 17 ms at 60 FPS, and 50 ms for the last frame before a still screen.
+
+Until 2026-11-14, the read of this post's frame ran inside the post, as on macOS, so the guest waited for the renderer to finish the frame and for the copy. With `-gpu lavapipe`, that read took 5.9 to 6.9 ms [observed: agent `stats` lines, EAS runs, 2026-11-05 and 2026-11-06]. With the SwiftShader translator, a 1×1 read of the frame of the post before took 0.27–0.28 ms, against about 15 ms of wait for the frame of this post [observed: EAS VM, 2026-11-04]. On 2026-11-13, with an experiment build on EAS Linux VMs (22 vCPUs), through the Hub with a WebRTC viewer and the Hub recording at 1080×2424, on a page that changes color every frame, SwiftShader went from 50.2–51.7 to 60.0 FPS, and lavapipe from 54.5–55.0 to 56.0–56.9 FPS [observed: EAS runs, 2026-11-13].
+
+Krystof Woldrich decided that only the Linux read changes [confirmed: Krystof Woldrich, 2026-11-14]. On the Mac mini M2 with SwANGLE, the 1×1 read of the frame of the post before still waited 22.5–24 ms, and the emulator posted 28.5 instead of 28.0 frames per second [observed: Mac mini M2, 2026-11-13]. So on macOS, the CPU read and the GPU copy stay in the post ([LLP 0020](0020-emulator-capture-macos.explainer.md#frame-paths)).
+
+For diagnosis and measurements, the agent reads two options at each `S`. A file next to the socket wins over the emulator's environment [observed: `sessionOption` and `chooseCaptureModes` in `src/native/agent.cpp`]:
+
+| Option | File             | Variable                      | Values                                                                                                             |
+| ------ | ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Read   | `<socket>.read`  | `EXPO_EMULATOR_CAPTURE_READ`  | `post` (this post's frame, in the post), `lag` (the frame before, in the post), `lag-async` (the default on Linux) |
+| Probe  | `<socket>.probe` | `EXPO_EMULATOR_CAPTURE_PROBE` | `1`: a 1×1 read before each read, which times the renderer's wait                                                  |
+
+The `stats` line reports the posts per second, the render thread's time per post in the agent, and the read's wait and copy times. A file stays after the session, so remove it after a measurement.
 
 The macOS GPU path is not ported, for two reasons:
 
@@ -132,7 +152,8 @@ Without the capture, the Hub streams an emulator from the emulator's gRPC screen
 
 ## Known limitations
 
-- The readback runs on the render thread, so the guest waits for every copy: 6 to 7 ms per frame with lavapipe on the EAS VM. With SwiftShader, earlier runs had 30 to 50 FPS for that reason [observed: EAS runs, 2026-11-04 and 2026-11-05].
+- Each frame reaches the consumer one post later, and the last frame before a still screen 50 ms later ([Frame path](#frame-path)).
+- The read still copies every frame on the CPU, and the renderer's read takes the FrameBuffer lock, which the post also takes. So a post that comes during a read can wait for it [inferred: from the shared lock on macOS ([LLP 0020](0020-emulator-capture-macos.explainer.md#locking)); not measured on Linux].
 - Tested only on EAS Linux VMs (Ubuntu 26.04, Intel, 22 vCPUs, no GPU) with emulator 37.1.11. A Linux host with a GPU and `-gpu host` is not tested.
 - Only x264 build 165. Hosts with another build fail with the install command.
 - No hardware encoder: VAAPI and NVENC are not used.
@@ -141,6 +162,5 @@ Without the capture, the Hub streams an emulator from the emulator's gRPC screen
 
 ## Open questions for the maintainer
 
-- Should the readback move off the render thread? An experiment that copied the frame of the post before reached 59 to 60 FPS with SwiftShader, at the cost of one frame of delay [observed: EAS experiment, 2026-11-04; the code is not in the branch].
 - Should the agent name its socket by the console port, so that one EAS step can start several emulators with the agent?
 - Should the Linux agent use VAAPI or NVENC, or `-gpu host`, when the host has a GPU?
