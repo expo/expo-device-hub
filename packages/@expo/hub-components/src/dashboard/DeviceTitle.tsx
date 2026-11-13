@@ -11,16 +11,17 @@ import {
   font,
   heading,
   icon,
-  InfoIcon,
   LOADING_LABEL,
   radius,
   shadow,
+  SmallChevronDownIcon,
   text,
   textSize,
   StatusDot,
   tone,
   type Tone,
   truncate,
+  usePrefersReducedMotion,
 } from "../primitives";
 import { type Device } from "./data";
 
@@ -63,7 +64,7 @@ const STATUS_DOT_SIZE = 4;
 /**
  * Live, but rendered on the CPU. The label stays "Live" and the dot does not
  * pulse, so it reads apart from the amber Loading and Reconnecting states; the
- * info icon is a cue besides the color.
+ * label and the chevron are the cues besides the color.
  */
 const CPU_RENDERING_APPEARANCE: StatusAppearance = {
   label: "Live",
@@ -193,6 +194,7 @@ function CpuRenderingTitle({
   recordingLabel: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const reducedMotion = usePrefersReducedMotion();
   return (
     <Root open={open} onOpenChange={setOpen} modal={false}>
       <div
@@ -232,7 +234,15 @@ function CpuRenderingTitle({
                   pulse={false}
                 />
                 <StatusLabel appearance={CPU_RENDERING_APPEARANCE} />
-                <InfoIcon color={icon.warning} />
+                <SmallChevronDownIcon
+                  color={icon.warning}
+                  style={{
+                    flexShrink: 0,
+                    // Points up while the details are open.
+                    transform: open ? "rotate(180deg)" : "rotate(0deg)",
+                    transition: reducedMotion ? undefined : "transform 150ms ease",
+                  }}
+                />
               </>
             }
             style={{
