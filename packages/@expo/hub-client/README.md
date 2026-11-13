@@ -152,6 +152,56 @@ function Screen() {
 }
 ```
 
+### Show the screen in its device shape
+
+Import `DeviceShape` from `@expo/hub-client/shapes` to clip the screen to the shape
+of its device: the corners of each iPhone, iPad, and Pixel model, and the shape of the
+display that an iPhone Duo shows. Like `DeviceScreen`, it takes the client, and it turns
+with the device. It only clips, so it draws nothing and pointer input keeps working. A
+model without a known shape gets no clip. Apps that do not import
+`@expo/hub-client/shapes` do not bundle the shapes.
+
+```tsx
+import { DeviceScreen, useDeviceClient } from "@expo/hub-client";
+import { DeviceShape, useScreenShape } from "@expo/hub-client/shapes";
+
+function ShapedScreen({ model }: { model: string }) {
+  const client = useDeviceClient();
+  // The shape as the viewer sees it, turned with the device, for the box's proportions.
+  const shape = useScreenShape({ client, model });
+  const aspectRatio = shape ? `${shape.width} / ${shape.height}` : "9 / 19.5";
+  return (
+    <div style={{ position: "relative", width: 360, aspectRatio }}>
+      <DeviceShape client={client} model={model} style={{ position: "absolute", inset: 0 }}>
+        <DeviceScreen client={client} />
+      </DeviceShape>
+    </div>
+  );
+}
+```
+
+The client's device name is the default model, but a simulator can report its name
+late. Pass `model` when you know it: the simulator device type name on iOS, such as
+`"iPhone 17 Pro"`, or the AVD hardware profile id on Android, such as `"pixel_9"`.
+`platform`, `display`, `orientation`, and `shape` also override the client, and
+without a client they are the only source, for example for a recording:
+
+```tsx
+<DeviceShape
+  platform="ios"
+  model="iPhone Duo"
+  display="inner"
+  style={{ position: "absolute", inset: 0 }}
+>
+  <video src={recordingUrl} />
+</DeviceShape>
+```
+
+`useScreenShape` returns the same shape for layout, such as the box's aspect ratio above.
+The clip keeps the corners right for the shape's own proportions, so give the box those
+proportions, or pass the box's `aspectRatio` to `DeviceShape`.
+`screenShapeClipPath` returns the CSS `clip-path` for an element that you cannot wrap.
+
 ### Fold a foldable device
 
 `client.fold` has the fold state of a foldable device, such as the iPhone Duo, and is
@@ -320,9 +370,15 @@ client.rotate();
 // poses that setOrientation accepts. client.orientation shows the choice at once, then the
 // backend's report; read client.orientationPending and client.orientationError like location.
 client.setOrientation("landscape_left");
-// client.screen.orientation is the pose of the shown frames. client.screen.framesUpright is
-// true when the backend already sends upright frames (serve-emu), so DeviceScreen never turns
-// them.
+// Observed iOS devices separate app screenOrientation from physical deviceOrientation.
+// A null observation is unknown; omitted fields mean the helper lacks this contract.
+// screen.orientation follows the app interface in this mode; displayScreen/streamGeometry
+// use physical pose for framing and map video/input accordingly. Duo and older helpers
+// retain their existing geometry. client.orientation follows physical pose on observed iOS,
+// including Duo, so portrait-only apps do not reset the Rotate cursor;
+// Native-pose Duo keeps its clockwise physical order; older Duo uses legacy names.
+// Ordinary observed iOS uses CLOCKWISE_ORIENTATIONS; older helpers use DEVICE_ORIENTATIONS.
+// framesUpright means the backend already sends upright frames (serve-emu).
 // While an Android recording could break, client.recordingLock is "status-unknown" or
 // "recording" and rotate, setOrientation and the stream setters are silently ignored. Disable
 // those controls from it. client.orientationUnavailable gives the reason orientation cannot
@@ -330,9 +386,11 @@ client.setOrientation("landscape_left");
 client.reload(); // reload the running React Native bundle
 client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance
 
-// { blob, artifact }, or null when capture fails. `artifact` is the session artifact outcome:
-// { status: 'saved' } | { status: 'disabled' } | { status: 'failed', error?: string } | null
-// (null for a backend that does not report one).
+// { blob, artifact, metadata? }, or null when capture fails. `artifact` is the session artifact
+// outcome: { status: 'saved' } | { status: 'disabled' } | { status: 'failed', error?: string }
+// | null (null for a backend that does not report one). `metadata` is the capture's
+// { width, height, displayRotation, screen? }; it is absent on older servers, and a zero width
+// or height or a null displayRotation means unknown.
 const capture = await client.screenshot();
 if (capture?.artifact?.status === "failed")
   console.warn("not saved to session artifacts", capture.artifact.error);

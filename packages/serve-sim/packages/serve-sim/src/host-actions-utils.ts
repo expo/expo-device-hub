@@ -1,3 +1,4 @@
+import type { ScreenshotMetadata } from "./screenshot-metadata";
 import { execFile } from "child_process";
 import { chmod, lstat, mkdir, readdir, rm } from "fs/promises";
 import { homedir } from "os";
@@ -9,6 +10,8 @@ export interface HostActionResult {
   exitCode: number;
   /** Set when the deadline killed the child; the remedy differs from an ordinary non-zero exit. */
   timedOut?: true;
+  /** Present on successful screenshot path results. */
+  metadata?: ScreenshotMetadata;
 }
 
 export interface Invocation {

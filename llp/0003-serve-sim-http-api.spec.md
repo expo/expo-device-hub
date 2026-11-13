@@ -2,10 +2,10 @@
 
 **Type:** Spec
 **Status:** Active
-**Systems:** ServeSim, HubClient
+**Systems:** ServeSim, ServeEmu, Hub, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output)
+**Revised:** 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -419,6 +419,16 @@ keyboard that serve-sim automatically hid; it does not undo a manual toggle
 ### Rotation readback
 
 The helper HID socket accepts a `0x07` frame carrying `{ orientation }`.
+New observed-pose helpers also accept an optional cardinal `deviceOrientation`
+(`portrait`, `pud`, `landscape-left`, `landscape-right`) on that frame. On a Duo
+advertising `supportsPhysicalOrientation: true`, this uses native physical control,
+independent of the active panel's mounting, and records that pose as the
+config's `physicalOrientation`, so Table Mode eligibility stays known. A rotation
+clears the named pose and Table Mode either way; a legacy panel-relative rotation
+leaves `physicalOrientation` unknown. Invalid or unsupported physical values
+are refused without running the legacy alternative. The command shares the existing
+hinge/input serial queue and send-as-answer behavior. Older packets retain their
+panel-relative semantics [observed: `src/device-session.ts` case `0x07`].
 Successful native delivery does not mean that the foreground app accepted the
 requested interface orientation. For regular devices, config `orientation`
 starts from native screen readback, then retains the last successfully delivered
@@ -434,6 +444,38 @@ Foldable devices retain native interface-orientation readback because their
 physical framing is controlled separately by the Duo view. That remains true
 when hinge capability discovery completes after an early rotation request
 [observed: `src/device-session.ts` `readScreenFromNative`, `src/client/client.tsx` `rotateDevice`].
+
+New native state snapshots also expose `screenOrientation` and
+`deviceOrientation` in screen config. The first is the observed CoreSimulator
+interface orientation; the second is the independent physical pose from the
+native state stream, using the existing physical names (`portrait`, `pud`,
+`landscape-left`, `landscape-right`, `faceup`, `facedown`). Unknown values are
+null. The legacy `orientation` field retains the requested-framing policy above
+for older clients; new consumers must not treat it as a native observation.
+Older addons without the snapshot marker omit the new fields.
+[observed: `src/device-session.ts`, `src/native.ts`,
+`Sources/SimNative/CoreDeviceState.swift`]
+
+Persistent ordinary iOS sessions with one integrated display observe the same
+deduplicated native state stream as Duo. The startup profile/runtime snapshot
+gates this capability before subscribing; unknown profiles and ordinary tvOS,
+watchOS, or other runtimes do not start this pose observer. Temporary screenshot sessions skip pose observation; a persistent
+consumer retaining one starts observation once. Screen orientation changes are
+broadcast independently of the legacy requested framing, even if dimensions and
+physical pose stay unchanged. This adds no per-screenshot pose query.
+[observed: `src/device-session.ts` `observeDeviceState`, `retainDeviceSession`,
+`readScreenFromNative`; `Sources/SimNative/CaptureEngine.swift`]
+
+HubClient opts confirmed ordinary devices into those observations. The controls
+follow physical pose, while video and input use the interface-to-physical
+rotation. Frame dimensions follow physical pose even for portrait-only apps;
+unknown observations do not reuse the legacy requested pose for framing. While
+the physical pose is unknown (null), the controls use the legacy `orientation`
+readback, Rotate order and commands, so Rotate still advances. Home gestures
+follow the interface edge and retain that edge through release. Duo and older
+helpers keep their existing geometry.
+[observed: `packages/@expo/hub-client/src/orientation.ts`, `screen-config.ts`,
+`useIosDevice.ts`]
 
 The standalone preview advances Rotate from requested poses, so rapid clicks or
 an app-declined pose do not repeat the same request. It ignores mismatched
@@ -790,6 +832,69 @@ JSON, unknown fields, and nonboolean values return 400 before capture; oversized
 bodies return 413. Binary exec-ws delegates through this same HTTP contract.
 [observed: `src/middleware.ts`, screenshot route and binary adapter]
 
+Successful path-mode `screenshot.capture` replies add a `metadata` object beside
+the existing `stdout` path, `stderr`, and `exitCode`. The object is
+`{width, height, displayRotation}` and defaults to
+`{width: 0, height: 0, displayRotation: null}`. Optional `screen` identifies a
+two-panel device as `"inner"` or `"outer"`, matching recording metadata. It is
+omitted on single-display devices and when unknown; numeric display IDs remain
+internal to capture and input routing. [confirmed: Hirbod, ENG-28925, 2026-11-10]
+Zero dimensions and null rotation mean unknown, not a zero-sized image.
+Rotation names are `portrait`, `portrait-upside-down`, `landscape-left`, and
+`landscape-right`. Unknown values retain these defaults; each capture source fills
+known values together with its frame, as described below.
+[confirmed: Gabe Debes, 2026-11-08; observed: `src/screenshot-metadata.ts`]
+
+Native screenshot metadata is captured with the selected IOSurface: screen
+orientation and optional panel name come from FrameCapture's maintained
+surface/profile state. The panel name uses the same native resolver as recordings. Width and height come from ScreenshotEncoder's final
+CGImage after its existing rotation. The snapshot travels with the PNG through
+the native bridge and the existing serialized screenshot lifetime. Active-panel
+retry replaces both pixels and metadata together. Older native helpers and
+every simctl capture (explicit display, verified cold session, fallback) return
+unknown defaults. Frame and pose state exist only while a device session runs,
+so a cold capture has none to read without starting video. Metadata adds no
+CoreDevice reads, PNG parsing, or file readback. [observed: `Sources/SimNative/FrameCapture.swift`,
+`ScreenshotEncoder.swift`, `CaptureEngine.swift`; `src/device-session.ts`]
+
+HTTP `/api/screenshot` retains its PNG body and returns the same metadata in
+`X-Expo-Screenshot-Metadata`, exposed to allowed CORS callers. Binary exec-ws
+framing remains unchanged. serve-sim adds no PNG parsing, file readback,
+sidecars, device queries, or opt-in environment variable for metadata.
+[observed: `src/host-actions.ts`,
+`src/middleware.ts`]
+
+ServeEmu returns the same object in PNG headers and its existing base64 JSON
+response. Both standalone and Hub-mounted routes use the same capture helper.
+Like serve-sim, the rotation describes the captured frame. One display-rotation
+read finishes before `adb screencap` starts and one starts after it ends.
+`displayRotation` is filled only when both readings agree, match the PNG's
+shape, and have no Hub rotation command between them, so a single turn around
+the capture, including a 180-degree turn, leaves it null. A Hub rotation command
+marks the reader before it turns the display; readings that overlap the command
+are dropped, so a commanded pose is never reported as observed, and a failed
+command leaves the cached reading stale. Two outside turns (for example from adb
+or a test tool) that return to the starting pose between the readings are not
+detected.
+Each read is about 90 ms on an emulator. A newer reading also refreshes the
+device-owned cache that `/api` uses.
+Width and height come from the PNG's IHDR, because `screencap` returns the
+display at native size; panel identity remains unknown and `screen` is omitted.
+[confirmed: Gabe Debes, 2026-11-11; observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
+`display-orientation.ts`, `middleware.ts`, and `server.ts`]
+
+HubClient returns recognized response metadata beside the screenshot Blob and
+artifact outcome. Older servers omit the optional metadata. Invalid or oversized
+metadata headers are ignored without losing the PNG; unknown extra fields are
+not forwarded. Zero/null values remain unknown and must not become layout sizes.
+[observed: `packages/@expo/hub-client/src/screenshot.ts`, `types.ts`]
+
+Device Hub's authenticated mounts preserve the screenshot PNG, metadata header,
+and CORS exposure from each backend. An unauthenticated request is refused
+before reaching either backend. Hub adds no separate screenshot state.
+[observed: `packages/expo-device-hub/src/server/index.ts`, `serve-sim.ts`,
+`serve-emu.ts`; `__tests__/fixtures/single-device-routes.fixture.ts`]
+
 The optional `automation` flag defaults to `false`. Setting it to `true`
 suppresses the screenshot activity event on both success and failure, so periodic
 background thumbnails do not refresh the session's idle deadline. Omitted or
@@ -821,7 +926,8 @@ bundles on the event loop. [observed: `withScreenshotDeviceSession`,
 `DeviceSession.start`, `DeviceSession.close`, `getScreenshotDisplayIdsAsync`]
 
 The HTTP `/api/screenshot` download follows the same native active-display
-selection and three-attempt handoff bound as `screenshot.capture`. Its optional
+selection and three-attempt handoff bound as `screenshot.capture`, except for
+verified cold-session direct capture, described next. Its optional
 `display` query selects an explicit panel without starting native capture. It
 defaults to native-resolution PNG and keeps the artifact headers. Native pixels
 stay in memory through display validation and delivery; only simctl capture uses a temporary file,
@@ -831,18 +937,45 @@ one-shot session ownership. If native startup or display readback fails, an
 installed device profile confirming exactly one display permits a
 `simctl screenshot` fallback with that display ID. Unknown profiles and multi-display devices still
 require native panel election. [observed: `simMiddleware` screenshot route,
-`getScreenshotDisplayIdsAsync`]
+`captureScreenshotPngAsync`, `getScreenshotDisplayIdsAsync`]
+
+The HTTP `/api/screenshot` route can capture directly without starting native
+video when no device session exists, the installed profile declares exactly one
+integrated panel, and fresh runtime enumeration verifies it. The runtime must expose exactly one integrated
+framebuffer with an IOSurface and one integrated connected screen. Its ID must
+match the profile, and the default, IOSurface, and connected-screen dimensions
+must match the profile panel, allowing rotation. Known `tvOut`, `carPlay`, and
+`scene` auxiliary outputs do not require integrated-panel election; their runtime
+IDs and types must match declared outputs. A multi-panel profile still requires
+native active-display selection even when only one IOSurface exists. Unknown,
+missing, conflicting, or unavailable evidence retains native selection and the
+existing fallback. A sole declared virtual screen retains the strict single
+runtime screen/framebuffer check, with matching declared and runtime types.
+Duplicate selection fields reject the shortcut. Legacy direct capture accepts
+the same known class-1 ports and TVOut/CarPlay
+connected screens as the legacy fallback above, while requiring exactly one
+integrated panel and an IOSurface with matching dimensions. Cold-session
+verification gives profile listing, profile conversion, and runtime enumeration
+separate two-second limits; this is not a shared verification deadline. Failed
+or timed-out verification retains the native path. Host-action display
+validation and native-failure fallback retain the simctl default timeout. Existing
+sessions skip verification and reuse native capture. Sessions created during
+verification also reuse native capture. Explicit display requests keep their
+direct capture path. [observed:
+`getSoleScreenshotDisplayIdAsync`, `captureScreenshotPngAsync`]
+
+EAS workers start capture during initialization to record video, and direct simctl capture is meant for requests that arrive while no capture is running [confirmed: Gabe Debes, 2026-11-05]. Such hosts already have a session when they request a screenshot, so they keep native capture [observed: `peekDeviceSession` checks in `captureScreenshotPngAsync`]. Foreground preview startup creates each device's session after it publishes device state ([LLP 0011](0011-serve-sim-session-startup.explainer.md#startup-order)) [observed: `serve` in `src/index.ts`]. Embedded middleware has no startup session. Its helper stream, panel, WebRTC, recording and control routes, `/readyz`, HID `/ws`, clipboard copy and paste, and prepared-process adoption with a device each create one, so a screenshot requested before any of these can take the direct path. [observed: `serveHelperInProcess`, `attachHidInProcess`, `configureSession`, `simMiddleware` `/readyz` route, `runHostActionAsync`]
 
 HTTP screenshot queries accept optional `maxWidth` (integer, 1–8192),
 `format` (`png` or `jpeg`), and `quality` (integer, 1–100; JPEG default 80).
 Width limiting preserves aspect ratio after rotation and never upscales.
 Native capture snapshots the pixels before Core Image scales them and encodes
-PNG; explicit-display and simctl fallback PNGs are resized after capture.
+PNG; explicit-display, verified cold-session, and simctl fallback PNGs are resized after capture.
 JPEG responses convert that PNG and use `Content-Type: image/jpeg`; PNG
 responses use `image/png`. JPEG is lossy and does not preserve transparency.
 Collected session artifacts remain PNG at the requested size, including for
 JPEG responses. [observed: `ScreenshotImageOptions`, `ScreenshotEncoder`,
-`simMiddleware` screenshot route]
+`captureScreenshotPngAsync`, `simMiddleware` screenshot route]
 
 An authenticated exec-ws client can request
 `{id, action: "screenshot.capture", params: {udid?, display?, output: "binary"}}`
@@ -853,9 +986,7 @@ The first four bytes are the unsigned 32-bit request ID in network byte order;
 the remaining bytes are the requested PNG or JPEG. IDs must be integers from
 0 through 4294967295.
 Failures return the usual JSON `{id, error}` frame. Concurrent replies may arrive
-out of order. This request shares the HTTP screenshot route's device restrictions,
-display validation, artifact persistence and error handling, and the socket's
-eight-action admission limit. Device names resolve as for ordinary actions; the
+out of order. This request goes through the HTTP screenshot route, so it shares that route's display selection, including verified cold-session direct capture, its device restrictions, display validation, artifact persistence and error handling. It is also subject to the socket's eight-action admission limit. Device names resolve as for ordinary actions; the
 single-device policy still applies. `fileName` is only supported in path mode.
 `output` defaults to `"path"`, which still returns a staged path and rejects the
 image options. Output selection is specific to the screenshot action. `actions.describe` advertises the supported

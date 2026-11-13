@@ -34,7 +34,6 @@ function device(id: string): Device {
     booted: true,
     physical: false,
     supported: true,
-    deviceFrame: null,
   };
 }
 
@@ -145,12 +144,17 @@ describe("PhoneFrame first load", () => {
     const { render, reported } = await frame(client("connecting", false));
     expect(testIds(renderer!)).toContain("device-screen-loading");
     const clip = renderer!.root.findByProps({ "data-testid": "device-screen-clip" });
-    expect(clip.props.style.backgroundColor).toBe(bg.element);
+    // The surface is its own layer, not a background under the stream.
+    expect(clip.props.style.backgroundColor).toBeUndefined();
+    const surface = renderer!.root.findByProps({ "data-testid": "device-screen-surface" });
+    expect(surface.props.style.backgroundColor).toBe(bg.element);
     expect(renderer!.root.findAllByProps({ role: "alert" })).toHaveLength(0);
     expect(reported.at(-1)).toBe(true);
 
     await render(client("streaming", true));
     expect(testIds(renderer!)).not.toContain("device-screen-loading");
+    // A solid layer under a presented stream would show along the clipped edge.
+    expect(testIds(renderer!)).not.toContain("device-screen-surface");
     expect(reported.at(-1)).toBe(false);
   });
 

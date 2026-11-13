@@ -36,7 +36,10 @@ function recordedPidsForPort(port: number): Set<number> {
  */
 export function findOwnListeners(port: number): number[] {
   try {
-    const output = execSync(`lsof -ti tcp:${port} -sTCP:LISTEN`, {
+    // Darwin lsof forks for filesystem metadata even for a TCP-only query. Skip those
+    // unrelated stat/readlink calls, which can delay listener discovery by seconds.
+    const filesystemFlags = process.platform === "darwin" ? "-b " : "";
+    const output = execSync(`lsof ${filesystemFlags}-ti tcp:${port} -sTCP:LISTEN`, {
       encoding: "utf-8",
       stdio: "pipe",
     }).trim();

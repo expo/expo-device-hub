@@ -1,0 +1,79 @@
+{
+  "capabilities": {
+    "displays": [
+      {
+        "cornerRadiusLR": 62.0,
+        "hdpi": 460.0,
+        "cornerRadiusUL": 62.0,
+        "screenID": 1,
+        "cornerRadiusLL": 62.0,
+        "deviceName": "primary",
+        "nativeOrientation": 0,
+        "displayName": "LCD",
+        "vdpi": 460.0,
+        "powerState": 1,
+        "chromeIdentifier": "com.apple.dt.devicekit.chrome.phone11",
+        "nativeRotation": 0,
+        "hasDigitizer": true,
+        "scale": 3.0,
+        "height": 2622,
+        "width": 1206,
+        "cornerRadiusUR": 62.0,
+        "refreshRate": 60.0,
+        "framebufferMaskIdentifier": "00000000-0000-4000-8000-000000000004",
+        "displayType": "integrated",
+        "colorspace": "P3"
+      },
+      {
+        "powerState": 0,
+        "scale": 1.0,
+        "width": 720,
+        "hasDigitizer": false,
+        "hdpi": 72.0,
+        "refreshRate": 60.0,
+        "deviceName": "external-0",
+        "vdpi": 72.0,
+        "height": 480,
+        "displayType": "tvOut",
+        "colorspace": "sRGB",
+        "displayName": "TVOut",
+        "screenID": 2
+      },
+      {
+        "powerState": 0,
+        "scale": 1.0,
+        "width": 720,
+        "hasDigitizer": false,
+        "hdpi": 72.0,
+        "refreshRate": 60.0,
+        "deviceName": "wireless0",
+        "vdpi": 72.0,
+        "height": 480,
+        "displayType": "carPlay",
+        "colorspace": "sRGB",
+        "displayName": "Wireless",
+        "screenID": 3
+      },
+      {
+        "powerState": 0,
+        "cornerRadiusLR": 0.0,
+        "scale": 3.0,
+        "cornerRadiusUR": 0.0,
+        "width": 7680,
+        "hasDigitizer": true,
+        "hdpi": 120.0,
+        "refreshRate": 60.0,
+        "requiredFeatures": ["com.apple.CoreSimulator.display.resizableScene"],
+        "deviceName": "resizable",
+        "vdpi": 120.0,
+        "height": 4320,
+        "cornerRadiusLL": 0.0,
+        "colorspace": "sRGB",
+        "cornerRadiusUL": 0.0,
+        "displayType": "scene",
+        "displayName": "Resizable",
+        "screenID": 4
+      }
+    ]
+  }
+}

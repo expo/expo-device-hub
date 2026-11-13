@@ -31,7 +31,10 @@ mock.module("../../native", () => ({
     return quality ? jpeg : bytes;
   },
 }));
+let soleDisplay: number | null = null;
 let activeDisplay = 7;
+let breakValidation = false;
+let failNextRead = false;
 const capturedDisplays: number[] = [];
 let unstable = false,
   reads = 0,
@@ -56,10 +59,35 @@ mock.module("../../device-session", () => ({
   ) => {
     targets.push(device);
     return await capture({
-      activeScreenId: async () => (unstable ? (++reads % 2 ? 7 : 8) : activeDisplay),
-      screenshot: async (display: number, _timeout: number, maxWidth?: number) => {
+      activeScreenId: async () => {
+        if (failNextRead) {
+          failNextRead = false;
+          throw new Error("fixture display read failed");
+        }
+        return unstable ? (++reads % 2 ? 7 : 8) : activeDisplay;
+      },
+      async screenshotWithMetadata(
+        this: {
+          screenshot(display: number, timeout?: number, maxWidth?: number): Promise<Uint8Array>;
+        },
+        display: number,
+        timeout?: number,
+        maxWidth?: number,
+      ) {
+        return {
+          data: await this.screenshot(display, timeout, maxWidth),
+          metadata: {
+            width: 1,
+            height: 1,
+            displayRotation: "portrait",
+            screen: display === 3 ? "inner" : "outer",
+          },
+        };
+      },
+      screenshot: async (display: number, _timeout?: number, maxWidth?: number) => {
         widths.push(maxWidth);
         capturedDisplays.push(display);
+        if (breakValidation) failNextRead = true;
         if (display !== 7 && display !== 8) throw new Error("Unexpected display");
         return display === 7 ? png : secondPanelPng;
       },
@@ -67,6 +95,7 @@ mock.module("../../device-session", () => ({
   },
 }));
 mock.module("../../screenshot-display", () => ({
+  getSoleScreenshotDisplayIdAsync: async () => soleDisplay,
   getScreenshotDisplayIdsAsync: async () => {
     fallbackReads++;
     return [7];
@@ -187,6 +216,15 @@ test("real socket callback returns HTTP PNG bytes and validates device/display i
       }),
     );
     expect(response!.headers.get("content-length")).toBe(String(png.length));
+    expect(JSON.parse(response!.headers.get("x-expo-screenshot-metadata")!)).toEqual({
+      width: 1,
+      height: 1,
+      displayRotation: "portrait",
+      screen: display === 3 ? "inner" : "outer",
+    });
+    expect(response!.headers.get("access-control-expose-headers")).toContain(
+      "X-Expo-Screenshot-Metadata",
+    );
     const http = Buffer.from(await response!.arrayBuffer());
     const binary = (await socketRequest({ udid: UDID })) as Buffer;
     expect(binary.readUInt32BE()).toBe(42);
@@ -322,6 +360,22 @@ test("JPEG conversion failure publishes only a failure and no artifact", async (
   }
 });
 
+test("binary requests use verified cold-session direct capture with image options", async () => {
+  soleDisplay = 7;
+  unstable = false;
+  simctlCaptures = 0;
+  const before = targets.length;
+  try {
+    const binary = (await socketRequest({ udid: UDID, maxWidth: 402 })) as Buffer;
+    expect(binary.readUInt32BE()).toBe(42);
+    expect(binary.subarray(4)).toEqual(png);
+    expect(simctlCaptures).toBe(1);
+    expect(converted.at(-1)).toEqual([402, 0]);
+    expect(targets).toHaveLength(before);
+  } finally {
+    soleDisplay = null;
+  }
+});
 test("binary automation preserves manual activity and suppresses success and failure events", async () => {
   for (const automation of [undefined, false, true]) {
     for (const failed of [false, true]) {
@@ -348,6 +402,31 @@ test("binary automation preserves manual activity and suppresses success and fai
     id: 42,
     error: "Invalid screenshot request",
   });
+});
+
+test("a simctl fallback never reuses metadata from discarded native pixels", async () => {
+  unstable = false;
+  activeDisplay = 8;
+  breakValidation = true;
+  try {
+    const response = await middleware(
+      new Request(`http://localhost/preview/api/screenshot?device=${UDID}`, {
+        method: "POST",
+        headers: { authorization: "Bearer test" },
+      }),
+    );
+    expect(response!.status).toBe(200);
+    expect(Buffer.from(await response!.arrayBuffer())).toEqual(png);
+    expect(JSON.parse(response!.headers.get("X-Expo-Screenshot-Metadata")!)).toEqual({
+      width: 0,
+      height: 0,
+      displayRotation: null,
+    });
+  } finally {
+    breakValidation = false;
+    failNextRead = false;
+    activeDisplay = 7;
+  }
 });
 
 test("HTTP automation preserves manual defaults and suppresses automated artifacts/activity", async () => {

@@ -9,6 +9,7 @@ let updateSettings = async () => {};
 let startCapture = async () => {};
 let readDisplay = async () => 3;
 let subscriptions = 0;
+let poseSubscriptions = 0;
 mock.module("../../native", () => ({
   ...native,
   NativeCapture: class {
@@ -34,6 +35,7 @@ mock.module("../../native", () => ({
       return async () => {};
     }
     async subscribeDeviceState() {
+      poseSubscriptions++;
       return async () => {};
     }
   },
@@ -65,6 +67,7 @@ test("a one-shot capture closes its temporary session on success and failure", a
   expect(await withScreenshotDeviceSession(UDID, undefined, (s) => s.activeScreenId())).toBe(3);
   expect(peekDeviceSession(UDID)).toBeUndefined();
   await stopped(1);
+  expect(poseSubscriptions).toBe(0);
   await expect(
     withScreenshotDeviceSession(UDID, undefined, async () => {
       throw Error("Capture failed");
@@ -82,6 +85,7 @@ test("a screenshot borrows an existing session without closing or replacing it",
   const existing = getDeviceSession(UDID);
   await existing.start();
   const before = starts;
+  expect(poseSubscriptions).toBe(1);
   expect(await withScreenshotDeviceSession(UDID, undefined, (s) => s.activeScreenId())).toBe(3);
   expect(peekDeviceSession(UDID)).toBe(existing);
   expect(starts).toBe(before);
@@ -106,10 +110,14 @@ test("overlapping screenshots share startup and a newly joined stream retains ca
   });
   await ready;
   const shared = peekDeviceSession(UDID)!;
+  const poseBefore = poseSubscriptions;
   expect(await withScreenshotDeviceSession(UDID, undefined, (s) => s.activeScreenId())).toBe(3);
   expect(starts).toBe(before + 1);
   expect(stops).toBe(beforeStops);
   expect(getDeviceSession(UDID)).toBe(shared);
+  await shared.start();
+  await Promise.resolve();
+  expect(poseSubscriptions).toBe(poseBefore + 1);
   release();
   await first;
   expect(peekDeviceSession(UDID)).toBe(shared);

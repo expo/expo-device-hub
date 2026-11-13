@@ -7,7 +7,7 @@
  * The test drives it over IPC and hears each milestone back.
  */
 
-import { mock } from "bun:test";
+import { mock, spyOn } from "bun:test";
 
 import type {
   AndroidUtilsResult,
@@ -60,6 +60,21 @@ function failure(message: string) {
   return { message, error: new Error(message) };
 }
 
+// Fake emulator pids (4_100_001 and up) are within Linux's pid range, so a
+// signal acts on the fake host only: signal 0 checks it, any other ends it.
+const fakePidExists = (pid: number) => String(pid) in readFakeHost(hostFile).processes;
+spyOn(process, "kill").mockImplementation((pid, signal) => {
+  if (!fakePidExists(pid)) {
+    throw Object.assign(new Error(`kill ESRCH ${pid}`), { code: "ESRCH" });
+  }
+  if (signal !== 0) {
+    updateFakeHost(hostFile, (state) => {
+      delete state.processes[String(pid)];
+    });
+  }
+  return true;
+});
+
 const androidUtils = await import("@expo/hub-android-utils");
 mock.module("@expo/hub-android-utils", () => ({
   ...androidUtils,
@@ -93,16 +108,19 @@ mock.module("@expo/hub-android-utils", () => ({
       error: null,
     };
   },
-  waitForAdbOnline: async (serial: string): Promise<AndroidUtilsResult<boolean>> => {
-    const scenario = readFakeHost(hostFile).android;
+  waitForAdbOnline: async (serial: string): Promise<AndroidUtilsResult<string | null>> => {
+    const host = readFakeHost(hostFile);
+    const scenario = host.android;
     // An emulator that exits never comes online; the exit wins the race.
     if (scenario.exitCode !== null) return pending();
-    if (scenario.waitError) return { value: false, error: failure("adb devices failed") };
-    if (scenario.neverOnline) return { value: false, error: null };
+    if (scenario.waitError) return { value: null, error: failure("adb devices failed") };
+    if (scenario.neverOnline) return { value: null, error: null };
+    // Like the real wait, report the AVD that came online at the serial.
+    const avdName = host.adb[serial]?.avdName ?? lastAvdName;
     updateFakeHost(hostFile, (state) => {
-      state.adb[serial] = { avdName: state.adb[serial]?.avdName ?? lastAvdName, state: "device" };
+      state.adb[serial] = { avdName, state: "device" };
     });
-    return { value: true, error: null };
+    return { value: avdName, error: null };
   },
   createDevice: async (): Promise<AndroidUtilsResult<boolean>> => ({ value: true, error: null }),
 }));
@@ -173,7 +191,7 @@ const admission: BootAdmission | undefined = admissionModule?.createBootAdmissio
         error: null,
       };
     },
-    pidExists: (pid) => String(pid) in readFakeHost(hostFile).processes,
+    pidExists: fakePidExists,
   },
 });
 

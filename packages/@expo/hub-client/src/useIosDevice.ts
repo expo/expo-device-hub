@@ -77,7 +77,6 @@ import { useActivityStatus } from "./useActivityStatus";
 import { type AccessibilityLoader, loadIosAccessibility } from "./accessibility";
 import { isAvccSupported } from "./avcc";
 import {
-  HID_EDGE_BOTTOM,
   homeIndicatorEdge,
   rawDeltaForDisplayDelta,
   rawEdgeForDisplayEdge,
@@ -147,6 +146,9 @@ import { IOS_INPUT_UNAVAILABLE_MESSAGE } from "./ios-input-error";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
 import {
   clockwiseQuarterTurns,
+  deviceOrientationForPose,
+  legacyOrientationForDeviceChoice,
+  physicalOrientationForInterface,
   DEVICE_ORIENTATIONS,
   CLOCKWISE_ORIENTATIONS,
   isDeviceOrientation,
@@ -759,6 +761,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // The pose observed while no local command owned the hinge, or while one was
   // pending. A readback that still lags a local preset matches it.
   const observedPoseRef = useRef<FoldPose | null | undefined>(undefined);
+  const observedRotationRef = useRef<DeviceOrientation | null>(null);
   const hingePendingRef = useRef(false);
   const sentHingePoseRef = useRef<FoldPose | null | undefined>(undefined);
   const hingeQueueRef = useRef<ReturnType<
@@ -822,8 +825,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (streamMode === "webrtc") return;
     setActiveWebRtcCodec(webRtcCodec);
   }, [streamMode, webRtcCodec]);
-  // True while the in-flight single-finger drag began in the home-indicator band.
-  const edgeGestureRef = useRef(false);
+  // The HID edge of the home indicator where the in-flight single-finger drag
+  // began, kept through its release; undefined when it began elsewhere.
+  const edgeGestureRef = useRef<number | undefined>(undefined);
   // Latest screen config, read by the (stable) input callbacks for orientation.
   const screenRef = useRef<SimScreenConfig | null>(null);
   // Layout effects, so an input event right after a paint already maps with the new screen.
@@ -833,10 +837,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // @ref LLP 0015#temporary-drops — input maps with the screen the view shows, also a kept one
   // Pointer input is measured on the shown frame, so it maps back with the
   // same orientation: the helper's config, or the kept one while a helper restarts.
-  const viewScreenRef = useRef<SimScreenConfig | null>(null);
+  const viewScreenRef = useRef<ScreenSize | null>(null);
   useLayoutEffect(() => {
-    viewScreenRef.current = viewScreen;
-  }, [viewScreen]);
+    viewScreenRef.current = publicScreen;
+  }, [publicScreen]);
   // Once the helper WS pushes a config, it owns dimensions+orientation.
   const hasWsConfigRef = useRef(false);
 
@@ -919,14 +923,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!ownsInput() || dropsDisplayInput("touch", sample.display, sample.phase)) return;
       const orientation = streamGeometry(viewScreenRef.current).inputOrientation;
 
-      let displayEdge: number | undefined;
       if (sample.phase === "begin") {
-        edgeGestureRef.current = homeIndicatorEdge(sample) !== undefined;
-        if (edgeGestureRef.current) displayEdge = HID_EDGE_BOTTOM;
-      } else if (edgeGestureRef.current) {
-        displayEdge = HID_EDGE_BOTTOM;
-        if (sample.phase === "end") edgeGestureRef.current = false;
+        edgeGestureRef.current = homeIndicatorEdge(sample, viewScreenRef.current);
       }
+      const displayEdge = edgeGestureRef.current;
+      if (sample.phase === "end") edgeGestureRef.current = undefined;
 
       const p = rawPointForDisplayPoint(orientation, sample.x, sample.y);
       const edge =
@@ -1156,10 +1157,22 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     key("up", HID_USAGE_R);
   }, [sendWs]);
 
+  // Only a known pose drives the controls. While the pose is unknown (null: no
+  // sample yet, or a pose the observer cannot name), the controls use the legacy
+  // readback, order and commands, so Rotate still advances.
+  // @ref LLP 0013#orientation — an unknown physical pose keeps the legacy orientation controls
+  const observedDevicePose = screen?.deviceOrientation ?? null;
+  const usesNativeDevicePose =
+    observedDevicePose !== null &&
+    (isDuo ? screen?.supportsPhysicalOrientation === true : screen?.supportsHingeAngle === false);
+  const readbackOrientation = usesNativeDevicePose
+    ? deviceOrientationForPose(observedDevicePose)
+    : isDeviceOrientation(screen?.orientation)
+      ? screen.orientation
+      : null;
   // The answer is the send: serve-sim has no reply, so the shown pose then waits for the
   // helper's readback. A choice the queue drops for age, which the queue notices only at its
   // next flush, fails when the queue's age limit has passed.
-  const readbackOrientation = isDeviceOrientation(screen?.orientation) ? screen.orientation : null;
   const orientationBackend = useMemo<DeviceOrientationBackend | null>(
     () =>
       connectionScope === null
@@ -1167,8 +1180,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         : {
             // The simulator, not the token: a reconnect keeps its choices in order.
             device: JSON.stringify([baseUrl, targetDevice]),
-            // Xcode's Device Hub turns the iPhone Duo clockwise.
-            orientations: isDuo ? CLOCKWISE_ORIENTATIONS : DEVICE_ORIENTATIONS,
+            // Xcode's Device Hub turns the iPhone Duo clockwise. With a known
+            // observed pose, the Duo's names are physical poses, which
+            // DEVICE_ORIENTATIONS turns clockwise. An ordinary iPhone's physical
+            // names in CLOCKWISE_ORIENTATIONS send the legacy command order.
+            orientations:
+              isDuo && usesNativeDevicePose
+                ? DEVICE_ORIENTATIONS
+                : isDuo || usesNativeDevicePose
+                  ? CLOCKWISE_ORIENTATIONS
+                  : DEVICE_ORIENTATIONS,
             reportsPose: true,
             pushesReports: true,
             set: (orientation) =>
@@ -1177,7 +1198,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
                   () => reject(new Error(ORIENTATION_NOT_SENT_MESSAGE)),
                   WS_QUEUE_MAX_AGE_MS,
                 );
-                const queued = sendWs(WS_MSG_ORIENTATION, { orientation }, () => {
+                const wireOrientation = usesNativeDevicePose
+                  ? legacyOrientationForDeviceChoice(orientation)
+                  : orientation;
+                const payload = {
+                  orientation: wireOrientation,
+                  ...(isDuo && usesNativeDevicePose
+                    ? { deviceOrientation: physicalOrientationForInterface(wireOrientation) }
+                    : {}),
+                };
+                const queued = sendWs(WS_MSG_ORIENTATION, payload, () => {
                   clearTimeout(timer);
                   resolve(orientation);
                 });
@@ -1187,7 +1217,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
                 }
               }),
           },
-    [baseUrl, connectionScope, sendWs, targetDevice, isDuo],
+    [baseUrl, connectionScope, sendWs, targetDevice, isDuo, usesNativeDevicePose],
   );
   // The native preset, which a rotation clears, is forgotten at once, and the
   // 3D view of an iPhone Duo turns with the `rotated` event.
@@ -1210,9 +1240,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         : commandPose
           ? hingePoseOrientation(commandPose)
           : current
-            ? observedScreenConfig(current).physicalOrientation
+            ? (current.deviceOrientation ?? observedScreenConfig(current).physicalOrientation)
             : undefined;
       rotationRef.current = { target: turnedPhysicalOrientation(start, quarterTurns) };
+      observedRotationRef.current = deviceOrientationForPose(rotationRef.current.target);
       setRotationRequest((request) => request + 1);
       setOrientationOverride(true);
       emitHingeEvent({ type: "rotated", quarterTurns });
@@ -1223,10 +1254,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const landRotation = useCallback(
     (config: ScreenSize | null) => {
       if (rotationRef.current === null) return;
-      if (config) observedPoseRef.current = observedScreenConfig(config).hingePose;
+      if (config) {
+        const observed = observedScreenConfig(config);
+        observedPoseRef.current = observed.hingePose;
+        const actual = deviceOrientationForPose(config.deviceOrientation);
+        const displayed = observedRotationRef.current;
+        if (displayed && actual) {
+          const quarterTurns = clockwiseQuarterTurns(
+            legacyOrientationForDeviceChoice(displayed),
+            legacyOrientationForDeviceChoice(actual),
+          );
+          if (quarterTurns) emitHingeEvent({ type: "rotated", quarterTurns });
+        }
+        if (actual) observedRotationRef.current = actual;
+      }
       endRotation();
     },
-    [endRotation],
+    [endRotation, emitHingeEvent],
   );
   // As in serve-sim's rotation tracker (`duo-rotation-state.ts`, serve-sim at
   // ace59bf34, #385), a rotation whose readback does not arrive ends after the
@@ -1240,8 +1284,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // one render turn it as far as the device.
   const turnDuoForChoice = useCallback(
     (from: DeviceOrientation | null, to: DeviceOrientation) =>
-      turnDuo(clockwiseQuarterTurns(from ?? "portrait", to)),
-    [turnDuo],
+      turnDuo(
+        clockwiseQuarterTurns(
+          usesNativeDevicePose && from
+            ? legacyOrientationForDeviceChoice(from)
+            : (from ?? "portrait"),
+          usesNativeDevicePose ? legacyOrientationForDeviceChoice(to) : to,
+        ),
+      ),
+    [turnDuo, usesNativeDevicePose],
   );
   const {
     orientation,
@@ -2196,6 +2247,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           setHardwareKeyboardConnectedState(null);
           setPhysicalPose(undefined);
           sentHingePoseRef.current = undefined;
+          // observedRotationRef stays: the 3D view still shows that pose, so an
+          // external turn during the drop is a turn on the next config. Only a
+          // new hinge session, which resets the view, clears it.
           endRotation();
           if (hingePendingRef.current) {
             const message = "Connection lost while changing the device pose.";
@@ -2282,6 +2336,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setPhysicalPose(undefined);
     sentHingePoseRef.current = undefined;
     observedPoseRef.current = undefined;
+    observedRotationRef.current = null;
     endRotation();
     hingeQueueRef.current?.clear();
     // Every command of the old session gets a final event, so no listener
@@ -2359,6 +2414,33 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     liveHinge?.hingePose,
     liveHinge?.physicalOrientation,
     physicalPose,
+  ]);
+
+  useEffect(() => {
+    // Keep the displayed baseline while a local control owns the view, then
+    // reconcile external turns on release even without another native config.
+    if (!isDuo || orientationOverride || hingePending || hingePreview) return;
+    const actual = deviceOrientationForPose(screen?.deviceOrientation);
+    if (!actual) return;
+    const previous = observedRotationRef.current;
+    observedRotationRef.current = actual;
+    // A shown named preset frames itself. A custom view still needs its turn
+    // even when the observation happens to match a preset after an angle edit.
+    if (!previous || (liveHinge?.hingePose && physicalPose != null)) return;
+    const quarterTurns = clockwiseQuarterTurns(
+      legacyOrientationForDeviceChoice(previous),
+      legacyOrientationForDeviceChoice(actual),
+    );
+    if (quarterTurns) emitHingeEvent({ type: "rotated", quarterTurns });
+  }, [
+    isDuo,
+    screen?.deviceOrientation,
+    liveHinge?.hingePose,
+    physicalPose,
+    orientationOverride,
+    hingePending,
+    hingePreview,
+    emitHingeEvent,
   ]);
 
   const videoKind = useWebRtc ? "video" : useAvcc ? "canvas" : "img";
@@ -2982,6 +3064,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     dropTimeoutMs: SCREEN_LOAD_TIMEOUT_MS,
   });
 
+  // Only the streamed simulator is current. The server marks every simulator
+  // with a running helper, so with two helpers a consumer that names the
+  // current device, such as the screen shape lookup, could take the other
+  // one's name. Before the streamed id is known, a running helper stays the
+  // best guess.
+  const shownDevices = useMemo(
+    () =>
+      !currentDeviceId || devices === PLACEHOLDER_DEVICES
+        ? devices
+        : devices.map((device) => ({ ...device, current: device.id === currentDeviceId })),
+    [devices, currentDeviceId],
+  );
+
   return {
     platform: "ios",
     status: presentation.status,
@@ -2994,7 +3089,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     deviceModelUrl: isDuo ? (knownConfig?.deviceKitModelUrl ?? null) : null,
     displayCorners,
     fps,
-    devices,
+    devices: shownDevices,
     logs,
     logsEnabled,
     attachLogs,

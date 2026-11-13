@@ -9,7 +9,7 @@ import {
   handleCameraRequest,
   readCameraWiring,
 } from "./camera.ts";
-import { screenshotResponse } from "./screenshot-response.ts";
+import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
 import { getExecSnapshot } from "./exec.ts";
 import { applyFoldRequest, getFoldStatus } from "./fold.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
@@ -2530,10 +2530,10 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           return new Response("method not allowed", { status: 405 });
         }
         try {
-          const png = await runForContext(requestContext, (context) =>
-            screencapPng(context.serial),
+          const shot = await runForContext(requestContext, (context) =>
+            captureScreenshot(() => screencapPng(context.serial), context.deviceState.orientation),
           );
-          return await screenshotResponse(png, url);
+          return await screenshotResponse(shot.png, url, shot.metadata);
         } catch (err) {
           return errorResponse(err);
         }

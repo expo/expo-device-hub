@@ -4,6 +4,29 @@ import Testing
 
 @Suite("SimulatorDisplayProfile")
 struct SimulatorDisplayProfileTests {
+    @Test("pose observation keeps ordinary non-iOS and unknown profiles out of CoreDevice")
+    func poseObservationCapability() {
+        let ordinary = SimulatorDisplayProfile(displays: [
+            ["displayType": "integrated", "screenID": 1],
+        ])
+        #expect(ordinary.supportsDevicePose(runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-27-1"))
+        for runtime in ["", "com.apple.CoreSimulator.SimRuntime.tvOS-27-1",
+                        "com.apple.CoreSimulator.SimRuntime.watchOS-27-1",
+                        "com.apple.CoreSimulator.SimRuntime.xrOS-27-1"] {
+            #expect(!ordinary.supportsDevicePose(runtimeIdentifier: runtime))
+        }
+        #expect(!SimulatorDisplayProfile().supportsDevicePose(runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-27-1"))
+        let foldable = SimulatorDisplayProfile(displays: [
+            ["displayType": "integrated", "screenID": 1],
+            ["displayType": "integrated", "screenID": 3],
+        ])
+        #expect(foldable.supportsDevicePose(runtimeIdentifier: ""))
+        let unsupportedProfile = SimulatorDisplayProfile(displays: (1...3).map {
+            ["displayType": "integrated", "screenID": $0]
+        })
+        #expect(!unsupportedProfile.supportsDevicePose(runtimeIdentifier: "com.apple.CoreSimulator.SimRuntime.iOS-27-1"))
+    }
+
     @Test("Duo uses the foldable path and retains each panel's mounting rotation")
     func duoProfile() {
         let profile = SimulatorDisplayProfile(displays: [

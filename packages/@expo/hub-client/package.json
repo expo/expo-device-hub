@@ -1,6 +1,6 @@
 {
   "name": "@expo/hub-client",
-  "version": "1.11.0",
+  "version": "1.12.1",
   "description": "Device-client React hooks and types for mirroring live iOS simulators and Android emulators in the browser through Expo Device Hub.",
   "keywords": [
     "android",
@@ -37,6 +37,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
+    },
+    "./shapes": {
+      "types": "./dist/shapes/index.d.ts",
+      "import": "./dist/shapes/index.mjs",
+      "default": "./dist/shapes/index.mjs"
     }
   },
   "publishConfig": {

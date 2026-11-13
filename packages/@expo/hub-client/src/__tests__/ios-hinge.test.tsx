@@ -512,6 +512,75 @@ function holdReadbackGrace() {
   return () => act(async () => graces.splice(0).forEach((callback) => callback()));
 }
 
+test("an external turn during an angle edit is applied when the edit releases the view", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe } = await connect();
+  await act(async () =>
+    socket.push(0x82, { ...observed(70, "portrait"), deviceOrientation: "portrait" }),
+  );
+  observe();
+  await act(async () => client().fold!.setControl({ control: "angle", value: 75 }));
+  const requestId = socket.frames().findLast((frame) => frame.tag === 0x10)!.payload.requestId;
+  await act(async () =>
+    socket.push(0x82, { ...observed(75, "landscape-left"), deviceOrientation: "landscape-left" }),
+  );
+  expect(events.filter((event) => event.type === "rotated")).toEqual([]);
+  await act(async () => socket.push(0x90, { requestId, ok: true }));
+  expect(events.filter((event) => event.type === "rotated")).toEqual([
+    { type: "rotated", quarterTurns: 1 },
+  ]);
+});
+
+test("an external turn while the input socket reconnects turns the view once", async () => {
+  installBrowser({ duo: true });
+  // The input socket retries after the same 1.5 s as the readback grace.
+  const retry = holdReadbackGrace();
+  const { socket, events, observe } = await connect();
+  await act(async () =>
+    socket.push(0x82, { ...observed(70, "portrait"), deviceOrientation: "portrait" }),
+  );
+  observe();
+  await act(async () => socket.onclose?.({ code: 1006, reason: "" }));
+  await retry();
+  const replacement = FakeSocket.instances.findLast((instance) =>
+    instance.url.includes("/helper/ws"),
+  )!;
+  expect(replacement).not.toBe(socket);
+  await act(async () => replacement.open());
+  await act(async () =>
+    replacement.push(0x82, {
+      ...observed(70, "landscape-left"),
+      deviceOrientation: "landscape-left",
+    }),
+  );
+  expect(events.filter((event) => event.type === "reset")).toEqual([]);
+  expect(events.filter((event) => event.type === "rotated")).toEqual([
+    { type: "rotated", quarterTurns: 1 },
+  ]);
+});
+
+test("a named readback after an angle edit still turns a custom view", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe } = await connect();
+  await act(async () =>
+    socket.push(0x82, { ...observed(0, "portrait"), deviceOrientation: "portrait" }),
+  );
+  await act(async () =>
+    socket.push(0x82, { ...observed(70, "landscape-left"), deviceOrientation: "landscape-left" }),
+  );
+  expect(client().fold?.physical?.pose).toBeNull();
+  observe();
+  await act(async () => client().fold!.setControl({ control: "angle", value: 0 }));
+  const requestId = socket.frames().findLast((frame) => frame.tag === 0x10)!.payload.requestId;
+  await act(async () =>
+    socket.push(0x82, { ...observed(0, "portrait"), deviceOrientation: "portrait" }),
+  );
+  await act(async () => socket.push(0x90, { requestId, ok: true }));
+  expect(events.filter((event) => event.type === "rotated")).toEqual([
+    { type: "rotated", quarterTurns: -1 },
+  ]);
+});
+
 test("turning Laptop to portrait keeps no physical pose when the readback reads as Book, until a later preset", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();

@@ -53,7 +53,7 @@ export interface FakeAndroidScenario {
   spawnError: boolean;
   /** The emulator process exits with this code before it comes online. */
   exitCode: number | null;
-  /** `waitForAdbOnline` gives up (`false`) instead of seeing the serial online. */
+  /** `waitForAdbOnline` gives up (`null`) instead of seeing the serial online. */
   neverOnline: boolean;
   /** `waitForAdbOnline` fails with an error. */
   waitError: boolean;

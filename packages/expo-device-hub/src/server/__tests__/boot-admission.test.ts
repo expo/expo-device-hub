@@ -342,6 +342,20 @@ describe("boot outcomes with capacity one", () => {
     expect(attempts(scratch)).toHaveLength(1);
   });
 
+  test("an emulator that finds another AVD on its port is stopped and its record finished", async () => {
+    const scratch = createScratch(2, (state) => {
+      state.adb["emulator-5560"] = { avdName: "Pixel_7", state: "device" };
+    });
+    const helper = await startHelper(scratch, "a");
+
+    expect(await helper.boot(android("Pixel_9"))).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('"Pixel_7" is already running on emulator-5560'),
+    });
+    expect(readFakeHost(scratch.hostFile).processes["4100001"]).toBeUndefined();
+    expect(attempts(scratch)).toHaveLength(1);
+  });
+
   test("an Android reopen by AVD name or by serial is idempotent", async () => {
     const scratch = createScratch(1);
     const helper = await startHelper(scratch, "a");
@@ -356,7 +370,21 @@ describe("boot outcomes with capacity one", () => {
     });
 
     expect((await helper.boot(android("Pixel_9"))).ok).toBe(true);
-    expect((await helper.boot(android("", "emulator-5560"))).ok).toBe(true);
+    // Admitted without a slot, so its boot runs (see `started()`). It spawns
+    // `-avd emulator-5560` on the fake's one port, finds Pixel_9 there and stops
+    // its own process.
+    updateFakeHost(scratch.hostFile, (state) => {
+      state.android.pid = 4_100_002;
+    });
+    expect(await helper.boot(android("", "emulator-5560"))).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('"Pixel_9" is already running on emulator-5560'),
+    });
+    const { processes } = readFakeHost(scratch.hostFile);
+    expect([processes["4100001"], processes["4100002"]]).toEqual([
+      "emulator -avd Pixel_9 -port 5560",
+      undefined,
+    ]);
     expect(attempts(scratch)).toHaveLength(1);
 
     const refused = await helper.boot(android("Pixel_8"));
