@@ -12,7 +12,8 @@ export type ListAdbSerialsFn = (options: {
   signal?: AbortSignal;
 }) => Promise<AndroidUtilsResult<string[]>>;
 
-const listAdbSerials: ListAdbSerialsFn = async (options) => {
+/** Every serial in `adb devices -l`, whatever its state (`offline`, `unauthorized`, …). */
+export const listAdbSerials: ListAdbSerialsFn = async (options) => {
   const adb = resolveAdbPath(process.env, homedir());
   const listed = await runAdbDevices(adb, options);
   if (listed.error) return result([], listed.error);
