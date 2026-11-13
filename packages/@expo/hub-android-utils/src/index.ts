@@ -2,6 +2,7 @@ export { bootDevice } from "./boot-device";
 export { createDevice } from "./create-device";
 export { emulatorSerial } from "./emulator";
 export { freeEmulatorPort } from "./free-emulator-port";
+export { defaultEmulatorGpu, detectBareMetalAppleSilicon } from "./host-gpu";
 export { listDeviceProfiles } from "./list-device-profiles";
 export { listDevices } from "./list-devices";
 export { listSystemImages } from "./list-system-images";

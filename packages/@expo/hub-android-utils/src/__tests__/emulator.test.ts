@@ -41,6 +41,21 @@ describe("buildEmulatorArgs", () => {
     ]);
   });
 
+  test("uses the given GPU mode in place of auto", () => {
+    const args = buildEmulatorArgs({ name: "x", port: 5554, gpu: "host" }, {});
+    expect(args.slice(args.indexOf("-gpu"), args.indexOf("-gpu") + 2)).toEqual(["-gpu", "host"]);
+    expect(args).not.toContain("auto");
+  });
+
+  test("keeps a -gpu from EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS last, so it wins over host", () => {
+    const args = buildEmulatorArgs(
+      { name: "x", port: 5554, gpu: "host" },
+      { EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: "-gpu swiftshader_indirect" },
+    );
+    expect(args.lastIndexOf("-gpu")).toBe(args.length - 2);
+    expect(args.at(-1)).toBe("swiftshader_indirect");
+  });
+
   test("stringifies the port for -port", () => {
     const args = buildEmulatorArgs({ name: "x", port: 5556 });
     expect(args[args.indexOf("-port") + 1]).toBe("5556");

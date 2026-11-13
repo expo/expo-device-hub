@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { emulatorSerial, formatEmulatorCommand, spawnEmulator } from "./emulator";
 import { type AndroidUtilsResult, reportError, result } from "./errors";
+import { defaultEmulatorGpu } from "./host-gpu";
 import { resolveEmulatorPath } from "./sdk-paths";
 import type { BootDeviceOptions, BootedDevice, EmulatorExit } from "./types";
 
@@ -13,14 +14,17 @@ import type { BootDeviceOptions, BootedDevice, EmulatorExit } from "./types";
  * the device is adb-online that means the boot failed; the emulator's output
  * is discarded (the detached child outlives us), so failure reports point the
  * user at re-running the returned `command` to see it. Resolves `emulator`
- * from the Android SDK (see `resolveSdkRoot`). The result's `value` is `null`
+ * from the Android SDK (see `resolveSdkRoot`). Without `options.gpu`, the GPU
+ * mode is `host` on an Apple silicon Mac that is not a virtual machine and
+ * `auto` elsewhere (see `defaultEmulatorGpu`). The result's `value` is `null`
  * if the process could not be spawned, with the invocation-specific failure in
  * `error`.
  */
 export async function bootDevice(
-  options: BootDeviceOptions,
+  bootOptions: BootDeviceOptions,
 ): Promise<AndroidUtilsResult<BootedDevice | null>> {
   try {
+    const options = { ...bootOptions, gpu: bootOptions.gpu ?? (await defaultEmulatorGpu()) };
     const emulator = resolveEmulatorPath(process.env, homedir());
     const spawned = await spawnEmulator(emulator, options);
     if (spawned.error || !spawned.value) return result(null, spawned.error);
