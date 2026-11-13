@@ -34,6 +34,15 @@ import { UI_OPTIONS } from "./ui-settings";
 import { TouchCoordinate, TouchGesture } from "./touch-gesture";
 import { MAX_PASTEBOARD_TEXT_BYTES, writeSimPasteboard } from "./sim-pasteboard";
 import { cleanupWarningOf } from "./sim-pasteboard-copy";
+import {
+  deleteKeychainValues,
+  KEYCHAIN_FORMATS,
+  listKeychainKeys,
+  setKeychainValues,
+  type KeychainTarget,
+  type KeychainWriteSummary,
+} from "./keychain";
+import { KEYCHAIN_ACCESSIBLE, type KeychainAccessible } from "./sim-keychain";
 import type { StreamSettings } from "./stream-settings";
 import {
   UploadChunk,
@@ -124,6 +133,47 @@ const ClipboardText = z
     "must be at most 4 MiB of UTF-8 text",
   );
 
+const KeychainKey = z.string().min(1).max(1024);
+// Bounded per action as well as by the app's 1 MiB request limit, so a bad call fails before IO.
+const MAX_KEYCHAIN_KEYS = 200;
+const KeychainValue = z.string().max(256 * 1024);
+const KeychainEntries = z
+  .array(z.tuple([KeychainKey, KeychainValue]))
+  .min(1)
+  .max(MAX_KEYCHAIN_KEYS);
+const { $schema: _$keychainValuesSchema, ...keychainValuesSchema } = z.toJSONSchema(
+  z.record(KeychainKey, KeychainValue),
+  { io: "input" },
+);
+// Credential names are data: record reconstruction would silently discard __proto__.
+// Validate entries once, while retaining the object-shaped wire/catalog contract.
+const KeychainValues = z
+  .unknown()
+  .transform((input, ctx) => {
+    const entries =
+      input !== null && typeof input === "object" && !Array.isArray(input)
+        ? Object.entries(input)
+        : null;
+    const parsed = KeychainEntries.safeParse(entries);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        const entry = typeof issue.path[0] === "number" ? entries?.[issue.path[0]] : undefined;
+        const path = entry ? [entry[0], ...issue.path.slice(2)] : issue.path;
+        ctx.addIssue({ code: "custom", path, message: issue.message });
+      }
+      return z.NEVER;
+    }
+    return Object.fromEntries(parsed.data);
+  })
+  .meta({ ...keychainValuesSchema, minProperties: 1, maxProperties: MAX_KEYCHAIN_KEYS });
+const KeychainTargetParams = {
+  udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+  bundleId: BundleId,
+  format: z.enum(KEYCHAIN_FORMATS).default("expo-secure-store"),
+  service: z.string().min(1).max(256).optional(),
+  accessGroup: z.string().min(1).max(256).optional(),
+};
+
 function UiSetting(option: string) {
   const spec = UI_OPTIONS[option];
   if (!spec) throw new Error(`Unknown simulator setting ${option}.`);
@@ -151,6 +201,27 @@ const ACTION_SCHEMAS = {
   "clipboard.paste": z.object({ udid: ClipboardDevice, text: ClipboardText.optional() }).meta({
     description:
       "Paste text into the focused field, or paste the current simulator clipboard if omitted.",
+  }),
+  "keychain.set": z
+    .object({
+      ...KeychainTargetParams,
+      values: KeychainValues,
+      accessible: z.enum(KEYCHAIN_ACCESSIBLE).optional(),
+      relaunch: z.boolean().default(false),
+    })
+    .meta({
+      description:
+        "Set values an app reads from its keychain, such as sign-in tokens. Uses the expo-secure-store layout unless format says otherwise; relaunch restarts the app and waits for the helper to acknowledge the change. Early native launch reads can precede the write.",
+    }),
+  "keychain.delete": z
+    .object({
+      ...KeychainTargetParams,
+      keys: z.array(KeychainKey).min(1).max(MAX_KEYCHAIN_KEYS),
+      relaunch: z.boolean().default(false),
+    })
+    .meta({ description: "Delete values from an app's keychain." }),
+  "keychain.list": z.object(KeychainTargetParams).meta({
+    description: "List the keys an app stored in its keychain. Values are never returned.",
   }),
   "appearance.get": z.object({ udid: Device }).meta({ description: "Read light or dark mode." }),
   "appearance.set": z
@@ -487,6 +558,9 @@ const PROCEDURE_ACTIONS = [
   "clipboard.write",
   "clipboard.copy",
   "clipboard.paste",
+  "keychain.set",
+  "keychain.delete",
+  "keychain.list",
   "app.file.upload",
   "app.file.read",
   "app.file.list",
@@ -762,12 +836,48 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
   return "uploadId" in p ? stagedUploadPath(p.uploadId) : p.path;
 }
 
+function keychainTarget(
+  p: ParamsFor<"keychain.list"> & { accessible?: KeychainAccessible },
+): KeychainTarget {
+  return {
+    udid: p.udid,
+    bundleId: p.bundleId,
+    format: p.format,
+    options: { service: p.service, accessGroup: p.accessGroup, accessible: p.accessible },
+  };
+}
+
+// In this process, so values never reach a child's argv; neither stdout nor errors carry them.
+async function runKeychainAction(
+  udid: string,
+  prepare: ((udid: string) => Promise<void>) | undefined,
+  run: () => Promise<HostActionResult>,
+): Promise<HostActionResult> {
+  try {
+    await prepare?.(udid);
+    return await run();
+  } catch (error) {
+    return {
+      stdout: "",
+      stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+      exitCode: 1,
+    };
+  }
+}
+
+/** Per-key statuses stay in stdout; a key that failed makes the action fail as a whole. */
+function keychainWriteResult(summary: KeychainWriteSummary): HostActionResult {
+  const failed = summary.applied && summary.keys.some((key) => !key.ok);
+  return { ...ok(JSON.stringify(summary)), exitCode: failed ? 1 : 0 };
+}
+
 async function runProcedureAsync(
   action: ProcedureAction,
   raw: unknown,
   streamSettings: StreamSettings | undefined,
   serveSimBinPath: string,
   deviceName?: (udid: string) => string | undefined,
+  prepareKeychain?: (udid: string) => Promise<void>,
 ): Promise<HostActionResult> {
   switch (action) {
     case "clipboard.read":
@@ -799,6 +909,30 @@ async function runProcedureAsync(
           exitCode: 1,
         };
       }
+    }
+    case "keychain.set": {
+      const p = parseParams(action, raw);
+      return runKeychainAction(p.udid, prepareKeychain, async () =>
+        keychainWriteResult(
+          await setKeychainValues(keychainTarget(p), Object.entries(p.values), {
+            relaunch: p.relaunch,
+          }),
+        ),
+      );
+    }
+    case "keychain.delete": {
+      const p = parseParams(action, raw);
+      return runKeychainAction(p.udid, prepareKeychain, async () =>
+        keychainWriteResult(
+          await deleteKeychainValues(keychainTarget(p), p.keys, { relaunch: p.relaunch }),
+        ),
+      );
+    }
+    case "keychain.list": {
+      const p = parseParams(action, raw);
+      return runKeychainAction(p.udid, prepareKeychain, async () =>
+        ok(JSON.stringify({ keys: await listKeychainKeys(keychainTarget(p)) })),
+      );
     }
     case "app.file.upload":
       return runAppFileAction("upload", parseParams(action, raw));
@@ -1078,6 +1212,7 @@ export async function runHostActionAsync(
   binPath: string,
   streamSettings?: StreamSettings,
   deviceName?: (udid: string) => string | undefined,
+  prepareKeychain?: (udid: string) => Promise<void>,
 ): Promise<HostActionResult> {
   const { action, params } = msg;
   if (typeof action !== "string" || !isHostActionName(action)) {
@@ -1088,13 +1223,13 @@ export async function runHostActionAsync(
     const p = parseParams(action, params);
     result = await timeStartup(
       action,
-      () => runProcedureAsync(action, params, streamSettings, binPath, deviceName),
+      () => runProcedureAsync(action, params, streamSettings, binPath, deviceName, prepareKeychain),
       p.udid,
       { deviceName: deviceName?.(p.udid), isSuccessful: (value) => value.exitCode === 0 },
     );
   } else {
     result = await (isProcedureAction(action)
-      ? runProcedureAsync(action, params, streamSettings, binPath, deviceName)
+      ? runProcedureAsync(action, params, streamSettings, binPath, deviceName, prepareKeychain)
       : runInvocation(buildInvocation(action, params, binPath)));
   }
   // exec-ws spreads this into its reply. Keep the explicit public result fields;

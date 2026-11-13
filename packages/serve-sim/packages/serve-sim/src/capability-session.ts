@@ -7,8 +7,8 @@ import {
   releaseSession,
   releaseSessionSync,
 } from "./launch-manager";
+import type { CapabilityDefinition } from "./capabilities";
 import { LaunchStateLockedError } from "./launch-state-lock";
-import { CLIPBOARD_CAPABILITY, clipboardCapability } from "./sim-pasteboard-reader";
 
 const RETRY_MIN_MS = 5_000;
 const RETRY_MAX_MS = 5 * 60_000;
@@ -45,7 +45,7 @@ function releaseOnExit(udid: string): void {
         releaseSessionSync(device, process.pid, () => {}, EXIT_LOCK_TIMEOUT_MS);
       } catch (error) {
         console.error(
-          `[serve-sim] Could not release the clipboard reader on ${device} at exit: ${exitReleaseFailure(error)}`,
+          `[serve-sim] Could not release the capability loader on ${device} at exit: ${exitReleaseFailure(error)}`,
         );
       }
     }
@@ -62,7 +62,12 @@ function exitReleaseFailure(error: unknown): string {
   return `${holder}. The loader can stay until the simulator reboots or serve-sim sets it up again.`;
 }
 
-export function createClipboardSession(
+/**
+ * Sets up one default capability on each device the middleware opens or starts, keeps it in place,
+ * and releases it on `dispose()` or at exit.
+ */
+export function createCapabilitySession(
+  definition: CapabilityDefinition,
   enabled = true,
   { now = Date.now }: { now?: () => number } = {},
 ) {
@@ -72,70 +77,79 @@ export function createClipboardSession(
   const devices = new Map<string, { work: Promise<void>; done: boolean; checkedAt: number }>();
   // A failed setup waits before the next attempt, so a device that keeps failing is not retried and
   // logged on every request. Each failure doubles the wait; a reboot retries at once.
-  const failures = new Map<string, { retryAt: number; delayMs: number }>();
+  const failures = new Map<string, { retryAt: number; delayMs: number; error: unknown }>();
   const initializedHere = new Set<string>();
   let disposed = false;
 
-  return {
-    initialize(udid: string, rebooted = false): Promise<void> {
-      if (disposed) return Promise.resolve();
-      if (!rebooted && now() < (failures.get(udid)?.retryAt ?? 0)) return Promise.resolve();
-      const previous = devices.get(udid);
-      if (
-        previous &&
-        !rebooted &&
-        (!previous.done ||
-          (!enabled && !isCapabilityEnabled(udid, CLIPBOARD_CAPABILITY)) ||
-          (enabled &&
-            now() - previous.checkedAt < RECHECK_MS &&
-            isCapabilityEnabled(udid, CLIPBOARD_CAPABILITY)))
-      ) {
-        return previous.work;
+  function initialize(udid: string, rebooted = false): Promise<void> {
+    if (disposed) return Promise.resolve();
+    if (!rebooted && now() < (failures.get(udid)?.retryAt ?? 0)) return Promise.resolve();
+    const previous = devices.get(udid);
+    if (
+      previous &&
+      !rebooted &&
+      (!previous.done ||
+        (!enabled && !isCapabilityEnabled(udid, definition.name)) ||
+        (enabled &&
+          now() - previous.checkedAt < RECHECK_MS &&
+          isCapabilityEnabled(udid, definition.name)))
+    ) {
+      return previous.work;
+    }
+    // A reboot clears launchd, so configure the new boot after any setup that started before it.
+    const earlier =
+      rebooted && previous && !previous.done ? previous.work.catch(() => {}) : undefined;
+    const entry = { work: Promise.resolve(), done: false, checkedAt: 0 };
+    entry.work = (async () => {
+      await earlier;
+      if (enabled && !rebooted && (await isCapabilityArmed(udid, definition.name))) return;
+      await configureCapability(udid, definition, { enabled, relaunch: false });
+      if (enabled) {
+        initializedHere.add(udid);
+        releaseOnExit(udid);
+      } else if (readLaunchState(udid)) {
+        // Republish without dead owners, including readers left by an earlier session.
+        await rearmCapabilityLoader(udid);
+        initializedHere.add(udid);
+        releaseOnExit(udid);
       }
-      // A reboot clears launchd, so configure the new boot after any setup that started before it.
-      const earlier =
-        rebooted && previous && !previous.done ? previous.work.catch(() => {}) : undefined;
-      const entry = { work: Promise.resolve(), done: false, checkedAt: 0 };
-      entry.work = (async () => {
-        await earlier;
-        if (enabled && !rebooted && (await isCapabilityArmed(udid, CLIPBOARD_CAPABILITY))) return;
-        await configureCapability(udid, clipboardCapability, { enabled, relaunch: false });
-        if (enabled) {
-          initializedHere.add(udid);
-          releaseOnExit(udid);
-        } else if (readLaunchState(udid)) {
-          // Republish without dead owners, including readers left by an earlier session.
-          await rearmCapabilityLoader(udid);
-          initializedHere.add(udid);
-          releaseOnExit(udid);
-        }
-      })().then(
-        () => {
-          entry.done = true;
-          entry.checkedAt = now();
-          failures.delete(udid);
-        },
-        (error) => {
-          if (devices.get(udid) === entry) devices.delete(udid);
-          const previousDelayMs = failures.get(udid)?.delayMs;
-          const delayMs = previousDelayMs
-            ? Math.min(RETRY_MAX_MS, 2 * previousDelayMs)
-            : RETRY_MIN_MS;
-          failures.set(udid, { retryAt: now() + delayMs, delayMs });
-          throw error;
-        },
-      );
-      devices.set(udid, entry);
-      return entry.work;
+    })().then(
+      () => {
+        entry.done = true;
+        entry.checkedAt = now();
+        failures.delete(udid);
+      },
+      (error) => {
+        if (devices.get(udid) === entry) devices.delete(udid);
+        const previousDelayMs = failures.get(udid)?.delayMs;
+        const delayMs = previousDelayMs
+          ? Math.min(RETRY_MAX_MS, 2 * previousDelayMs)
+          : RETRY_MIN_MS;
+        failures.set(udid, { retryAt: now() + delayMs, delayMs, error });
+        throw error;
+      },
+    );
+    devices.set(udid, entry);
+    return entry.work;
+  }
+
+  return {
+    initialize,
+    /** Actions need a successful setup; background polling may skip a failed setup's backoff. */
+    async prepare(udid: string): Promise<void> {
+      await initialize(udid);
+      if (disposed) throw new Error(`The ${definition.name} session has ended.`);
+      const failure = failures.get(udid);
+      if (failure) throw failure.error;
     },
     async dispose(): Promise<void> {
       disposed = true;
       await Promise.allSettled([...devices.values()].map(({ work }) => work));
       const results = await Promise.allSettled(
         [...initializedHere].map(async (udid) => {
-          const clipboard = readLaunchState(udid)?.capabilities[CLIPBOARD_CAPABILITY];
-          if (clipboard?.ownerPid === process.pid) {
-            await configureCapability(udid, clipboardCapability, {
+          const record = readLaunchState(udid)?.capabilities[definition.name];
+          if (record?.ownerPid === process.pid) {
+            await configureCapability(udid, definition, {
               enabled: false,
               relaunch: false,
             });
@@ -151,7 +165,7 @@ export function createClipboardSession(
         .filter((result) => result.status === "rejected")
         .map((result) => result.reason);
       if (errors.length > 0)
-        throw new AggregateError(errors, "Could not release the clipboard session");
+        throw new AggregateError(errors, `Could not release the ${definition.name} session`);
     },
   };
 }

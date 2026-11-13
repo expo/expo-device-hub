@@ -1939,6 +1939,7 @@ async function serve(
     networkCapture?: boolean;
     networkCaptureProxy?: string;
     clipboard?: boolean | "unmanaged";
+    keychain?: boolean | "unmanaged";
   } = {},
 ) {
   const quiet = !!options.quiet;
@@ -2084,6 +2085,7 @@ async function serve(
         networkCapture: !!options.networkCapture,
         networkCaptureProxy: options.networkCaptureProxy,
         clipboard: options.clipboard,
+        keychain: options.keychain,
         loopbackOnly: isLoopbackHost(host),
         execToken: previewToken,
         requirePreviewToken,
@@ -3139,6 +3141,7 @@ Examples:
         networkCapture: !!opts.networkCapture,
         networkCaptureProxy: opts.networkCaptureProxy,
         clipboard: isStreamHelper ? "unmanaged" : !capabilities.disable.includes("clipboard"),
+        keychain: isStreamHelper ? "unmanaged" : !capabilities.disable.includes("keychain"),
         networkCaptureFields: opts.networkCaptureField,
       });
     }
