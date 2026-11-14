@@ -80,7 +80,8 @@ export const ScreenshotParams = z.object({
   udid: Device,
   fileName: ScreenshotName.optional(),
   display: ScreenshotDisplay.optional(),
-  output: z.enum(["path", "binary"]).default("path"),
+  // Binary replies are followed by a `{id, screenshotMetadata}` frame; clients check this flag.
+  output: z.enum(["path", "binary"]).default("path").meta({ binaryMetadataFrame: true }),
   // The CLI infers positional arguments from catalog property order. Append new options.
   ...ScreenshotImageOptions.shape,
   automation: z.boolean().default(false),
