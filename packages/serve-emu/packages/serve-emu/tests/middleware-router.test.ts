@@ -1922,7 +1922,9 @@ describe("createRouter emulator capture", () => {
     const attach = async (request: { serial: string; processId: number }) => {
       calls.push(request);
       if (control.failWith) throw new Error(control.failWith);
-      await writeFile(join(directory, `${request.serial}.sock`), "");
+      agentListeners.push(
+        Bun.listen({ unix: join(directory, `${request.serial}.sock`), socket: { data() {} } }),
+      );
     };
     return { calls, control, attach };
   };
