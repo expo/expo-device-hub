@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { CaptureRecordingSourceOptions } from "../src/capture-recording-source.ts";
+import { DeviceSessionState } from "../src/device-session-state.ts";
 import { GpuCaptureUnavailableError } from "../src/gpu-session.ts";
 import {
   createRouter,
@@ -11,7 +12,8 @@ import {
   type RouterDependencies,
 } from "../src/middleware.ts";
 import type { RecordingOptions } from "../src/screen-recording.ts";
-import type { StreamMode } from "../src/shared/api-contracts.ts";
+import type { ScreenOrientation, StreamMode } from "../src/shared/api-contracts.ts";
+import { watchNoOrientationEvents } from "./fixtures/orientation.ts";
 
 // SPS + PPS + IDR slice: one self-contained H.264 keyframe.
 const KEYFRAME = Buffer.from(
@@ -42,6 +44,7 @@ afterEach(async () => {
 
 async function setup(
   startCaptureRecording: NonNullable<RouterDependencies["startCaptureRecording"]>,
+  overrides: RouterDependencies = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "router-independent-recording-"));
   roots.push(root);
@@ -70,10 +73,12 @@ async function setup(
       },
       startCaptureRecording,
       readHardwareConfig: async () => "hw.lcd.width = 1080\nhw.lcd.vsync = 90\n",
-      readOrientation: async () => "portrait",
+      readShownOrientation: async () => ({ orientation: "portrait", settling: false }),
+      watchOrientationEvents: watchNoOrientationEvents,
       openHingeSensor: async () => {
         throw new Error("no hinge in this test");
       },
+      ...overrides,
     },
   );
   const options: RecordingOptions = {
@@ -207,6 +212,140 @@ describe("router recording with the capture agent", () => {
       expect(created[0]!.screenRecording?.snapshot()).not.toHaveProperty("independent");
       const change = await switchSource(router, "grpc-screenshot");
       expect(change.status).toBe(409);
+    } finally {
+      await router.stopAll();
+    }
+  });
+});
+
+type AgentRecorder = CaptureRecordingSourceOptions["recorder"];
+
+/** One frame from the agent, captured now. Returns its capture time. */
+function agentFrame(recorder: AgentRecorder): bigint {
+  const pts = recorder.monotonicUs();
+  recorder.accept(
+    { type: "frame", pts, data: KEYFRAME, isKey: true, isConfig: false },
+    { width: 1080, height: 2424 },
+    "capture-recording",
+    { width: 1080, height: 2424, contentRect: { x: 0, y: 0, width: 1080, height: 2424 } },
+  );
+  return pts;
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+describe("the recording's orientation timeline", () => {
+  test("names the pose that the display shows, not a Hub rotation that the top app refuses", async () => {
+    let recorder!: AgentRecorder;
+    let firstPts = 0n;
+    // What Android's display shows: the launcher keeps portrait under a landscape lock.
+    let shown: ScreenOrientation = "portrait";
+    const states: DeviceSessionState[] = [];
+    const { router, created, options, manifest } = await setup(
+      async (source) => {
+        recorder = source.recorder;
+        firstPts = agentFrame(recorder);
+        return { canvas: { width: 1080, height: 2424 }, close: () => {} };
+      },
+      {
+        readShownOrientation: async () => ({ orientation: shown, settling: false }),
+        // An app with the device state of a real one, whose lock reports the requested pose.
+        createApp: async (appOptions) => {
+          created.push(appOptions);
+          const deviceState = new DeviceSessionState({
+            serial: appOptions.serial,
+            applyLocation: async () => {},
+            readOrientation: async () => shown,
+            applyRotation: async () => ({
+              mode: "lock",
+              rotation: 3,
+              orientation: "landscape",
+              pose: "landscape_left",
+              raw: "lock 3",
+            }),
+          });
+          states.push(deviceState);
+          return Object.assign(fakeApp(appOptions.serial, "scrcpy", []), { deviceState });
+        },
+      },
+    );
+    // What the app's `POST /api/orientation` does.
+    const rotate = async () => {
+      await states[0]!.setOrientation("landscape");
+      created[0]!.onDisplayChanged?.();
+    };
+    try {
+      await router.startScreenRecording(options);
+      await router.ensure("emulator-5554");
+
+      // Rotate on the launcher: the lock holds, the picture stays upright in portrait.
+      await rotate();
+      await wait(30);
+      const launcherPts = agentFrame(recorder);
+
+      // Rotate in an app that turns: the display follows the lock.
+      await wait(5);
+      shown = "landscape_left";
+      await rotate();
+      await wait(30);
+      const appPts = agentFrame(recorder);
+
+      await router.finishScreenRecording();
+      const written = await manifest();
+      expect(
+        written.deviceStates.map(
+          (entry: { state: { orientation?: string } }) => entry.state.orientation,
+        ),
+      ).toEqual(["portrait", "landscape_left"]);
+      // The landscape entry starts at the app's frame; the launcher's frame stayed portrait.
+      const msAfterFirst = (pts: bigint) => Number(pts - firstPts) / 1000;
+      expect(written.deviceStates[1].timeMs).toBeGreaterThan(msAfterFirst(launcherPts) + 1);
+      expect(Math.abs(written.deviceStates[1].timeMs - msAfterFirst(appPts))).toBeLessThanOrEqual(
+        1,
+      );
+    } finally {
+      await router.stopAll();
+    }
+  });
+
+  test("an app's own turn reaches the next frame through the device event stream", async () => {
+    let recorder!: AgentRecorder;
+    let shown: ScreenOrientation = "portrait";
+    const stream: { changed?: () => void; signal?: AbortSignal } = {};
+    const { router, options, manifest } = await setup(
+      async (source) => {
+        recorder = source.recorder;
+        agentFrame(recorder);
+        return { canvas: { width: 1080, height: 2424 }, close: () => {} };
+      },
+      {
+        readShownOrientation: async () => ({ orientation: shown, settling: false }),
+        watchOrientationEvents: (_serial, onChange, signal) => {
+          stream.changed = onChange;
+          stream.signal = signal;
+          return new Promise((resolve) => signal.addEventListener("abort", () => resolve()));
+        },
+      },
+    );
+    try {
+      await router.startScreenRecording(options);
+      await wait(5);
+      // The app turns to landscape under the user's lock; the Hub sent nothing. The display
+      // reports it well within the one-second fallback read.
+      shown = "landscape_left";
+      stream.changed?.();
+      await wait(30);
+      agentFrame(recorder);
+
+      await router.finishScreenRecording();
+      const written = await manifest();
+      expect(
+        written.deviceStates.map(
+          (entry: { state: { orientation?: string } }) => entry.state.orientation,
+        ),
+      ).toEqual(["portrait", "landscape_left"]);
+      // The finished recording closes the change stream.
+      expect(stream.signal?.aborted).toBe(true);
     } finally {
       await router.stopAll();
     }
