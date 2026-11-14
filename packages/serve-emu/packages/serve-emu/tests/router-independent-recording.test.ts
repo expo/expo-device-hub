@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -34,7 +34,9 @@ function fakeApp(serial: string, mode: StreamMode, stopped: string[]): EmuApp {
 }
 
 const roots: string[] = [];
+const agentListeners: ReturnType<typeof Bun.listen>[] = [];
 afterEach(async () => {
+  for (const listener of agentListeners.splice(0)) listener.stop(true);
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -44,7 +46,10 @@ async function setup(
   const root = await mkdtemp(join(tmpdir(), "router-independent-recording-"));
   roots.push(root);
   const socketDirectory = join(root, "sockets");
-  await Bun.write(join(socketDirectory, "emulator-5554.sock"), "");
+  await mkdir(socketDirectory, { mode: 0o700 });
+  agentListeners.push(
+    Bun.listen({ unix: join(socketDirectory, "emulator-5554.sock"), socket: { data() {} } }),
+  );
   const created: AppOptions[] = [];
   const stopped: string[] = [];
   const router = createRouter(
