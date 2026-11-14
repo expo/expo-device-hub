@@ -226,6 +226,8 @@ bool Agent::initialize(GumModule* backend, std::string& error) {
   }
   fcntl(wakePipe_[0], F_SETFL, O_NONBLOCK);
   fcntl(wakePipe_[1], F_SETFL, O_NONBLOCK);
+  fcntl(wakePipe_[0], F_SETFD, FD_CLOEXEC);
+  fcntl(wakePipe_[1], F_SETFD, FD_CLOEXEC);
   std::thread([this] {
     guardCallback("encoder stopped", [this] { encoderLoop(); });
   }).detach();
