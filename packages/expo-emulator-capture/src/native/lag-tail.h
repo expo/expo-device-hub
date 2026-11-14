@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <optional>
+#include "protocol.h"
 
 namespace expo_capture {
 
@@ -26,10 +29,21 @@ class LagTail {
     return request_;
   }
   void retry(Request request, int64_t nowUs) {
+    defer(request, nowUs + delayUs);
+  }
+  void defer(Request request, int64_t dueUs) {
     // A new post or a session reset supersedes an in-flight tail read.
     if (request.sequence != request_.sequence) return;
+    dueUs_ = pending_ ? std::min(dueUs_, dueUs) : dueUs;
     pending_ = true;
-    dueUs_ = nowUs + delayUs;
+  }
+  // Call with both the tail mutex and the pacer mutex held. A final frame
+  // survives a skipped sample, but it shares the ordinary post's FPS budget.
+  bool pace(Request request, FramePacer& pacer, int64_t nowUs, int fps) {
+    if (request.sequence != request_.sequence) return false;
+    if (pacer.take(nowUs, fps)) return true;
+    defer(request, int64_t(std::ceil(pacer.nextUs)));
+    return false;
   }
   void reset() {
     pending_ = false;
