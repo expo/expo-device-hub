@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Capture agent preloaded into the Android Emulator's QEMU process
-// (DYLD_INSERT_LIBRARIES on macOS). It hooks gfxstream's
+// (DYLD_INSERT_LIBRARIES on macOS, LD_PRELOAD on Linux). It hooks gfxstream's
 // display post, copies posted color buffers out of the renderer, encodes them to
 // H.264, and serves one consumer on a Unix socket.
 #include <dlfcn.h>
@@ -34,6 +34,7 @@
 #include "frida-gum.h"
 #include "gfxstream.h"
 #include "log.h"
+#include "lag-tail.h"
 #include "protocol.h"
 #include "socket-input.h"
 
@@ -67,11 +68,19 @@ void logLine(const char* format, ...) noexcept {
 
 namespace {
 
+#if defined(__APPLE__)
 constexpr const char* kPlatform = "darwin-arm64";
 constexpr const char* kPreloadVariable = "DYLD_INSERT_LIBRARIES";
 constexpr const char* kRendererModule = "libgfxstream_backend.dylib";
 constexpr int kSendFlags = 0;  // SO_NOSIGPIPE is set on the socket instead.
 const char* programName() { return getprogname(); }
+#else
+constexpr const char* kPlatform = "linux-x64";
+constexpr const char* kPreloadVariable = "LD_PRELOAD";
+constexpr const char* kRendererModule = "libgfxstream_backend.so";
+constexpr int kSendFlags = MSG_NOSIGNAL;
+const char* programName() { return program_invocation_short_name; }
+#endif
 
 using Clock = std::chrono::steady_clock;
 constexpr int kNativeFps = 60;
@@ -82,6 +91,8 @@ constexpr size_t kMaxQueuedOutputBytes = 8 * 1024 * 1024;
 constexpr size_t kMaxBufferedOutputBytes = 32 * 1024 * 1024;
 constexpr int kSocketBufferBytes = 4 * 1024 * 1024;
 constexpr size_t kMaxPendingFrames = 2;
+// Lag read: each post copies the frame of the post before, which the renderer has finished.
+// The capture worker also reads the last post at its LagTail deadline.
 
 std::string jsonEscape(const std::string& text) {
   std::string out;
@@ -112,23 +123,54 @@ double threadCpuSeconds() {
 
 // Encoder thread timings, logged every 10 seconds while a consumer streams.
 struct EncoderStats {
-  uint64_t frames = 0;
-  double captureMs = 0, encodeMs = 0, threadCpu = threadCpuSeconds();
+  // The agent's counters: all posts, and the render thread's time inside them.
+  const std::atomic<uint64_t>* posts = nullptr;
+  const std::atomic<uint64_t>* postUs = nullptr;
+  uint64_t frames = 0, postsSince = 0, postUsSince = 0;
+  double captureMs = 0, waitMs = 0, readMs = 0, encodeMs = 0, convertMs = 0;
+  double threadCpu = threadCpuSeconds();
   Clock::time_point since = Clock::now();
 
-  void reset() { *this = EncoderStats{}; }
-  void record(double frameCaptureMs, double frameEncodeMs) {
+  void reset() {
+    auto postCounter = posts;
+    auto postTime = postUs;
+    *this = EncoderStats{};
+    posts = postCounter;
+    postUs = postTime;
+    postsSince = posts ? posts->load() : 0;
+    postUsSince = postUs ? postUs->load() : 0;
+  }
+  void record(const CapturedFrame& frame, double frameEncodeMs, double frameConvertMs) {
     frames++;
-    captureMs += frameCaptureMs;
+    captureMs += frame.captureMs;
+    waitMs += frame.waitMs;
+    readMs += frame.readMs;
     encodeMs += frameEncodeMs;
+    convertMs += frameConvertMs;
     double wall = std::chrono::duration<double>(Clock::now() - since).count();
     if (wall < 10) return;
     double cpu = threadCpuSeconds();
-    logLine("stats: %.1f fps, capture %.2f ms, encode %.2f ms, encoder thread %.0f%% CPU",
-            frames / wall, captureMs / frames, encodeMs / frames, (cpu - threadCpu) / wall * 100);
+    uint64_t postCount = posts ? posts->load() - postsSince : 0;
+    double postMs = postUs ? double(postUs->load() - postUsSince) / 1000 : 0;
+    logLine("stats: %.1f fps, posts %.1f/s, render thread %.2f ms per post, capture %.2f ms "
+            "(wait %.2f, read %.2f), encode %.2f ms (convert %.2f), encoder thread %.0f%% CPU",
+            frames / wall, postCount / wall, postCount ? postMs / double(postCount) : 0,
+            captureMs / frames, waitMs / frames, readMs / frames, encodeMs / frames,
+            convertMs / frames, (cpu - threadCpu) / wall * 100);
     reset();
   }
 };
+
+enum class ReadMode { Auto, Post, Lag, LagAsync };
+
+const char* readModeName(ReadMode mode) {
+  switch (mode) {
+    case ReadMode::Post: return "post";
+    case ReadMode::Lag: return "lag";
+    case ReadMode::LagAsync: return "lag-async";
+    default: return "auto";
+  }
+}
 
 class Agent {
  public:
@@ -140,7 +182,11 @@ class Agent {
 
  private:
   void encoderLoop();
+  void captureLoop();
   void capturePost(uint32_t handle, bool needLockAndBind);
+  ReadMode effectiveReadMode() const;
+  void chooseCaptureModes();
+  std::string sessionOption(const char* file, const char* variable) const;
   bool captureNow(PendingFrame& out);
   void accept();
   void readCommands();
@@ -164,7 +210,21 @@ class Agent {
   std::atomic<uint64_t> posts_{0}, captured_{0}, skippedLocked_{0}, droppedBusy_{0},
       captureErrors_{0};
   std::mutex postMutex_;  // Guards pacer_ if more than one thread posts.
+  std::mutex pacerMutex_;  // Shared by posts and tail reads.
   FramePacer pacer_;
+  std::atomic<uint64_t> postUs_{0};  // The render thread's time inside captured posts.
+
+  // How posts read frames, chosen at each consumer's settings (see chooseCaptureModes()).
+  std::atomic<ReadMode> readMode_{ReadMode::Auto};
+  uint32_t previousHandle_ = 0;  // Lag read; guarded by postMutex_.
+  LagTail tail_;  // Guarded by asyncMutex_, including the worker wait.
+  std::atomic<uint64_t> lagTails_{0};
+  // Lag + async: the newest copy request from the render thread, guarded by asyncMutex_.
+  std::mutex asyncMutex_;
+  std::condition_variable asyncWake_;
+  uint32_t asyncHandle_ = 0;
+  uint64_t asyncPts_ = 0;
+  std::atomic<uint64_t> asyncReplaced_{0};  // Requests replaced before captureLoop() took them.
 
   // Encoder thread inputs, guarded by encodeMutex_. Only the encoder thread
   // owns the H264Encoder; its callbacks never take encodeMutex_.
@@ -218,8 +278,10 @@ bool Agent::initialize(GumModule* backend, std::string& error) {
   error = resolveGfxstream(backend, g_);
   if (!error.empty()) return false;
   frames_ = createFrameSource(g_);
+#if defined(__APPLE__)
   if (!g_.gpuEntryPointsAvailable())
     logLine("GPU frame path disabled: renderer symbols are missing; using CPU readback");
+#endif
   if (pipe(wakePipe_) != 0) {
     error = "cannot create wake pipe";
     return false;
@@ -230,6 +292,9 @@ bool Agent::initialize(GumModule* backend, std::string& error) {
   fcntl(wakePipe_[1], F_SETFD, FD_CLOEXEC);
   std::thread([this] {
     guardCallback("encoder stopped", [this] { encoderLoop(); });
+  }).detach();
+  std::thread([this] {
+    guardCallback("capture stopped", [this] { captureLoop(); });
   }).detach();
   return true;
 }
@@ -244,6 +309,21 @@ void Agent::onPost(uint32_t handle, bool needLockAndBind) {
   }
 }
 
+ReadMode Agent::effectiveReadMode() const {
+  ReadMode mode = readMode_.load(std::memory_order_relaxed);
+  if (mode != ReadMode::Auto) return mode;
+#if defined(__linux__)
+  // @ref LLP 0021#frame-path — on Linux, the render thread does not wait for the read
+  // The read of this post's frame waits for the renderer to finish it, and the copy takes
+  // several ms. The frame of the post before is finished, so the capture thread reads it.
+  return ReadMode::LagAsync;
+#else
+  // On macOS, the GPU copy takes 0.1 ms, and SwANGLE's CPU read waits for the renderer even
+  // for the frame before, so both stay in the post.
+  return ReadMode::Post;
+#endif
+}
+
 void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
   posts_++;
   if (!active_.load(std::memory_order_relaxed)) return;
@@ -252,24 +332,61 @@ void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
     skippedLocked_++;
     return;
   }
+  auto entered = Clock::now();
+  struct PostTimer {
+    std::atomic<uint64_t>& total;
+    Clock::time_point entered;
+    ~PostTimer() {
+      total += uint64_t(
+          std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - entered).count());
+    }
+  } timer{postUs_, entered};
   std::unique_lock<std::mutex> postLock(postMutex_, std::try_to_lock);
   if (!postLock.owns_lock()) {
     droppedBusy_++;
     return;
   }
   int64_t elapsedUs =
-      std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start_).count();
-  if (!pacer_.take(elapsedUs, captureFps_.load())) return;
-  {
+      std::chrono::duration_cast<std::chrono::microseconds>(entered - start_).count();
+  ReadMode mode = effectiveReadMode();
+  bool lag = mode == ReadMode::Lag || mode == ReadMode::LagAsync;
+  uint32_t readHandle = handle;
+  if (lag) {
+    // The frame of this post waits for the next post, or for the capture worker's tail rule.
+    readHandle = previousHandle_;
+    previousHandle_ = handle;
+  }
+  bool take = false;
+  if (readHandle) {
+    std::lock_guard<std::mutex> guard(pacerMutex_);
+    take = pacer_.take(elapsedUs, captureFps_.load());
+  }
+  if (take) {
     std::lock_guard<std::mutex> guard(encodeMutex_);
     if (pending_.size() >= kMaxPendingFrames) {
       droppedBusy_++;
-      return;
+      take = false;
     }
   }
+  if (lag) {
+    {
+      // Publish the deadline and its previous-frame request together. The worker
+      // cannot claim this tail and then receive older work from the same post.
+      std::lock_guard<std::mutex> guard(asyncMutex_);
+      tail_.post(handle, elapsedUs);
+      if (mode == ReadMode::LagAsync && take) {
+        if (asyncHandle_) asyncReplaced_++;
+        asyncHandle_ = readHandle;
+        asyncPts_ = nextPts();
+      }
+    }
+    asyncWake_.notify_one();
+    if (mode == ReadMode::LagAsync) return;
+  }
+  if (!take) return;
   PendingFrame pending;
   std::string error;
-  if (!frames_->capture(handle, pending.frame, error)) {
+  if (!frames_->capture(readHandle, pending.frame, error)) {
     if (captureErrors_++ % 300 == 0) logLine("frame capture failed: %s", error.c_str());
     return;
   }
@@ -280,6 +397,86 @@ void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
     pending_.push_back(std::move(pending));
   }
   encodeWake_.notify_one();
+}
+
+// Lag + async: copies the frame of the post before on its own thread. The frame source
+// serializes reads, and the renderer's read takes the FrameBuffer lock itself.
+void Agent::captureLoop() {
+  for (;;) {
+    uint32_t handle = 0;
+    uint64_t ptsUs = 0;
+    std::optional<LagTail::Request> tail;
+    {
+      std::unique_lock<std::mutex> lock(asyncMutex_);
+      for (;;) {
+        int64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                            Clock::now() - start_).count();
+        // Prefer a due tail over queued work so a stalled capture worker eventually
+        // delivers the final frame even if it still has an older request.
+        tail = tail_.takeIfDue(nowUs);
+        if (tail) {
+          handle = tail->handle;
+          asyncHandle_ = 0;  // Older queued work cannot follow this newer frame.
+          break;
+        }
+        if (asyncHandle_) {
+          handle = asyncHandle_;
+          ptsUs = asyncPts_;
+          asyncHandle_ = 0;
+          break;
+        }
+        if (tail_.pending())
+          asyncWake_.wait_until(lock, start_ + std::chrono::microseconds(tail_.dueUs()));
+        else
+          asyncWake_.wait(lock);
+      }
+    }
+    const auto retryTail = [&] {
+      if (!tail) return;
+      std::lock_guard<std::mutex> guard(asyncMutex_);
+      tail_.retry(*tail, std::chrono::duration_cast<std::chrono::microseconds>(
+                            Clock::now() - start_).count());
+    };
+    try {
+      if (!active_.load(std::memory_order_relaxed)) continue;
+      if (tail) {
+        // Release the wait lock before taking the pacer lock, matching the post's
+        // pacer -> async order. Keep postMutex_ exclusive to concurrent posts, so
+        // a tail cannot make a final post fail its try-lock and lose its handle.
+        std::lock_guard<std::mutex> pacerGuard(pacerMutex_);
+        std::lock_guard<std::mutex> tailGuard(asyncMutex_);
+        int64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                            Clock::now() - start_).count();
+        if (!tail_.pace(*tail, pacer_, nowUs, captureFps_.load())) continue;
+      }
+      PendingFrame pending;
+      std::string error;
+      if (!frames_->capture(handle, pending.frame, error)) {
+        if (captureErrors_++ % 300 == 0) logLine("frame capture failed: %s", error.c_str());
+        retryTail();
+        continue;
+      }
+      pending.ptsUs = tail ? nextPts() : ptsUs;
+      if (tail) lagTails_++;
+      captured_++;
+      {
+        std::lock_guard<std::mutex> guard(encodeMutex_);
+        if (pending_.size() >= kMaxPendingFrames) {
+          droppedBusy_++;
+          if (!tail) continue;
+          // The final frame supersedes old queued frames; dropping it would leave
+          // a static screen showing the penultimate post indefinitely.
+          pending_.pop_front();
+        }
+        pending_.push_back(std::move(pending));
+      }
+      encodeWake_.notify_one();
+    } catch (...) {
+      // An exception must not leave this thread: std::terminate would end QEMU.
+      captureErrors_++;
+      retryTail();
+    }
+  }
 }
 
 uint64_t Agent::nextPts() {
@@ -312,6 +509,10 @@ void Agent::encoderLoop() {
   int encoderNativeWidth = 0, encoderNativeHeight = 0;
   auto lastFrameAt = Clock::now() - std::chrono::hours(1);
   uint64_t lastEncodedPts = 0;
+  std::string lastConfigureError;
+  stats.posts = &posts_;
+  stats.postUs = &postUs_;
+  stats.reset();
   for (;;) {
     try {
       PendingFrame pending;
@@ -383,10 +584,13 @@ void Agent::encoderLoop() {
             [](const std::string& message) { logLine("%s", message.c_str()); });
         std::string error;
         if (!next->configure(width, height, settings.fps, settings.bitRate, rotation, error)) {
-          logLine("%s", error.c_str());
+          // A missing encoder fails every 200 ms until the host changes; log each error once.
+          if (error != lastConfigureError) logLine("%s", error.c_str());
+          lastConfigureError = error;
           std::this_thread::sleep_for(std::chrono::milliseconds(200));
           continue;
         }
+        lastConfigureError.clear();
         if (pending.frame.width != announcedWidth || pending.frame.height != announcedHeight) {
           {
             std::lock_guard<std::mutex> guard(encodeMutex_);
@@ -418,8 +622,9 @@ void Agent::encoderLoop() {
       auto encodeStart = Clock::now();
       bool encoded = encoder->encode(pending.frame, pending.ptsUs, forceKey, error);
       lastEncodedPts = pending.ptsUs;
-      stats.record(pending.frame.captureMs,
-                   std::chrono::duration<double, std::milli>(Clock::now() - encodeStart).count());
+      stats.record(pending.frame,
+                   std::chrono::duration<double, std::milli>(Clock::now() - encodeStart).count(),
+                   encoder->lastConvertMs());
       pending.frame.pixels = FramePixels();  // Back to the frame source's pool.
       if (!encoded) {
         logLine("%s", error.c_str());
@@ -480,12 +685,16 @@ void Agent::wake() {
 std::string Agent::helloJson() {
   // posts counts every display post since the agent started, with or without a
   // consumer, so two hellos give the renderer's frame rate without capture.
-  return std::string("{\"protocol\":") + std::to_string(kProtocolVersion) + ",\"version\":\"" +
-         EXPO_EMULATOR_CAPTURE_VERSION + "\",\"platform\":\"" + kPlatform +
-         "\",\"gpuAvailable\":" +
-         (g_.gpuEntryPointsAvailable() && !frames_->gpuUnavailable() ? "true" : "false") +
-         ",\"renderer\":\"" + jsonEscape(g_.path) + "\",\"posts\":" +
-         std::to_string(posts_.load()) + "}";
+  std::string hello =
+      std::string("{\"protocol\":") + std::to_string(kProtocolVersion) + ",\"version\":\"" +
+      EXPO_EMULATOR_CAPTURE_VERSION + "\",\"platform\":\"" + kPlatform + "\",\"gpuAvailable\":" +
+      (g_.gpuEntryPointsAvailable() && !frames_->gpuUnavailable() ? "true" : "false") +
+      ",\"renderer\":\"" + jsonEscape(g_.path) + "\",\"posts\":" + std::to_string(posts_.load());
+  // A consumer that sees encoderError stops: no session can start until the host has the
+  // encoder (on Linux, x264 build 165).
+  std::string encoderError = h264EncoderProblem();
+  if (!encoderError.empty()) hello += ",\"encoderError\":\"" + jsonEscape(encoderError) + "\"";
+  return hello + "}";
 }
 
 bool Agent::listen(const std::string& path, std::string& error) {
@@ -680,6 +889,7 @@ void Agent::readCommands() {
       return;
     }
     commands_.erase(commands_.begin(), commands_.begin() + kSettingsCommandBytes);
+    chooseCaptureModes();
     {
       std::lock_guard<std::mutex> guard(encodeMutex_);
       settings_ = settings;
@@ -782,10 +992,49 @@ void Agent::disconnect(const char* reason) {
   }
   outputStalled_ = false;
   encodeWake_.notify_one();
-  logLine("consumer disconnected: %s (posts=%llu captured=%llu busy=%llu locked=%llu errors=%llu)",
-          reason, (unsigned long long)posts_.load(), (unsigned long long)captured_.load(),
-          (unsigned long long)droppedBusy_.load(), (unsigned long long)skippedLocked_.load(),
-          (unsigned long long)captureErrors_.load());
+  logLine(
+      "consumer disconnected: %s (posts=%llu captured=%llu busy=%llu locked=%llu errors=%llu "
+      "tails=%llu replaced=%llu)",
+      reason, (unsigned long long)posts_.load(), (unsigned long long)captured_.load(),
+      (unsigned long long)droppedBusy_.load(), (unsigned long long)skippedLocked_.load(),
+      (unsigned long long)captureErrors_.load(), (unsigned long long)lagTails_.load(),
+      (unsigned long long)asyncReplaced_.load());
+}
+
+// A session option: the file <socket><suffix> wins over the variable. Both are for
+// diagnosis and measurements; without them the agent picks the read itself.
+std::string Agent::sessionOption(const char* suffix, const char* variable) const {
+  const char* value = getenv(variable);
+  std::string option = value ? value : "";
+  if (FILE* file = fopen((path_ + suffix).c_str(), "r")) {
+    char text[32] = {};
+    if (fgets(text, sizeof(text), file)) option = text;
+    fclose(file);
+  }
+  while (!option.empty() && (option.back() == '\n' || option.back() == ' ')) option.pop_back();
+  return option;
+}
+
+void Agent::chooseCaptureModes() {
+  std::string read = sessionOption(".read", "EXPO_EMULATOR_CAPTURE_READ");
+  ReadMode mode = read == "post"        ? ReadMode::Post
+                  : read == "lag"       ? ReadMode::Lag
+                  : read == "lag-async" ? ReadMode::LagAsync
+                                        : ReadMode::Auto;
+  CaptureOptions options;
+  options.probe = sessionOption(".probe", "EXPO_EMULATOR_CAPTURE_PROBE") == "1";
+  {
+    std::lock_guard<std::mutex> postGuard(postMutex_);
+    previousHandle_ = 0;
+  }
+  readMode_ = mode;
+  {
+    std::lock_guard<std::mutex> guard(asyncMutex_);
+    tail_.reset();
+    asyncHandle_ = 0;
+  }
+  frames_->setOptions(options);
+  logLine("capture modes: read %s, probe %s", readModeName(mode), options.probe ? "on" : "off");
 }
 
 void removeFromPreload() {

@@ -591,6 +591,26 @@ describe("GPU capture session", () => {
     }
   });
 
+  test("reports the agent's encoder error as unavailable, with its message", async () => {
+    const fixture = await gpuFixture();
+    try {
+      const missing =
+        "x264 build 165 (libx264.so.165) is missing. Install it with: sudo apt install libx264-165 (Ubuntu 26.04 or later)";
+      fixture.onConnect((socket) => {
+        socket.write(
+          record(GPU_RECORD.hello, json({ protocol: 2, encoderError: missing }), 0n, 1440, 2560),
+        );
+      });
+      const failure = fixture.start();
+      await expect(failure).rejects.toBeInstanceOf(GpuCaptureUnavailableError);
+      await expect(failure).rejects.toThrow(missing);
+      // No settings were sent, so the agent never tried to start an encoder.
+      expect(fixture.commands().some((command) => command[0] === 0x53)).toBe(false);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   test("reports an unavailable agent when nothing listens on the socket", async () => {
     const fixture = await gpuFixture();
     try {

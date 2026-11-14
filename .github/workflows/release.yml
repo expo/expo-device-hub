@@ -20,9 +20,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
-  # serve-sim and expo-emulator-capture build native macOS binaries. An EAS macOS
-  # job builds this commit and writes the Turborepo remote cache; the Ubuntu
-  # release job then reads it.
+  # serve-sim and expo-emulator-capture build native macOS binaries, and
+  # expo-emulator-capture also a Linux agent that needs Ubuntu 26.04's x264 header.
+  # EAS macOS and Linux jobs build this commit and write the Turborepo remote cache;
+  # the Ubuntu release job then reads it.
   build-cache:
     runs-on: ubuntu-latest
     env:
@@ -115,15 +116,21 @@ jobs:
         run: ./scripts/summarize-versions.ts
 
       # serve-sim and expo-emulator-capture must be remote cache hits: serve-sim's
-      # native build fails on Linux, and expo-emulator-capture's prepublishOnly
-      # refuses to publish without its macOS agent.
+      # native build fails on Linux, and the generic expo-emulator-capture build is
+      # its macOS agent, which only warns here.
       - name: Build packages
         run: bun run build
 
-      # changeset publish starts every publish at once, so the agent's prepublishOnly would stop
-      # only the agent, and the Hub would publish with a pin to a version that is not on npm.
-      # Check here, before the version commit.
-      - name: Check the capture agent
+      # A cache hit from the EAS Linux job. A miss builds it here, which needs g++
+      # and the x264 build 165 header (Ubuntu 26.04 libx264-dev); without them the
+      # build fails and nothing is published.
+      - name: Build the Linux capture agent
+        run: bunx turbo run build:linux-x64 --filter=expo-emulator-capture
+
+      # changeset publish starts every publish at once, so the agents' prepublishOnly would stop
+      # only the agent package, and the Hub would publish with a pin to a version that is not
+      # on npm. Check both agents here, before the version commit.
+      - name: Check the capture agents
         run: node packages/expo-emulator-capture/scripts/check-dist.mjs
 
       - name: Test

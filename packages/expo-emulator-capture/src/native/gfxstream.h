@@ -11,8 +11,34 @@ typedef struct _GumModule GumModule;
 
 namespace expo_capture {
 
+#if defined(_LIBCPP_VERSION)
 // The agent and the renderer both use libc++, so the types match.
 using ColorBufferRef = std::shared_ptr<void>;
+#else
+// @ref LLP 0021#c-runtime — the renderer's libc++ std::shared_ptr, held by its layout
+// The renderer returns std::shared_ptr<ColorBuffer> from libc++, and this agent is
+// built against another C++ library. This class has the same layout (element,
+// control block) and, like it, is returned through a hidden pointer, because its
+// destructor is user-provided. It drops its reference through the renderer's libc++.
+class ColorBufferRef {
+ public:
+  ColorBufferRef() = default;
+  ColorBufferRef(const ColorBufferRef&) = delete;
+  ColorBufferRef& operator=(const ColorBufferRef&) = delete;
+  ~ColorBufferRef() {
+    if (control_) releaseShared(control_);
+  }
+  void* get() const { return element_; }
+  explicit operator bool() const { return element_ != nullptr; }
+
+  // std::__1::__shared_weak_count::__release_shared(), from the renderer's libc++.
+  static void (*releaseShared)(void* control);
+
+ private:
+  void* element_ = nullptr;
+  void* control_ = nullptr;
+};
+#endif
 
 // Leading fields of gfxstream's BorrowedImageInfo and BorrowedImageInfoGl.
 // Adapted interface layout (Apache-2.0); see ../../THIRD_PARTY_LICENSES.md.

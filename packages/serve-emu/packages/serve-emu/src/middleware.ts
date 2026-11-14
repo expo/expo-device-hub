@@ -60,6 +60,7 @@ import {
 } from "./device-capabilities.ts";
 import {
   GPU_CAPTURE_REPLACED_CODE,
+  GpuCaptureEncoderError,
   GpuCaptureReplacedError,
   GpuCaptureUnavailableError,
 } from "./gpu-session.ts";
@@ -2562,8 +2563,8 @@ export function createRouter(
       } catch (error) {
         if (error instanceof GpuCaptureReplacedError) noteCaptureTakenOver(serial);
         // A default capture that cannot start (nothing answers the socket of an emulator that
-        // exited, or another program has the agent): use gRPC, as for an emulator without a
-        // socket.
+        // exited, the agent cannot encode on this host, or another program has the agent): use
+        // gRPC, as for an emulator without a socket.
         if (!(error instanceof GpuCaptureUnavailableError) || streamModeOverrides.has(serial)) {
           throw error;
         }
@@ -3070,7 +3071,8 @@ export function createRouter(
         if (
           streamMode === "emulator-capture" &&
           err instanceof GpuCaptureUnavailableError &&
-          !(err instanceof GpuCaptureReplacedError)
+          !(err instanceof GpuCaptureReplacedError) &&
+          !(err instanceof GpuCaptureEncoderError)
         ) {
           return streamModeUnavailableResponse(
             new Error(emulatorCaptureMissingAgent(serial, defaults.emulatorCapture)),

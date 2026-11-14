@@ -37,10 +37,18 @@ class H264Encoder {
 
   virtual bool hardware() const = 0;
   virtual const std::string& encoderId() const = 0;
+  // The last encode's pixel work before the encoder: turn, scale and convert. 0 when the
+  // encoder does that work itself (VideoToolbox).
+  virtual double lastConvertMs() const { return 0; }
 };
 
 // macOS: VideoToolbox, on the hardware encoder when the Mac has one.
+// Linux: x264 build 165 from the system (libx264-165), loaded at run time.
 std::unique_ptr<H264Encoder> createH264Encoder(H264Encoder::Sink sink,
                                                H264Encoder::ErrorSink onError);
+
+// Why no encoder can start on this host, or an empty string. The hello record reports it,
+// so that a consumer can tell the user what to install instead of waiting for frames.
+std::string h264EncoderProblem();
 
 }  // namespace expo_capture

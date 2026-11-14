@@ -1,7 +1,7 @@
 {
   "name": "expo-emulator-capture",
   "version": "0.0.0",
-  "description": "GPU-accelerated Android Emulator capture for macOS on Apple silicon",
+  "description": "Android Emulator screen capture for macOS on Apple silicon (GPU copy, VideoToolbox) and Linux x86-64 (system x264)",
   "keywords": [
     "android",
     "apple-silicon",
@@ -9,10 +9,12 @@
     "expo",
     "h264",
     "iosurface",
+    "linux",
     "macos",
     "streaming",
     "video-capture",
-    "videotoolbox"
+    "videotoolbox",
+    "x264"
   ],
   "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/expo-emulator-capture",
   "bugs": {
@@ -32,6 +34,7 @@
     "src",
     "scripts",
     "dist/darwin-arm64/libexpo_emulator_capture.dylib",
+    "dist/linux-x64/libexpo_emulator_capture.so",
     "README.md",
     "LICENSE",
     "LICENSES",
@@ -46,6 +49,7 @@
     "build": "bun run setup:build && bun run build:native",
     "setup:build": "bun scripts/setup-build.mjs",
     "build:native": "bun scripts/build.mjs",
+    "build:linux-x64": "bun scripts/setup-build.mjs --target linux-x64 && bun scripts/build.mjs --target linux-x64",
     "capture": "node src/cli.mjs",
     "test": "bun run test:native && bun test tests",
     "test:native": "bun scripts/test-native.mjs",

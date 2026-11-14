@@ -68,4 +68,69 @@ if (target === "darwin-arm64") {
     await $`strip -x ${library}`;
     await $`codesign --force --sign - ${library}`;
   }
+} else {
+  // CXX may carry arguments, such as "ccache g++".
+  const [compiler, ...compilerArgs] = (process.env.CXX || "g++").trim().split(/\s+/);
+  // @ref LLP 0021#encoder — x264 build 165 from the host, not bundled
+  // The agent includes x264's header from the build host (libx264-dev) and loads the
+  // library at run time, so the header must be build 165, the build that the agent loads.
+  const probe = await $`${compiler} ${compilerArgs} -E -P -x c++ - < ${new Response(
+    "#include <stdint.h>\n#include <x264.h>\nx264_build_is X264_BUILD\n",
+  )}`
+    .quiet()
+    .nothrow();
+  const build = /x264_build_is (\d+)/.exec(probe.stdout.toString())?.[1];
+  if (build !== "165") {
+    const stderr = probe.stderr.toString().trim();
+    throw new Error(
+      build
+        ? `x264.h is build ${build}; the agent needs build 165 (Ubuntu 26.04: sudo apt install libx264-dev)`
+        : probe.exitCode !== 0 && !stderr.includes("x264.h")
+          ? `the x264 header check failed: ${stderr.split("\n").slice(-3).join(" ")}`
+          : "x264.h is missing; install x264 build 165 headers (Ubuntu 26.04: sudo apt install libx264-dev)",
+    );
+  }
+
+  // The same single export. --exclude-libs keeps the bundled Gum, GLib and the
+  // static C++ library private: a preloaded library's exports would otherwise
+  // take precedence over the emulator's own symbols.
+  const versionScript = join(root, "build/exports.map");
+  await writeFile(versionScript, "{ global: expo_emulator_capture_version; local: *; };\n");
+
+  const library = "dist/linux-x64/libexpo_emulator_capture.so";
+  const args = [
+    "-std=c++17",
+    "-O2",
+    "-g",
+    ...warnings,
+    "-fvisibility=hidden",
+    "-shared",
+    "-fPIC",
+    ...defines,
+    "-I",
+    "deps/frida-gum",
+    "src/native/agent.cpp",
+    "src/native/encoder-x264.cpp",
+    "src/native/frame-source-linux.cpp",
+    "src/native/gfxstream.cpp",
+    "-o",
+    library,
+    "deps/frida-gum/libfrida-gum.a",
+    `-Wl,--version-script=${versionScript}`,
+    "-Wl,--exclude-libs,ALL",
+    "-Wl,--gc-sections",
+    "-static-libstdc++",
+    "-static-libgcc",
+    "-pthread",
+    "-ldl",
+    "-lm",
+    "-lrt",
+    "-lresolv",
+  ];
+  // @ref LLP 0021#c-runtime — any C++ library works; only findColorBuffer's result is a libc++ object
+  await $`${compiler} ${compilerArgs} ${args}`;
+  // GNU strip -x keeps the debug sections; --strip-unneeded removes them and the local symbols,
+  // and keeps the dynamic export.
+  if (process.env.EXPO_EMULATOR_CAPTURE_KEEP_DEBUG !== "1")
+    await $`strip --strip-unneeded ${library}`;
 }
