@@ -19,6 +19,8 @@ export async function fetchAppDetails(
   udid: string,
   bundleId: string,
 ): Promise<Partial<AppDetails>> {
+  // Use the name and icon fallbacks for SpringBoard instead of app metadata.
+  if (bundleId === "com.apple.springboard") return {};
   const ctn = await runHostAction("app.container", { udid, bundleId });
   if (ctn.exitCode !== 0) {
     return { error: ctn.stderr.trim() || "App not found on simulator" };

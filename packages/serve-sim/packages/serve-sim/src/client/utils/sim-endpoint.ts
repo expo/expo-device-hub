@@ -14,6 +14,8 @@ declare global {
       port: number;
       device: string;
       basePath: string;
+      /** Whether this preview is running on a hosted EAS worker. */
+      isRunningOnEAS?: boolean;
       logsEndpoint?: string;
       metricsEndpoint?: string;
       crashesEndpoint?: string;

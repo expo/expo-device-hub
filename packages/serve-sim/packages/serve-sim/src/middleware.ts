@@ -9,6 +9,7 @@ import { captureScreenshotPngAsync } from "./http-screenshot";
 import { ScreenshotParams } from "./host-actions";
 import { ScreenshotDisplay, SCREENSHOT_DISPLAY_CHANGED } from "./screenshot-store";
 import { createReadinessReporter } from "./startup-timing";
+import { isRunningOnEAS } from "./environment";
 import { fileURLToPath } from "node:url";
 import { openSseStream } from "./sse-stream";
 import { parseCaptureProxy } from "./capture/upstream";
@@ -966,6 +967,7 @@ export function previewConfigForState(
   singleDevice?: string,
 ): ServeSimState & {
   basePath: string;
+  isRunningOnEAS: boolean;
   logsEndpoint: string;
   crashesEndpoint: string;
   appStateEndpoint: string;
@@ -1011,6 +1013,7 @@ export function previewConfigForState(
     ...publicState,
     ...(singleDevice ? { singleDevice } : {}),
     basePath: base,
+    isRunningOnEAS: isRunningOnEAS(),
     logsEndpoint: endpoint(base, "/logs", state.device),
     crashesEndpoint: endpoint(base, "/crashes", state.device),
     appStateEndpoint: endpoint(base, "/appstate", state.device),
@@ -2249,10 +2252,11 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       if (!state) {
         // Empty-state UI still polls /exec (boot/list helpers), so the page
         // needs the bearer token even before a helper attaches. Inject a
-        // minimal config with just the basePath + token.
+        // minimal config with the basePath, token, and session context.
         const minimal = JSON.stringify({
           basePath: base,
           execToken,
+          isRunningOnEAS: isRunningOnEAS(),
           ...(policy ? { singleDevice: policy.device } : {}),
           ...(shareUrl ? { shareUrl } : {}),
           ...(disableShare ? { disableShare: true } : {}),
