@@ -33,6 +33,8 @@
 #include <vector>
 #include "encoder.h"
 #include "encoder-wake.h"
+#include "lag-tail.h"
+#include "socket-input.h"
 #include "callback.h"
 #include "frame-source.h"
 #include "frida-gum.h"
@@ -52,16 +54,20 @@ namespace expo_capture {
 FILE* logFile = nullptr;
 std::mutex logMutex;
 
-void logLine(const char* format, ...) {
+void logLine(const char* format, ...) noexcept {
   char line[1024];
   va_list args;
   va_start(args, format);
   vsnprintf(line, sizeof(line), format, args);
   va_end(args);
-  std::lock_guard<std::mutex> guard(logMutex);
-  FILE* out = logFile ? logFile : stderr;
-  fprintf(out, "[expo-emulator-capture] %s\n", line);
-  fflush(out);
+  try {
+    std::lock_guard<std::mutex> guard(logMutex);
+    FILE* out = logFile ? logFile : stderr;
+    fprintf(out, "[expo-emulator-capture] %s\n", line);
+    fflush(out);
+  } catch (...) {
+    // Logging an exception must not throw another one across a callback boundary.
+  }
 }
 
 namespace {
@@ -93,7 +99,7 @@ constexpr size_t kMaxPendingFrames = 2;
 // Lag read: each post copies the frame of the post before, which the renderer has finished.
 // The frame of a post that stays the last one for this long is copied on the capture thread
 // (the tail rule), so a still screen shows its newest frame.
-constexpr auto kLagTailDelay = std::chrono::milliseconds(50);
+
 // One consumer per role, and a few connections that have not sent 'S' yet.
 constexpr size_t kMaxConnections = kRoleCount + 4;
 // @ref LLP 0018#recording-keyframes — keyframes at most a second apart, as serve-sim's recorder
@@ -312,7 +318,7 @@ class Agent {
   void captureLoop();
   void capturePost(uint32_t handle, bool needLockAndBind);
   void deliver(PendingFrame& pending, const bool (&take)[kRoleCount]);
-  void deliverTail(int64_t postUs);
+  bool deliverTail(uint32_t handle, int64_t postUs);
   ReadMode effectiveReadMode() const;
   void chooseCaptureModes();
   std::string sessionOption(const char* file, const char* variable) const;
@@ -355,15 +361,14 @@ class Agent {
   std::atomic<uint64_t> lagTails_{0};
   // Lag read: what captureLoop() reads next, guarded by asyncMutex_. A request is the newest
   // frame for the roles that took it; the tail is the last post's frame, read once no post
-  // came for kLagTailDelay.
+  // came for the LagTail delay.
   std::mutex asyncMutex_;
   std::condition_variable asyncWake_;
   uint32_t asyncHandle_ = 0;
   uint64_t asyncPts_ = 0;
   int64_t asyncPostUs_ = -1;
   bool asyncTake_[kRoleCount] = {};
-  bool tailPending_ = false;
-  int64_t tailPostUs_ = 0;
+  LagTail tail_;  // Guarded by asyncMutex_, including worker waits.
   std::atomic<uint64_t> asyncReplaced_{0};  // Requests replaced before captureLoop() took them.
 
   // Encoder thread inputs. Only each role's encoder thread owns its H264Encoder; the
@@ -425,8 +430,15 @@ bool Agent::initialize(GumModule* backend, std::string& error) {
   }
   fcntl(wakePipe_[0], F_SETFL, O_NONBLOCK);
   fcntl(wakePipe_[1], F_SETFL, O_NONBLOCK);
-  for (int role = 0; role < kRoleCount; role++) std::thread([this, role] { encoderLoop(role); }).detach();
-  std::thread([this] { captureLoop(); }).detach();
+  fcntl(wakePipe_[0], F_SETFD, FD_CLOEXEC);
+  fcntl(wakePipe_[1], F_SETFD, FD_CLOEXEC);
+  for (int role = 0; role < kRoleCount; role++)
+    std::thread([this, role] {
+      guardCallback("encoder stopped", [this, role] { encoderLoop(role); });
+    }).detach();
+  std::thread([this] {
+    guardCallback("capture stopped", [this] { captureLoop(); });
+  }).detach();
   return true;
 }
 
@@ -527,8 +539,7 @@ void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
   if (lag) {
     {
       std::lock_guard<std::mutex> guard(asyncMutex_);
-      tailPending_ = true;
-      tailPostUs_ = elapsedUs;
+      tail_.post(handle, elapsedUs);
       if (mode == ReadMode::LagAsync && anyTaken) {
         // captureLoop() copies the frame, so the post does not wait for the read. A newer
         // request replaces one that it has not taken, for the roles of both.
@@ -579,9 +590,15 @@ void Agent::deliver(PendingFrame& pending, const bool (&take)[kRoleCount]) {
 
 // The tail rule: no post came after the last one, so no post reads its frame. Every active role
 // gets it, past its pacer, in place of its oldest pending frame when its queue is full.
-void Agent::deliverTail(int64_t postUs) {
+bool Agent::deliverTail(uint32_t handle, int64_t postUs) {
   PendingFrame pending;
-  if (!captureNow(pending)) return;
+  std::string error;
+  if (!readFrame(handle, pending.frame, error)) {
+    if (captureErrors_++ % 300 == 0) logLine("tail capture failed: %s", error.c_str());
+    return false;
+  }
+  pending.ptsUs = nextPts();
+  captured_++;
   pending.postUs = postUs;
   lagTails_++;
   bool queued[kRoleCount] = {};
@@ -601,6 +618,7 @@ void Agent::deliverTail(int64_t postUs) {
   }
   for (int role = 0; role < kRoleCount; role++)
     if (queued[role]) roles_[role].wake.notify_one();
+  return true;
 }
 
 // Lag read: copies the frame of the post before on its own thread (lag + async), and the last
@@ -622,12 +640,22 @@ void Agent::captureLoop() {
     uint64_t ptsUs = 0;
     int64_t postUs = -1;
     bool take[kRoleCount] = {};
-    bool tail = false;
+    std::optional<LagTail::Request> tail;
     {
       // Wakes at least every second for the stats line.
       auto statsAt = Clock::now() + std::chrono::seconds(1);
       std::unique_lock<std::mutex> lock(asyncMutex_);
       for (;;) {
+        auto now = Clock::now();
+        tail = tail_.takeIfDue(std::chrono::duration_cast<std::chrono::microseconds>(
+                                  now - start_).count());
+        if (tail) {
+          handle = tail->handle;
+          postUs = tail->postUs;
+          asyncHandle_ = 0;
+          for (bool& role : asyncTake_) role = false;
+          break;
+        }
         if (asyncHandle_) {
           handle = asyncHandle_;
           ptsUs = asyncPts_;
@@ -639,22 +667,18 @@ void Agent::captureLoop() {
           asyncHandle_ = 0;
           break;
         }
-        auto now = Clock::now();
         auto wakeAt = statsAt;
-        if (tailPending_) {
-          auto due = start_ + std::chrono::microseconds(tailPostUs_) + kLagTailDelay;
-          if (now >= due) {
-            tailPending_ = false;
-            tail = true;
-            postUs = tailPostUs_;
-            break;
-          }
-          wakeAt = std::min(wakeAt, due);
-        }
+        if (tail_.pending())
+          wakeAt = std::min(wakeAt, start_ + std::chrono::microseconds(tail_.dueUs()));
         if (now >= statsAt) break;
         asyncWake_.wait_until(lock, wakeAt);
       }
     }
+    const auto retryTail = [&] {
+      if (!tail) return;
+      std::lock_guard<std::mutex> guard(asyncMutex_);
+      tail_.retry(*tail, int64_t(clockUs()));
+    };
     try {
       bool anyActive = false;
       for (const RoleState& role : roles_) anyActive |= role.active.load();
@@ -662,7 +686,8 @@ void Agent::captureLoop() {
       if (!anyActive || (!handle && !tail)) continue;
       if (tail) {
         ReadMode mode = effectiveReadMode();
-        if (mode == ReadMode::Lag || mode == ReadMode::LagAsync) deliverTail(postUs);
+        if ((mode == ReadMode::Lag || mode == ReadMode::LagAsync) &&
+            !deliverTail(handle, postUs)) retryTail();
         continue;
       }
       PendingFrame pending;
@@ -678,6 +703,7 @@ void Agent::captureLoop() {
     } catch (...) {
       // An exception must not leave this thread: std::terminate would end QEMU.
       captureErrors_++;
+      retryTail();
     }
   }
 }
@@ -704,8 +730,7 @@ bool Agent::readFrame(uint32_t handle, CapturedFrame& out, std::string& error) {
 }
 
 bool Agent::captureNow(PendingFrame& out) {
-  void* fb = g_.getFB();
-  uint32_t handle = fb ? g_.lastPostedColorBuffer(fb) : 0;
+  uint32_t handle = lastPostedHandle(g_);
   if (!handle) return false;
   std::string error;
   if (!readFrame(handle, out.frame, error)) {
@@ -1169,7 +1194,7 @@ void Agent::accept() {
   connection->fd = next;
   int width = 0, height = 0;
   void* fb = g_.getFB();
-  if (!fb || !colorBufferSize(g_, g_.lastPostedColorBuffer(fb), width, height)) {
+  if (!fb || !colorBufferSize(g_, lastPostedHandle(g_), width, height)) {
     width = fb ? g_.frameBufferWidth(fb) : 0;
     height = fb ? g_.frameBufferHeight(fb) : 0;
   }
@@ -1233,19 +1258,17 @@ void Agent::assignRole(Connection& connection, const StreamSettings& settings) {
 
 void Agent::readCommands(Connection& connection) {
   const uint64_t generation = connection.generation;
-  uint8_t bytes[256];
-  for (;;) {
-    ssize_t n = recv(connection.fd, bytes, sizeof(bytes), 0);
+  {
+    ssize_t n = readCommandBatch(connection.fd, connection.commands);
     if (n == 0) {
       disconnect(generation, "consumer closed the socket");
       return;
     }
     if (n < 0) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) break;
+      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return;
       disconnect(generation, "read failed");
       return;
     }
-    connection.commands.insert(connection.commands.end(), bytes, bytes + n);
   }
   std::vector<uint8_t>& commands = connection.commands;
   while (!commands.empty()) {
@@ -1487,7 +1510,9 @@ void Agent::chooseCaptureModes() {
       previousHandle_ = 0;
     }
     std::lock_guard<std::mutex> guard(asyncMutex_);
-    tailPending_ = false;
+    tail_.reset();
+    asyncHandle_ = 0;
+    for (bool& role : asyncTake_) role = false;
   }
   readMode_ = mode;
   frames_->setOptions(options);
@@ -1559,25 +1584,31 @@ void runAgent(std::string socketPath) {
 
 // @ref LLP 0020#loading — preloaded at launch; only QEMU runs the agent, and its children do not inherit it
 __attribute__((constructor)) static void expoEmulatorCaptureInit() {
-  const char* name = expo_capture::programName();
-  if (!name || strncmp(name, "qemu-system", 11) != 0) return;
-  expo_capture::removeFromPreload();
-  const char* socketPath = getenv("EXPO_EMULATOR_CAPTURE_SOCKET");
-  if (const char* logPath = getenv("EXPO_EMULATOR_CAPTURE_LOG")) {
-    // O_NOFOLLOW: a symlink at the log path must not redirect the writes to another file.
-    int fd = open(logPath, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
-    if (fd >= 0) {
-      if (FILE* file = fdopen(fd, "a"))
-        expo_capture::logFile = file;
-      else
-        close(fd);
+  expo_capture::guardCallback("capture disabled during startup", [] {
+    const char* name = expo_capture::programName();
+    if (!name || strncmp(name, "qemu-system", 11) != 0) return;
+    expo_capture::removeFromPreload();
+    const char* socketPath = getenv("EXPO_EMULATOR_CAPTURE_SOCKET");
+    if (const char* logPath = getenv("EXPO_EMULATOR_CAPTURE_LOG")) {
+      // O_NOFOLLOW: a symlink at the log path must not redirect the writes to another file.
+      int fd = open(logPath, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+      if (fd >= 0) {
+        if (FILE* file = fdopen(fd, "a"))
+          expo_capture::logFile = file;
+        else
+          close(fd);
+      }
     }
-  }
-  if (!socketPath || !*socketPath) {
-    expo_capture::logLine("capture disabled: EXPO_EMULATOR_CAPTURE_SOCKET is not set");
-    return;
-  }
-  std::thread(expo_capture::runAgent, std::string(socketPath)).detach();
+    if (!socketPath || !*socketPath) {
+      expo_capture::logLine("capture disabled: EXPO_EMULATOR_CAPTURE_SOCKET is not set");
+      return;
+    }
+    std::thread([path = std::string(socketPath)] {
+      expo_capture::guardCallback("capture disabled during startup", [&] {
+        expo_capture::runAgent(path);
+      });
+    }).detach();
+  });
 }
 
 // The only exported symbol: lets tools confirm which agent build is loaded.
