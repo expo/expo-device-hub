@@ -10,8 +10,15 @@ void* hookedTarget = nullptr;
 thread_local void** borrowedGl = nullptr;
 
 void onBorrow(GumInvocationContext* context, gpointer) {
-  if (borrowedGl)
+  if (borrowedGl) {
+    // unique_ptr is returned via a hidden result pointer: on x86-64 it precedes this;
+    // arm64 carries it in x8, outside the normal argument registers.
+#if defined(__x86_64__)
+    *borrowedGl = gum_invocation_context_get_nth_argument(context, 1);
+#else
     *borrowedGl = gum_invocation_context_get_nth_argument(context, 0);
+#endif
+  }
 }
 }  // namespace
 

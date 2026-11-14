@@ -233,8 +233,8 @@ as before. The existing tail rule and on-demand capture use the same source
 
 This is a prototype rather than a new default: the deferred copy still costs CPU
 on software renderers, and mapping into the current encoder interface adds a
-second memory copy. PBO submission itself may block; reduced guest contention is
-a hypothesis until measured [inferred]. No direct renderer-memory access or tearing mode
+second memory copy. PBO submission itself may block; the measurements below show the guest effect
+for the tested software renderers. No direct renderer-memory access or tearing mode
 is introduced [observed: `pbo-readback.h`].
 
 The experiment uses the private emulator-37 EGLDispatch prefix, from the generated
@@ -245,7 +245,8 @@ come from gfxstream's exported dispatch lookup. Linux 37.1 has no exported
 `getColorBufferGl` or FrameBuffer `getDisplay`. The PBO path gets the default display
 from EGLDispatch and borrows through `ColorBuffer::borrowForDisplay(kGl)`. A Gum
 entry listener on `ColorBufferGl::getBorrowedImageInfo` observes that call's opaque
-`this` pointer on the capture thread, for the `waitSync`/`setSync` calls. It does
+`this` pointer on the capture thread (argument 1 on x86-64, after the hidden
+class-result pointer; argument 0 on arm64, whose result address uses x8), for the `waitSync`/`setSync` calls. It does
 not read private object fields or invoke a foreign `std::function`. A missing or
 inlined-away call fails the explicit experiment [observed: EAS export table,
 `pbo-borrow.cpp`]. Missing optional entry points fail
@@ -260,7 +261,63 @@ pass threshold [observed: workflow and `ci/summary.py`].
 
 A native fake-dispatch test checks that submission holds the FrameBuffer lock,
 waiting and mapping release it, retained frames survive resize/reuse, and errors
-restore the calling context. EAS validation and results follow below when available.
+restore the calling context. Both native checks passed on EAS Linux; the borrow check also passed on the Mac.
+The package's existing native and 21 JavaScript tests passed on both hosts, and
+macOS native compilation, root lint and `bun run llp:check` passed, run by Codex.
+
+### PBO results, 2026-11-14
+
+Codex ran the [EAS comparison workflow](https://expo.dev/accounts/krystofwoldrich/projects/undefined/workflows/01a1da43-2f86-7bd0-8a9f-58e3df951861)
+in the existing personal test project, because this account cannot read the
+repository's `expo-ci` project. All three jobs succeeded. Each had a separate
+22-vCPU VM on `ubuntu-26.04-jdk-17-ndk-r27b-sdk-58`, emulator 37.1.11 and API 36.
+Each renderer used its own cold boot, a 1280-pixel stream at 12 Mbit/s and a native
+recording at 8 Mbit/s, both requesting 60 fps. Two normal-reader 30 s windows ran
+before one PBO window on the same boot, after a short PBO preflight. The table's
+normal-reader figures are means of those two controls. The page changes color
+every animation frame. Video FPS counts decoded color changes, not repeated
+packets [observed: workflow logs and downloaded analysis artifacts].
+
+| Renderer             | Device                            | Guest FPS, normal → PBO | Stream changed FPS, normal → PBO | Recording changed FPS, normal → PBO |
+| -------------------- | --------------------------------- | ----------------------: | -------------------------------: | ----------------------------------: |
+| lavapipe             | Medium Phone, 720×1600            |             60.0 → 60.0 |                      60.0 → 60.0 |                         60.0 → 60.0 |
+| lavapipe             | Pixel 9, 1080×2424                |             48.1 → 55.4 |                      45.8 → 53.2 |                         45.8 → 53.1 |
+| lavapipe             | Pixel 9 Pro Fold inner, 2076×2152 |             25.0 → 29.7 |                      24.6 → 27.7 |                         24.6 → 27.7 |
+| swiftshader_indirect | Medium Phone                      |             60.0 → 60.0 |                      60.0 → 59.8 |                         60.0 → 60.0 |
+| swiftshader_indirect | Pixel 9                           |             59.9 → 60.0 |                      59.8 → 59.8 |                         59.8 → 60.0 |
+| swiftshader_indirect | Pixel 9 Pro Fold inner            |             39.0 → 38.9 |                      33.9 → 33.2 |                         37.0 → 36.4 |
+
+All 36 decoded role/windows had zero torn and zero unknown-color frames. No
+capture error was logged in the measured lavapipe runs. On Pixel 9, the final
+10-second capture stats window was 9.48 ms for the normal read, versus 10.76 ms
+for PBO, of which 6.42 ms was fence waiting outside the FrameBuffer lock and
+2.69 ms was mapping/copying. These are individual stats windows, not averages
+of the entire experiment. Sampled submit times still include occasional long
+calls: a PBO does not guarantee every GL operation returns immediately
+[observed: `agent.txt` in the comparison artifacts].
+
+The benefit is higher guest and changed-video FPS on lavapipe, despite a longer
+total capture call. Arrival latency does not improve consistently: Pixel 9's
+stream p95 moves from 24.2–24.4 ms in the controls to 25.9 ms; the Fold moves
+from 50.7–51.0 to 64.1 ms. These times start at the agent timestamp and end at
+the socket consumer on the VM; they are not browser or guest-to-display latency.
+SwiftShader shows no material FPS gain in this run. These are short, ordered
+samples, not randomized or repeated VM-level trials, and do not prove 60 fps
+at full resolution [observed: decoded window analysis].
+
+A separate [fold/unfold workflow](https://expo.dev/accounts/krystofwoldrich/projects/undefined/workflows/01a1da45-33cd-72ff-a5a2-97da96b96135)
+also succeeded with PBO and both consumers. The stream changed 1234×1280 →
+570×1280 → 1234×1280. The recording kept its 2076×2152 canvas and changed its
+content rectangle from full canvas to (558, 0, 958×2152) and back. It produced
+259 stream and 248 recording frames during the 25/26-second consumers; ffmpeg
+decoded the recording without errors. This checks continuity and resizing,
+not sustained frame rate [observed: fold artifact's consumer JSON and job log].
+
+[Exact measurements and source hashes](assets/0023/pbo-eas-results-2026-11-14.json)
+retain every per-role window. EAS artifacts retain logs, arrival/PTS CSVs and
+sample H.264 files. These runs use the agent socket directly; this iteration did
+not repeat Hub/WebRTC UI tests or port PBO to macOS software rendering. The
+macOS GPU path already uses its existing asynchronous IOSurface copy.
 
 ## Open questions
 
