@@ -28,6 +28,7 @@
 #include <thread>
 #include <vector>
 #include "encoder.h"
+#include "encoder-wake.h"
 #include "callback.h"
 #include "frame-source.h"
 #include "frida-gum.h"
@@ -81,7 +82,6 @@ constexpr size_t kMaxQueuedOutputBytes = 8 * 1024 * 1024;
 constexpr size_t kMaxBufferedOutputBytes = 32 * 1024 * 1024;
 constexpr int kSocketBufferBytes = 4 * 1024 * 1024;
 constexpr size_t kMaxPendingFrames = 2;
-constexpr auto kIdleKeyFrameDelay = std::chrono::milliseconds(40);
 
 std::string jsonEscape(const std::string& text) {
   std::string out;
@@ -322,8 +322,8 @@ void Agent::encoderLoop() {
       int announcedWidth, announcedHeight;
       {
         std::unique_lock<std::mutex> lock(encodeMutex_);
-        encodeWake_.wait_for(lock, keyRequested_ ? kIdleKeyFrameDelay : std::chrono::seconds(1),
-                             [&] { return !pending_.empty() || settingsChanged_; });
+        waitForEncoderWork(encodeWake_, lock, keyRequested_, keyNeededByOutput_,
+                           [&] { return !pending_.empty() || settingsChanged_; });
         active = active_;
         generation = generation_;
         configure = settingsChanged_;
@@ -335,7 +335,7 @@ void Agent::encoderLoop() {
           pending_.pop_front();
           havePending = true;
         }
-        forceKey = keyRequested_ || keyNeededByOutput_.exchange(false);
+        forceKey = keyNeededByOutput_.exchange(false) || keyRequested_;
         keyRequested_ = false;
         announcedWidth = announcedWidth_;
         announcedHeight = announcedHeight_;
@@ -713,17 +713,26 @@ void Agent::flushOutput() {
       disconnect("write failed");
       return;
     }
-    std::lock_guard<std::mutex> guard(outputMutex_);
-    outputOffset_ += size_t(n);
-    if (outputOffset_ == output_.front().bytes.size()) {
-      outputBytes_ -= output_.front().bytes.size();
-      output_.pop_front();
-      outputOffset_ = 0;
-      if (keyAfterDrain_ && outputBytes_ <= kMaxQueuedOutputBytes / 2) {
-        keyAfterDrain_ = false;
-        keyNeededByOutput_ = true;
-        encodeWake_.notify_one();
+    bool requestKey = false;
+    {
+      std::lock_guard<std::mutex> guard(outputMutex_);
+      outputOffset_ += size_t(n);
+      if (outputOffset_ == output_.front().bytes.size()) {
+        outputBytes_ -= output_.front().bytes.size();
+        output_.pop_front();
+        outputOffset_ = 0;
+        if (keyAfterDrain_ && outputBytes_ <= kMaxQueuedOutputBytes / 2) {
+          keyAfterDrain_ = false;
+          requestKey = true;
+        }
       }
+    }
+    if (requestKey) {
+      // Publish under the waiter's mutex so a notification cannot be lost between
+      // its predicate check and sleep. Never hold outputMutex_ while taking it.
+      std::lock_guard<std::mutex> guard(encodeMutex_);
+      keyNeededByOutput_ = true;
+      encodeWake_.notify_one();
     }
   }
 }
