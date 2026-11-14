@@ -1523,6 +1523,10 @@ void Agent::chooseCaptureModes() {
                   : read == "lag-async" ? ReadMode::LagAsync
                                         : ReadMode::Auto;
   CaptureOptions options;
+  options.pbo = sessionOption(".pbo", "EXPO_EMULATOR_CAPTURE_PBO") == "1";
+#if defined(__linux__)
+  if (options.pbo) mode = ReadMode::LagAsync;
+#endif
   options.probe = sessionOption(".probe", "EXPO_EMULATOR_CAPTURE_PROBE") == "1";
   bool anyActive = false;
   for (const RoleState& role : roles_) anyActive |= role.active.load();
@@ -1540,7 +1544,8 @@ void Agent::chooseCaptureModes() {
   }
   readMode_ = mode;
   frames_->setOptions(options);
-  logLine("capture modes: read %s, probe %s", readModeName(mode), options.probe ? "on" : "off");
+  logLine("capture modes: read %s, probe %s, pbo %s", readModeName(mode),
+          options.probe ? "on" : "off", options.pbo ? "on" : "off");
 }
 
 void removeFromPreload() {

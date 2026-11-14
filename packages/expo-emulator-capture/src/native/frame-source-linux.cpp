@@ -7,6 +7,7 @@
 #include <mutex>
 #include <vector>
 #include "frame-source.h"
+#include "pbo-readback.h"
 
 namespace expo_capture {
 namespace {
@@ -22,15 +23,17 @@ using Clock = std::chrono::steady_clock;
 // @ref LLP 0021#frame-path — CPU readback only; the encoder converts and scales
 class ReadbackFrameSource final : public FrameSource {
  public:
-  explicit ReadbackFrameSource(const Gfxstream& gfxstream) : g_(gfxstream) {}
+  explicit ReadbackFrameSource(const Gfxstream& gfxstream) : g_(gfxstream), pbo_(gfxstream) {}
 
   void setOptions(const CaptureOptions& options) override {
     std::lock_guard<std::mutex> guard(mutex_);
     probe_ = options.probe;
+    usePbo_ = options.pbo;
   }
 
   bool capture(uint32_t handle, CapturedFrame& out, std::string& error) override {
     std::lock_guard<std::mutex> guard(mutex_);
+    if (usePbo_) return pbo_.capture(handle, out, error);
     void* fb = g_.getFB();
     if (!fb) {
       error = "renderer is not initialized";
@@ -94,6 +97,8 @@ class ReadbackFrameSource final : public FrameSource {
   const Gfxstream& g_;
   std::mutex mutex_;
   std::vector<FramePixels> pool_;
+  PboReadback pbo_;
+  bool usePbo_ = false;
   bool probe_ = false;
 };
 

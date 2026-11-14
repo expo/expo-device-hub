@@ -1,0 +1,1009 @@
+{
+  "date": "2026-11-14",
+  "recordingBase": "8b08dff78a1a21d287861aa6c1b757781d18ed7a",
+  "workflow": "https://expo.dev/accounts/krystofwoldrich/projects/undefined/workflows/01a1da43-2f86-7bd0-8a9f-58e3df951861",
+  "foldWorkflow": "https://expo.dev/accounts/krystofwoldrich/projects/undefined/workflows/01a1da45-33cd-72ff-a5a2-97da96b96135",
+  "emulator": "37.1.11",
+  "image": "ubuntu-26.04-jdk-17-ndk-r27b-sdk-58",
+  "api": 36,
+  "vcpus": 22,
+  "streamMaxSize": 1280,
+  "recordingMaxSize": 0,
+  "requestedFps": 60,
+  "windowSeconds": 30,
+  "sourceSha256": {
+    "packages/expo-emulator-capture/src/native/agent.cpp": "c922755f53d44c103467e9d1a6a4af0b41df36c94baae7e20660996b8d8ad477",
+    "packages/expo-emulator-capture/src/native/callback.h": "67a0e7ebc5bec9b7962214377609aadf9f0903fe0907ec3a4390e42c1c804a05",
+    "packages/expo-emulator-capture/src/native/encoder-videotoolbox.mm": "a75f40ed540ce943cb81b3347e907f9d7ab213b2affbce7d65b192886d672331",
+    "packages/expo-emulator-capture/src/native/encoder-wake.h": "47320f002c8653c4baca2eadf4f1b39d07f8834e4db263569cc0c5fd0aa79013",
+    "packages/expo-emulator-capture/src/native/encoder-x264.cpp": "184ca43a388e51df357be5b0a9b6da7eced31a449e0ae3a611ad8bccc9f56d7e",
+    "packages/expo-emulator-capture/src/native/encoder.h": "98a773fc81ce9388a000a0f1dab0b273570c44158a01d959bed9667ce1d713df",
+    "packages/expo-emulator-capture/src/native/frame-source-darwin.mm": "b6b1caca9ddc1cb0ee42097d7da3ed0acb8108516cc279417581aaba88dd41d1",
+    "packages/expo-emulator-capture/src/native/frame-source-linux.cpp": "9c3cffe1f4cd05cd0e11aa15c9b9ff6815ff4d917e104494da073317ddbea388",
+    "packages/expo-emulator-capture/src/native/frame-source.h": "5ea3d8682d14637608382f5ee62d5d94ff8a2ede160c43446163b61599bba23e",
+    "packages/expo-emulator-capture/src/native/frame.h": "eb3c44049d3b6f96ccab7a1bc2a7f7faab7a2032c13bb6d3232c0b7df5ae9d78",
+    "packages/expo-emulator-capture/src/native/gfxstream.cpp": "2cf6b9bbe237b27c242c0bca89e621a25759ab14ac821bee19cd2e306113994d",
+    "packages/expo-emulator-capture/src/native/gfxstream.h": "c65e2989ea4b2a4e6f33a1a4089ef5ee746c8ddafaeafa69585353b3806a11dc",
+    "packages/expo-emulator-capture/src/native/lag-tail.h": "6e54b2bbf7c902092dfd3f74f74d11ddf46516fb74610d27077c72e156e9036c",
+    "packages/expo-emulator-capture/src/native/log.h": "57a4d63812a9096f03c0cdbc9d9e476f58709fe573cc30cc2625db791a6634f5",
+    "packages/expo-emulator-capture/src/native/pbo-borrow.cpp": "8e50e3d33dca837bf57fb2d7c75cbaebf44dca7c2cda3a61b585ac52615f31e6",
+    "packages/expo-emulator-capture/src/native/pbo-readback.h": "5f536c3a7f8cefc80716657f075f5bf49b9b37b8a5089c87978ee7cb4db91d3d",
+    "packages/expo-emulator-capture/src/native/protocol.h": "35e1f2f7ae3541a732ed00dc331509a3c284bf363a0c4d4adc1f7a5a3f75bd24",
+    "packages/expo-emulator-capture/src/native/socket-input.h": "0c719aeb453a662d39ce9ca06f9e174044719b6be6c08c54ac57f9036e2015c1",
+    "packages/expo-emulator-capture/src/native/yuv.h": "b0b20e686a32946b25838610c41293822aa3c805fe3cddf11dc57dbdda68f6ff"
+  },
+  "measurements": [
+    {
+      "device": "medium_phone",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 60.02,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1799,
+      "fps": 59.97,
+      "changedFps": 59.93,
+      "steps": {
+        "0": 0,
+        "1": 1798,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.87,
+      "ptsToArrivalMs": {
+        "mean": 11.8,
+        "p95": 13.0,
+        "max": 15.0
+      }
+    },
+    {
+      "device": "medium_phone",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 60.02,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1799,
+      "fps": 59.97,
+      "changedFps": 59.93,
+      "steps": {
+        "0": 0,
+        "1": 1798,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 2.69,
+      "ptsToArrivalMs": {
+        "mean": 7.9,
+        "p95": 8.9,
+        "max": 11.0
+      }
+    },
+    {
+      "device": "medium_phone",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 60.02,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1800,
+      "fps": 60.0,
+      "changedFps": 59.97,
+      "steps": {
+        "0": 0,
+        "1": 1799,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.87,
+      "ptsToArrivalMs": {
+        "mean": 12.4,
+        "p95": 13.4,
+        "max": 15.3
+      }
+    },
+    {
+      "device": "medium_phone",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 60.02,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1800,
+      "fps": 60.0,
+      "changedFps": 59.97,
+      "steps": {
+        "0": 0,
+        "1": 1799,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 2.69,
+      "ptsToArrivalMs": {
+        "mean": 7.5,
+        "p95": 8.6,
+        "max": 9.9
+      }
+    },
+    {
+      "device": "medium_phone",
+      "renderer": "lavapipe",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 60.0,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1800,
+      "fps": 60.0,
+      "changedFps": 59.97,
+      "steps": {
+        "0": 0,
+        "1": 1799,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.87,
+      "ptsToArrivalMs": {
+        "mean": 12.0,
+        "p95": 13.0,
+        "max": 15.6
+      }
+    },
+    {
+      "device": "medium_phone",
+      "renderer": "lavapipe",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 60.0,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1800,
+      "fps": 60.0,
+      "changedFps": 59.97,
+      "steps": {
+        "0": 0,
+        "1": 1799,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 2.69,
+      "ptsToArrivalMs": {
+        "mean": 7.8,
+        "p95": 8.7,
+        "max": 11.6
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 48.1,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1631,
+      "fps": 54.37,
+      "changedFps": 45.47,
+      "steps": {
+        "0": 266,
+        "1": 1284,
+        "2": 80,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.4,
+      "ptsToArrivalMs": {
+        "mean": 20.3,
+        "p95": 24.2,
+        "max": 30.1
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 48.1,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1630,
+      "fps": 54.33,
+      "changedFps": 45.4,
+      "steps": {
+        "0": 267,
+        "1": 1281,
+        "2": 81,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 4.35,
+      "ptsToArrivalMs": {
+        "mean": 19.6,
+        "p95": 23.6,
+        "max": 30.5
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 48.18,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1647,
+      "fps": 54.9,
+      "changedFps": 46.13,
+      "steps": {
+        "0": 262,
+        "1": 1324,
+        "2": 60,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.42,
+      "ptsToArrivalMs": {
+        "mean": 20.3,
+        "p95": 24.4,
+        "max": 31.8
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 48.18,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1645,
+      "fps": 54.83,
+      "changedFps": 46.13,
+      "steps": {
+        "0": 260,
+        "1": 1324,
+        "2": 60,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 4.41,
+      "ptsToArrivalMs": {
+        "mean": 20.2,
+        "p95": 24.4,
+        "max": 29.9
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "lavapipe",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 55.37,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1687,
+      "fps": 56.23,
+      "changedFps": 53.23,
+      "steps": {
+        "0": 89,
+        "1": 1533,
+        "2": 64,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.61,
+      "ptsToArrivalMs": {
+        "mean": 21.2,
+        "p95": 25.9,
+        "max": 38.2
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "lavapipe",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 55.37,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1682,
+      "fps": 56.07,
+      "changedFps": 53.07,
+      "steps": {
+        "0": 89,
+        "1": 1525,
+        "2": 67,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 4.98,
+      "ptsToArrivalMs": {
+        "mean": 21.5,
+        "p95": 26.3,
+        "max": 39.3
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 25.13,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1018,
+      "fps": 33.93,
+      "changedFps": 24.8,
+      "steps": {
+        "0": 273,
+        "1": 735,
+        "2": 9,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.39,
+      "ptsToArrivalMs": {
+        "mean": 42.1,
+        "p95": 50.7,
+        "max": 59.5
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 25.13,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1018,
+      "fps": 33.93,
+      "changedFps": 24.8,
+      "steps": {
+        "0": 273,
+        "1": 735,
+        "2": 9,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 3.82,
+      "ptsToArrivalMs": {
+        "mean": 36.5,
+        "p95": 44.7,
+        "max": 52.9
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 24.87,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1046,
+      "fps": 34.87,
+      "changedFps": 24.47,
+      "steps": {
+        "0": 311,
+        "1": 723,
+        "2": 11,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.38,
+      "ptsToArrivalMs": {
+        "mean": 42.5,
+        "p95": 51.0,
+        "max": 64.9
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "lavapipe",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 24.87,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1046,
+      "fps": 34.87,
+      "changedFps": 24.4,
+      "steps": {
+        "0": 313,
+        "1": 721,
+        "2": 11,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 3.87,
+      "ptsToArrivalMs": {
+        "mean": 36.7,
+        "p95": 44.3,
+        "max": 54.7
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "lavapipe",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 29.73,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1023,
+      "fps": 34.1,
+      "changedFps": 27.73,
+      "steps": {
+        "0": 190,
+        "1": 772,
+        "2": 60,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.54,
+      "ptsToArrivalMs": {
+        "mean": 50.4,
+        "p95": 64.1,
+        "max": 82.0
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "lavapipe",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 29.73,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1021,
+      "fps": 34.03,
+      "changedFps": 27.67,
+      "steps": {
+        "0": 190,
+        "1": 768,
+        "2": 62,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 3.98,
+      "ptsToArrivalMs": {
+        "mean": 44.0,
+        "p95": 57.0,
+        "max": 82.1
+      }
+    },
+    {
+      "device": "medium_phone",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 60.0,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1800,
+      "fps": 60.0,
+      "changedFps": 59.97,
+      "steps": {
+        "0": 0,
+        "1": 1799,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.84,
+      "ptsToArrivalMs": {
+        "mean": 11.8,
+        "p95": 13.4,
+        "max": 17.0
+      }
+    },
+    {
+      "device": "medium_phone",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 60.0,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1800,
+      "fps": 60.0,
+      "changedFps": 59.97,
+      "steps": {
+        "0": 0,
+        "1": 1799,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 2.64,
+      "ptsToArrivalMs": {
+        "mean": 6.6,
+        "p95": 8.2,
+        "max": 10.4
+      }
+    },
+    {
+      "device": "medium_phone",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 60.0,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1800,
+      "fps": 60.0,
+      "changedFps": 59.97,
+      "steps": {
+        "0": 0,
+        "1": 1799,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.84,
+      "ptsToArrivalMs": {
+        "mean": 11.6,
+        "p95": 13.2,
+        "max": 19.4
+      }
+    },
+    {
+      "device": "medium_phone",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 60.0,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1800,
+      "fps": 60.0,
+      "changedFps": 59.97,
+      "steps": {
+        "0": 0,
+        "1": 1799,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 2.64,
+      "ptsToArrivalMs": {
+        "mean": 6.8,
+        "p95": 8.4,
+        "max": 10.9
+      }
+    },
+    {
+      "device": "medium_phone",
+      "renderer": "swiftshader_indirect",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 59.99,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1796,
+      "fps": 59.87,
+      "changedFps": 59.83,
+      "steps": {
+        "0": 0,
+        "1": 1791,
+        "2": 4,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.84,
+      "ptsToArrivalMs": {
+        "mean": 12.4,
+        "p95": 14.0,
+        "max": 16.6
+      }
+    },
+    {
+      "device": "medium_phone",
+      "renderer": "swiftshader_indirect",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 59.99,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1800,
+      "fps": 60.0,
+      "changedFps": 59.97,
+      "steps": {
+        "0": 0,
+        "1": 1799,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 2.64,
+      "ptsToArrivalMs": {
+        "mean": 7.1,
+        "p95": 8.6,
+        "max": 11.2
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 59.87,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1798,
+      "fps": 59.93,
+      "changedFps": 59.8,
+      "steps": {
+        "0": 3,
+        "1": 1793,
+        "2": 1,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.81,
+      "ptsToArrivalMs": {
+        "mean": 19.9,
+        "p95": 24.7,
+        "max": 28.9
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 59.87,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1799,
+      "fps": 59.97,
+      "changedFps": 59.83,
+      "steps": {
+        "0": 3,
+        "1": 1795,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 5.57,
+      "ptsToArrivalMs": {
+        "mean": 20.7,
+        "p95": 26.1,
+        "max": 30.5
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 59.89,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1799,
+      "fps": 59.97,
+      "changedFps": 59.8,
+      "steps": {
+        "0": 4,
+        "1": 1794,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.81,
+      "ptsToArrivalMs": {
+        "mean": 19.2,
+        "p95": 23.9,
+        "max": 34.6
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 59.89,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1799,
+      "fps": 59.97,
+      "changedFps": 59.8,
+      "steps": {
+        "0": 4,
+        "1": 1794,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 5.58,
+      "ptsToArrivalMs": {
+        "mean": 19.7,
+        "p95": 25.3,
+        "max": 29.4
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "swiftshader_indirect",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 59.96,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1796,
+      "fps": 59.87,
+      "changedFps": 59.83,
+      "steps": {
+        "0": 0,
+        "1": 1791,
+        "2": 4,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.82,
+      "ptsToArrivalMs": {
+        "mean": 21.6,
+        "p95": 25.9,
+        "max": 29.3
+      }
+    },
+    {
+      "device": "pixel_9",
+      "renderer": "swiftshader_indirect",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 59.96,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1800,
+      "fps": 60.0,
+      "changedFps": 59.97,
+      "steps": {
+        "0": 0,
+        "1": 1799,
+        "2": 0,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 5.6,
+      "ptsToArrivalMs": {
+        "mean": 19.3,
+        "p95": 23.7,
+        "max": 27.8
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 38.96,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1097,
+      "fps": 36.57,
+      "changedFps": 34.07,
+      "steps": {
+        "0": 74,
+        "1": 876,
+        "2": 146,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.88,
+      "ptsToArrivalMs": {
+        "mean": 55.6,
+        "p95": 69.0,
+        "max": 81.5
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w1",
+      "pageFps": 38.96,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1208,
+      "fps": 40.27,
+      "changedFps": 36.97,
+      "steps": {
+        "0": 98,
+        "1": 1049,
+        "2": 60,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 5.21,
+      "ptsToArrivalMs": {
+        "mean": 47.8,
+        "p95": 63.5,
+        "max": 75.5
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 39.07,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1104,
+      "fps": 36.8,
+      "changedFps": 33.77,
+      "steps": {
+        "0": 90,
+        "1": 856,
+        "2": 157,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.86,
+      "ptsToArrivalMs": {
+        "mean": 55.1,
+        "p95": 68.4,
+        "max": 76.3
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "swiftshader_indirect",
+      "reader": "default",
+      "repeat": "v4-w2",
+      "pageFps": 39.07,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1222,
+      "fps": 40.73,
+      "changedFps": 37.0,
+      "steps": {
+        "0": 111,
+        "1": 1050,
+        "2": 60,
+        "3+": 0,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 5.15,
+      "ptsToArrivalMs": {
+        "mean": 47.6,
+        "p95": 63.6,
+        "max": 75.1
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "swiftshader_indirect",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 38.93,
+      "role": "stream",
+      "fromS": 2.0,
+      "frames": 1065,
+      "fps": 35.5,
+      "changedFps": 33.2,
+      "steps": {
+        "0": 68,
+        "1": 826,
+        "2": 168,
+        "3+": 2,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 1.83,
+      "ptsToArrivalMs": {
+        "mean": 58.7,
+        "p95": 71.5,
+        "max": 88.2
+      }
+    },
+    {
+      "device": "pixel_9_pro_fold",
+      "renderer": "swiftshader_indirect",
+      "reader": "pbo",
+      "repeat": "v4-pbo",
+      "pageFps": 38.93,
+      "role": "recording",
+      "fromS": 2.0,
+      "frames": 1180,
+      "fps": 39.33,
+      "changedFps": 36.43,
+      "steps": {
+        "0": 86,
+        "1": 1020,
+        "2": 72,
+        "3+": 1,
+        "7": 0
+      },
+      "torn": 0,
+      "unknown": 0,
+      "mbps": 5.11,
+      "ptsToArrivalMs": {
+        "mean": 54.2,
+        "p95": 69.1,
+        "max": 76.4
+      }
+    }
+  ]
+}

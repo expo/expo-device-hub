@@ -77,6 +77,9 @@ struct Gfxstream {
   uint32_t (*colorBufferHeight)(const void* colorBuffer) = nullptr;
   void* (*colorBufferGl)(void* colorBuffer) = nullptr;
   std::unique_ptr<BorrowedImageInfo> (*borrowedImageInfo)(void* colorBufferGl) = nullptr;
+  bool (*canUseGlOps)(void* colorBuffer) = nullptr;
+  std::unique_ptr<BorrowedImageInfo> (*borrowForDisplay)(void* colorBuffer, int usedApi) = nullptr;
+  void (*setSync)(void* colorBufferGl, bool debug) = nullptr;
   void (*waitSync)(void* colorBufferGl, bool debug) = nullptr;
 
   // GLES translator EGL entry points, for the macOS GPU path. They are local
@@ -86,6 +89,9 @@ struct Gfxstream {
   void* (*eglGetCurrentContext)() = nullptr;
   void* (*eglGetCurrentDisplay)() = nullptr;
   void* (*eglGetCurrentSurface)(int which) = nullptr;
+  // Optional dispatch for the experimental Linux PBO source, also present in stripped builds.
+  const void* (*getEglDispatch)(void* fb) = nullptr;
+  void* (*glesProc)(const char* name) = nullptr;
   unsigned (*getGlobalTexName)(unsigned localName) = nullptr;
 
   bool gpuEntryPointsAvailable() const {
@@ -98,6 +104,12 @@ struct Gfxstream {
 // Resolves the renderer entry points. Returns an empty string on success, or the
 // reason capture cannot run with this emulator build.
 std::string resolveGfxstream(GumModule* module, Gfxstream& out);
+
+// Experimental Linux accessor: observe the GL object while gfxstream borrows it, rather
+// than relying on the ColorBuffer object's private field layout.
+bool preparePboBorrow(const Gfxstream& g, std::string& error);
+std::unique_ptr<BorrowedImageInfo> borrowPboGlImage(const Gfxstream& g, void* colorBuffer,
+                                                  void*& colorBufferGl);
 
 // Reads a color buffer's native size without copying pixels.
 bool colorBufferSize(const Gfxstream& g, uint32_t handle, int& width, int& height);

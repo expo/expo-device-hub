@@ -112,6 +112,7 @@ if (target === "darwin-arm64") {
     "src/native/agent.cpp",
     "src/native/encoder-x264.cpp",
     "src/native/frame-source-linux.cpp",
+    "src/native/pbo-borrow.cpp",
     "src/native/gfxstream.cpp",
     "-o",
     library,

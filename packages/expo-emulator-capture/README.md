@@ -284,3 +284,16 @@ Frida Gum (wxWindows 3.1, an LGPL-2.0+ license with a binary exception) and GLib
 (LGPL-2.1+). [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) lists every component,
 with the license texts in `LICENSES/`. The Linux agent loads x264 (GPL-2.0-or-later) from
 the host system; the package does not contain it.
+
+### Temporary Linux PBO experiment
+
+Set `EXPO_EMULATOR_CAPTURE_PBO=1` in the emulator's environment, or write `1` to
+`<socket>.pbo` before a consumer starts, to test PBO readback on emulator 37. This
+forces `lag-async`, submits a GLES pixel-buffer copy under the renderer lock, and
+waits/maps on a capture thread after releasing that lock. It is opt-in and fails
+explicitly if its private renderer entry points are unavailable. Remove the file
+and variable before a new session to return to the default reader.
+
+This prototype copies mapped bytes into the shared encoder pool; its performance
+must include that cost. See [LLP 0023](../../llp/0023-android-recording-independent-of-stream.rfc.md#pbo-experiment)
+for the experiment and measurements.

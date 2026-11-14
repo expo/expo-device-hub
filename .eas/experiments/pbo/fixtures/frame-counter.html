@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Frame counter</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      // Each animation frame paints the whole page in the next of 8 colors. A video frame
+      // that shows two colors is torn; a step other than one color means skipped frames.
+      const colors = [
+        "#ff0000",
+        "#00ff00",
+        "#0000ff",
+        "#ffff00",
+        "#00ffff",
+        "#ff00ff",
+        "#ffffff",
+        "#000000",
+      ];
+      let frame = 0;
+      function paint() {
+        document.body.style.background = colors[frame % colors.length];
+        frame++;
+        requestAnimationFrame(paint);
+      }
+      requestAnimationFrame(paint);
+    </script>
+  </body>
+</html>
