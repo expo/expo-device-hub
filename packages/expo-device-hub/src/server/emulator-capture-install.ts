@@ -82,6 +82,8 @@ export async function installEmulatorCapture({
         "--no-fund",
         "--no-audit",
         "--no-save",
+        // The package ships prebuilt agents and needs no lifecycle scripts.
+        "--ignore-scripts",
         // Asks the registry, not a cached package list: a release minutes old has the pinned
         // version, and a list cached before it would answer "No matching version found".
         "--prefer-online",
