@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { Device } from "../src/adb.ts";
 import { GrpcCaptureDiagnosticsTracker } from "../src/grpc-session.ts";
 import {
@@ -1856,9 +1856,15 @@ describe("createRouter emulator capture", () => {
     createdModes: [] as StreamMode[],
     createdInputSources: [] as InputSource[],
   });
+  const agentListeners: ReturnType<typeof Bun.listen>[] = [];
+  afterEach(() => {
+    for (const listener of agentListeners.splice(0)) listener.stop(true);
+  });
   const withAgentSocket = async () => {
     const directory = await mkdtemp(join(tmpdir(), "router-capture-"));
-    await writeFile(join(directory, "emulator-5554.sock"), "");
+    agentListeners.push(
+      Bun.listen({ unix: join(directory, "emulator-5554.sock"), socket: { data() {} } }),
+    );
     return directory;
   };
   const streamMode = async (router: ReturnType<typeof createRouter>, serial: string) =>

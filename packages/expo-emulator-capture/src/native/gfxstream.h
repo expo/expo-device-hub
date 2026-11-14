@@ -76,4 +76,7 @@ std::string resolveGfxstream(GumModule* module, Gfxstream& out);
 // Reads a color buffer's native size without copying pixels.
 bool colorBufferSize(const Gfxstream& g, uint32_t handle, int& width, int& height);
 
+// The renderer's last-post field is not atomic; readers outside the renderer take its lock.
+uint32_t lastPostedHandle(const Gfxstream& g);
+
 }  // namespace expo_capture
