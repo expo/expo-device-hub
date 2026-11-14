@@ -24,9 +24,11 @@ import {
   setReduceMotion,
   setSoftwareKeyboard,
   getDisplayOrientation,
+  getShownOrientation,
   getDeviceSize,
   getDisplayRotation,
   setUserRotation,
+  watchOrientationEvents,
   type DisplayRotation,
   type NightModeStatus,
 } from "./adb.ts";
@@ -48,8 +50,12 @@ import {
   startCaptureRecordingSource,
   type CaptureRecordingSource,
 } from "./capture-recording-source.ts";
-import { createDisplayOrientationReader } from "./display-orientation.ts";
 import { startFoldRecordingFeed, type FoldRecordingFeed } from "./fold-recording-feed.ts";
+import {
+  startRecordingOrientationFeed,
+  type OrientationReading,
+  type RecordingOrientationFeed,
+} from "./recording-orientation-feed.ts";
 import type { GrpcRecordingOutput } from "./grpc-recording-encoder.ts";
 import {
   captureBox,
@@ -170,7 +176,6 @@ import {
   type GrpcImageMode,
   type GrpcEncoder,
   type InputSource,
-  type ScreenOrientation,
   type StreamMode,
   type StreamModeResponse,
 } from "./shared/api-contracts.ts";
@@ -421,6 +426,14 @@ export type CreateAppDependencies = {
   readFoldState?: typeof readFoldState;
   /** Open the hinge over gRPC while a foldable records; the emulator's controller by default. */
   openHingeSensor?: typeof openHingeSensor;
+  /** The pose that the screen shows, for a recording's timeline; adb by default. */
+  readShownOrientation?: (serial: string) => Promise<OrientationReading>;
+  /** The device events after which a recording reads the shown pose; adb logcat by default. */
+  watchOrientationEvents?: (
+    serial: string,
+    onEvent: () => void,
+    signal: AbortSignal,
+  ) => Promise<void>;
   /** Read the shown display's size for a native-size MMAP fold recording; adb by default. */
   readDisplaySize?: typeof getDeviceSize;
 };
@@ -489,8 +502,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   // that takes the stream's packets, and only that one refuses stream changes.
   const recorder = opts.screenRecording?.independent ? undefined : opts.screenRecording;
   const readFold = dependencies.readFoldState ?? readFoldState;
-  const readOrientation =
-    dependencies.readOrientation ?? ((serial: string) => getDisplayOrientation(serial));
+  const readShown =
+    dependencies.readShownOrientation ?? ((serial: string) => getShownOrientation(serial));
   // Set once the app reads the hinge for its recording.
   let readFoldNow: () => void = () => {};
   // @ref LLP 0018#fold-canvas — a foldable records on a fixed canvas, so a fold does not end the recording
@@ -502,7 +515,9 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     if (displays) {
       const [pose, orientation] = await Promise.all([
         readFold(opts.serial).catch(() => null),
-        readOrientation(opts.serial).catch(() => null),
+        readShown(opts.serial)
+          .then((shown) => shown.orientation)
+          .catch(() => null),
       ]);
       recorder.observePose({
         ...(pose ? recordingPose(pose) : {}),
@@ -634,16 +649,24 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   const routePlayback = deviceState.route;
   // The hinge also moves through adb or the emulator's own controls, so the recording reads it.
   let foldFeed: FoldRecordingFeed | null = null;
+  // The orientation that the display shows, not the one that a rotation asks for.
+  let orientationFeed: RecordingOrientationFeed | null = null;
   if (recorder && session.feedsRecording) {
     foldFeed = startFoldRecordingFeed({
       openSensor: (signal) =>
         (dependencies.openHingeSensor ?? openHingeSensor)(opts.serial, signal),
       readHingeOverAdb: async () => (await readFold(opts.serial)).hingeAngle,
-      orientation: () => deviceState.orientation.current(),
       observe: (pose) => recorder.observePose(pose),
       active: () => recorder.active,
     });
     readFoldNow = foldFeed.readNow;
+    const watchEvents = dependencies.watchOrientationEvents ?? watchOrientationEvents;
+    orientationFeed = startRecordingOrientationFeed({
+      read: () => readShown(opts.serial),
+      watchChanges: (onChange, signal) => watchEvents(opts.serial, onChange, signal),
+      observe: (orientation) => recorder.observePose({ orientation }),
+      active: () => recorder.active,
+    });
   }
 
   const health = () => {
@@ -1928,8 +1951,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           const orientation = (payload as Record<string, unknown>).orientation;
           if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
           const result = await deviceState.setOrientation(orientation);
-          // A source that follows the display (emulator capture) re-reads it now.
+          // A source that follows the display (emulator capture) re-reads it now, and so does a
+          // recording, which names the pose the display shows, not the requested one.
           session.displayChanged?.();
+          orientationFeed?.readNow();
           opts.onDisplayChanged?.();
           return Response.json({ ok: true, orientation: result });
         } catch (err) {
@@ -2249,6 +2274,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     if (stopTask) return stopTask;
     stopRequested = true;
     foldFeed?.stop();
+    orientationFeed?.stop();
     captureRestarting = false;
     captureRestartController?.abort(new Error("server stopping"));
     captureRestartController = null;
@@ -2446,8 +2472,10 @@ export type RouterDependencies = {
   startCaptureRecording?: typeof startCaptureRecordingSource;
   /** The emulator's hardware config, for the recording's canvas and frame rate. */
   readHardwareConfig?: (serial: string) => Promise<string | null>;
-  /** The display pose, for an independent recording's timeline; adb by default. */
-  readOrientation?: (serial: string) => Promise<ScreenOrientation>;
+  /** The pose that the screen shows, for an independent recording's timeline; adb by default. */
+  readShownOrientation?: CreateAppDependencies["readShownOrientation"];
+  /** The device events after which the recording reads the shown pose; adb logcat by default. */
+  watchOrientationEvents?: CreateAppDependencies["watchOrientationEvents"];
   readFoldState?: typeof readFoldState;
   openHingeSensor?: typeof openHingeSensor;
 };
@@ -2507,21 +2535,23 @@ export function createRouter(
   let stopped = false;
   let stopAllTask: Promise<void> | null = null;
   /**
-   * The recording and, for an independent one, the agent consumer and the pose feed that the
-   * router owns apart from every app.
+   * The recording and, for an independent one, the agent consumer and the pose feeds that the
+   * router owns apart from every app: the hinge for a foldable, and the orientation.
    */
   type RouterRecording = {
     serial: string;
     recorder: ScreenRecording;
     source: CaptureRecordingSource | null;
     feed: FoldRecordingFeed | null;
+    orientation: RecordingOrientationFeed | null;
   };
   let screenRecording: RouterRecording | null = null;
   let recordingStartTask: Promise<void> | null = null;
   const startCaptureRecording = dependencies.startCaptureRecording ?? startCaptureRecordingSource;
   const readConfig = dependencies.readHardwareConfig ?? readHardwareConfig;
   const readRecordingOrientation =
-    dependencies.readOrientation ?? ((serial: string) => getDisplayOrientation(serial));
+    dependencies.readShownOrientation ?? ((serial: string) => getShownOrientation(serial));
+  const watchRecordingEvents = dependencies.watchOrientationEvents ?? watchOrientationEvents;
   const readRecordingFold = dependencies.readFoldState ?? readFoldState;
   const openRecordingHinge = dependencies.openHingeSensor ?? openHingeSensor;
 
@@ -2671,7 +2701,7 @@ export function createRouter(
         deviceState,
         screenRecording: screenRecording?.serial === serial ? screenRecording.recorder : undefined,
         onDisplayChanged: () => {
-          if (screenRecording?.serial === serial) screenRecording.feed?.readNow();
+          if (screenRecording?.serial === serial) screenRecording.orientation?.readNow();
         },
         signal: combineAbortSignals(defaults.signal, operation.signal),
       });
@@ -2978,7 +3008,7 @@ export function createRouter(
     serial: string,
     recorder: ScreenRecording,
     options: RecordingOptions,
-  ): Promise<Pick<RouterRecording, "source" | "feed"> | null> => {
+  ): Promise<Pick<RouterRecording, "source" | "feed" | "orientation"> | null> => {
     const socketPath = emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory);
     if (!socketPath) return null;
     const config = await readConfig(serial).catch(() => null);
@@ -2986,14 +3016,15 @@ export function createRouter(
     // The timeline names the UI's orientation, and a foldable's hinge, for every part. Read them
     // before the agent sends frames, so the first frame has them; a frame takes the last reading
     // from before it.
-    const own = createDisplayOrientationReader({ read: () => readRecordingOrientation(serial) });
     const [fold, orientation] = await Promise.all([
       displays ? readRecordingFold(serial).catch(() => null) : null,
-      own.reader.observe().catch(() => null),
+      readRecordingOrientation(serial)
+        .then((shown) => shown.orientation)
+        .catch(() => null),
     ]);
     recorder.observePose({
       ...(fold ? recordingPose(fold) : {}),
-      ...(orientation ? { orientation: orientation.orientation } : {}),
+      ...(orientation ? { orientation } : {}),
     });
     let feed: FoldRecordingFeed | null = null;
     let source: CaptureRecordingSource;
@@ -3016,30 +3047,30 @@ export function createRouter(
       return null;
     }
     recorder.markIndependent();
-    const orientationNow = () => {
-      const app = apps.get(serial);
-      const state = app ? deviceStateForApp(app) : undefined;
-      // An app's reader learns a turn through the Hub at once; without an app, adb tells.
-      return (state?.orientation ?? own.reader).current();
-    };
-    feed = startFoldRecordingFeed({
-      openSensor: displays
-        ? (signal) => openRecordingHinge(serial, signal)
-        : () => Promise.reject(new Error("The device has no hinge")),
-      readHingeOverAdb: displays
-        ? async () => (await readRecordingFold(serial)).hingeAngle
-        : async () => null,
-      orientation: orientationNow,
-      observe: (pose) => recorder.observePose(pose),
+    // The display's own orientation, never a rotation request: a Hub rotation that the top app
+    // refuses, such as on the launcher, leaves the picture as it is.
+    const orientationFeed = startRecordingOrientationFeed({
+      read: () => readRecordingOrientation(serial),
+      watchChanges: (onChange, signal) => watchRecordingEvents(serial, onChange, signal),
+      observe: (next) => recorder.observePose({ orientation: next }),
       active: () => recorder.active,
     });
-    return { source, feed };
+    feed = displays
+      ? startFoldRecordingFeed({
+          openSensor: (signal) => openRecordingHinge(serial, signal),
+          readHingeOverAdb: async () => (await readRecordingFold(serial)).hingeAngle,
+          observe: (pose) => recorder.observePose(pose),
+          active: () => recorder.active,
+        })
+      : null;
+    return { source, feed, orientation: orientationFeed };
   };
 
   /** Stops what the router owns for a recording that ended. */
   const releaseRecording = (recording: RouterRecording | null) => {
     recording?.source?.close();
     recording?.feed?.stop();
+    recording?.orientation?.stop();
   };
 
   const startScreenRecording = (options: RecordingOptions): Promise<void> => {
@@ -3050,7 +3081,13 @@ export function createRouter(
         throw new Error("Screen recording must start before device capture.");
       const serial = await resolveSerial(options.udid);
       const recorder = await ScreenRecording.create(options);
-      let recording: RouterRecording = { serial, recorder, source: null, feed: null };
+      let recording: RouterRecording = {
+        serial,
+        recorder,
+        source: null,
+        feed: null,
+        orientation: null,
+      };
       try {
         const independent = await startIndependentRecording(serial, recorder, options);
         recording = { ...recording, ...independent };
