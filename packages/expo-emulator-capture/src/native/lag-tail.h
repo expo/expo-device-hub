@@ -16,10 +16,11 @@ class LagTail {
   struct Request {
     uint32_t handle;
     uint64_t sequence;
+    int64_t postUs;
   };
 
   void post(uint32_t handle, int64_t nowUs) {
-    request_ = {handle, request_.sequence + 1};
+    request_ = {handle, request_.sequence + 1, nowUs};
     dueUs_ = nowUs + delayUs;
     pending_ = true;
   }

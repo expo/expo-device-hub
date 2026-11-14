@@ -21,7 +21,7 @@ int main() {
       },
       [](const std::string&) { assert(false && "unexpected encoder error"); });
   std::string error;
-  assert(encoder->configure(32, 32, 30, 1'000'000, 0, error));
+  assert(encoder->configure(EncoderConfig{32, 32, 30, 1'000'000}, error));
   CVPixelBufferRef pixels = nullptr;
   assert(CVPixelBufferCreate(kCFAllocatorDefault, 32, 32, kCVPixelFormatType_32BGRA,
                              nullptr, &pixels) == kCVReturnSuccess);
