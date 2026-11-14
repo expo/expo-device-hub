@@ -201,7 +201,7 @@ test("the off reason says how to turn the capture on, or why the host cannot", (
 test("emulatorCaptureEncoderProblem looks for x264 build 165 where the loader does", () => {
   const found = (paths: string[]) => (path: string) => paths.includes(path);
   expect(emulatorCaptureEncoderProblem("darwin", {}, found([]))).toBeNull();
-  expect(emulatorCaptureEncoderProblem("linux", {}, found([]))).toBe(
+  expect(emulatorCaptureEncoderProblem("linux", {}, found([]), () => "")).toBe(
     "x264 build 165 (libx264.so.165) is missing. Install it with: sudo apt install libx264-165 (Ubuntu 26.04 or later), then start the emulator again from the Hub.",
   );
   expect(
@@ -214,12 +214,37 @@ test("emulatorCaptureEncoderProblem looks for x264 build 165 where the loader do
       found(["/opt/x264/lib/libx264.so.165"]),
     ),
   ).toBeNull();
-  // A relative LD_LIBRARY_PATH entry depends on the emulator's directory; it does not count.
+  // Relative entries depend on the emulator's directory, so the agent decides.
   expect(
     emulatorCaptureEncoderProblem(
       "linux",
       { LD_LIBRARY_PATH: "relative" },
       found(["relative/libx264.so.165"]),
+    ),
+  ).toBeNull();
+});
+
+test("x264 preflight accepts custom loader-cache directories and defers inconclusive probes", () => {
+  const cache = "  libx264.so.165 (libc6,x86-64) => /opt/x264/lib/libx264.so.165\n";
+  const found = (path: string) => path === "/opt/x264/lib/libx264.so.165";
+  expect(emulatorCaptureEncoderProblem("linux", {}, found, () => cache)).toBeNull();
+  expect(
+    emulatorCaptureEncoderProblem(
+      "linux",
+      {},
+      () => false,
+      () => null,
+    ),
+  ).toBeNull();
+  expect(
+    emulatorCaptureEncoderProblem("linux", {}, found, () => cache.replace("x86-64", "AArch64")),
+  ).not.toBeNull();
+  expect(
+    emulatorCaptureEncoderProblem(
+      "linux",
+      {},
+      () => false,
+      () => cache,
     ),
   ).not.toBeNull();
 });

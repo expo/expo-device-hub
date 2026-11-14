@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { lstat, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -52,6 +53,22 @@ const LIBRARY_DIRECTORIES = [
   "/usr/lib",
 ];
 
+function readLoaderCache(): string | null {
+  for (const command of ["/sbin/ldconfig", "/usr/sbin/ldconfig"]) {
+    try {
+      return execFileSync(command, ["-p"], {
+        encoding: "utf8",
+        timeout: 1_000,
+        maxBuffer: 1024 * 1024,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch {
+      // An unavailable cache is inconclusive. The agent's dlopen is authoritative.
+    }
+  }
+  return null;
+}
+
 // @ref LLP 0021#encoder — the system's x264 build 165; the Hub checks for it before a boot
 /**
  * Why the agent cannot encode on this host, or null. The Linux agent loads x264 from the
@@ -62,6 +79,7 @@ export function emulatorCaptureEncoderProblem(
   platform: EmulatorCapture["platform"],
   env: NodeJS.ProcessEnv = process.env,
   exists: (path: string) => boolean = existsSync,
+  loaderCache: () => string | null = readLoaderCache,
 ): string | null {
   if (platform !== "linux") return null;
   const directories = [
@@ -69,6 +87,18 @@ export function emulatorCaptureEncoderProblem(
     ...LIBRARY_DIRECTORIES,
   ];
   if (directories.some((directory) => exists(join(directory, X264_LIBRARY)))) return null;
+  // Relative and empty entries depend on QEMU's working directory, not the Hub's.
+  if (
+    env.LD_LIBRARY_PATH !== undefined &&
+    env.LD_LIBRARY_PATH.split(":").some((p) => !isAbsolute(p))
+  )
+    return null;
+  const cache = loaderCache();
+  if (cache === null) return null;
+  for (const line of cache.split("\n")) {
+    const entry = /^\s*libx264\.so\.165\s+\([^)]*\bx86-64\b[^)]*\)\s+=>\s+(\/.*)\s*$/.exec(line);
+    if (entry && exists(entry[1].trim())) return null;
+  }
   return `x264 build 165 (${X264_LIBRARY}) is missing. Install it with: sudo apt install libx264-165 (Ubuntu 26.04 or later), then start the emulator again from the Hub.`;
 }
 

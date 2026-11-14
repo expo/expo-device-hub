@@ -27,15 +27,16 @@ you turn the capture on. The design is in
 x264 changes its interface with every build, so the Linux agent supports build 165 only.
 Ubuntu 26.04 ships it; Ubuntu 24.04 ships build 164, which does not work. The EAS Linux
 image `ubuntu-26.04-jdk-17-ndk-r27b-sdk-58` has it installed. Without it, the agent
-reports the install command, and the Hub boots emulators without the agent and shows the
-command below the stream source select.
+reports the install command. The Hub preflight checks standard paths and the loader cache;
+a confirmed absence boots without the agent and shows the command below the source select.
+An inconclusive preflight lets the agent try the actual loader.
 
 ## How it works
 
 ```text
 macOS: display post → GL texture → GPU copy into an IOSurface
          → VideoToolbox rotation, scale and NV12 conversion → H.264 (hardware)
-Linux: display post → readback into memory (RGBA)
+Linux: display post → queue the previous post's handle → capture-worker readback (RGBA)
          → scale and I420 conversion → rotation → x264 → H.264
 then:  Unix socket → serve-emu → Device Hub (WebCodecs or WebRTC)
 ```
@@ -50,8 +51,9 @@ then:  Unix socket → serve-emu → Device Hub (WebCodecs or WebRTC)
 - A Mac without a usable hardware encoder gets the VideoToolbox software encoder.
   The `configured` record and the agent log say which encoder runs.
 - On Linux, the agent reads every frame back with the renderer's own readback, on the
-  renderer's thread, so the guest waits for each copy (6 to 7 ms per 1080×2400 frame with
-  lavapipe on an EAS VM). It loads x264 when a consumer connects; when x264 is missing,
+  capture worker, using the preceding post's handle. A last post becomes eligible after
+  50 ms without another post, within the same requested FPS budget. The worker can still
+  contend with the renderer for its lock. It loads x264 when a consumer connects; when x264 is missing,
   the first record says so, and a later connection tries again.
 - A consumer connects to the agent's socket, sets the stream size, frame rate and bit
   rate, and receives H.264. Consumers can disconnect and reconnect at any time.
@@ -236,7 +238,10 @@ renderer, and the emulator used 4.4 cores. Earlier frame rate measurements (2026
 
 EAS Linux VM (Intel, 22 vCPUs, no GPU), Android Emulator 37.1.11, Pixel 6 profile
 (1080×2400) started by `eas/start_android_emulator` with the agent, `-gpu lavapipe`,
-2026-11-05 and 2026-11-06. A web page painted each animation frame in the next of eight colors, and every
+2026-11-05 and 2026-11-06, with the earlier synchronous read inside the render post.
+These measurements predate the lag plus asynchronous worker and the tail scheduling fixes.
+The newer timing matrix is in [LLP 0021](../../llp/0021-emulator-capture-linux.explainer.md#frame-path).
+A web page painted each animation frame in the next of eight colors, and every
 decoded frame was checked:
 
 | Stream    | Stream FPS | Frames  | Torn | Skipped | Repeated |
