@@ -42,6 +42,11 @@ Exception, which permits this for code that GCC compiles.
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Adapted borrowed-image declarations | [gfxstream BorrowedImage.h](https://android.googlesource.com/platform/hardware/google/gfxstream/+/35d53baaa71ec845d4e616dc7a31cc7d8d5f640b/host/BorrowedImage.h) and [BorrowedImageGl.h](https://android.googlesource.com/platform/hardware/google/gfxstream/+/35d53baaa71ec845d4e616dc7a31cc7d8d5f640b/host/gl/BorrowedImageGl.h), [Apache-2.0](LICENSES/Apache-2.0.txt) |
 
+The experimental PBO source also adapts the leading EGLDispatch declarations from
+[gfxstream EGLDispatch.h and RenderEGL_functions.h](https://android.googlesource.com/platform/hardware/google/gfxstream/+/ca9abf8fd1ef9dadedc4de1bdfc1b68beb7850a2/include/OpenGLESDispatch/),
+under the same Apache-2.0 terms. Those files carry the Android Open Source Project's
+2011 copyright notice; the license notice below applies to this interface as well.
+
 ### gfxstream borrowed-image declarations
 
 ```text

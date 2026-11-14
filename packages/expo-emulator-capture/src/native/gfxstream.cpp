@@ -124,12 +124,16 @@ std::string resolveGfxstream(GumModule* module, Gfxstream& g) {
   resolve(module, "_ZN9gfxstream4host11ColorBuffer16getColorBufferGlEv", g.colorBufferGl);
   resolve(module, "_ZN9gfxstream4host2gl13ColorBufferGl20getBorrowedImageInfoEv",
           g.borrowedImageInfo);
+  resolve(module, "_ZN9gfxstream4host11ColorBuffer11canUseGlOpsEv", g.canUseGlOps);
+  resolve(module, "_ZN9gfxstream4host11ColorBuffer16borrowForDisplayENS1_7UsedApiE", g.borrowForDisplay);
+  resolve(module, "_ZN9gfxstream4host2gl13ColorBufferGl7setSyncEb", g.setSync);
   resolve(module, "_ZN9gfxstream4host2gl13ColorBufferGl8waitSyncEb", g.waitSync);
   resolve(module, "_ZN10translator3egl14eglMakeCurrentEPvS1_S1_S1_", g.eglMakeCurrent, true);
   resolve(module, "_ZN10translator3egl20eglGetCurrentContextEv", g.eglGetCurrentContext, true);
   resolve(module, "_ZN10translator3egl20eglGetCurrentDisplayEv", g.eglGetCurrentDisplay, true);
   resolve(module, "_ZN10translator3egl20eglGetCurrentSurfaceEi", g.eglGetCurrentSurface, true);
-  void* (*glesProc)(const char*) = nullptr;
+  resolve(module, "_ZN9gfxstream4host11FrameBuffer14getEglDispatchEv", g.getEglDispatch);
+  auto& glesProc = g.glesProc;
   if (resolve(module, "_ZN9gfxstream4host2gl35gles2_dispatch_get_proc_func_staticEPKc", glesProc))
     g.getGlobalTexName = reinterpret_cast<decltype(g.getGlobalTexName)>(glesProc("glGetGlobalTexName"));
   return "";
