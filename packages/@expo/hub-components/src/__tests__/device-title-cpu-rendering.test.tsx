@@ -30,10 +30,12 @@ describe("the status pill of an emulator that renders on the CPU", () => {
     expect(html).toContain(">Live</span>");
     expect(html).toContain(`background-color:${icon.warning}`);
     expect(html).toContain(`border:2px solid ${border.warning}`);
-    expect(html).toContain(`color:${text.warning}">Live</span>`);
+    expect(html).toContain(
+      `color:${text.warning}"><span class="hub-status-label" style="display:inline-block">Live</span>`,
+    );
     expect(html).not.toContain(text.success);
     // A sharp 12 px chevron follows the label, pointing down while the details are closed.
-    expect(html).toMatch(/>Live<\/span><svg width="12" height="12" viewBox="0 0 12 12"/);
+    expect(html).toMatch(/>Live<\/span><\/span><svg width="12" height="12" viewBox="0 0 12 12"/);
     expect(html).toMatch(CHEVRON);
     const chevron = html.slice(html.indexOf('viewBox="0 0 12 12"'));
     expect(chevron).toMatch(/^[^>]*aria-hidden="true"/);
@@ -78,7 +80,9 @@ describe("the status pill of an emulator that renders on the CPU", () => {
     const html = markup({ renderingOnCpu: false });
     expect(html.match(/<button/g)).toHaveLength(1);
     expect(html).not.toContain("aria-haspopup");
-    expect(html).toContain(`color:${text.success}">Live</span>`);
+    expect(html).toContain(
+      `color:${text.success}"><span class="hub-status-label" style="display:inline-block">Live</span>`,
+    );
     expect(html).not.toMatch(CHEVRON);
   });
 });
