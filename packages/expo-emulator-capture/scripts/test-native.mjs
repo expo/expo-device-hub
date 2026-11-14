@@ -6,7 +6,7 @@ import { $, root } from "./common.mjs";
 // checks run on any host, including the Linux CI image.
 const compiler = process.env.CXX || "c++";
 await mkdir(join(root, "build"), { recursive: true });
-for (const test of ["protocol", "safety", "encoder-wake", "yuv"]) {
+for (const test of ["protocol", "safety", "encoder-wake", "yuv", "lag-tail"]) {
   await $`${compiler} -std=c++17 -O2 -Wall -Wextra -pthread tests/${test}.test.cpp -o build/${test}-test`;
   await $`./build/${test}-test`;
 }

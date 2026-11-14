@@ -34,6 +34,7 @@
 #include "frida-gum.h"
 #include "gfxstream.h"
 #include "log.h"
+#include "lag-tail.h"
 #include "protocol.h"
 #include "socket-input.h"
 
@@ -91,9 +92,7 @@ constexpr size_t kMaxBufferedOutputBytes = 32 * 1024 * 1024;
 constexpr int kSocketBufferBytes = 4 * 1024 * 1024;
 constexpr size_t kMaxPendingFrames = 2;
 // Lag read: each post copies the frame of the post before, which the renderer has finished.
-// The frame of a post that stays the last one for this long is copied on the encoder thread
-// (the tail rule), so a still screen shows its newest frame.
-constexpr auto kLagTailDelay = std::chrono::milliseconds(50);
+// The capture worker also reads the last post at its LagTail deadline.
 
 std::string jsonEscape(const std::string& text) {
   std::string out;
@@ -217,8 +216,7 @@ class Agent {
   // How posts read frames, chosen at each consumer's settings (see chooseCaptureModes()).
   std::atomic<ReadMode> readMode_{ReadMode::Auto};
   uint32_t previousHandle_ = 0;  // Lag read; guarded by postMutex_.
-  std::atomic<bool> lastPostCaptured_{true};
-  std::atomic<int64_t> lastPostUs_{0};
+  LagTail tail_;  // Guarded by asyncMutex_, including the worker wait.
   std::atomic<uint64_t> lagTails_{0};
   // Lag + async: the newest copy request from the render thread, guarded by asyncMutex_.
   std::mutex asyncMutex_;
@@ -350,34 +348,37 @@ void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
   int64_t elapsedUs =
       std::chrono::duration_cast<std::chrono::microseconds>(entered - start_).count();
   ReadMode mode = effectiveReadMode();
+  bool lag = mode == ReadMode::Lag || mode == ReadMode::LagAsync;
   uint32_t readHandle = handle;
-  if (mode == ReadMode::Lag || mode == ReadMode::LagAsync) {
-    // The frame of this post waits for the next post, or for the tail rule in encoderLoop().
+  if (lag) {
+    // The frame of this post waits for the next post, or for the capture worker's tail rule.
     readHandle = previousHandle_;
     previousHandle_ = handle;
-    lastPostUs_ = elapsedUs;
-    lastPostCaptured_ = false;
-    if (!readHandle) return;
   }
-  if (!pacer_.take(elapsedUs, captureFps_.load())) return;
-  {
+  bool take = readHandle && pacer_.take(elapsedUs, captureFps_.load());
+  if (take) {
     std::lock_guard<std::mutex> guard(encodeMutex_);
     if (pending_.size() >= kMaxPendingFrames) {
       droppedBusy_++;
-      return;
+      take = false;
     }
   }
-  if (mode == ReadMode::LagAsync) {
-    // captureLoop() copies the frame, so the post does not wait for the read.
+  if (lag) {
     {
+      // Publish the deadline and its previous-frame request together. The worker
+      // cannot claim this tail and then receive older work from the same post.
       std::lock_guard<std::mutex> guard(asyncMutex_);
-      if (asyncHandle_) asyncReplaced_++;
-      asyncHandle_ = readHandle;
-      asyncPts_ = nextPts();
+      tail_.post(handle, elapsedUs);
+      if (mode == ReadMode::LagAsync && take) {
+        if (asyncHandle_) asyncReplaced_++;
+        asyncHandle_ = readHandle;
+        asyncPts_ = nextPts();
+      }
     }
     asyncWake_.notify_one();
-    return;
+    if (mode == ReadMode::LagAsync) return;
   }
+  if (!take) return;
   PendingFrame pending;
   std::string error;
   if (!frames_->capture(readHandle, pending.frame, error)) {
@@ -399,28 +400,58 @@ void Agent::captureLoop() {
   for (;;) {
     uint32_t handle = 0;
     uint64_t ptsUs = 0;
+    std::optional<LagTail::Request> tail;
     {
       std::unique_lock<std::mutex> lock(asyncMutex_);
-      asyncWake_.wait(lock, [&] { return asyncHandle_ != 0; });
-      handle = asyncHandle_;
-      ptsUs = asyncPts_;
-      asyncHandle_ = 0;
+      for (;;) {
+        int64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                            Clock::now() - start_).count();
+        // Prefer a due tail over queued work so a stalled capture worker eventually
+        // delivers the final frame even if it still has an older request.
+        tail = tail_.takeIfDue(nowUs);
+        if (tail) {
+          handle = tail->handle;
+          asyncHandle_ = 0;  // Older queued work cannot follow this newer frame.
+          break;
+        }
+        if (asyncHandle_) {
+          handle = asyncHandle_;
+          ptsUs = asyncPts_;
+          asyncHandle_ = 0;
+          break;
+        }
+        if (tail_.pending())
+          asyncWake_.wait_until(lock, start_ + std::chrono::microseconds(tail_.dueUs()));
+        else
+          asyncWake_.wait(lock);
+      }
     }
+    const auto retryTail = [&] {
+      if (!tail) return;
+      std::lock_guard<std::mutex> guard(asyncMutex_);
+      tail_.retry(*tail, std::chrono::duration_cast<std::chrono::microseconds>(
+                            Clock::now() - start_).count());
+    };
     try {
       if (!active_.load(std::memory_order_relaxed)) continue;
       PendingFrame pending;
       std::string error;
       if (!frames_->capture(handle, pending.frame, error)) {
         if (captureErrors_++ % 300 == 0) logLine("frame capture failed: %s", error.c_str());
+        retryTail();
         continue;
       }
-      pending.ptsUs = ptsUs;
+      pending.ptsUs = tail ? nextPts() : ptsUs;
+      if (tail) lagTails_++;
       captured_++;
       {
         std::lock_guard<std::mutex> guard(encodeMutex_);
         if (pending_.size() >= kMaxPendingFrames) {
           droppedBusy_++;
-          continue;
+          if (!tail) continue;
+          // The final frame supersedes old queued frames; dropping it would leave
+          // a static screen showing the penultimate post indefinitely.
+          pending_.pop_front();
         }
         pending_.push_back(std::move(pending));
       }
@@ -428,6 +459,7 @@ void Agent::captureLoop() {
     } catch (...) {
       // An exception must not leave this thread: std::terminate would end QEMU.
       captureErrors_++;
+      retryTail();
     }
   }
 }
@@ -499,21 +531,6 @@ void Agent::encoderLoop() {
         encoderGeneration = generation;
       }
       if (!active) continue;
-      if (!havePending && !lastPostCaptured_) {
-        ReadMode mode = effectiveReadMode();
-        int64_t nowUs =
-            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start_).count();
-        if ((mode == ReadMode::Lag || mode == ReadMode::LagAsync) &&
-            nowUs - lastPostUs_.load() >=
-                std::chrono::duration_cast<std::chrono::microseconds>(kLagTailDelay).count()) {
-          // No post came after the last one, so no post will copy its frame.
-          lastPostCaptured_ = true;
-          if (captureNow(pending)) {
-            havePending = true;
-            lagTails_++;
-          }
-        }
-      }
       if (!havePending && (forceKey || !encoder) &&
           Clock::now() - lastFrameAt >= kIdleKeyFrameDelay) {
         // A static screen posts nothing; capture the last posted frame instead.
@@ -996,7 +1013,11 @@ void Agent::chooseCaptureModes() {
     previousHandle_ = 0;
   }
   readMode_ = mode;
-  lastPostCaptured_ = true;
+  {
+    std::lock_guard<std::mutex> guard(asyncMutex_);
+    tail_.reset();
+    asyncHandle_ = 0;
+  }
   frames_->setOptions(options);
   logLine("capture modes: read %s, probe %s", readModeName(mode), options.probe ? "on" : "off");
 }
