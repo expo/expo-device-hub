@@ -5,7 +5,7 @@
 **Systems:** EmulatorCapture, ServeEmu, Hub, Release
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-04
-**Revised:** 2026-11-06 (x264 build 165 from the system instead of OpenH264; rotation; `-gpu lavapipe`; the EAS emulator step; the release job; fixes from a deep review; the frame rate compared with the gRPC stream); 2026-11-14 (the frame of the post before, read on a capture thread; the read with lavapipe, from a timing matrix); all by Claude Code, directed by Krystof Woldrich
+**Revised:** 2026-11-06 (x264 build 165 from the system instead of OpenH264; rotation; `-gpu lavapipe`; the EAS emulator step; the release job; fixes from a deep review; the frame rate compared with the gRPC stream); 2026-11-14 (the frame of the post before, read on a capture thread; the read with lavapipe, from a timing matrix); all by Claude Code, directed by Krystof Woldrich; 2026-11-14 (capture-worker tail deadlines and retry ownership), by Codex (gpt-6.1-sol), directed by Krystof Woldrich
 **Related:** LLP 0000, LLP 0020
 
 > File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
@@ -40,11 +40,11 @@ The agent core is portable C++: hook, encoder thread, socket server and protocol
 
 The Linux frame source reads a posted color buffer with `FrameBuffer::readColorBufferDeprecated` into a pooled RGBA image; the encoder converts, scales and turns it [observed: `src/native/frame-source-linux.cpp`]. This works with every gfxstream renderer.
 
-The read does not run inside the post [observed: `effectiveReadMode`, `capturePost`, `captureLoop` and `encoderLoop` in `src/native/agent.cpp`]:
+The read does not run inside the post [observed: `effectiveReadMode`, `capturePost`, `captureLoop` in `src/native/agent.cpp` and `LagTail` in `src/native/lag-tail.h`]:
 
-- A post stores its color buffer handle and hands the frame of the post before to a capture thread, which reads it. The renderer has finished that frame, so the read does not wait for it, and the guest's render thread waits for neither the renderer nor the copy.
+- A post stores its color buffer handle and hands the frame of the post before to a capture thread, which reads it. The capture thread waits for the renderer and the copy. The post does not perform that read, although it can still contend for the renderer's shared lock (see Known limitations).
 - The capture thread holds one request. A post replaces a request that the thread has not taken yet. The pacer and the limit of two pending frames work as before.
-- A frame that stays the last one for 50 ms has no post after it, so the encoder thread reads it then (the tail rule). A still screen shows its newest frame.
+- A frame that stays the last one for 50 ms has no post after it, so the capture thread reads it at that deadline (the tail rule). Every lag post wakes that worker, including a first post with no preceding frame and a post skipped by the pacer. Deadline state and condition-variable waits share one mutex, so a tail does not wait for the encoder's one-second idle timeout. Claiming a due tail happens under that mutex before readback; a new post during readback keeps its own deadline. A failed read retries only while its sequence is still current, and the final frame supersedes an older queued frame if the encoder queue is full [observed: `LagTail`, `capturePost`, `captureLoop`; regression tests in `tests/lag-tail.test.cpp`].
 - Each frame reaches the encoder one post later: about 17 ms at 60 FPS, and 50 ms for the last frame before a still screen.
 
 Until 2026-11-14, the read of this post's frame ran inside the post, as on macOS, so the guest waited for the renderer to finish the frame and for the copy. With `-gpu lavapipe`, that read took 5.9 to 6.9 ms [observed: agent `stats` lines, EAS runs, 2026-11-05 and 2026-11-06]. With the SwiftShader translator, a 1×1 read of the frame of the post before took 0.27–0.28 ms, against about 15 ms of wait for the frame of this post [observed: EAS VM, 2026-11-04]. On 2026-11-13, with an experiment build on EAS Linux VMs (22 vCPUs), through the Hub with a WebRTC viewer and the Hub recording at 1080×2424, on a page that changes color every frame, SwiftShader went from 50.2–51.7 to 60.0 FPS, and lavapipe from 54.5–55.0 to 56.0–56.9 FPS [observed: EAS runs, 2026-11-13].
@@ -157,7 +157,7 @@ Without the capture, the Hub streams an emulator from the emulator's gRPC screen
 
 - The generic `build` task builds only the macOS agent and warns on other hosts, so Linux CI, which builds every package, needs no x264 header. The Linux agent has its own task, `build:linux-x64`, which fails on any other host [observed: `scripts/platform.mjs`, `package.json`].
 - The two agents need separate Turborepo cache entries, because the cache key does not include the host. `turbo.json` declares `expo-emulator-capture#build:linux-x64` with `dist/linux-x64/**` as its output [observed: `turbo.json`].
-- The release cache workflow has a second job on an Ubuntu 26.04 image. It installs `libx264-dev`, applies the same version steps as the macOS job, and runs only the Linux task with `--force`. The release job restores it, then checks that both agents exist before the version commit [observed: `.eas/workflows/build-release-cache.yml`, `.github/workflows/release.yml`, `scripts/check-dist.mjs`]. This path has not run yet: it needs the production `TURBO_TOKEN` and a release.
+- The release cache workflow has a second job on an Ubuntu 26.04 image. It installs `libx264-dev`, applies the same version steps as the macOS job, and runs only the Linux task with `--force`. The release job restores it, then checks that both agents exist before the version commit [observed: `.eas/workflows/build-release-cache.yml`, `.github/workflows/release.yml`, `scripts/check-dist.mjs`]. The PR reports a canary release run on 2026-11-06; that evidence predates the current tail changes [observed: the Evidence section of https://github.com/expo/expo-device-hub/pull/571].
 
 ## Known limitations
 
