@@ -5,7 +5,7 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
+**Revised:** 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -867,11 +867,13 @@ CoreDevice reads, PNG parsing, or file readback. [observed: `Sources/SimNative/F
 `ScreenshotEncoder.swift`, `CaptureEngine.swift`; `src/device-session.ts`]
 
 HTTP `/api/screenshot` retains its PNG body and returns the same metadata in
-`X-Expo-Screenshot-Metadata`, exposed to allowed CORS callers. Binary exec-ws
-framing remains unchanged. serve-sim adds no PNG parsing, file readback,
+`X-Expo-Screenshot-Metadata`, exposed to allowed CORS callers. The binary exec-ws
+frame layout is unchanged; binary replies carry the same metadata in a following
+`{id, screenshotMetadata}` JSON frame (see the exec-ws binary screenshot paragraph).
+serve-sim adds no PNG parsing, file readback,
 sidecars, device queries, or opt-in environment variable for metadata.
 [observed: `src/host-actions.ts`,
-`src/middleware.ts`]
+`src/middleware.ts`, `src/socket/server-control.ts`]
 
 ServeEmu returns the same object in PNG headers and its existing base64 JSON
 response. Both standalone and Hub-mounted routes use the same capture helper.
@@ -994,8 +996,24 @@ omitting them preserves native-resolution PNG.
 The first four bytes are the unsigned 32-bit request ID in network byte order;
 the remaining bytes are the requested PNG or JPEG. IDs must be integers from
 0 through 4294967295.
-Failures return the usual JSON `{id, error}` frame. Concurrent replies may arrive
-out of order. This request goes through the HTTP screenshot route, so it shares that route's display selection, including verified cold-session direct capture, its device restrictions, display validation, artifact persistence and error handling. It is also subject to the socket's eight-action admission limit. Device names resolve as for ordinary actions; the
+Directly after the binary frame, the server sends a JSON frame
+`{id, screenshotMetadata}` for the same ID. `screenshotMetadata` is the value of the
+HTTP `X-Expo-Screenshot-Metadata` header for the same request. Binary requests go
+through the HTTP route, so simctl captures, including verified cold-session
+capture, report unknown values as described above. When the header is missing or
+unreadable, the frame reports the unknown values
+`{width: 0, height: 0, displayRotation: null}`. Clients identify the frame by its
+`screenshotMetadata` key. Successful replies to `{id, ui}` requests also have no
+`exitCode`, `stdout` or `error`, so a client must not reuse an ID until the
+metadata frame for it has arrived.
+The binary frame comes first, so a client that does not know this frame has its
+image before the metadata frame arrives.
+`actions.describe` advertises the frame with
+`screenshot.capture.properties.output.binaryMetadataFrame: true`; clients wait for
+the frame only when that flag is present, because older servers do not send it.
+[observed: `server-control.ts`, `screenshotMetadataFromHeaders`, `ScreenshotParams`]
+Failures return the usual JSON `{id, error}` frame and no metadata frame.
+Concurrent replies may arrive out of order. This request goes through the HTTP screenshot route, so it shares that route's display selection, including verified cold-session direct capture, its device restrictions, display validation, artifact persistence and error handling. It is also subject to the socket's eight-action admission limit. Device names resolve as for ordinary actions; the
 single-device policy still applies. `fileName` is only supported in path mode.
 `output` defaults to `"path"`, which still returns a staged path and rejects the
 image options. Output selection is specific to the screenshot action. `actions.describe` advertises the supported
