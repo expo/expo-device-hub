@@ -88,6 +88,8 @@ The consumer sends `K` for a keyframe, `S` and three big-endian u32 values (long
 - Under backpressure (8 MB queued), the agent drops delta frames until the next keyframe, and requests the keyframe once the queue drains to half. Keyframes and control records are never dropped; a consumer whose queue grows past 32 MB stopped reading, and the agent closes it [observed: `sendRecord` and `flushOutput`].
 - The encoder thread catches exceptions, so an unexpected size cannot end QEMU through `std::terminate`. The stream size keeps a short edge of at least 2 [observed: `encoderLoop`, `streamSize` in `src/native/protocol.h`].
 
+The package's diagnostic `record` CLI pauses the socket while its output file is backpressured. It validates duration and settings before opening the output, and exits unsuccessfully for output errors, encoder errors, an early socket close or no video frames [observed: `record` in `src/cli.mjs`, process tests in `tests/cli-record.test.mjs`].
+
 ## Folding and resizes
 
 Folding changes the size of the posted color buffers: 2076×2152 unfolded and 1080×2424 folded on the Pixel 9 Pro Fold profile [observed: capture on 2026-11-04]. When a frame's size differs, the encoder thread re-creates the encoder and sends resized, configured and an IDR [observed: `encoderLoop` in `src/native/agent.cpp`]. serve-emu uses the resized size to map touches, which go to the native display because scrcpy runs without video, as in `grpc-session.ts`. A configured record with a new size becomes a `session` packet, so the middleware resyncs every client from a keyframe [observed: serve-emu `src/gpu-session.ts`, `middleware.ts`].
