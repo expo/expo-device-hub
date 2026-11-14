@@ -21,8 +21,10 @@ function parseExtraArgs(value: string): string[] {
 
 /**
  * Build the `emulator` arguments for a boot.
- * Let the emulator choose the GPU backend that best matches the host.
- * `EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS` is appended last, with shell-style quoting.
+ * `-gpu` is `options.gpu`, or `auto` to let the emulator choose the GPU backend;
+ * `bootDevice` picks the mode for the host (see `defaultEmulatorGpu`).
+ * `EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS` is appended last, with shell-style quoting,
+ * so a `-gpu` there wins: the emulator takes the last `-gpu`.
  */
 export function buildEmulatorArgs(options: BootDeviceOptions, env = process.env): string[] {
   return [
@@ -32,7 +34,7 @@ export function buildEmulatorArgs(options: BootDeviceOptions, env = process.env)
     "-no-window",
     "-no-metrics",
     "-gpu",
-    "auto",
+    options.gpu ?? "auto",
     "-no-boot-anim",
     "-port",
     String(options.port),

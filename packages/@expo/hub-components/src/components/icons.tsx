@@ -443,6 +443,38 @@ export function WarningIcon({
   );
 }
 
+/**
+ * A down chevron drawn on a 12-unit grid, so its 1.5 px lines stay sharp at
+ * 12 px, unlike a 24-unit Lucide drawing scaled down. Marks a status that
+ * opens details.
+ */
+export function SmallChevronDownIcon({
+  size = 12,
+  color = "currentColor",
+  strokeWidth = 1.5,
+  style,
+}: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+      style={style}
+    >
+      <path
+        d="M3 4.5 6 7.5l3-3"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Lucide `check` — trailing mark on the selected recent row. */
 export function CheckIcon({
   size = 17,

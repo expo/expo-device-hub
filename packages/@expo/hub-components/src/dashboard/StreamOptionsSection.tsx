@@ -13,7 +13,7 @@ import {
   type DeviceStreamSource,
   type DeviceWebRtcCodec,
 } from "@expo/hub-client";
-import { Select, type SelectOption } from "../primitives";
+import { Select, text, textSize, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { SectionNote } from "./SectionNote";
 import { SidebarRow } from "./SidebarRow";
@@ -21,6 +21,18 @@ import { type StreamModeAvailability } from "./StreamSection";
 import { StreamStatistics } from "./StreamStatistics";
 
 type StreamTransport = "http" | "websocket" | "webrtc";
+
+/**
+ * What an Android device renders with: the host's CPU (a software renderer) or
+ * a GPU. `unknown` until the Hub answers, and when it cannot read the renderer.
+ */
+export type DeviceRendering = "unknown" | "cpu" | "gpu";
+
+const RENDERING_LABELS: Record<DeviceRendering, string> = {
+  unknown: "Unknown",
+  cpu: "CPU",
+  gpu: "GPU",
+};
 
 export type StreamOptionsSectionProps = {
   client: DeviceClient;
@@ -31,6 +43,11 @@ export type StreamOptionsSectionProps = {
   streamModeAvailability?: StreamModeAvailability;
   onStreamModeChange?: (mode: DeviceStreamMode) => void;
   onHttpCodecChange?: (codec: DeviceHttpCodec) => void;
+  /**
+   * What the device renders with. Omit to hide the row, as for iOS; an Android
+   * device shows it from the start, as `unknown`, so the rows do not move.
+   */
+  rendering?: DeviceRendering;
 };
 
 const DEFAULT_SETTINGS: DeviceStreamEncoderSettings = {
@@ -134,6 +151,7 @@ export function StreamOptionsSection({
   streamModeAvailability = DEFAULT_AVAILABILITY,
   onStreamModeChange,
   onHttpCodecChange,
+  rendering,
 }: StreamOptionsSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
   const recordingControlsLocked = client.recordingLock !== null;
@@ -254,6 +272,13 @@ export function StreamOptionsSection({
 
   return (
     <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
+      {rendering && (
+        <SidebarRow label="Rendering">
+          <span aria-live="polite" style={{ ...textSize.sm, flexShrink: 0, color: text.secondary }}>
+            {RENDERING_LABELS[rendering]}
+          </span>
+        </SidebarRow>
+      )}
       {streamSource && sourceOptions.length > 1 && (
         <>
           <SidebarRow label="Source">

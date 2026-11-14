@@ -12,7 +12,7 @@ import { type FoldPreviewOption } from "./FoldSettings";
 import { EventsSection } from "./EventsSection";
 import { LocationSection } from "./LocationSection";
 import { LogsSection } from "./LogsSection";
-import { StreamOptionsSection } from "./StreamOptionsSection";
+import { type DeviceRendering, StreamOptionsSection } from "./StreamOptionsSection";
 import { type Device } from "./data";
 import { type StreamModeAvailability } from "./StreamSection";
 
@@ -23,6 +23,11 @@ export type LogSidebarProps = {
   client?: DeviceClient;
   /** Selected device metadata used by viewer-local options. */
   device?: Device;
+  /**
+   * What the selected Android device renders with, shown in Stream options;
+   * `unknown` until the Hub answers. Ignored for iOS.
+   */
+  rendering?: DeviceRendering;
   /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
   showScreenShape?: boolean;
   /** Change the viewer-local screen shape preference. */
@@ -67,6 +72,7 @@ export type InspectorSectionsProps = Omit<LogSidebarProps, "onToggle" | "width">
 export function InspectorSections({
   client,
   device,
+  rendering,
   showScreenShape = true,
   onShowScreenShapeChange,
   screenShapeAvailable = false,
@@ -90,6 +96,7 @@ export function InspectorSections({
     : undefined;
   // Physical devices cannot be deleted from the host.
   const onRemoveDevice = device?.physical ? undefined : onRemove;
+  const androidRendering = device?.platform === "android" ? (rendering ?? "unknown") : undefined;
 
   return (
     <>
@@ -116,6 +123,7 @@ export function InspectorSections({
           streamModeAvailability={streamModeAvailability}
           onStreamModeChange={onStreamModeChange}
           onHttpCodecChange={onHttpCodecChange}
+          rendering={androidRendering}
         />
       )}
       {client?.capabilities.camera && <CameraSection client={client} />}

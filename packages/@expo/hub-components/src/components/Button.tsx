@@ -1,4 +1,10 @@
-import { type CSSProperties, type ReactNode, useState } from "react";
+import {
+  type ButtonHTMLAttributes,
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+  useState,
+} from "react";
 
 import { radius, textSize } from "../theme/tokens";
 
@@ -82,11 +88,36 @@ const SIZE_STYLES: Record<ButtonSize, CSSProperties> = {
     borderRadius: radius.lg,
     ...textSize.xs,
   },
-  xs: { height: BUTTON_HEIGHTS.xs, paddingInline: 12, borderRadius: radius.lg, ...textSize.xs },
-  sm: { height: BUTTON_HEIGHTS.sm, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
-  md: { height: BUTTON_HEIGHTS.md, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
-  lg: { height: BUTTON_HEIGHTS.lg, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
-  xl: { height: BUTTON_HEIGHTS.xl, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
+  xs: {
+    height: BUTTON_HEIGHTS.xs,
+    paddingInline: 12,
+    borderRadius: radius.lg,
+    ...textSize.xs,
+  },
+  sm: {
+    height: BUTTON_HEIGHTS.sm,
+    paddingInline: 16,
+    borderRadius: radius.lg,
+    ...textSize.sm,
+  },
+  md: {
+    height: BUTTON_HEIGHTS.md,
+    paddingInline: 16,
+    borderRadius: radius.lg,
+    ...textSize.sm,
+  },
+  lg: {
+    height: BUTTON_HEIGHTS.lg,
+    paddingInline: 24,
+    borderRadius: radius.lg,
+    ...textSize.base,
+  },
+  xl: {
+    height: BUTTON_HEIGHTS.xl,
+    paddingInline: 24,
+    borderRadius: radius.lg,
+    ...textSize.base,
+  },
   "2xl": {
     height: BUTTON_HEIGHTS["2xl"],
     paddingInline: 24,
@@ -95,7 +126,7 @@ const SIZE_STYLES: Record<ButtonSize, CSSProperties> = {
   },
 };
 
-export type ButtonProps = {
+type OwnButtonProps = {
   children?: ReactNode;
   theme?: ButtonTheme;
   size?: ButtonSize;
@@ -114,7 +145,16 @@ export type ButtonProps = {
   onClick?: () => void;
   className?: string;
   style?: CSSProperties;
+  /** The rendered `<button>`. Ignored when rendering a link. */
+  ref?: Ref<HTMLButtonElement>;
 };
+
+/**
+ * Other `<button>` attributes, such as `aria-*` and `id`, pass through to the
+ * button, so a Radix trigger can wrap it with `asChild`. Ignored when rendering a link.
+ */
+export type ButtonProps = OwnButtonProps &
+  Omit<ButtonHTMLAttributes<HTMLButtonElement>, keyof OwnButtonProps | "color">;
 
 export function Button({
   children,
@@ -130,6 +170,8 @@ export function Button({
   onClick,
   className,
   style,
+  ref,
+  ...buttonAttributes
 }: ButtonProps) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -193,12 +235,29 @@ export function Button({
 
   return (
     <button
+      {...buttonAttributes}
+      ref={ref}
       type={type}
       className={className}
       style={baseStyle}
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
-      {...handlers}
+      onMouseEnter={(event) => {
+        handlers.onMouseEnter();
+        buttonAttributes.onMouseEnter?.(event);
+      }}
+      onMouseLeave={(event) => {
+        handlers.onMouseLeave();
+        buttonAttributes.onMouseLeave?.(event);
+      }}
+      onMouseDown={(event) => {
+        handlers.onMouseDown();
+        buttonAttributes.onMouseDown?.(event);
+      }}
+      onMouseUp={(event) => {
+        handlers.onMouseUp();
+        buttonAttributes.onMouseUp?.(event);
+      }}
     >
       {content}
     </button>
