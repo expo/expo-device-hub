@@ -143,6 +143,21 @@ value stops the Hub at startup with the variable name in the error.
 On success, `recordings.json` in the output directory lists a subdirectory containing
 `recording.mp4` and `session.json`. Failed recordings leave the manifest empty.
 
+With `--experimental-emulator-capture` and an emulator that runs the capture agent, the agent
+encodes the recording on its own, apart from the live stream. The recording then needs no
+settings: it uses the emulator's native resolution, the display's refresh rate from the AVD
+(`hw.lcd.vsync`, 60 on the usual profiles, at most 120) and 8 Mbit/s, in the panel orientation,
+with a keyframe at least once a second. Three variables change that at the start:
+`EXPO_DEVICE_HUB_RECORDING_MAX_DIMENSION` (0 for native, or 16 to 4096),
+`EXPO_DEVICE_HUB_RECORDING_FPS` (1 to 120) and `EXPO_DEVICE_HUB_RECORDING_BITRATE` (100000 to
+50000000). Stream settings, the stream source, viewers, rotation, folds and the device options do
+not end such a recording, and the Hub keeps every control available while it runs; the recording
+status that `/api` reports has `independent: true`. `session.json` has a `deviceStates`
+timeline with the UI orientation, and for a foldable the display and the hinge angle. When the
+emulator shuts down or goes away, the recording finishes at once with
+`stopReason: "device-ended"`, and the stop request publishes it. LLP 0023 in the repository's
+`llp/` folder describes it.
+
 A foldable emulator, such as the Pixel 9 Pro Fold, can fold and unfold while it records with
 the default gRPC capture. The Hub records it on one fixed canvas that fits both displays and
 centers the shown display on it. `session.json` then has a `deviceStates` timeline with the
@@ -153,8 +168,9 @@ emulator's gRPC controller every 100 ms. The recording status that `/api` report
 a fold still ends the recording, and the Hub refuses fold commands while it records. LLP 0018
 in the repository's `llp/` folder describes the canvas and the timeline.
 
-Keep the emulator's orientation and capture settings unchanged during recording.
-Rotation invalidates the recording. A capture failure does not: the Hub restarts the
+Without the capture agent, the recording takes the stream's packets. Keep the emulator's
+orientation and capture settings unchanged during such a recording; the Hub locks those
+controls meanwhile. Rotation invalidates it. A capture failure does not: the Hub restarts the
 capture and the recording continues when the encoder configuration is unchanged. The gap
 appears as a held frame. The MP4 is fragmented, so a
 forced kill leaves a `recording.mp4.partial` that plays up to the last keyframe before

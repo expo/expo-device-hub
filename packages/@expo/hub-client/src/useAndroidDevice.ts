@@ -88,6 +88,7 @@ import {
   parseScreenRecordingStatus,
   foldRecordingLock,
   screenRecordingFollowsFold,
+  screenRecordingIndependent,
   recordingLockReason,
   recordingOrientationUnavailable,
 } from "./screen-recording";
@@ -373,19 +374,28 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     scope: string;
     status: DeviceScreenRecordingStatus | null;
     followsFold: boolean;
-  }>({ scope: deviceScope, status: initialRecording, followsFold: false });
+    independent: boolean;
+  }>({ scope: deviceScope, status: initialRecording, followsFold: false, independent: false });
   if (recordingSnapshot.scope !== deviceScope) {
-    setRecordingSnapshot({ scope: deviceScope, status: initialRecording, followsFold: false });
+    setRecordingSnapshot({
+      scope: deviceScope,
+      status: initialRecording,
+      followsFold: false,
+      independent: false,
+    });
   }
   const screenRecording =
     recordingSnapshot.scope === deviceScope ? recordingSnapshot.status : initialRecording;
   const recordingFollowsFold =
     recordingSnapshot.scope === deviceScope && recordingSnapshot.followsFold;
-  // @ref LLP 0013#recording-lock — temporary until recordings survive rotation and stream changes
-  // Turning the device or changing the stream can end the host recording, so the three places
-  // that send those changes (`putStreamMode`, `updateStreamSettings` and the orientation
-  // backend) ignore them while it could break.
-  const recordingLock = recordingLockReason(screenRecording);
+  const recordingIndependent =
+    recordingSnapshot.scope === deviceScope && recordingSnapshot.independent;
+  // @ref LLP 0013#recording-lock — only a recording of the stream's packets locks the controls
+  // Turning the device or changing the stream can end a host recording that takes the stream's
+  // packets, so the three places that send those changes (`putStreamMode`,
+  // `updateStreamSettings` and the orientation backend) ignore them while it could break. A
+  // recording that reports `independent` has its own encode and needs no lock.
+  const recordingLock = recordingLockReason(screenRecording, recordingIndependent);
   const recordingControlsLocked = recordingLock !== null;
   // @ref LLP 0013#recording-lock — a recording that follows folds leaves fold commands free
   const foldLock = foldRecordingLock(recordingLock, recordingFollowsFold);
@@ -1014,12 +1024,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         const nextViewerTransports = parseServeEmuViewerTransports(info.viewerTransports);
         const recordingStatus = parseScreenRecordingStatus(info.screenRecording);
         const followsFold = screenRecordingFollowsFold(info.screenRecording);
+        const independent = screenRecordingIndependent(info.screenRecording);
         setRecordingSnapshot((current) =>
           current.scope === deviceScope &&
           current.status === recordingStatus &&
-          current.followsFold === followsFold
+          current.followsFold === followsFold &&
+          current.independent === independent
             ? current
-            : { scope: deviceScope, status: recordingStatus, followsFold },
+            : { scope: deviceScope, status: recordingStatus, followsFold, independent },
         );
         setServerStreamSettings((current) =>
           JSON.stringify(current) === JSON.stringify(next) ? current : next,

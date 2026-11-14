@@ -12,7 +12,8 @@ export type RecordingGeometry = {
   /** The shown display's native size. */
   width: number;
   height: number;
-  screen: RecordingScreen;
+  /** Which display of a foldable; absent for a device with one display. */
+  screen?: RecordingScreen;
   /** The picture's bounds on the canvas, without the letterbox borders. */
   contentRect: RecordingRect;
 };

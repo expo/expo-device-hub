@@ -83,3 +83,42 @@ export function rotationCommand(rotation) {
   command.writeUInt32BE(rotation, 1);
   return command;
 }
+
+/** The first hello "protocol" value whose agent serves a stream and a recording consumer. */
+export const ROLE_PROTOCOL = 3;
+
+/** Consumer roles: one consumer of each role at a time. */
+export const ROLES = Object.freeze({ stream: 0, recording: 1 });
+
+/**
+ * The 'U' command: the consumer's role. It comes before the first 'S', which assigns it; a
+ * consumer without it is a stream consumer.
+ */
+export function roleCommand(role) {
+  const value = typeof role === "string" ? ROLES[role] : role;
+  if (value !== ROLES.stream && value !== ROLES.recording)
+    throw new RangeError("role must be stream (0) or recording (1)");
+  const command = Buffer.alloc(5);
+  command[0] = 0x55; // U
+  command.writeUInt32BE(value, 1);
+  return command;
+}
+
+/**
+ * The 'C' command: the recording's fixed canvas. The agent places every frame on it, centered,
+ * scaled down only when it does not fit. Both edges are even, from 2 to 4096.
+ */
+export function canvasCommand({ width, height }) {
+  for (const [name, value] of [
+    ["width", width],
+    ["height", height],
+  ]) {
+    if (!Number.isInteger(value) || value < 2 || value > 4096 || value % 2 !== 0)
+      throw new RangeError(`canvas ${name} must be an even integer from 2 to 4096`);
+  }
+  const command = Buffer.alloc(9);
+  command[0] = 0x43; // C
+  command.writeUInt32BE(width, 1);
+  command.writeUInt32BE(height, 5);
+  return command;
+}

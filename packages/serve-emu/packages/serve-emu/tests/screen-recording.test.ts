@@ -143,6 +143,52 @@ test.each([
   await expect(setup(limits)).rejects.toThrow("Invalid recording limit");
 });
 
+test.each([
+  { maxSize: 8 },
+  { maxSize: 4097 },
+  { maxSize: 1.5 },
+  { fps: 0 },
+  { fps: 121 },
+  { bitRate: 99_999 },
+  { bitRate: 50_000_001 },
+])("rejects invalid recording encode settings %j before any disk write", async (encoding) => {
+  const root = await mkdtemp(join(tmpdir(), "screen-recording-encoding-"));
+  roots.push(root);
+  await expect(
+    ScreenRecording.create({
+      directory: join(root, "session"),
+      udid: "emulator-5554",
+      deviceName: "Pixel",
+      runtimeDisplayName: "Android 16",
+      encoding,
+    }),
+  ).rejects.toThrow("Invalid recording encoding");
+  await expect(stat(join(root, "session"))).rejects.toThrow();
+});
+
+test("an independent recording says so until it finishes, and the device end finishes it", async () => {
+  const { recording, root, setTime } = await setup({
+    encoding: { maxSize: 0, fps: 120, bitRate: 100_000 },
+  });
+  recording.markIndependent();
+  expect(recording.snapshot()).toEqual({ status: "waiting", independent: true });
+  recording.accept(frame(10_000_000n), size, "capture-recording");
+  await recording.ready;
+  expect(recording.snapshot()).toMatchObject({ status: "recording", independent: true });
+  setTime(12_000_000n);
+  const ending = recording.endWithDevice();
+  expect(recording.snapshot()).toEqual({ status: "finalizing", independent: true });
+  await ending;
+  // A later stop request publishes the same recording.
+  expect(recording.finish()).toBe(ending);
+  expect(recording.snapshot()).toEqual({ status: "complete" });
+  expect(JSON.parse(await readFile(join(root, "session/session.json"), "utf8"))).toMatchObject({
+    status: "complete",
+    stopReason: "device-ended",
+    durationSeconds: 2,
+  });
+});
+
 test("rejects low free space before opening the output", async () => {
   const { root } = await setup();
   const path = join(root, "guarded.mp4");

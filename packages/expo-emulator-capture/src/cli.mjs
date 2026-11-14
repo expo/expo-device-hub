@@ -8,9 +8,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
+  canvasCommand,
   FLAGS,
   KEY_FRAME_COMMAND,
   RecordReader,
+  ROLE_PROTOCOL,
+  roleCommand,
+  ROLES,
   ROTATION_PROTOCOL,
   rotationCommand,
   settingsCommand,
@@ -21,14 +25,20 @@ const USAGE = `Usage:
   expo-emulator-capture launch [--socket <path>] [--log <path>] [--emulator <path>] -- <emulator args>
   expo-emulator-capture record --socket <path> --output <file.h264> [--seconds 10]
                                [--fps 60] [--max-size 0] [--bit-rate 12000000]
-                               [--rotation 0]
+                               [--rotation 0] [--role stream|recording]
+                               [--canvas <width>x<height>]
   expo-emulator-capture socket-path --port <console port>
 
 launch starts the emulator with the capture agent preloaded. Pass -port to the
 emulator, or --socket, so the socket path is known. On macOS, use -gpu host for
 the GPU frame path; software renderers use CPU readback. On Linux, every renderer
 uses CPU readback, -gpu lavapipe is the tested one, and the agent encodes with the
-system's x264 build 165 (Ubuntu 26.04: sudo apt install libx264-165).`;
+system's x264 build 165 (Ubuntu 26.04: sudo apt install libx264-165).
+
+record takes the stream role by default. --role recording takes the recording role,
+which another program's stream does not replace: the panel orientation, keyframes at
+least once a second, and each frame placed on --canvas (default: the first frame's
+size, capped by --max-size).`;
 
 function fail(message) {
   console.error(`[expo-emulator-capture] ${message}`);
@@ -115,12 +125,27 @@ function record(argv) {
       "max-size": { type: "string" },
       "bit-rate": { type: "string" },
       rotation: { type: "string" },
+      role: { type: "string" },
+      canvas: { type: "string" },
     },
   });
   if (!values.socket || !values.output) fail("record needs --socket and --output");
   // Android's display rotation (0 to 3); the agent turns the picture upright.
   const rotation = integer("rotation", values.rotation, 0);
   if (rotation < 0 || rotation > 3) fail("--rotation must be 0, 1, 2 or 3");
+  const role = values.role ?? "stream";
+  if (!(role in ROLES)) fail("--role must be stream or recording");
+  let canvas = null;
+  if (values.canvas !== undefined) {
+    const match = /^(\d+)x(\d+)$/.exec(values.canvas);
+    if (!match || role !== "recording")
+      fail("--canvas needs --role recording and <width>x<height>");
+    try {
+      canvas = canvasCommand({ width: Number(match[1]), height: Number(match[2]) });
+    } catch (error) {
+      fail(error.message);
+    }
+  }
   const seconds = Number(values.seconds ?? 10);
   if (!Number.isFinite(seconds) || seconds <= 0 || seconds * 1000 > 2_147_483_647)
     fail("--seconds must be positive and within the timer range");
@@ -147,6 +172,12 @@ function record(argv) {
         if ((details.protocol ?? 1) < ROTATION_PROTOCOL)
           fail("this capture agent cannot turn the picture; rebuild it");
         socket.write(rotationCommand(rotation));
+      }
+      if (role === "recording") {
+        if ((details.protocol ?? 1) < ROLE_PROTOCOL)
+          fail("this capture agent has no recording role; rebuild it");
+        socket.write(roleCommand(role));
+        if (canvas) socket.write(canvas);
       }
       socket.write(command);
     } else if (entry.flags === FLAGS.replaced) {

@@ -1,6 +1,5 @@
 import type { HingeSensor } from "./fold.ts";
 import type { RecordingPose } from "./recording-canvas.ts";
-import type { ScreenOrientation } from "./shared/api-contracts.ts";
 
 // @ref LLP 0018#hinge-readings — gRPC reads every 100 ms, as serve-sim's hinge monitor updates
 /** How often a foldable's recording reads the hinge over the emulator's gRPC controller. */
@@ -14,8 +13,7 @@ export type FoldRecordingFeedOptions = {
   openSensor(signal: AbortSignal): Promise<HingeSensor>;
   /** The hinge angle over adb, or null when the device has none. */
   readHingeOverAdb(): Promise<number | null>;
-  /** The pose that the UI shows on the panel now, or null before the first reading. */
-  orientation(): ScreenOrientation | null;
+  /** A hinge reading; the orientation feed reads the orientation apart from it. */
   observe(pose: RecordingPose): void;
   /** False once the recording ends; the feed then stops, and closes the gRPC sensor. */
   active(): boolean;
@@ -28,8 +26,8 @@ export type FoldRecordingFeed = {
 };
 
 /**
- * Reads the hinge and the orientation while a foldable records, since the hinge also moves
- * through adb, agent-device, or the emulator's own controls. The emulator has no hinge angle
+ * Reads the hinge while a foldable records, since the hinge also moves through adb,
+ * agent-device, or the emulator's own controls. The emulator has no hinge angle
  * stream, so the feed reads the angle and reads it again at once when the emulator pushes a
  * posture change.
  */
@@ -89,12 +87,8 @@ export function startFoldRecordingFeed(options: FoldRecordingFeedOptions): FoldR
     reading = true;
     void readHinge()
       .then((hingeAngle) => {
-        if (stopped) return;
-        const orientation = options.orientation();
-        options.observe({
-          ...(hingeAngle !== null ? { hingeAngle } : {}),
-          ...(orientation !== null ? { orientation } : {}),
-        });
+        if (stopped || hingeAngle === null) return;
+        options.observe({ hingeAngle });
       })
       .catch(() => {})
       .finally(() => {
