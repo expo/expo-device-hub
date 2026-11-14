@@ -28,11 +28,13 @@
 #include <thread>
 #include <vector>
 #include "encoder.h"
+#include "callback.h"
 #include "frame-source.h"
 #include "frida-gum.h"
 #include "gfxstream.h"
 #include "log.h"
 #include "protocol.h"
+#include "socket-input.h"
 
 // The package version; the build passes it from package.json.
 #ifndef EXPO_EMULATOR_CAPTURE_VERSION
@@ -46,16 +48,20 @@ namespace expo_capture {
 FILE* logFile = nullptr;
 std::mutex logMutex;
 
-void logLine(const char* format, ...) {
+void logLine(const char* format, ...) noexcept {
   char line[1024];
   va_list args;
   va_start(args, format);
   vsnprintf(line, sizeof(line), format, args);
   va_end(args);
-  std::lock_guard<std::mutex> guard(logMutex);
-  FILE* out = logFile ? logFile : stderr;
-  fprintf(out, "[expo-emulator-capture] %s\n", line);
-  fflush(out);
+  try {
+    std::lock_guard<std::mutex> guard(logMutex);
+    FILE* out = logFile ? logFile : stderr;
+    fprintf(out, "[expo-emulator-capture] %s\n", line);
+    fflush(out);
+  } catch (...) {
+    // Logging an exception must not throw another one across a callback boundary.
+  }
 }
 
 namespace {
@@ -220,7 +226,9 @@ bool Agent::initialize(GumModule* backend, std::string& error) {
   }
   fcntl(wakePipe_[0], F_SETFL, O_NONBLOCK);
   fcntl(wakePipe_[1], F_SETFL, O_NONBLOCK);
-  std::thread([this] { encoderLoop(); }).detach();
+  std::thread([this] {
+    guardCallback("encoder stopped", [this] { encoderLoop(); });
+  }).detach();
   return true;
 }
 
@@ -281,8 +289,7 @@ uint64_t Agent::nextPts() {
 }
 
 bool Agent::captureNow(PendingFrame& out) {
-  void* fb = g_.getFB();
-  uint32_t handle = fb ? g_.lastPostedColorBuffer(fb) : 0;
+  uint32_t handle = lastPostedHandle(g_);
   if (!handle) return false;
   std::string error;
   if (!frames_->capture(handle, out.frame, error)) {
@@ -554,7 +561,6 @@ void Agent::serve() {
         }
       }
       if (outputStalled_.exchange(false)) disconnect("consumer stopped reading");
-      if (fds[0].revents & POLLIN) accept();
       if (client_ >= 0 && count == 3) {
         if (fds[2].revents & (POLLERR | POLLNVAL)) {
           disconnect("socket error");
@@ -563,6 +569,9 @@ void Agent::serve() {
         if (fds[2].revents & (POLLIN | POLLHUP)) readCommands();
         if (client_ >= 0) flushOutput();
       }
+      // Handle the polled consumer before replacing it. Its POLLERR/POLLHUP belongs to
+      // the old connection and must never disconnect a newly accepted consumer.
+      if (fds[0].revents & POLLIN) accept();
     } catch (const std::exception& error) {
       // An exception must not leave this thread either: std::terminate would end QEMU.
       logLine("socket error: %s", error.what());
@@ -601,7 +610,7 @@ void Agent::accept() {
   }
   int width = 0, height = 0;
   void* fb = g_.getFB();
-  if (!fb || !colorBufferSize(g_, g_.lastPostedColorBuffer(fb), width, height)) {
+  if (!fb || !colorBufferSize(g_, lastPostedHandle(g_), width, height)) {
     width = fb ? g_.frameBufferWidth(fb) : 0;
     height = fb ? g_.frameBufferHeight(fb) : 0;
   }
@@ -617,19 +626,17 @@ void Agent::accept() {
 }
 
 void Agent::readCommands() {
-  uint8_t bytes[256];
-  for (;;) {
-    ssize_t n = recv(client_, bytes, sizeof(bytes), 0);
+  {
+    ssize_t n = readCommandBatch(client_, commands_);
     if (n == 0) {
       disconnect("consumer closed the socket");
       return;
     }
     if (n < 0) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) break;
+      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return;
       disconnect("read failed");
       return;
     }
-    commands_.insert(commands_.end(), bytes, bytes + n);
   }
   while (!commands_.empty()) {
     if (commands_[0] == kCommandKeyFrame) {
@@ -841,25 +848,31 @@ void runAgent(std::string socketPath) {
 
 // @ref LLP 0020#loading — preloaded at launch; only QEMU runs the agent, and its children do not inherit it
 __attribute__((constructor)) static void expoEmulatorCaptureInit() {
-  const char* name = expo_capture::programName();
-  if (!name || strncmp(name, "qemu-system", 11) != 0) return;
-  expo_capture::removeFromPreload();
-  const char* socketPath = getenv("EXPO_EMULATOR_CAPTURE_SOCKET");
-  if (const char* logPath = getenv("EXPO_EMULATOR_CAPTURE_LOG")) {
-    // O_NOFOLLOW: a symlink at the log path must not redirect the writes to another file.
-    int fd = open(logPath, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
-    if (fd >= 0) {
-      if (FILE* file = fdopen(fd, "a"))
-        expo_capture::logFile = file;
-      else
-        close(fd);
+  expo_capture::guardCallback("capture disabled during startup", [] {
+    const char* name = expo_capture::programName();
+    if (!name || strncmp(name, "qemu-system", 11) != 0) return;
+    expo_capture::removeFromPreload();
+    const char* socketPath = getenv("EXPO_EMULATOR_CAPTURE_SOCKET");
+    if (const char* logPath = getenv("EXPO_EMULATOR_CAPTURE_LOG")) {
+      // O_NOFOLLOW: a symlink at the log path must not redirect the writes to another file.
+      int fd = open(logPath, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+      if (fd >= 0) {
+        if (FILE* file = fdopen(fd, "a"))
+          expo_capture::logFile = file;
+        else
+          close(fd);
+      }
     }
-  }
-  if (!socketPath || !*socketPath) {
-    expo_capture::logLine("capture disabled: EXPO_EMULATOR_CAPTURE_SOCKET is not set");
-    return;
-  }
-  std::thread(expo_capture::runAgent, std::string(socketPath)).detach();
+    if (!socketPath || !*socketPath) {
+      expo_capture::logLine("capture disabled: EXPO_EMULATOR_CAPTURE_SOCKET is not set");
+      return;
+    }
+    std::thread([path = std::string(socketPath)] {
+      expo_capture::guardCallback("capture disabled during startup", [&] {
+        expo_capture::runAgent(path);
+      });
+    }).detach();
+  });
 }
 
 // The only exported symbol: lets tools confirm which agent build is loaded.

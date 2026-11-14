@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // H.264 through VideoToolbox, on the hardware encoder when the Mac has one.
 #include "encoder.h"
+#include "callback.h"
 #import <Foundation/Foundation.h>
 #include <CoreVideo/CoreVideo.h>
 #include <IOSurface/IOSurface.h>
@@ -322,12 +323,14 @@ void VideoToolboxEncoder::invalidate() {
 void VideoToolboxEncoder::didEncode(void* refcon, void*, OSStatus status, VTEncodeInfoFlags flags,
                             CMSampleBufferRef sample) {
   auto* self = static_cast<VideoToolboxEncoder*>(refcon);
-  if (status != noErr) {
-    self->onError_(osStatus("H.264 encoding", status));
-    return;
-  }
-  if (!sample || (flags & kVTEncodeInfo_FrameDropped)) return;
-  self->emit(sample);
+  guardCallback("VideoToolbox output failed", [&] {
+    if (status != noErr) {
+      self->onError_(osStatus("H.264 encoding", status));
+      return;
+    }
+    if (!sample || (flags & kVTEncodeInfo_FrameDropped)) return;
+    self->emit(sample);
+  });
 }
 
 void VideoToolboxEncoder::emit(CMSampleBufferRef sample) {

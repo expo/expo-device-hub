@@ -6,7 +6,12 @@ import { $, root } from "./common.mjs";
 // including the Linux CI image.
 const compiler = process.env.CXX || "c++";
 await mkdir(join(root, "build"), { recursive: true });
-for (const test of ["protocol"]) {
+for (const test of ["protocol", "safety"]) {
   await $`${compiler} -std=c++17 -O2 -Wall -Wextra tests/${test}.test.cpp -o build/${test}-test`;
   await $`./build/${test}-test`;
+}
+
+if (process.platform === "darwin" && process.arch === "arm64") {
+  await $`clang++ -std=c++17 -fobjc-arc -O2 -Wall -Wextra tests/videotoolbox.test.mm src/native/encoder-videotoolbox.mm -framework Foundation -framework CoreFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework VideoToolbox -o build/videotoolbox-test`;
+  await $`./build/videotoolbox-test`;
 }

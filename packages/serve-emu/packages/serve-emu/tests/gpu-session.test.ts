@@ -626,8 +626,8 @@ test("maps touches to the native display, upright for the rotation", () => {
 describe("emulator capture availability", () => {
   test("offers the mode only for an emulator whose agent serves a socket", async () => {
     const directory = await mkdtemp("/tmp/semu-gpu-");
+    const listener = Bun.listen({ unix: `${directory}/emulator-5554.sock`, socket: { data() {} } });
     try {
-      await writeFile(`${directory}/emulator-5554.sock`, "");
       expect(emulatorCaptureSocketFor("emulator-5554", directory)).toBe(
         `${directory}/emulator-5554.sock`,
       );
@@ -664,6 +664,7 @@ describe("emulator capture availability", () => {
       // An app that does not offer the mode gives no reason, so clients do not show it.
       expect(emulatorCaptureAvailability("emulator-5554", undefined)).toEqual({ socket: null });
     } finally {
+      listener.stop(true);
       await rm(directory, { recursive: true, force: true });
     }
   });

@@ -582,7 +582,10 @@ test("reports GPU capture health from one diagnostics snapshot", async () => {
 
 test("gives every emulator capture it starts the agent socket and a rotation reader", async () => {
   const directory = await mkdtemp(join(tmpdir(), "create-app-capture-"));
-  await writeFile(join(directory, "emulator-5554.sock"), "");
+  const agentListener = Bun.listen({
+    unix: join(directory, "emulator-5554.sock"),
+    socket: { data() {} },
+  });
   const requests: StartEmuSessionOptions[] = [];
   const app = await createApp(
     {
@@ -618,6 +621,7 @@ test("gives every emulator capture it starts the agent socket and a rotation rea
     ]);
     expect(await requests[0]!.readDisplayRotation?.(new AbortController().signal)).toBe(1);
   } finally {
+    agentListener.stop(true);
     await app.stop();
     await rm(directory, { recursive: true, force: true });
   }

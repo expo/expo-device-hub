@@ -57,10 +57,17 @@ export function emulatorCaptureSocketFor(
   if (!socketDirectory || !isEmulatorSerial(serial)) return null;
   const socket = join(socketDirectory, `${serial}.sock`);
   try {
+    const directory = lstatSync(socketDirectory);
     const info = lstatSync(socket);
     // A socket that another user created, or a link, is not this user's agent.
     const uid = process.getuid?.();
-    if (info.isSymbolicLink() || (uid !== undefined && info.uid !== uid)) return null;
+    if (
+      !directory.isDirectory() ||
+      (directory.mode & 0o077) !== 0 ||
+      !info.isSocket() ||
+      (uid !== undefined && (directory.uid !== uid || info.uid !== uid))
+    )
+      return null;
     return socket;
   } catch {
     return null;

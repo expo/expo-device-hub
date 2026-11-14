@@ -34,6 +34,15 @@ bool colorBufferSize(const Gfxstream& g, uint32_t handle, int& width, int& heigh
   return width >= 2 && height >= 2;
 }
 
+uint32_t lastPostedHandle(const Gfxstream& g) {
+  void* fb = g.getFB();
+  if (!fb) return 0;
+  g.lock(fb);
+  uint32_t handle = g.lastPostedColorBuffer(fb);
+  g.unlock(fb);
+  return handle;
+}
+
 std::string resolveGfxstream(GumModule* module, Gfxstream& g) {
   g.path = gum_module_get_path(module);
   struct Required {
