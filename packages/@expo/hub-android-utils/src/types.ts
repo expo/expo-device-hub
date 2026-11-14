@@ -108,6 +108,11 @@ export interface BootDeviceOptions {
   port: number;
   /** Extra `emulator` flags appended after `-port <port>`, passed through verbatim. */
   extraArgs?: readonly string[];
+  /**
+   * Variables added to the emulator's environment. `DYLD_*` variables survive
+   * because the emulator is spawned directly, never through a shell.
+   */
+  env?: Readonly<Record<string, string>>;
 }
 
 /** How a spawned emulator process ended (see {@link BootedDevice.exited}). */

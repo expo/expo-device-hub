@@ -2,9 +2,14 @@ import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { Device } from "../src/adb.ts";
 import { GrpcCaptureDiagnosticsTracker } from "../src/grpc-session.ts";
+import {
+  GPU_CAPTURE_REPLACED_CODE,
+  GpuCaptureReplacedError,
+  GpuCaptureUnavailableError,
+} from "../src/gpu-session.ts";
 import { ControlInputQueue } from "../src/control-input-queue.ts";
 import {
   createApp,
@@ -1836,4 +1841,266 @@ test("router preserves a working encoder on failed switches and retains per-devi
   } finally {
     await router.stopAll();
   }
+});
+
+describe("createRouter emulator capture", () => {
+  const twoEmulators = () => ({
+    devices: [
+      { serial: "emulator-5554", state: "device" },
+      { serial: "emulator-5556", state: "device" },
+    ] as Device[],
+    avds: [] as string[],
+    running: [] as RunningAvd[],
+    created: [] as string[],
+    stopped: [] as string[],
+    createdModes: [] as StreamMode[],
+    createdInputSources: [] as InputSource[],
+  });
+  const agentListeners: ReturnType<typeof Bun.listen>[] = [];
+  afterEach(() => {
+    for (const listener of agentListeners.splice(0)) listener.stop(true);
+  });
+  const withAgentSocket = async () => {
+    const directory = await mkdtemp(join(tmpdir(), "router-capture-"));
+    agentListeners.push(
+      Bun.listen({ unix: join(directory, "emulator-5554.sock"), socket: { data() {} } }),
+    );
+    return directory;
+  };
+  const streamMode = async (router: ReturnType<typeof createRouter>, serial: string) =>
+    responseJson(
+      await router.handleRequest(
+        new Request(`http://router.test/api/stream-mode?device=${serial}`),
+      ),
+    );
+
+  test("offers the mode for an emulator with an agent and explains why not otherwise", async () => {
+    const directory = await withAgentSocket();
+    const state = twoEmulators();
+    const router = createRouter(
+      {
+        emulatorCapture: { socketDirectory: directory, missingAgentReason: "Restart it." },
+      },
+      routerDependencies(state),
+    );
+    try {
+      const withAgent = await streamMode(router, "emulator-5554");
+      expect(withAgent.availableModes).toEqual(["scrcpy", "grpc-screenshot", "emulator-capture"]);
+      expect(withAgent.unavailableModes).toBeUndefined();
+      const withoutAgent = await streamMode(router, "emulator-5556");
+      expect(withoutAgent.availableModes).toEqual(["scrcpy", "grpc-screenshot"]);
+      expect(withoutAgent.unavailableModes).toEqual({ "emulator-capture": "Restart it." });
+
+      const refused = await router.handleRequest(
+        put("/api/stream-mode?device=emulator-5556", { mode: "emulator-capture" }),
+      );
+      expect(refused.status).toBe(400);
+      expect(await responseJson(refused)).toMatchObject({ error: { message: "Restart it." } });
+
+      const switched = await router.handleRequest(
+        put("/api/stream-mode?device=emulator-5554", { mode: "emulator-capture" }),
+      );
+      expect(switched.status).toBe(200);
+      expect(await responseJson(switched)).toMatchObject({
+        mode: "emulator-capture",
+        inputSource: "scrcpy",
+        availableInputSources: ["scrcpy"],
+      });
+      expect(state.createdModes.at(-1)).toBe("emulator-capture");
+      expect(state.createdInputSources.at(-1)).toBe("scrcpy");
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("defaults to the capture for an emulator with an agent and to gRPC otherwise", async () => {
+    const directory = await withAgentSocket();
+    const router = createRouter(
+      { streamMode: "emulator-capture", emulatorCapture: { socketDirectory: directory } },
+      routerDependencies(twoEmulators()),
+    );
+    try {
+      expect((await streamMode(router, "emulator-5554")).mode).toBe("emulator-capture");
+      expect((await streamMode(router, "emulator-5556")).mode).toBe("grpc-screenshot");
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("uses gRPC when the default capture finds no agent behind its socket", async () => {
+    const directory = await withAgentSocket();
+    const state = twoEmulators();
+    const dependencies = routerDependencies(state);
+    const createApp = dependencies.createApp!;
+    const router = createRouter(
+      { streamMode: "emulator-capture", emulatorCapture: { socketDirectory: directory } },
+      {
+        ...dependencies,
+        createApp: async (options) => {
+          if (options.streamMode === "emulator-capture") {
+            state.createdModes.push("emulator-capture");
+            throw new GpuCaptureUnavailableError("connect ECONNREFUSED");
+          }
+          return createApp(options);
+        },
+      },
+    );
+    try {
+      expect((await streamMode(router, "emulator-5554")).mode).toBe("grpc-screenshot");
+      expect(state.createdModes).toEqual(["emulator-capture", "grpc-screenshot"]);
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps an emulator on gRPC after another program takes its capture", async () => {
+    const directory = await withAgentSocket();
+    const state = twoEmulators();
+    const dependencies = routerDependencies(state);
+    const createApp = dependencies.createApp!;
+    // The first capture app streams, then ends because another consumer replaced it.
+    let replaced: EmuApp | null = null;
+    const router = createRouter(
+      { streamMode: "emulator-capture", emulatorCapture: { socketDirectory: directory } },
+      {
+        ...dependencies,
+        createApp: async (options) => {
+          const app = await createApp(options);
+          if (options.streamMode !== "emulator-capture" || replaced) return app;
+          let streaming = true;
+          replaced = Object.assign(Object.create(null), app, {
+            isStreaming: () => streaming,
+            getTerminalErrorCode: () => (streaming ? null : GPU_CAPTURE_REPLACED_CODE),
+            stop: async () => {
+              streaming = false;
+            },
+          }) as EmuApp;
+          return replaced;
+        },
+      },
+    );
+    try {
+      expect((await streamMode(router, "emulator-5554")).mode).toBe("emulator-capture");
+      await replaced!.stop();
+      expect((await streamMode(router, "emulator-5554")).mode).toBe("grpc-screenshot");
+      expect(state.createdModes).toEqual(["emulator-capture", "grpc-screenshot"]);
+      // Selecting the capture again takes the agent back.
+      const switched = await router.handleRequest(
+        put("/api/stream-mode?device=emulator-5554", { mode: "emulator-capture" }),
+      );
+      expect(switched.status).toBe(200);
+      expect(state.createdModes.at(-1)).toBe("emulator-capture");
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("uses gRPC when another program has the agent at the start", async () => {
+    const directory = await withAgentSocket();
+    const state = twoEmulators();
+    const dependencies = routerDependencies(state);
+    const createApp = dependencies.createApp!;
+    const router = createRouter(
+      { streamMode: "emulator-capture", emulatorCapture: { socketDirectory: directory } },
+      {
+        ...dependencies,
+        createApp: async (options) => {
+          if (options.streamMode === "emulator-capture") {
+            state.createdModes.push("emulator-capture");
+            throw new GpuCaptureReplacedError();
+          }
+          return createApp(options);
+        },
+      },
+    );
+    try {
+      expect((await streamMode(router, "emulator-5554")).mode).toBe("grpc-screenshot");
+      expect(state.createdModes).toEqual(["emulator-capture", "grpc-screenshot"]);
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("forgets a capture choice when the emulator comes back without its agent", async () => {
+    const directory = await withAgentSocket();
+    const state = twoEmulators();
+    const dependencies = routerDependencies(state);
+    const createApp = dependencies.createApp!;
+    let current: { streaming: boolean } | null = null;
+    const router = createRouter(
+      { emulatorCapture: { socketDirectory: directory } },
+      {
+        ...dependencies,
+        createApp: async (options) => {
+          const app = await createApp(options);
+          const status = { streaming: true };
+          current = status;
+          return Object.assign(Object.create(null), app, {
+            isStreaming: () => status.streaming,
+          }) as EmuApp;
+        },
+      },
+    );
+    try {
+      const switched = await router.handleRequest(
+        put("/api/stream-mode?device=emulator-5554", { mode: "emulator-capture" }),
+      );
+      expect(switched.status).toBe(200);
+      // The emulator restarts without the agent: its socket is gone and its stream ended.
+      await rm(join(directory, "emulator-5554.sock"));
+      current!.streaming = false;
+      expect((await streamMode(router, "emulator-5554")).mode).toBe("scrcpy");
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("explains a socket that nothing answers when the user picks the capture", async () => {
+    const directory = await withAgentSocket();
+    const state = twoEmulators();
+    const dependencies = routerDependencies(state);
+    const createApp = dependencies.createApp!;
+    const router = createRouter(
+      { emulatorCapture: { socketDirectory: directory, missingAgentReason: "Restart it." } },
+      {
+        ...dependencies,
+        createApp: async (options) => {
+          if (options.streamMode === "emulator-capture")
+            throw new GpuCaptureUnavailableError("connect ECONNREFUSED");
+          return createApp(options);
+        },
+      },
+    );
+    try {
+      await streamMode(router, "emulator-5554");
+      const refused = await router.handleRequest(
+        put("/api/stream-mode?device=emulator-5554", { mode: "emulator-capture" }),
+      );
+      expect(refused.ok).toBe(false);
+      expect(JSON.stringify(await responseJson(refused))).toContain("Restart it.");
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("explains how to turn the capture on while it is off", async () => {
+    const router = createRouter(
+      { emulatorCapture: { unavailableReason: "Turn it on." } },
+      routerDependencies(twoEmulators()),
+    );
+    try {
+      const response = await streamMode(router, "emulator-5554");
+      expect(response.availableModes).toEqual(["scrcpy", "grpc-screenshot"]);
+      expect(response.unavailableModes).toEqual({ "emulator-capture": "Turn it on." });
+    } finally {
+      await router.stopAll();
+    }
+  });
 });

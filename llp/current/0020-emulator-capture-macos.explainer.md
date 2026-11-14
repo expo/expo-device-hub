@@ -1,0 +1,1 @@
+../0020-emulator-capture-macos.explainer.md
