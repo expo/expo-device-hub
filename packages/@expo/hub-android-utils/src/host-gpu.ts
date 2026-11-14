@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, type ExecFileException } from "node:child_process";
 
 /** The `sysctl` names that {@link isBareMetalAppleSilicon} reads, in one call. */
 export const HOST_GPU_SYSCTL_NAMES = [
@@ -37,16 +37,29 @@ export function isBareMetalAppleSilicon(platform: NodeJS.Platform, sysctlOutput:
 /**
  * Run `sysctl` for {@link HOST_GPU_SYSCTL_NAMES} and resolve with its stdout.
  * `sysctl` exits non-zero when it does not know one of the names, but still
- * prints the others, so the output is used whatever the exit code. Never rejects.
+ * prints the others on exit 1. Other failures discard partial output. Never rejects.
  */
-function readHostSysctl(): Promise<string> {
+export function readHostSysctl(
+  run: (
+    path: string,
+    args: string[],
+    options: { timeout: number },
+    callback: (error: ExecFileException | null, stdout: string) => void,
+  ) => unknown = execFile,
+): Promise<string> {
   return new Promise((resolve) => {
     try {
-      execFile(
+      run(
         SYSCTL_PATH,
         [...HOST_GPU_SYSCTL_NAMES],
         { timeout: SYSCTL_TIMEOUT_MS },
-        (_error, stdout) => resolve(typeof stdout === "string" ? stdout : ""),
+        (error, stdout) => {
+          // Exit 1 can mean one unknown key, with the other answers still valid.
+          // A timeout, signal or spawn/buffer failure must keep the conservative default,
+          // even when sysctl printed enough values before it failed.
+          if (error && (error.killed || error.signal || error.code !== 1)) return resolve("");
+          resolve(typeof stdout === "string" ? stdout : "");
+        },
       );
     } catch {
       resolve("");
