@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { defaultEmulatorGpu, isBareMetalAppleSilicon } from "../host-gpu";
+import { defaultEmulatorGpu, isBareMetalAppleSilicon, readHostSysctl } from "../host-gpu";
 
 // `sysctl hw.optional.arm64 sysctl.proc_translated kern.hv_vmm_present` on a
 // Mac mini M2 (macOS, not a virtual machine).
@@ -54,4 +54,18 @@ describe("defaultEmulatorGpu", () => {
     expect(await defaultEmulatorGpu(async () => true)).toBe("host");
     expect(await defaultEmulatorGpu(async () => false)).toBe("auto");
   });
+});
+
+test.each([
+  ["success", null, true],
+  ["an unknown sysctl key", { code: 1 }, true],
+  ["a timeout after output", { code: null, killed: true, signal: "SIGTERM" }, false],
+  ["a killed sysctl", { code: null, signal: "SIGKILL" }, false],
+  ["a spawn failure", { code: "ENOENT" }, false],
+  ["a buffer overflow", { code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }, false],
+] as const)("host detection handles %s", async (_case, error, expected) => {
+  const output = await readHostSysctl((_path, _names, _options, callback) => {
+    callback(error ? Object.assign(new Error("sysctl failed"), error) : null, APPLE_SILICON);
+  });
+  expect(isBareMetalAppleSilicon("darwin", output)).toBe(expected);
 });

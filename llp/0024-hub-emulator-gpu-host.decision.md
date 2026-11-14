@@ -5,7 +5,7 @@
 **Systems:** Hub, HubComponents, AndroidUtils
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-13
-**Revised:** 2026-11-13 (the warning moved to the status pill; the Rendering row moved to Stream options; a chevron replaced the info icon)
+**Revised:** 2026-11-13 (the warning moved to the status pill; the Rendering row moved to Stream options; a chevron replaced the info icon); 2026-11-14 (discard partial sysctl output on timeout, signal, spawn or buffer failure), by Codex (gpt-6.1-sol), directed by Krystof Woldrich
 **Related:** LLP 0000
 
 ## Summary
@@ -36,7 +36,7 @@ The Hub boots Android emulators with `-gpu host` on an Apple silicon Mac that is
 - **macOS only.** Any other platform is `false` without a `sysctl` call.
 - **Apple silicon:** `hw.optional.arm64` is `1`, or `sysctl.proc_translated` is `1`. On this Mac mini M2, the first is `1` and the second is `0` [observed: `sysctl`, 2026-11-13]. `sysctl.proc_translated` is `1` only for a process that runs under Rosetta, which exists only on Apple silicon, so a Node.js for x86_64 on Apple silicon still counts. Rosetta is not installed on this Mac, so that case is not tested [inferred].
 - **Not a virtual machine:** `kern.hv_vmm_present` is exactly `0`. It is `0` on this Mac mini M2 [observed: `sysctl`, 2026-11-13] and `1` on an EAS macOS VM (`macos-large`, "Apple M4 Pro (Virtual)") [observed: EAS workflow runs, 2026-11-04]. A missing or empty value counts as a virtual machine, so an unknown host keeps `-gpu auto`.
-- **Failure means no.** A `sysctl` that fails, times out after 2 s, or prints nothing gives `false`. `sysctl` exits non-zero when it does not know a name, such as on an Intel Mac, but still prints the names it knows, so the output is read whatever the exit code [observed: `sysctl hw.optional.nonexistent kern.hv_vmm_present` on this Mac prints the second value and exits 1].
+- **Failure means no.** A `sysctl` that fails, times out after 2 s, or prints nothing gives `false`. `sysctl` exits non-zero when it does not know a name, such as on an Intel Mac, but still prints the names it knows, so output on exit 1 is still read. A timed-out, signaled or failed subprocess discards even a complete-looking partial answer [observed: `readHostSysctl` and executor failure tests in `src/__tests__/host-gpu.test.ts`; `sysctl hw.optional.nonexistent kern.hv_vmm_present` on this Mac prints the second value and exits 1].
 
 ## Boot default
 
