@@ -117,25 +117,33 @@ function record(argv) {
   const rotation = integer("rotation", values.rotation, 0);
   if (rotation < 0 || rotation > 3) fail("--rotation must be 0, 1, 2 or 3");
   const seconds = Number(values.seconds ?? 10);
+  if (!Number.isFinite(seconds) || seconds <= 0 || seconds * 1000 > 2_147_483_647)
+    fail("--seconds must be positive and within the timer range");
   const settings = {
     fps: integer("fps", values.fps, 60),
     maxSize: integer("max-size", values["max-size"], 0),
     bitRate: integer("bit-rate", values["bit-rate"], 12_000_000),
   };
+  const command = settingsCommand(settings);
   const output = createWriteStream(values.output);
+  output.on("error", (error) => fail(`recording output: ${error.message}`));
   const stats = { frames: 0, keyFrames: 0, bytes: 0, resizes: 0, firstPts: null, lastPts: null };
   const socket = createConnection(values.socket);
+  let finishing = false;
+  output.on("drain", () => socket.resume());
   const reader = new RecordReader((entry) => {
     if (entry.flags === FLAGS.hello) {
       console.log(`hello: native ${entry.width}x${entry.height}@${entry.fps} ${entry.payload}`);
+      const details = JSON.parse(entry.payload.toString());
+      if (typeof details.encoderError === "string") fail(details.encoderError);
       // 'R' before 'S': the agent starts streaming on 'S', so the first session is
       // already upright.
       if (rotation !== 0) {
-        if ((JSON.parse(entry.payload.toString()).protocol ?? 1) < ROTATION_PROTOCOL)
+        if ((details.protocol ?? 1) < ROTATION_PROTOCOL)
           fail("this capture agent cannot turn the picture; rebuild it");
         socket.write(rotationCommand(rotation));
       }
-      socket.write(settingsCommand(settings));
+      socket.write(command);
     } else if (entry.flags === FLAGS.replaced) {
       fail("another consumer connected to the capture socket and replaced this recording");
     } else if (entry.flags === FLAGS.resized) {
@@ -151,12 +159,14 @@ function record(argv) {
       stats.bytes += entry.payload.length;
       stats.firstPts ??= entry.pts;
       stats.lastPts = entry.pts;
-      output.write(entry.payload);
+      // A slow disk must backpressure the socket instead of growing the Node write queue.
+      if (!output.write(entry.payload)) socket.pause();
     } else {
       throw new Error(`unknown record flags ${entry.flags}`);
     }
   });
   socket.on("data", (chunk) => {
+    if (finishing) return;
     try {
       reader.push(chunk);
     } catch (error) {
@@ -164,11 +174,16 @@ function record(argv) {
     }
   });
   socket.on("error", (error) => fail(`capture socket: ${error.message}`));
+  socket.on("end", () => {
+    if (!finishing) fail("capture socket closed before recording finished");
+  });
   const keyTimer = setInterval(() => socket.write(KEY_FRAME_COMMAND), 5000);
   setTimeout(() => {
+    finishing = true;
     clearInterval(keyTimer);
-    socket.end();
+    socket.destroy();
     output.end(() => {
+      if (!stats.frames) fail("capture produced no video frames");
       const spanUs = stats.lastPts !== null ? Number(stats.lastPts - stats.firstPts) : 0;
       const fps = spanUs > 0 ? ((stats.frames - 1) * 1e6) / spanUs : 0;
       console.log(
