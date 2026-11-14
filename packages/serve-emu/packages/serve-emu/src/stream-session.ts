@@ -2,6 +2,7 @@ import type { DisplayRotation } from "./adb.ts";
 import { ControlInputQueue } from "./control-input-queue.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
 import { startGpuCaptureSession } from "./gpu-session.ts";
+import type { GrpcRecordingOutput } from "./grpc-recording-encoder.ts";
 import { startGrpcSession } from "./grpc-session.ts";
 import { H264StartupGate } from "./h264-readiness.ts";
 import { startScrcpy, type ScrcpySession, type StartOpts, type VideoPacket } from "./scrcpy.ts";
@@ -61,6 +62,11 @@ export type EmuSession = {
   displayChanged?(): void;
   /** Present only on the scrcpy adapter during the server migration. */
   readonly rawScrcpy?: ScrcpySession;
+  /**
+   * True when the session encodes the screen recording itself, from `recording`. Its
+   * `readFrame` packets are then for viewers only.
+   */
+  readonly feedsRecording?: boolean;
   readFrame(): Promise<VideoPacket | null>;
   /** Emits only the first terminal failure and immediately replays it to late subscribers. */
   onFatal(listener: (failure: StreamFailure) => void): () => void;
@@ -83,6 +89,11 @@ export type StartEmuSessionOptions = StartOpts & {
   emulatorCaptureSocket?: string;
   /** For `emulator-capture`: reads Android's display rotation, so the agent can turn frames. */
   readDisplayRotation?: (signal: AbortSignal) => Promise<DisplayRotation>;
+  /**
+   * A foldable's recording on a fixed canvas. Only gRPC capture encodes it; scrcpy capture
+   * ignores it, and the recording then takes the viewers' packets.
+   */
+  recording?: GrpcRecordingOutput;
 };
 
 export async function startEmuSession(options: StartEmuSessionOptions): Promise<EmuSession> {
@@ -108,7 +119,7 @@ export async function startEmuSession(options: StartEmuSessionOptions): Promise<
   if (options.inputSource !== "scrcpy") {
     throw new Error("scrcpy streaming requires scrcpy input");
   }
-  const { encoder: _encoder, ...scrcpyOptions } = options;
+  const { encoder: _encoder, recording: _recording, ...scrcpyOptions } = options;
   return prepareDecodableScrcpySession(await startScrcpy(scrcpyOptions), options.signal);
 }
 

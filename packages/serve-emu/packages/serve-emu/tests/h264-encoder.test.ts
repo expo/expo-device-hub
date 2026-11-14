@@ -10,6 +10,7 @@ import {
   H264Encoder,
   H264OutputParser,
   resolveFfmpeg,
+  supportsTimedKeyFrames,
   videoFilter,
   type H264EncoderOpts,
   type FfmpegEncoderName,
@@ -995,6 +996,54 @@ describe("H264Encoder validation", () => {
     }
     expect(encoder.writable).toBe(false);
   });
+
+  realFfmpegTest(
+    "forces a keyframe after a second of real time, and keeps one AU per frame",
+    async () => {
+      if (!(await supportsTimedKeyFrames())) return;
+      const frames: VideoFrame[] = [];
+      const exits: string[] = [];
+      const encoder = new H264Encoder({
+        ...valid,
+        width: 64,
+        height: 64,
+        keyFrameInterval: 1,
+        timedKeyFrames: true,
+        onFrame(frame) {
+          if (!frame.isConfig) frames.push(frame);
+        },
+        onExit(reason) {
+          exits.push(reason);
+        },
+      });
+      const rgb = (value: number) => Buffer.alloc(64 * 64 * 3, value);
+      // Five frames, a 1.2 s pause as on a still screen, then four frames that arrive together.
+      for (let index = 0; index < 5; index++) {
+        expect(encoder.write(rgb(index * 20), BigInt(index + 1))).toBe(true);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      for (let index = 5; index < 9; index++) {
+        expect(encoder.write(rgb(index * 20), BigInt(index + 1))).toBe(true);
+      }
+      for (let attempt = 0; attempt < 100 && frames.length < 8; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await encoder.close();
+      expect(exits).toEqual([]);
+      // 60 frames at 60 fps would wait a second more; the pause starts a keyframe at once.
+      expect(frames.slice(0, 8).map((frame) => [frame.pts, frame.isKey])).toEqual([
+        [1n, true],
+        [2n, false],
+        [3n, false],
+        [4n, false],
+        [5n, false],
+        [6n, true],
+        [7n, false],
+        [8n, false],
+      ]);
+    },
+  );
 
   realFfmpegTest("accepts concatenated PNG images through image2pipe", async () => {
     const generated = spawnSync(

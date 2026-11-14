@@ -386,6 +386,64 @@ function* protoFields(buffer: Buffer): Generator<ProtoField> {
   }
 }
 
+/** `PhysicalModelValue.PhysicalType.HINGE_ANGLE0` in the emulator's controller proto. */
+export const PHYSICAL_MODEL_HINGE_ANGLE0 = 10;
+
+/** `PhysicalModelValue.State` values other than OK: the emulator has no such sensor running. */
+const PHYSICAL_MODEL_UNAVAILABLE = new Set([-3, -2, -1]);
+
+/**
+ * The floats of a `PhysicalModelValue`, or null when its status says that the emulator has no
+ * such sensor or has disabled it on this profile.
+ */
+export function decodePhysicalModelValue(buffer: Buffer): number[] | null {
+  let status = 0;
+  const data: number[] = [];
+  for (const field of protoFields(buffer)) {
+    if (field.fieldNo === 2 && field.wire === 0) {
+      status = Number(BigInt.asIntN(32, field.varint));
+    } else if (field.fieldNo === 3 && field.wire === 2) {
+      for (const value of protoFields(field.bytes)) {
+        // ParameterValue.data is packed; an unpacked float is valid protobuf as well.
+        if (value.fieldNo !== 1) continue;
+        if (value.wire === 2) {
+          if (value.bytes.length % 4 !== 0) throw new Error("truncated packed float field");
+          for (let offset = 0; offset < value.bytes.length; offset += 4) {
+            data.push(value.bytes.readFloatLE(offset));
+          }
+        } else if (value.wire === 5) {
+          const bytes = Buffer.alloc(4);
+          bytes.writeUInt32LE(value.fixed32);
+          data.push(bytes.readFloatLE(0));
+        }
+      }
+    }
+  }
+  if (PHYSICAL_MODEL_UNAVAILABLE.has(status)) return null;
+  if (status !== 0) throw new Error(`physical model status ${status}`);
+  return data;
+}
+
+/** `Posture.PostureValue` names, by value, as `FoldPosture` names them. */
+const NOTIFIED_POSTURES = [null, "closed", "half_opened", "opened", "flipped", "tent"] as const;
+
+export type NotifiedPosture = Exclude<(typeof NOTIFIED_POSTURES)[number], null>;
+
+/** The posture of a `Notification`, or null for another notification or an unknown posture. */
+export function decodePostureNotification(buffer: Buffer): NotifiedPosture | null {
+  for (const field of protoFields(buffer)) {
+    if (field.fieldNo !== 4 || field.wire !== 2) continue;
+    for (const value of protoFields(field.bytes)) {
+      if (value.fieldNo === 3 && value.wire === 0) {
+        return NOTIFIED_POSTURES[Number(value.varint)] ?? null;
+      }
+    }
+    // A posture message without a value is POSTURE_UNKNOWN.
+    return null;
+  }
+  return null;
+}
+
 export const IMG_FORMAT_PNG = 0;
 export const IMG_FORMAT_RGBA8888 = 1;
 export const IMG_FORMAT_RGB888 = 2;
@@ -1197,6 +1255,44 @@ export class EmulatorGrpcClient {
       throw new Error(`invalid evdev keycode ${keyCode}`);
     }
     await this.sendKey({ evdev: keyCode }, signal);
+  }
+
+  /**
+   * One physical model value, such as `PHYSICAL_MODEL_HINGE_ANGLE0`'s degrees. Null when the
+   * emulator has no such sensor, or has disabled it on this profile.
+   */
+  async getPhysicalModel(target: number, signal?: AbortSignal): Promise<number[] | null> {
+    const request: number[] = [];
+    varintField(request, 1, target);
+    const [message] = await this.#request("getPhysicalModel", Buffer.from(request), {
+      timeoutMs: this.#unaryTimeoutMs,
+      signal,
+      maxMessageBytes: 1024,
+    });
+    if (!message) throw new Error("getPhysicalModel returned no value");
+    return decodePhysicalModelValue(message);
+  }
+
+  /**
+   * Calls `onPosture` for each posture change that the emulator pushes, until `signal` aborts.
+   * The emulator pushes a change of its own posture model only; it has no hinge angle stream.
+   */
+  async streamPostures(
+    onPosture: (posture: NotifiedPosture) => void,
+    signal: AbortSignal,
+  ): Promise<void> {
+    try {
+      await this.#request("streamNotification", Buffer.alloc(0), {
+        signal,
+        maxMessageBytes: 64 * 1024,
+        onMessage: (message) => {
+          const posture = decodePostureNotification(message);
+          if (posture) onPosture(posture);
+        },
+      });
+    } catch (error) {
+      if (!signal.aborted) throw error;
+    }
   }
 
   close(): void {

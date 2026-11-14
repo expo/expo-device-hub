@@ -2089,10 +2089,23 @@ test("Android fold capabilities show the shared pose controls without Duo-only c
   expect(html).not.toContain(">Preview mode<");
   expect(html).not.toContain(">Folded<");
   const locked = renderToStaticMarkup(
-    <LogSidebar client={{ ...client, recordingLock: "recording" }} />,
+    <LogSidebar
+      client={{
+        ...client,
+        recordingLock: "recording",
+        fold: { ...client.fold, unavailable: "recording" },
+      }}
+    />,
   );
   expect(locked.match(/<button[^>]*aria-label="Fold pose"[^>]*>/)?.[0]).toContain("disabled");
   expect(locked).toContain("interrupt the recording");
+  // A recording that follows folds locks rotation but leaves the fold controls on.
+  const following = renderToStaticMarkup(
+    <LogSidebar client={{ ...client, recordingLock: "recording" }} />,
+  );
+  expect(following.match(/<button[^>]*aria-label="Fold pose"[^>]*>/)?.[0]).not.toContain(
+    "disabled",
+  );
   const unsupported = renderToStaticMarkup(<LogSidebar client={base} />);
   expect(unsupported).not.toContain('aria-label="Fold pose"');
 });
