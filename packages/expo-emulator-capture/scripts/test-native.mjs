@@ -14,6 +14,9 @@ for (const test of ["protocol", "safety", "encoder-wake", "yuv", "lag-tail"]) {
 await $`${compiler} -std=c++17 -O2 -Wall -Wextra -I tests/fixtures/gum tests/gfxstream-startup.test.cpp src/native/gfxstream.cpp -o build/gfxstream-startup-test`;
 await $`./build/gfxstream-startup-test`;
 
+await $`${compiler} -std=c++17 -O2 -Wall -Wextra -pthread -I tests/fixtures/pbo-gum tests/pbo-borrow.test.cpp -o build/pbo-borrow-test`;
+await $`./build/pbo-borrow-test`;
+
 if (process.platform === "linux") {
   await $`${compiler} -std=c++17 -O2 -Wall -Wextra -pthread tests/pbo-readback.test.cpp -o build/pbo-readback-test`;
   await $`./build/pbo-readback-test`;

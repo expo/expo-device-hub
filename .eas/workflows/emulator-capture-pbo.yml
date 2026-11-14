@@ -89,3 +89,21 @@ jobs:
           name: pixel_9_pro_fold-swiftshader
           path: .eas/experiments/pbo/results-basess.tar.gz
           ignore_error: true
+  fold-transitions:
+    runs_on: linux-large-nested-virtualization
+    image: ubuntu-26.04-jdk-17-ndk-r27b-sdk-58
+    steps:
+      - uses: eas/checkout
+      - name: Setup foldable
+        run: bash .eas/experiments/pbo/ci/setup.sh pixel_9_pro_fold
+      - name: Build and native tests
+        run: EXPO_PBO_CAPTURE="$PWD/packages/expo-emulator-capture" bash .eas/experiments/pbo/ci/build.sh && cd packages/expo-emulator-capture && bun run test
+      - name: Fold with both consumers
+        run: EXPO_PBO_CAPTURE="$PWD/packages/expo-emulator-capture" bash .eas/experiments/pbo/ci/fold.sh
+      - name: Upload fold transitions
+        uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          name: pbo-fold-transitions
+          path: .eas/experiments/pbo/results-fold.tar.gz
+          ignore_error: true

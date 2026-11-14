@@ -13,5 +13,7 @@ pass threshold. Missing, undecodable, torn or unknown-color captures fail the su
 The arrival metric starts at the agent timestamp; it is not end-to-end display latency.
 
 The scripts derive from the earlier Linux timing harness used in LLP 0023. They
-start and stop their own emulators on isolated EAS VMs. The foldable job tests its
-booted display; an actual fold/unfold transition needs a separate test.
+start and stop their own emulators on isolated EAS VMs. The performance foldable job tests its
+booted display. The separate `fold-transitions` job folds and unfolds during a
+PBO stream and fixed-canvas recording, checks changed stream sizes and recording
+placements, and decodes the recording.

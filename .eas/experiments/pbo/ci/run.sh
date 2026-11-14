@@ -86,6 +86,12 @@ page_frames "$D/page-check.json"
 node "$ROOT/ci/page-info.mjs" 9223 "$WS" > "$D/page-info.json" 2> /dev/null
 echo "page counter: $(cat "$D/page-check.json"); page info: $(cat "$D/page-info.json")"
 
+# Fail unsupported PBO paths before spending time collecting controls.
+echo 1 > "$SOCK.pbo"
+consumer --role stream --max-size 1280 --fps 60 --seconds 3 --out "$D/preflight" > "$D/preflight.json"
+rm -f "$SOCK.pbo"
+python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["frames"] > 0, d' "$D/preflight.json" || { tail -30 "$AGENT_LOG"; exit 1; }
+
 echo "::: $PROFILE $CONFIG baseline: no consumer, 30 s"
 rm -f "$SOCK.read" "$SOCK.probe"
 consumer --hello-only > "$D/baseline-hello-a.json"

@@ -31,7 +31,7 @@ for window in sorted(root.glob('*/*-*')):
             latency = (stats.get('ptsToArrivalMs') or {}).get('p95', '')
             print(f"| {window.parent.name}/{window.name} | {page_fps} | {role} | "
                   f"{stats['changedFps']} | {stats['torn']} | {stats['unknown']} | {latency} |")
-            if not stats['frames'] or stats['torn'] or stats['unknown']:
+            if not stats['frames'] or not stats['changedFps'] or stats['torn'] or stats['unknown']:
                 failures.append(f'{window}/{role}: empty/torn/unknown frames')
 if failures:
     sys.exit('\n'.join(failures))
