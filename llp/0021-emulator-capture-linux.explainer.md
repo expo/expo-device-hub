@@ -5,7 +5,7 @@
 **Systems:** EmulatorCapture, ServeEmu, Hub, Release
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-04
-**Revised:** 2026-11-06 (x264 build 165 from the system instead of OpenH264; rotation; `-gpu lavapipe`; the EAS emulator step; the release job; fixes from a deep review; the frame rate compared with the gRPC stream); 2026-11-14 (the frame of the post before, read on a capture thread); all by Claude Code, directed by Krystof Woldrich
+**Revised:** 2026-11-06 (x264 build 165 from the system instead of OpenH264; rotation; `-gpu lavapipe`; the EAS emulator step; the release job; fixes from a deep review; the frame rate compared with the gRPC stream); 2026-11-14 (the frame of the post before, read on a capture thread; the read with lavapipe, from a timing matrix); all by Claude Code, directed by Krystof Woldrich
 **Related:** LLP 0000, LLP 0020
 
 > File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
@@ -119,6 +119,15 @@ The frame check records a page that paints each animation frame in the next of e
 | 2026-11-06 | 1080×2400 | 540    | 54.1       | 0    | 446            | 22          | 71           |
 | 2026-11-06 | 576×1280  | 550    | 55.1       | 0    | 465            | 22          | 62           |
 
+### The read with lavapipe
+
+On 2026-11-14, a timing matrix measured each part of the frame path with `-gpu lavapipe`, on the page that paints each frame in the next of eight colors, with Chrome's own frame counter read through DevTools. The EAS VM (`linux-large-nested-virtualization`) had 22 vCPUs: an Intel Xeon Platinum 8481C with 11 cores and 2 threads per core, under KVM. The agent came from a later PR of the stack, with the stream and recording roles and per-part timings; LLP 0023 in https://github.com/expo/expo-device-hub/pull/624 has the full tables [observed: EAS runs, 2026-11-14]:
+
+- With the Pixel 10 profile (1080×2424), a read took 8.6 to 9.5 ms. A 1×1 read before it took 5.5 to 6.2 ms, so most of the read is a wait for the renderer, also for the frame of the post before. With the Medium Phone that EAS sessions use (720×1600 at 300 ppi), a read took 3.2 to 3.4 ms, of which 2.3 to 2.4 ms was the wait.
+- On the Pixel 10, Chrome drew 59.7 frames per second without a consumer. With every frame read and a stream of 16 pixels, which needs almost no encode, it drew 55.3; with the same read in the post, 55.1; with 30 reads per second, 59.7. So the read costs the guest frames wherever it runs. A likely reason is that each read makes lavapipe finish its queued work [inferred].
+- With a 1280 stream, the read on the capture thread kept the read off the render thread: 0.00 ms in the agent per post, against 8.4 ms with the read in the post. Chrome drew 52.9 and 53.0 frames per second, and the emulator posted 58.8 and 58.0. A frame took 37 ms from its post to the end of its encode, against 19 ms with the read in the post: the frame waits for the next post.
+- With the Medium Phone, Chrome drew 60.0 frames per second in every variant, with and without capture.
+
 ## Frame rate compared with the gRPC stream
 
 Without the capture, the Hub streams an emulator from the emulator's gRPC screenshot stream, and it boots emulators with `-no-window -gpu auto` [observed: `buildEmulatorArgs` in `packages/@expo/hub-android-utils/src/emulator.ts`]. One EAS run compared that stream with the capture on one VM. Every recording used the same app-action script (Settings, Display settings, Chrome with an animated page, recents, home and the notification shade) and the Pixel 10 profile [observed: EAS run, 2026-11-06]. The Mac rows come from the same script on the Mac mini M2 [observed: research runs, 2026-11-05].
@@ -153,7 +162,8 @@ Without the capture, the Hub streams an emulator from the emulator's gRPC screen
 ## Known limitations
 
 - Each frame reaches the consumer one post later, and the last frame before a still screen 50 ms later ([Frame path](#frame-path)).
-- The read still copies every frame on the CPU, and the renderer's read takes the FrameBuffer lock, which the post also takes. So a post that comes during a read can wait for it [inferred: from the shared lock on macOS ([LLP 0020](0020-emulator-capture-macos.explainer.md#locking)); not measured on Linux].
+- The read still copies every frame on the CPU, and the renderer's read takes the FrameBuffer lock, which the post also takes. So a post that comes during a read can wait for it [inferred: from the shared lock on macOS ([LLP 0020](0020-emulator-capture-macos.explainer.md#locking))]. On the Pixel 10 with lavapipe, the whole post took 1.0 to 1.2 ms with the read on the capture thread, and 0.1 ms on the Medium Phone, whose read is shorter [observed: EAS runs, 2026-11-14].
+- With lavapipe at 1080×2424, reading every frame costs the guest about 4 of its 60 frames per second ([The read with lavapipe](#the-read-with-lavapipe)).
 - Tested only on EAS Linux VMs (Ubuntu 26.04, Intel, 22 vCPUs, no GPU) with emulator 37.1.11. A Linux host with a GPU and `-gpu host` is not tested.
 - Only x264 build 165. Hosts with another build fail with the install command.
 - No hardware encoder: VAAPI and NVENC are not used.
