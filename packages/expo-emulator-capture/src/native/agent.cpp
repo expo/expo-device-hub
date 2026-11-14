@@ -297,7 +297,8 @@ struct RoleState {
   std::atomic<bool> keyNeededByOutput{false};
   // The last keyframe's timestamp, from the encoder thread and the encoder's callback.
   std::atomic<uint64_t> lastKeyPts{0};
-  FramePacer pacer;  // Render thread, under postMutex_.
+  FramePacer pacer;  // Post and capture threads, under pacerMutex_.
+  uint64_t tailSequence = 0;  // Last tail delivered to this role, under pacerMutex_.
   // For the stats line: frames queued for this role, posts that its pacer skipped, frames that
   // found its queue full, delta frames that its output dropped, and its encoded bytes.
   std::atomic<uint64_t> offered{0}, pacerSkipped{0}, queueFull{0}, outputDropped{0},
@@ -318,7 +319,7 @@ class Agent {
   void captureLoop();
   void capturePost(uint32_t handle, bool needLockAndBind);
   void deliver(PendingFrame& pending, const bool (&take)[kRoleCount]);
-  bool deliverTail(uint32_t handle, int64_t postUs);
+  bool deliverTail(uint32_t handle, int64_t postUs, const bool (&take)[kRoleCount]);
   ReadMode effectiveReadMode() const;
   void chooseCaptureModes();
   std::string sessionOption(const char* file, const char* variable) const;
@@ -589,8 +590,8 @@ void Agent::deliver(PendingFrame& pending, const bool (&take)[kRoleCount]) {
 }
 
 // The tail rule: no post came after the last one, so no post reads its frame. Every active role
-// gets it, past its pacer, in place of its oldest pending frame when its queue is full.
-bool Agent::deliverTail(uint32_t handle, int64_t postUs) {
+// gets it within its pacing budget, replacing an old pending frame if its queue is full.
+bool Agent::deliverTail(uint32_t handle, int64_t postUs, const bool (&take)[kRoleCount]) {
   PendingFrame pending;
   std::string error;
   if (!readFrame(handle, pending.frame, error)) {
@@ -606,7 +607,7 @@ bool Agent::deliverTail(uint32_t handle, int64_t postUs) {
     std::lock_guard<std::mutex> guard(encodeMutex_);
     for (int role = 0; role < kRoleCount; role++) {
       RoleState& state = roles_[role];
-      if (!state.active) continue;
+      if (!take[role] || !state.active) continue;
       if (state.pending.size() >= kMaxPendingFrames) {
         state.pending.pop_front();
         state.queueFull++;
@@ -686,8 +687,31 @@ void Agent::captureLoop() {
       if (!anyActive || (!handle && !tail)) continue;
       if (tail) {
         ReadMode mode = effectiveReadMode();
-        if ((mode == ReadMode::Lag || mode == ReadMode::LagAsync) &&
-            !deliverTail(handle, postUs)) retryTail();
+        if (mode == ReadMode::Lag || mode == ReadMode::LagAsync) {
+          bool anyTaken = false;
+          {
+            // Match the post's pacer -> async lock order after releasing the wait lock.
+            // Keep the posts' try-lock free so a final post cannot lose its handle.
+            std::lock_guard<std::mutex> pacerGuard(pacerMutex_);
+            std::lock_guard<std::mutex> tailGuard(asyncMutex_);
+            int64_t nowUs = int64_t(clockUs());
+            for (int role = 0; role < kRoleCount; role++) {
+              RoleState& state = roles_[role];
+              if (!state.active || state.tailSequence == tail->sequence) continue;
+              take[role] = tail_.pace(*tail, state.pacer, nowUs, state.fps.load());
+              anyTaken |= take[role];
+            }
+          }
+          if (anyTaken) {
+            if (!deliverTail(handle, postUs, take)) {
+              retryTail();
+            } else {
+              std::lock_guard<std::mutex> pacerGuard(pacerMutex_);
+              for (int role = 0; role < kRoleCount; role++)
+                if (take[role]) roles_[role].tailSequence = tail->sequence;
+            }
+          }
+        }
         continue;
       }
       PendingFrame pending;
