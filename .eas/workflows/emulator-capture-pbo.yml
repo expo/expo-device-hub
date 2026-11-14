@@ -1,0 +1,91 @@
+name: Emulator capture PBO experiment
+on:
+  workflow_dispatch: {}
+jobs:
+  pixel_9:
+    runs_on: linux-large-nested-virtualization
+    image: ubuntu-26.04-jdk-17-ndk-r27b-sdk-58
+    steps:
+      - uses: eas/checkout
+      - name: Setup
+        run: bash .eas/experiments/pbo/ci/setup.sh pixel_9
+      - name: Build and native tests
+        run: EXPO_PBO_CAPTURE="$PWD/packages/expo-emulator-capture" bash .eas/experiments/pbo/ci/build.sh && cd packages/expo-emulator-capture && bun run test
+      - name: Exported renderer symbols
+        run: nm -D "$ANDROID_HOME/emulator/lib64/libgfxstream_backend.so" | c++filt > .eas/experiments/pbo/logs/renderer-exports.txt
+      - name: lavapipe comparison
+        run: EXPO_PBO_CAPTURE="$PWD/packages/expo-emulator-capture" VARIANTS='v2:1280:- v4:1280:0' PROBE=0 bash .eas/experiments/pbo/ci/run.sh pixel_9 base
+      - name: Upload lavapipe
+        uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          name: pixel_9-lavapipe
+          path: .eas/experiments/pbo/results-base.tar.gz
+          ignore_error: true
+      - name: SwiftShader comparison
+        run: EXPO_PBO_CAPTURE="$PWD/packages/expo-emulator-capture" VARIANTS='v4:1280:0' PROBE=0 bash .eas/experiments/pbo/ci/run.sh pixel_9 basess
+      - name: Upload SwiftShader
+        uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          name: pixel_9-swiftshader
+          path: .eas/experiments/pbo/results-basess.tar.gz
+          ignore_error: true
+  medium_phone:
+    runs_on: linux-large-nested-virtualization
+    image: ubuntu-26.04-jdk-17-ndk-r27b-sdk-58
+    steps:
+      - uses: eas/checkout
+      - name: Setup
+        run: bash .eas/experiments/pbo/ci/setup.sh medium_phone
+      - name: Build and native tests
+        run: EXPO_PBO_CAPTURE="$PWD/packages/expo-emulator-capture" bash .eas/experiments/pbo/ci/build.sh && cd packages/expo-emulator-capture && bun run test
+      - name: Exported renderer symbols
+        run: nm -D "$ANDROID_HOME/emulator/lib64/libgfxstream_backend.so" | c++filt > .eas/experiments/pbo/logs/renderer-exports.txt
+      - name: lavapipe comparison
+        run: EXPO_PBO_CAPTURE="$PWD/packages/expo-emulator-capture" VARIANTS='v2:1280:- v4:1280:0' PROBE=0 bash .eas/experiments/pbo/ci/run.sh medium_phone base
+      - name: Upload lavapipe
+        uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          name: medium_phone-lavapipe
+          path: .eas/experiments/pbo/results-base.tar.gz
+          ignore_error: true
+      - name: SwiftShader comparison
+        run: EXPO_PBO_CAPTURE="$PWD/packages/expo-emulator-capture" VARIANTS='v4:1280:0' PROBE=0 bash .eas/experiments/pbo/ci/run.sh medium_phone basess
+      - name: Upload SwiftShader
+        uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          name: medium_phone-swiftshader
+          path: .eas/experiments/pbo/results-basess.tar.gz
+          ignore_error: true
+  pixel_9_pro_fold:
+    runs_on: linux-large-nested-virtualization
+    image: ubuntu-26.04-jdk-17-ndk-r27b-sdk-58
+    steps:
+      - uses: eas/checkout
+      - name: Setup
+        run: bash .eas/experiments/pbo/ci/setup.sh pixel_9_pro_fold
+      - name: Build and native tests
+        run: EXPO_PBO_CAPTURE="$PWD/packages/expo-emulator-capture" bash .eas/experiments/pbo/ci/build.sh && cd packages/expo-emulator-capture && bun run test
+      - name: Exported renderer symbols
+        run: nm -D "$ANDROID_HOME/emulator/lib64/libgfxstream_backend.so" | c++filt > .eas/experiments/pbo/logs/renderer-exports.txt
+      - name: lavapipe comparison
+        run: EXPO_PBO_CAPTURE="$PWD/packages/expo-emulator-capture" VARIANTS='v2:1280:- v4:1280:0' PROBE=0 bash .eas/experiments/pbo/ci/run.sh pixel_9_pro_fold base
+      - name: Upload lavapipe
+        uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          name: pixel_9_pro_fold-lavapipe
+          path: .eas/experiments/pbo/results-base.tar.gz
+          ignore_error: true
+      - name: SwiftShader comparison
+        run: EXPO_PBO_CAPTURE="$PWD/packages/expo-emulator-capture" VARIANTS='v4:1280:0' PROBE=0 bash .eas/experiments/pbo/ci/run.sh pixel_9_pro_fold basess
+      - name: Upload SwiftShader
+        uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          name: pixel_9_pro_fold-swiftshader
+          path: .eas/experiments/pbo/results-basess.tar.gz
+          ignore_error: true

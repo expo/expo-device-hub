@@ -9,6 +9,7 @@
 namespace expo_capture {
 
 struct CaptureOptions {
+  bool pbo = false;  // Temporary Linux experiment; keep the blocking read as the default.
   bool probe = false;  // Times the renderer's wait with a 1x1 read before each read.
 };
 

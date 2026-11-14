@@ -5,7 +5,7 @@
 **Systems:** Hub, ServeEmu, EmulatorCapture, HubClient
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-13
-**Revised:** 2026-11-13 (decisions confirmed; the implementation in [As built](#as-built); device test results); 2026-11-14 (on Linux, one read on the capture thread for both roles; the Linux timing matrix in [Test plan and results](#test-plan-and-results)); by Claude Code, directed by Krystof Woldrich; 2026-11-14 (restack preserves inherited native failure guards, bounded socket reads and tail retry ownership; tail delivery shares each role's FPS budget), by Codex (gpt-6.1-sol), directed by Krystof Woldrich; 2026-11-14 (the timeline's orientation follows the pose that the screen shows; run 6 in [Test plan and results](#test-plan-and-results)), by Claude Code (Claude Opus 5.5), after an agent found the fault in the media run
+**Revised:** 2026-11-13 (decisions confirmed; the implementation in [As built](#as-built); device test results); 2026-11-14 (on Linux, one read on the capture thread for both roles; the Linux timing matrix in [Test plan and results](#test-plan-and-results)); by Claude Code, directed by Krystof Woldrich; 2026-11-14 (restack preserves inherited native failure guards, bounded socket reads and tail retry ownership; tail delivery shares each role's FPS budget), by Codex (gpt-6.1-sol), directed by Krystof Woldrich; 2026-11-14 (the timeline's orientation follows the pose that the screen shows; run 6 in [Test plan and results](#test-plan-and-results)), by Claude Code (Claude Opus 5.5), after an agent found the fault in the media run; 2026-11-14 (temporary PBO experiment and EAS comparisons), by Codex (gpt-6.1-sol), directed by Krystof Woldrich
 **Related:** LLP 0001, LLP 0013, LLP 0018, LLP 0020, LLP 0021, LLP 0022 (attach to a running emulator, in a later PR of the stack)
 
 > File paths in `src/` are relative to the package that the text names. serve-emu is `packages/serve-emu/packages/serve-emu`, the agent is `packages/expo-emulator-capture`, and the Hub is `packages/expo-device-hub`.
@@ -212,6 +212,55 @@ Unit tests cover the protocol roles, the canvas and placement, the letterbox pla
    | Medium Phone, Home from Gmail in landscape (3 times) | −0.167, −0.067, −0.091 s                |
 
    No entry came after its turn. A rotation's entry is early because Android changes the rotation at once and starts the turn animation only when the app has drawn in the new pose; a cold start is early because Android names the turned activity about 0.4 s before its first window shows [observed]. In a first Medium Phone run, the guest rebooted 3 to 7 s after a Gmail tap (`sys.boot.reason` `reboot`); the log from before the reboot was lost, and the cause is unknown. The recording went on through the reboot, and its two entries after the reboot came 0.14 and 0.22 s after Android's log line for the rotation, by the guest's clock, which the emulator set at the boot [observed: 2026-11-14].
+
+## PBO experiment
+
+Krystof Woldrich requested a temporary experiment on top of the independent video
+recording changes, to measure the deferred readback proposal in EAS workflows
+[confirmed: Krystof Woldrich, 2026-11-14]. It is opt-in; Linux's default remains
+`lag-async` with the existing blocking renderer read.
+
+Set `EXPO_EMULATOR_CAPTURE_PBO=1`, or write `1` to `<socket>.pbo` before a consumer
+starts. The existing session option precedence applies. PBO mode forces
+`lag-async` so that fence waiting never runs in the display-post hook. The capture
+thread binds a private shared GLES context and attaches the posted color buffer's
+borrowed texture to its own framebuffer. Under the FrameBuffer lock it issues a
+pixel-pack-buffer read, publishes the color buffer's synchronization dependency,
+inserts a fence and flushes. It releases the FrameBuffer lock before the client
+fence wait, map and memcpy into a pooled RGBA image. Both roles share that image
+as before. The existing tail rule and on-demand capture use the same source
+[observed: `chooseCaptureModes`, `PboReadback::capture`, `ReadbackFrameSource`].
+
+This is a prototype rather than a new default: the deferred copy still costs CPU
+on software renderers, and mapping into the current encoder interface adds a
+second memory copy. PBO submission itself may block; reduced guest contention is
+a hypothesis until measured [inferred]. No direct renderer-memory access or tearing mode
+is introduced [observed: `pbo-readback.h`].
+
+The experiment uses the private emulator-37 EGLDispatch prefix, from the generated
+[`EGLDispatch.h` and `RenderEGL_functions.h`](https://android.googlesource.com/platform/hardware/google/gfxstream/+/ca9abf8fd1ef9dadedc4de1bdfc1b68beb7850a2/include/OpenGLESDispatch/).
+The generated core list contains `eglGetCurrentDisplay` between current context
+and current surface (the `.entries` input at that revision does not). GLES functions
+come from gfxstream's exported dispatch lookup. Linux 37.1 has no exported
+`getColorBufferGl` or FrameBuffer `getDisplay`. The PBO path gets the default display
+from EGLDispatch and borrows through `ColorBuffer::borrowForDisplay(kGl)`. A Gum
+entry listener on `ColorBufferGl::getBorrowedImageInfo` observes that call's opaque
+`this` pointer on the capture thread, for the `waitSync`/`setSync` calls. It does
+not read private object fields or invoke a foreign `std::function`. A missing or
+inlined-away call fails the explicit experiment [observed: EAS export table,
+`pbo-borrow.cpp`]. Missing optional entry points fail
+an explicitly enabled PBO capture and do not change the default reader
+[observed: source headers, `resolveGfxstream`, `PboReadback::load`].
+
+The manually triggered `.eas/workflows/emulator-capture-pbo.yml` compares both
+readers on isolated EAS VMs. Its scripts are in `.eas/experiments/pbo/`; it has no
+automatic push/PR trigger. The decoded color summary fails empty, undecodable,
+torn or unknown-color captures. It reports FPS rather than imposing a performance
+pass threshold [observed: workflow and `ci/summary.py`].
+
+A native fake-dispatch test checks that submission holds the FrameBuffer lock,
+waiting and mapping release it, retained frames survive resize/reuse, and errors
+restore the calling context. EAS validation and results follow below when available.
 
 ## Open questions
 
