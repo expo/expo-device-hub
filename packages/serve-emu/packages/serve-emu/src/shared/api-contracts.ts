@@ -210,6 +210,12 @@ export type StreamModeResponse = ApiSuccess<{
   availableModes: StreamMode[];
   /** Why a mode is not available for this device, for display. Older hosts omit this field. */
   unavailableModes?: Partial<Record<StreamMode, string>>;
+  /**
+   * A note for an available mode, for display: for example that selecting `emulator-capture`
+   * attaches its agent to the running emulator, or why the last attach failed. Older hosts omit
+   * this field.
+   */
+  modeNotes?: Partial<Record<StreamMode, string>>;
   sessionGeneration: number;
 }>;
 
@@ -1237,17 +1243,23 @@ export function parseStreamModeResponse(value: unknown): StreamModeResponse {
     availableModes,
     ...(root.unavailableModes === undefined
       ? {}
-      : { unavailableModes: parseUnavailableModes(root.unavailableModes) }),
+      : { unavailableModes: parseModeTexts(root.unavailableModes, "unavailableModes") }),
+    ...(root.modeNotes === undefined
+      ? {}
+      : { modeNotes: parseModeTexts(root.modeNotes, "modeNotes") }),
     sessionGeneration,
   };
 }
 
-function parseUnavailableModes(value: unknown): Partial<Record<StreamMode, string>> {
-  const reasons = record(value, "stream mode response.unavailableModes");
+function parseModeTexts(
+  value: unknown,
+  field: "unavailableModes" | "modeNotes",
+): Partial<Record<StreamMode, string>> {
+  const texts = record(value, `stream mode response.${field}`);
   const result: Partial<Record<StreamMode, string>> = {};
-  for (const [key, reason] of Object.entries(reasons)) {
-    const mode = oneOf(key, STREAM_MODES, "stream mode response.unavailableModes key");
-    result[mode] = string(reason, `stream mode response.unavailableModes.${mode}`);
+  for (const [key, text] of Object.entries(texts)) {
+    const mode = oneOf(key, STREAM_MODES, `stream mode response.${field} key`);
+    result[mode] = string(text, `stream mode response.${field}.${mode}`);
   }
   return result;
 }
