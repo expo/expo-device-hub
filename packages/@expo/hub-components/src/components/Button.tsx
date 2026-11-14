@@ -88,11 +88,36 @@ const SIZE_STYLES: Record<ButtonSize, CSSProperties> = {
     borderRadius: radius.lg,
     ...textSize.xs,
   },
-  xs: { height: BUTTON_HEIGHTS.xs, paddingInline: 12, borderRadius: radius.lg, ...textSize.xs },
-  sm: { height: BUTTON_HEIGHTS.sm, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
-  md: { height: BUTTON_HEIGHTS.md, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
-  lg: { height: BUTTON_HEIGHTS.lg, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
-  xl: { height: BUTTON_HEIGHTS.xl, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
+  xs: {
+    height: BUTTON_HEIGHTS.xs,
+    paddingInline: 12,
+    borderRadius: radius.lg,
+    ...textSize.xs,
+  },
+  sm: {
+    height: BUTTON_HEIGHTS.sm,
+    paddingInline: 16,
+    borderRadius: radius.lg,
+    ...textSize.sm,
+  },
+  md: {
+    height: BUTTON_HEIGHTS.md,
+    paddingInline: 16,
+    borderRadius: radius.lg,
+    ...textSize.sm,
+  },
+  lg: {
+    height: BUTTON_HEIGHTS.lg,
+    paddingInline: 24,
+    borderRadius: radius.lg,
+    ...textSize.base,
+  },
+  xl: {
+    height: BUTTON_HEIGHTS.xl,
+    paddingInline: 24,
+    borderRadius: radius.lg,
+    ...textSize.base,
+  },
   "2xl": {
     height: BUTTON_HEIGHTS["2xl"],
     paddingInline: 24,
@@ -217,7 +242,22 @@ export function Button({
       style={baseStyle}
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
-      {...handlers}
+      onMouseEnter={(event) => {
+        handlers.onMouseEnter();
+        buttonAttributes.onMouseEnter?.(event);
+      }}
+      onMouseLeave={(event) => {
+        handlers.onMouseLeave();
+        buttonAttributes.onMouseLeave?.(event);
+      }}
+      onMouseDown={(event) => {
+        handlers.onMouseDown();
+        buttonAttributes.onMouseDown?.(event);
+      }}
+      onMouseUp={(event) => {
+        handlers.onMouseUp();
+        buttonAttributes.onMouseUp?.(event);
+      }}
     >
       {content}
     </button>

@@ -1,12 +1,17 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   type AndroidRenderingAnswer,
   renderingAnswerFrom,
+  readAndroidRendering,
   showsCpuRenderingWarning,
 } from "../useAndroidRendering";
 
-const SOFTWARE = { renderer: "Google SwiftShader", name: "SwiftShader", software: true };
+const SOFTWARE = {
+  renderer: "Google SwiftShader",
+  name: "SwiftShader",
+  software: true,
+};
 const HARDWARE = {
   renderer: "Android Emulator OpenGL ES Translator (Apple M2)",
   name: "Apple M2",
@@ -73,5 +78,109 @@ describe("showsCpuRenderingWarning", () => {
     ["no device", undefined, answer(true, "cpu")],
   ])("does not warn for %s", (_case, device, current) => {
     expect(showsCpuRenderingWarning(device, current)).toBe(false);
+  });
+});
+
+describe("renderer discovery after boot", () => {
+  let originalWindow: PropertyDescriptor | undefined;
+  beforeEach(() => {
+    originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      writable: true,
+      value: { __EXPO_DEVICE_HUB_BASE_PATH__: "/hub" },
+    });
+  });
+  afterEach(() => {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+  });
+  test("recovers from a discovery 404 without a stream reconnect", async () => {
+    const controller = new AbortController();
+    const urls: string[] = [];
+    let waits = 0;
+    const answer = await readAndroidRendering(
+      "emulator-5554",
+      controller.signal,
+      async (url, options) => {
+        urls.push(url);
+        expect(options.signal).toBe(controller.signal);
+        return urls.length === 1
+          ? new Response(null, { status: 404 })
+          : Response.json({ gpuAvailable: true, renderer: SOFTWARE });
+      },
+      async () => {
+        waits++;
+      },
+    );
+    expect(answer).toEqual({ gpuAvailable: true, rendering: "cpu" });
+    expect(urls).toEqual([
+      "/hub/api/devices/gpu?serial=emulator-5554",
+      "/hub/api/devices/gpu?serial=emulator-5554",
+    ]);
+    expect(waits).toBe(1);
+  });
+
+  test("bounds discovery retries and keeps an absent device unknown", async () => {
+    let calls = 0;
+    const answer = await readAndroidRendering(
+      "gone",
+      new AbortController().signal,
+      async () => {
+        calls++;
+        return new Response(null, { status: 404 });
+      },
+      async () => {},
+    );
+    expect(answer).toBeNull();
+    expect(calls).toBe(3);
+  });
+
+  test("does not retry an authorization refusal", async () => {
+    let calls = 0;
+    const answer = await readAndroidRendering(
+      "other",
+      new AbortController().signal,
+      async () => {
+        calls++;
+        return new Response(null, { status: 403 });
+      },
+      async () => {
+        throw new Error("must not retry");
+      },
+    );
+    expect(answer).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  test("aborting a real retry wait settles without another request", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const pending = readAndroidRendering("old", controller.signal, async () => {
+      calls++;
+      return new Response(null, { status: 404 });
+    });
+    await Promise.resolve();
+    controller.abort();
+    expect(await pending).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  test("a device switch or deadline abort cancels discovery retries", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const answer = await readAndroidRendering(
+      "old",
+      controller.signal,
+      async () => {
+        calls++;
+        return new Response(null, { status: 404 });
+      },
+      async () => {
+        controller.abort();
+      },
+    );
+    expect(answer).toBeNull();
+    expect(calls).toBe(1);
   });
 });
