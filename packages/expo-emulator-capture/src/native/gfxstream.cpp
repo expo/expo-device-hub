@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "gfxstream.h"
 #include <type_traits>
+#include <chrono>
+#include <thread>
 #include "frida-gum.h"
 
 namespace expo_capture {
@@ -45,6 +47,9 @@ uint32_t lastPostedHandle(const Gfxstream& g) {
 
 std::string resolveGfxstream(GumModule* module, Gfxstream& g) {
   g.path = gum_module_get_path(module);
+  // Discovery can see a partially loaded module. Do not call its exported APIs
+  // until the loader has run its initializers.
+  gum_module_ensure_initialized(module);
   struct Required {
     const char* name;
     bool ok;
@@ -78,6 +83,14 @@ std::string resolveGfxstream(GumModule* module, Gfxstream& g) {
     if (!entry.ok)
       return std::string("unsupported emulator renderer: missing ") + entry.name + " in " + g.path;
   }
+
+  // @ref LLP 0020#hook-point — resolve lazy GLES dispatch only after FrameBuffer initialization
+  // glGetGlobalTexName comes from s_gles2, not directly from a module export.
+  // FrameBuffer initialization fills that table before publishing getFB(). Looking
+  // it up at module discovery can cache a null pointer for this emulator's lifetime.
+  for (int attempt = 0; attempt < 1200 && !g.getFB(); attempt++)
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  if (!g.getFB()) return "the renderer FrameBuffer was not created";
 
   // Entry points for the GPU frame path. Missing ones only disable that path.
   resolve(module, "_ZN9gfxstream4host11FrameBuffer26createSharedTrivialContextEPPvS3_",

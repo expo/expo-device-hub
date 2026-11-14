@@ -5,7 +5,7 @@
 **Systems:** EmulatorCapture, ServeEmu, Hub, AndroidUtils
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-04
-**Revised:** 2026-11-04 (added the EAS macOS VM results); 2026-11-05 (source files moved to a shared C++ layout; rotation); 2026-11-06 (fixes from two deep reviews: replaced record, output limits, touch rotation, install lock, agent log, private socket directory); all by Claude Code, directed by Krystof Woldrich; 2026-11-14 (native exception boundaries, bounded command reads, consumer event ordering, locked last-post reads and install/socket checks), by Codex (gpt-6.1-sol), directed by Krystof Woldrich
+**Revised:** 2026-11-04 (added the EAS macOS VM results); 2026-11-05 (source files moved to a shared C++ layout; rotation); 2026-11-06 (fixes from two deep reviews: replaced record, output limits, touch rotation, install lock, agent log, private socket directory); all by Claude Code, directed by Krystof Woldrich; 2026-11-14 (native exception boundaries, bounded command reads, consumer event ordering, locked last-post reads, install/socket checks and renderer dispatch startup ordering), by Codex (gpt-6.1-sol), directed by Krystof Woldrich
 **Related:** LLP 0000, LLP 0008, LLP 0009, LLP 0016
 
 > File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
@@ -35,6 +35,12 @@ The preload constructor, startup and encoder threads, and VideoToolbox output ca
 The agent hooks gfxstream's `FrameBuffer::Impl::postImpl(handle, callback, needLockAndBind, repaint)` with Frida Gum 17.18.0, linked statically [observed: `src/native/agent.cpp`]. All renderer entry points are resolved by name at runtime. The translator EGL functions are local symbols, which Gum resolves from the symbol table [observed: `nm` on `libgfxstream_backend.dylib`; `src/native/gfxstream.cpp`]. A missing required symbol disables capture; missing GPU-path symbols leave only the CPU path.
 
 In the emulator builds tested, every post arrived on one render thread with `needLockAndBind` true [observed: a probe library on 37.2.7, 2026-11-04]. A post with `needLockAndBind` false means that the caller already holds the non-recursive FrameBuffer lock, so the agent skips that frame rather than deadlock [observed: `onPost` in `src/native/agent.cpp`; the same rule as PR #107].
+
+The module can be visible before its initializers have run, and its GLES dispatch can still be empty before FrameBuffer initialization. The resolver now ensures module initialization and polls `getFB()` (100 ms, up to 120 seconds) before reading optional GPU entry points. In gfxstream, `gles2_dispatch_get_proc_func_static` returns an entry from `s_gles2`, which FrameBuffer initialization populates before publishing the singleton [observed: `resolveGfxstream` in `src/native/gfxstream.cpp`; upstream [StaticDispatch.cpp](https://github.com/google/gfxstream/blob/main/host/gl/OpenGLESDispatch/StaticDispatch.cpp) and [FrameBuffer initialization](https://github.com/google/gfxstream/blob/main/host/frame_buffer.cpp)]. The hook is installed only after this wait. The native startup regression exercises the real resolver with delayed dispatch and genuinely missing optional and required symbols [observed: `tests/gfxstream-startup.test.cpp`].
+
+A fresh private Pixel 10 AVD on the Mac mini M2, emulator 37.2.7 with `-gpu host`, used GPU frames and the `h264.rtvc` hardware encoder on its first and second boots after the fix. The test AVD was stopped and removed [observed: Codex startup smoke test, 2026-11-14].
+
+Previously optional GPU pointers were resolved once, before the FrameBuffer wait. A null dispatch entry stayed null; the first capture then permanently disabled the GPU path in the frame source. There was no later symbol lookup retry. A renderer that truly lacks optional GPU symbols still uses CPU fallback after initialization [observed: `runAgent`, `resolveGfxstream` and `IOSurfaceFrameSource::captureGpu` before this fix; current regression tests].
 
 ## Frame paths
 
