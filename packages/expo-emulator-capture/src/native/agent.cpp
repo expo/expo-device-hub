@@ -821,15 +821,7 @@ void runAgent(std::string socketPath) {
     logLine("capture disabled: %s", error.c_str());
     return;
   }
-  // The renderer creates its FrameBuffer once the GPU emulation starts.
-  void* (*getFB)() = reinterpret_cast<void* (*)()>(
-      gum_module_find_export_by_name(backend, "_ZN9gfxstream4host11FrameBuffer5getFBEv"));
-  for (int attempt = 0; attempt < 1200 && !getFB(); attempt++)
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  if (!getFB()) {
-    logLine("capture disabled: the renderer FrameBuffer was not created");
-    return;
-  }
+  // initialize() waits for FrameBuffer and resolves dispatch before the hook is installed.
   GumInterceptor* interceptor = gum_interceptor_obtain();
   GumInvocationListener* listener = gum_make_call_listener(onPostEnter, nullptr, nullptr, nullptr);
   if (gum_interceptor_attach(interceptor, agent->postTarget(), listener, nullptr) !=
