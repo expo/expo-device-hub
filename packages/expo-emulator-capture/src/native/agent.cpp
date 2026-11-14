@@ -210,6 +210,7 @@ class Agent {
   std::atomic<uint64_t> posts_{0}, captured_{0}, skippedLocked_{0}, droppedBusy_{0},
       captureErrors_{0};
   std::mutex postMutex_;  // Guards pacer_ if more than one thread posts.
+  std::mutex pacerMutex_;  // Shared by posts and tail reads.
   FramePacer pacer_;
   std::atomic<uint64_t> postUs_{0};  // The render thread's time inside captured posts.
 
@@ -355,7 +356,11 @@ void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
     readHandle = previousHandle_;
     previousHandle_ = handle;
   }
-  bool take = readHandle && pacer_.take(elapsedUs, captureFps_.load());
+  bool take = false;
+  if (readHandle) {
+    std::lock_guard<std::mutex> guard(pacerMutex_);
+    take = pacer_.take(elapsedUs, captureFps_.load());
+  }
   if (take) {
     std::lock_guard<std::mutex> guard(encodeMutex_);
     if (pending_.size() >= kMaxPendingFrames) {
@@ -434,6 +439,16 @@ void Agent::captureLoop() {
     };
     try {
       if (!active_.load(std::memory_order_relaxed)) continue;
+      if (tail) {
+        // Release the wait lock before taking the pacer lock, matching the post's
+        // pacer -> async order. Keep postMutex_ exclusive to concurrent posts, so
+        // a tail cannot make a final post fail its try-lock and lose its handle.
+        std::lock_guard<std::mutex> pacerGuard(pacerMutex_);
+        std::lock_guard<std::mutex> tailGuard(asyncMutex_);
+        int64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                            Clock::now() - start_).count();
+        if (!tail_.pace(*tail, pacer_, nowUs, captureFps_.load())) continue;
+      }
       PendingFrame pending;
       std::string error;
       if (!frames_->capture(handle, pending.frame, error)) {
