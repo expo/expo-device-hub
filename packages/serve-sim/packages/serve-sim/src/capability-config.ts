@@ -1,8 +1,8 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { readFileSync, renameSync, writeFileSync } from "fs";
 import { isAbsolute, join } from "path";
 import type { CapabilityScope } from "./capabilities";
 import type { LaunchState, RecordedCapability } from "./launch-state";
-import { stateDir } from "./state";
+import { ensureStateDir, stateDir } from "./state";
 import { dirnameOf } from "./runtime";
 
 export function capabilityLoaderDir(): string {
@@ -94,7 +94,7 @@ export function capabilityConfigPath(udid: string): string {
 }
 
 export function commitCapabilityConfig(udid: string, contents: string): void {
-  mkdirSync(stateDir(), { recursive: true });
+  ensureStateDir();
   const target = capabilityConfigPath(udid);
   const temp = `${target}.${process.pid}.tmp`;
   writeFileSync(temp, contents);
@@ -126,7 +126,7 @@ export function managedStartupDylibs(udid: string): string[] {
 }
 
 export function writeManagedStartupDylibs(udid: string, paths: string[]): void {
-  mkdirSync(stateDir(), { recursive: true });
+  ensureStateDir();
   const target = startupInsertStatePath(udid);
   const temp = `${target}.${process.pid}.tmp`;
   writeFileSync(temp, JSON.stringify([...new Set(paths)]));

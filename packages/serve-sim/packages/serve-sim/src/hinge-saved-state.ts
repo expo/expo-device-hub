@@ -1,8 +1,8 @@
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
+import { readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { isHingeAngle } from "./hinge-angle";
 import { HINGE_POSES, type HingePhysicalOrientation, type HingePose } from "./hinge-control";
-import { stateDir } from "./state";
+import { ensureStateDir, stateDir } from "./state";
 
 type SavedHingeState = {
   hingeAngle: number;
@@ -81,7 +81,7 @@ export function writeSavedHingeState(
       } catch {}
       return;
     }
-    mkdirSync(stateDir(), { recursive: true });
+    ensureStateDir();
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(
       tmp,

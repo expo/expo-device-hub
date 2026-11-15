@@ -1,12 +1,12 @@
 import { execFile } from "child_process";
 import { randomUUID } from "crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { findBootedDevice, resolveDevice } from "./device";
 import { debugUi } from "./debug";
 import { setHardwareKeyboard } from "./native";
 import { dirnameOf } from "./runtime";
-import { stateDir } from "./state";
+import { ensureStateDir, stateDir } from "./state";
 import { withStateLock } from "./state-lock";
 
 // Bun's bundler inlines a bare `__dirname` as the build machine's source
@@ -125,7 +125,7 @@ function writeDeviceOptionState(
   option: string,
   value: string,
 ): string {
-  mkdirSync(stateDir(), { recursive: true });
+  ensureStateDir();
   const file = deviceOptionStateFile(udid);
   const temporary = `${file}.${process.pid}.tmp`;
   const current = readDeviceOptionState(udid);
