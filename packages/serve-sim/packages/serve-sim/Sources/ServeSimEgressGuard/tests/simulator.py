@@ -274,7 +274,12 @@ try:
                                 local_peer['localPeer'], str(listeners.tcp_port), str(listeners.udp_port), tag],
                                timeout=60))
         time.sleep(1)
-        contacts = app_path_contacts(listeners.since(start), tag)
+        window = listeners.since(start)
+        contacts = app_path_contacts(window, tag)
+        if mode == 'block':
+            # Only this probe runs in the window, so an untagged TCP contact is also a gap.
+            contacts['untaggedTcp'] = sum(1 for e in window if e['kind'] == 'tcp' and not any(
+                f'/{tag}-{name}' in e['first'] for name in ('urlsession', 'nwtcp')))
         safari_start = time.monotonic()
         run(['xcrun', 'simctl', 'openurl', device, f'{base_url}/{tag}-safari'], timeout=60)
         if mode == 'block':
@@ -299,6 +304,8 @@ try:
         verdicts[path] = 'gap' if blocked else 'enforced' if passed else 'inconclusive'
     results['appPaths'] = app_paths_results | {'verdicts': verdicts,
                                                'scope': 'one probe per path on this machine; no remote traffic'}
+    if app_paths_results['block']['contacts']['untaggedTcp']:
+        verdicts['untaggedTcp'] = 'gap'
     if any(verdict != 'enforced' for verdict in verdicts.values()):
         raise RuntimeError(f'App path coverage not established: {verdicts}')
     results['status'] = 'PASS_MECHANISM_ONLY'
