@@ -350,6 +350,13 @@ does not claim or publish a policy. Adapter tests establish ordering; packaged
 native evidence is recorded separately in the pull request
 [observed: `src/session-owner.ts`, `src/egress.ts`, resident-owner fixtures].
 
+Resident device startup rechecks the captured boot identity immediately before
+its setup callback and again before publishing readiness. A replacement detected
+before the callback prevents setup; one detected after the callback prevents ready
+publication. These checks do not serialize external Simulator tools or undo work
+already performed during an asynchronous callback
+[observed: `src/device-lifecycle.ts` and callback-boundary regression fixtures].
+
 A prepared resident boot uses a strict `simctl boot` under the existing device
 lock. An already-booted response fails; the ordinary boot-or-observe fallback is
 not used. The native identity captured after boot must survive the non-booting

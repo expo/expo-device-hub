@@ -27,6 +27,11 @@ export async function startDeviceInProcess(
   const resident = await checkResidentEgressBoot(udid);
   await bootDevice(udid, { allowBootedRecovery: !options.requireReady });
   signal?.throwIfAborted();
+  // @ref LLP 0011#resident-egress-startup — refuse setup on an already-replaced resident boot
+  if (resident) {
+    await checkResidentEgressBoot(udid, resident);
+    signal?.throwIfAborted();
+  }
   await onBoot?.();
   signal?.throwIfAborted();
   if (resident) await checkResidentEgressBoot(udid, resident);
