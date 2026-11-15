@@ -21,9 +21,11 @@ export function createAppDropClient(
       if (dropKindFor(file) !== "app")
         throw new Error("Drop a Simulator .app folder or .tar.gz/.tgz archive.");
       await uploadDroppedFile(file, "app", udid, progress, transport);
+      return { opened: true };
     },
-    installFolder(entry: AppFolderEntry, progress: (value: number | null) => void) {
-      return uploadDroppedAppFolder(entry, udid, progress, transport, workerAsset);
+    async installFolder(entry: AppFolderEntry, progress: (value: number | null) => void) {
+      await uploadDroppedAppFolder(entry, udid, progress, transport, workerAsset);
+      return { opened: true };
     },
   };
 }

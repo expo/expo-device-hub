@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { UNSUPPORTED_INSTALL_FORMAT } from "../app-install-format";
+import { APP_NOT_OPENED, UNSUPPORTED_INSTALL_FORMAT } from "../app-install-format";
 import { APP_FOLDER_GUIDANCE, APP_FOLDER_UNREADABLE } from "../client/utils/app-drop-folder";
 import { describeUploadError, UNSUPPORTED_DROP } from "../client/utils/upload-error";
 
@@ -26,6 +26,16 @@ describe("describeUploadError", () => {
     expect(describeUploadError("notes.txt", "media", UNSUPPORTED_DROP)).toEqual({
       title: "Cannot add notes.txt",
       body: "Drop an image, a video, a Simulator .app folder, or a .tar.gz archive.",
+    });
+  });
+
+  test("says an installed app did not open and keeps the launch error", () => {
+    expect(
+      describeUploadError("App.app", "app", `${APP_NOT_OPENED}\nsimctl launch failed\n`),
+    ).toEqual({
+      title: "Installed App.app",
+      body: "The app did not open. Open it from the Home Screen.",
+      details: "simctl launch failed",
     });
   });
 

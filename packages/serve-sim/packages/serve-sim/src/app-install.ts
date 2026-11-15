@@ -22,14 +22,15 @@ export async function installAppAsync(
   path: string,
   deadline = Date.now() + actionTimeoutMs(),
   serveSimBinPath = "serve-sim",
-): Promise<HostActionResult> {
+  { readBundleId = false }: { readBundleId?: boolean } = {},
+): Promise<HostActionResult & { bundleId?: string }> {
   return installArchive(async () => {
     const directory = (extractionDirectory ??= join(
       UPLOAD_DIR,
       `.install-extract-${deadline}-${randomUUID()}`,
     ));
     const remaining = () => Math.max(1, deadline - Date.now());
-    let result: HostActionResult = {
+    let result: HostActionResult & { bundleId?: string } = {
       stdout: "",
       stderr: "App installation timed out.",
       exitCode: 1,
@@ -51,6 +52,9 @@ export async function installAppAsync(
             ...installAppInvocation(udid, app),
             timeoutMs: remaining(),
           });
+          // Read before cleanup removes an extracted bundle. A missing id fails only the launch.
+          if (readBundleId && result.exitCode === 0)
+            result.bundleId = await readBundleIdAsync(app, remaining());
         }
       }
     } catch {
@@ -70,4 +74,13 @@ export async function installAppAsync(
     }
     return result;
   });
+}
+
+async function readBundleIdAsync(app: string, timeoutMs: number): Promise<string | undefined> {
+  const read = await runInvocation({
+    file: "plutil",
+    args: ["-extract", "CFBundleIdentifier", "raw", "-o", "-", join(app, "Info.plist")],
+    timeoutMs,
+  });
+  return read.exitCode === 0 ? read.stdout.trim() : undefined;
 }

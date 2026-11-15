@@ -172,7 +172,7 @@ describe("UploadToastContent", () => {
     );
 
     expect(media).toContain("Added photo.png to Photos");
-    expect(ipa).toContain("Installed App.tgz");
+    expect(ipa).toContain("Installed and opened App.tgz");
   });
 });
 

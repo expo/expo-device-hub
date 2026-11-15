@@ -55,9 +55,11 @@ export function useAppDrop(
           );
         progress(0);
         try {
-          if (folder) await backend.installFolder(entry!, progress);
-          else await backend.installFile(file, progress);
-          update(id, `Installed ${file.name}`, true);
+          const result = folder
+            ? await backend.installFolder(entry!, progress)
+            : await backend.installFile(file, progress);
+          // An older Simulator server installs without opening the app.
+          update(id, `Installed ${result?.opened ? "and opened " : ""}${file.name}`, true);
         } catch (error) {
           update(
             id,

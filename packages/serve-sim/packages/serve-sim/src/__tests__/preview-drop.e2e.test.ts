@@ -177,18 +177,19 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
     return bundle;
   }
 
-  /** Checks the install reply, the success toast, the installed files and a launch. */
+  /** Checks the install reply, the success toast, the installed files and that the drop opened the app. */
   async function expectInstalled(name: string, frame?: string) {
     await until(
       () => sent.some(({ id, action }) => action === "app.install" && replies.has(id)),
       "Archive drop did not reach app.install",
     );
     const request = sent.find((message) => message.action === "app.install")!;
+    expect(request.params).toMatchObject({ launch: true });
     expect(replies.get(request.id)?.exitCode, replies.get(request.id)?.stderr).toBe(0);
     await until(
       () =>
         browser.cdp.evaluate<boolean>(
-          `document.body.textContent.includes(${JSON.stringify("Installed ")} + ${JSON.stringify(name)})`,
+          `document.body.textContent.includes(${JSON.stringify(`Installed and opened ${name}`)})`,
           frame,
         ),
       "Preview did not report installation",
@@ -196,15 +197,15 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
     await removedUpload();
     const installed = simctl("get_app_container", udid!, APP, "app").trim();
     expect(readFileSync(join(installed, ASSET), "utf8")).toBe("archive asset");
+    // appBundle uninstalled the app, so this fresh container records only the drop's launch.
     const container = simctl("get_app_container", udid!, APP, "data").trim();
-    simctl("launch", udid!, APP, "-DropE2E", name);
     await until(() => {
       try {
-        return readFileSync(join(container, "Documents/launches.tsv"), "utf8").includes(name);
+        return /^start\t/m.test(readFileSync(join(container, "Documents/launches.tsv"), "utf8"));
       } catch {
         return false;
       }
-    }, "Installed app did not launch with the test argument");
+    }, "The drop did not open the installed app");
     simctl("terminate", udid!, APP);
   }
 
@@ -413,7 +414,7 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
 
   // expo.dev frames the preview from another site, with these iframe attributes.
   test.skipIf(!fixtureReady)(
-    "an .app folder dropped on a preview framed by another site installs through the Worker",
+    "an .app folder dropped on a preview framed by another site installs and opens through the Worker",
     async () => {
       const bundle = appBundle("Framed.app");
       // localhost and 127.0.0.1 are different sites, so Chrome runs the frame in its own process.

@@ -540,7 +540,8 @@ times out, the action runs the whole launch once more; other failures and a
 second timeout fail it. Pre-approval is best effort. Launch arguments are limited to 256 arguments of 8,192 characters each
 and 128 KiB total UTF-8 bytes, including terminators. The action replies with
 `{id, stdout, stderr, exitCode}`; invalid parameters and unsupported actions
-reply with `{id, error}`. Installation stays a separate operation. Setup finishes
+reply with `{id, error}`. `app.install` with `launch: true` runs this launch with
+`restart: false` after a successful install (see below). Setup finishes
 before the app stops. If the stop or the launch fails, the action restores the
 previous app target, launch settings, and capability environment. The deep link
 opens after the app is running, so a failed `openUrl` keeps the new launch.
@@ -597,9 +598,22 @@ before uploading. Device `.ipa` builds and `.zip` archives are refused with an
 actionable Simulator-build error before installation. Regular files without a
 gzip header are also refused, including extensionless staged ZIP uploads.
 
+`app.install` takes an optional `launch` flag. With `launch: true`, after a
+successful install the host reads `CFBundleIdentifier` from the installed bundle and
+launches it as `app.launch` with `restart: false` and no arguments. `simctl install`
+has already stopped a running copy, so the launch starts a new process [observed:
+iOS 26.5 reinstall over a running fixture app, 2026-11-14]. `launch` needs a
+Simulator UDID; a device name is refused before installation. A failed install
+launches nothing. When the install succeeds but the bundle identifier is missing or
+the launch fails, the action replies with exit code 1 and `stderr` that starts with
+`The app was installed but did not open.` followed by the cause
+[observed: `host-actions.ts`, `app-install.ts`, `app-install-launch.test.ts`].
+
 The preview classifies `.tar.gz` and `.tgz` files as app drops, streams them through
-`upload.append`, calls `app.install`, and removes the staged source on success or
-failure. Device `.ipa`/`.zip` drops are rejected before upload.
+`upload.append`, calls `app.install` with `launch: true`, and removes the staged source
+on success or failure. Device `.ipa`/`.zip` drops are rejected before upload. The
+served drop client resolves `{ opened: true }` after such an install, so a Hub that
+loads an older client can tell that the app only installed.
 
 The preview also accepts dropped `.app` directories when the browser exposes
 filesystem entries. It walks every directory batch before streaming a gzip tar
