@@ -42,7 +42,8 @@ HUB_E2E_UDID=<owned-booted-udid> bun run --filter expo-device-hub test:e2e:clien
 Add `--app-drop` to also drop a real app archive and `.app` folder through the
 dashboard, verify their installed container, and capture `dashboard-app-drop.png`.
 This uses the same built serve-sim assets and authenticated control connection
-as the dashboard. It requires the archive-support stack.
+as the dashboard. It requires the archive-support stack and the headless browser,
+so it cannot be combined with `--interactive`.
 
 The default runner opens isolated headless Chrome. Set `HUB_E2E_BROWSER` to its
 executable when it is not at the default macOS path. To use the collaborative

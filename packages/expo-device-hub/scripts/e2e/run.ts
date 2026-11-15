@@ -9,6 +9,9 @@ import { buildDashboard } from "./build-dashboard";
 import { openBrowser } from "./browser-driver";
 import { startProxy } from "./proxy";
 
+// The app-drop checks drive the headless browser, which an interactive run does not open.
+if (process.argv.includes("--app-drop") && process.argv.includes("--interactive"))
+  throw new Error("--app-drop needs the headless browser. Run it without --interactive.");
 const udid = process.env.HUB_E2E_UDID;
 if (!udid)
   throw new Error(
