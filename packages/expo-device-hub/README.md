@@ -179,3 +179,17 @@ MIT — see [LICENSE](./LICENSE).
 
 Bundled dependencies keep their own licenses under [`vendor/`](./vendor); see
 [Acknowledgements](#acknowledgements) above.
+
+## Device inventory API
+
+`GET /api/devices` returns available iOS simulators with usage history and Android
+devices with successful boot history or a current connection. Automation callers
+can request `/api/devices?includeUnusedIos=true` to also include available iOS
+simulators that have never been used or whose plist history cannot be read. Their
+`lastUsedAt` remains optional; discovery errors are still returned in `errors`.
+
+`includeUnusedIos` defaults to false and accepts `true` or `1` to enable it. It
+can be combined with `booted=true` (or `booted=1`) to return only running devices.
+The configured platform and single-device session restrictions still apply, and
+Android discovery is unchanged. The dashboard and WebSocket recents keep their
+existing history-based behavior.

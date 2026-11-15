@@ -3,7 +3,8 @@
  *
  * iOS simulators are listed via `@expo/hub-apple-utils` (which shells out to
  * `simctl`) when CoreSimulator has usage history for them — both booted and
- * shut-down. Android devices are listed via `@expo/hub-android-utils` (which
+ * shut-down. Callers can opt into unused iOS simulators for complete inventory.
+ * Android devices are listed via `@expo/hub-android-utils` (which
  * shells out to `avdmanager` / `adb`) when Android Emulator has successful boot
  * history for them, plus any currently connected device. Each device carries a
  * `booted` flag, so the caller can show the running devices in the sidebar and
@@ -69,10 +70,17 @@ interface PlatformDeviceList {
   error: SerializableError | null;
 }
 
+export interface DeviceListOptions {
+  /** Include available iOS simulators even without plist usage history. Defaults to false. */
+  includeUnusedIos?: boolean;
+}
+
 const appleDeviceTypeNames = createAppleDeviceTypeNames();
 
-/** Available iOS simulators with plist usage history, via `@expo/hub-apple-utils` → `simctl`. */
-export async function listIosSimulators(): Promise<PlatformDeviceList> {
+/** Available iOS simulators, restricted to plist usage history unless explicitly opted out. */
+export async function listIosSimulators({
+  includeUnusedIos = false,
+}: DeviceListOptions = {}): Promise<PlatformDeviceList> {
   const listed = await listAppleDevices();
   const available = listed.value.filter(
     (device) => device.platform === "iOS" && device.isAvailable,
@@ -102,7 +110,7 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
           lastUsedAt: latestTimestamp(device.lastUsedAt, device.lastBootedAt),
         };
       })
-      .filter((device) => device.lastUsedAt !== undefined),
+      .filter((device) => includeUnusedIos || device.lastUsedAt !== undefined),
     error: toSerializableError(listed.error),
   };
 }
@@ -149,10 +157,13 @@ function latestTimestamp(...timestamps: Array<number | null>): number | undefine
 }
 
 /** Every requested simulator and emulator/device, each tagged with its `booted` state. */
-export async function listDevices(platform?: PlatformFilter): Promise<HubDeviceList> {
+export async function listDevices(
+  platform?: PlatformFilter,
+  options: DeviceListOptions = {},
+): Promise<HubDeviceList> {
   const empty = (): PlatformDeviceList => ({ devices: [], error: null });
   const [simulators, emulators] = await Promise.all([
-    platform === "android" ? empty() : listIosSimulators(),
+    platform === "android" ? empty() : listIosSimulators(options),
     platform === "ios" ? empty() : listAndroidEmulators(),
   ]);
 
