@@ -131,13 +131,14 @@ class HostListeners:
 
 
 def app_path_contacts(events, tag):
-    """Attribute contacts by the tag each probe sends. Safari is attributed by its time window."""
+    """Attribute contacts by the tag each probe sends."""
     def first(event):
         return event['first']
     return {
         'urlSession': sum(1 for e in events if e['kind'] == 'tcp' and f'/{tag}-urlsession' in first(e)),
         'nwTcp': sum(1 for e in events if e['kind'] == 'tcp' and f'/{tag}-nwtcp' in first(e)),
         'nwUdp': sum(1 for e in events if e['kind'] == 'udp' and first(e) == f'{tag}-nwudp'),
+        'safari': sum(1 for e in events if e['kind'] == 'tcp' and f'/{tag}-safari' in first(e)),
     }
 
 
@@ -247,8 +248,24 @@ try:
     assert milestone()['phase'] == 'passthrough-again'
     if client.wait(timeout=10):
         raise RuntimeError('Simulator fixture failed')
-    # Ordinary app paths. Block runs first: a pass-through connection could stay open into block.
+    # Ordinary app paths. Safari is warmed under pass-through first, so its cold launch cannot
+    # hide inside the block window. Probe processes are new for each mode.
     listeners = HostListeners(local_peer['localPeer'])
+    base_url = f"http://{local_peer['localPeer']}:{listeners.tcp_port}"
+
+    def wait_for(start, tag, seconds):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if app_path_contacts(listeners.since(start), tag)['safari']:
+                return True
+            time.sleep(0.5)
+        return False
+
+    warm_start = time.monotonic()
+    run(['xcrun', 'simctl', 'openurl', device, f'{base_url}/warm-safari'], timeout=60)
+    if not wait_for(warm_start, 'warm', 60):
+        raise RuntimeError('Safari did not load the warm-up page under pass-through')
+    time.sleep(2)
     app_paths_results = {}
     for tag, mode in (('block', 'block'), ('pass', 'passthrough')):
         publication = json.loads(run([str(control), 'set', str(page), mode]))
@@ -259,16 +276,21 @@ try:
         time.sleep(1)
         contacts = app_path_contacts(listeners.since(start), tag)
         safari_start = time.monotonic()
-        run(['xcrun', 'simctl', 'openurl', device,
-             f"http://{local_peer['localPeer']}:{listeners.tcp_port}/{tag}-safari"], timeout=60)
-        deadline = safari_start + (10 if mode == 'block' else 30)
-        while time.monotonic() < deadline:
-            if mode == 'passthrough' and any(e['kind'] == 'tcp' for e in listeners.since(safari_start)):
-                break
-            time.sleep(0.5)
-        contacts['safari'] = sum(1 for e in listeners.since(safari_start) if e['kind'] == 'tcp')
+        run(['xcrun', 'simctl', 'openurl', device, f'{base_url}/{tag}-safari'], timeout=60)
+        if mode == 'block':
+            time.sleep(15)
+            # A blocked attempt may not reach the request line (for example a TLS upgrade), so any
+            # TCP contact in this window counts. No other probe runs during it.
+            contacts['safari'] = sum(1 for e in listeners.since(safari_start) if e['kind'] == 'tcp')
+        else:
+            wait_for(safari_start, tag, 30)
+            contacts['safari'] = app_path_contacts(listeners.since(safari_start), tag)['safari']
         app_paths_results[mode] = {'publication': publication, 'probe': probe, 'contacts': contacts}
         print(json.dumps({'appPaths': mode, 'contacts': contacts}), flush=True)
+    # A block-tagged contact that arrived late is still a gap.
+    late = app_path_contacts(listeners.since(warm_start), 'block')
+    for path, count in late.items():
+        app_paths_results['block']['contacts'][path] = max(app_paths_results['block']['contacts'][path], count)
     listeners.close()
     verdicts = {}
     for path in ('urlSession', 'nwTcp', 'nwUdp', 'safari'):
