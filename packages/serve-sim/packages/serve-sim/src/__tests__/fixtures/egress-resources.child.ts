@@ -495,6 +495,40 @@ if(process.argv[3]==='bootstatus') require('fs').writeFileSync(${JSON.stringify(
   expect(existsSync(stateFileForDevice(udid))).toBe(false);
 });
 
+for (const replacement of ["before-callback", "during-callback", "none"] as const) {
+  test(`resident startup brackets callback execution with boot identity checks: ${replacement}`, async () => {
+    await prepareResidentEgress(udid, "passthrough");
+    writeFileSync(bootFile, JSON.stringify({ pid: 1234, startedAt: "1720000000:42" }));
+    await bootFixture();
+    const device = await import("../../device");
+    const { startDeviceInProcess } = await import("../../device-lifecycle");
+    const { stateFileForDevice } = await import("../../state");
+    const originalBoot = device.bootDevice;
+    const changeBoot = () => {
+      writeFileSync(bootFile, JSON.stringify({ pid: 1234, startedAt: "1720000001:42" }));
+    };
+    const boot = spyOn(device, "bootDevice").mockImplementation(async (target, options) => {
+      await originalBoot(target, options);
+      if (replacement === "before-callback") changeBoot();
+    });
+    let applied = false;
+    try {
+      await withShimsAsync({ xcrun: bootShim(join(state.dir, "callback-boot")) }, async () => {
+        const started = startDeviceInProcess(udid, 12345, "/", undefined, undefined, async () => {
+          applied = true;
+          if (replacement === "during-callback") changeBoot();
+        });
+        if (replacement === "none") await started;
+        else await expect(started).rejects.toThrow("boot changed");
+      });
+      expect(applied).toBe(replacement !== "before-callback");
+      expect(existsSync(stateFileForDevice(udid))).toBe(replacement === "none");
+    } finally {
+      boot.mockRestore();
+    }
+  });
+}
+
 // Exercise the existing private owner channel, with only the boot/controller executables modeled.
 async function ownerFixture(
   run: (value: {
