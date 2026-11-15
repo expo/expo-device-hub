@@ -97,3 +97,10 @@ panel. It uses sockets bound to this machine, confirms shutdown with the boot pr
 and removes only the device and temporary outputs it created. Uncertain cleanup
 retains the outputs. This checks one non-app process's policy observation; it does
 not establish all-process coverage, performance or hosted acceptance.
+
+After that check, `tests/app-paths.m` probes ordinary app networking under block and
+then pass-through: `URLSession`, Network.framework TCP and UDP, and a Safari page
+load through the WebKit networking process. Each probe targets host listeners on
+this machine's own address. A path passes only if block prevents contact and
+pass-through allows it. One probe per path is evidence for that path, not for
+every framework or process.
