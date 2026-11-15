@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { ensureStateDir, stateDir } from "../state";
 import { writeLaunchState } from "../launch-state";
+import { withLaunchStateLock } from "../launch-state-lock";
 
 let root: string;
 const saved = { state: process.env.SERVE_SIM_STATE_DIR, tmp: process.env.TMPDIR };
@@ -32,6 +33,12 @@ describe("serve-sim state directory", () => {
   test("launch state creates its directory privately", () => {
     process.env.SERVE_SIM_STATE_DIR = join(root, "state");
     writeLaunchState("PRIVATE-STATE-DIR", { launchArgs: [], capabilities: {} });
+    expect(mode(stateDir())).toBe(0o700);
+  });
+
+  test("the launch lock creates the state directory privately", async () => {
+    process.env.SERVE_SIM_STATE_DIR = join(root, "locked");
+    await withLaunchStateLock("PRIVATE-STATE-LOCK", async () => {});
     expect(mode(stateDir())).toBe(0o700);
   });
 
