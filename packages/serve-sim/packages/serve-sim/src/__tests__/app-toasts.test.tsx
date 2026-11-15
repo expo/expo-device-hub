@@ -62,6 +62,17 @@ describe("UploadToastContent", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("Copy</button>");
     expect(html).toMatch(/<pre[^>]*hidden=""[^>]*>install failed\nsecond line<\/pre>/);
+    // The package avoids low-opacity icons: dismiss, Details and Copy icons use full white.
+    const icons = [...html.matchAll(/<svg[^>]*class="([^"]*)"/g)].map(([, cls]) => cls!);
+    expect(
+      icons.filter(
+        (cls) =>
+          cls.includes("lucide-x") || cls.includes("lucide-chevron") || cls.includes("lucide-copy"),
+      ),
+    ).toHaveLength(3);
+    expect(html).not.toMatch(/Dismiss upload error"[^>]*text-white\//);
+    for (const cls of icons.filter((c) => !c.includes("lucide-circle-alert")))
+      if (!cls.includes("lucide-x")) expect(cls).toContain("text-white");
   });
 
   test("shows open Details and does not clamp fixed advice", () => {

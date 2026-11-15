@@ -147,7 +147,7 @@ function UploadErrorContent({
         <button
           type="button"
           aria-label="Dismiss upload error"
-          className="-mt-0.5 -mr-1.5 grid size-5 shrink-0 cursor-pointer place-items-center rounded text-white/45 hover:bg-white/10 hover:text-white/80"
+          className="-mt-0.5 -mr-1.5 grid size-5 shrink-0 cursor-pointer place-items-center rounded text-white hover:bg-white/10"
           onClick={onDismiss}
         >
           <X aria-hidden="true" size={14} />
@@ -172,7 +172,7 @@ function UploadErrorContent({
               <ChevronRight
                 aria-hidden="true"
                 size={12}
-                className={`transition-transform ${open ? "rotate-90" : ""}`}
+                className={`text-white transition-transform ${open ? "rotate-90" : ""}`}
               />
               Details
             </button>
@@ -188,9 +188,9 @@ function UploadErrorContent({
               }
             >
               {copied ? (
-                <Check aria-hidden="true" size={12} />
+                <Check aria-hidden="true" size={12} className="text-white" />
               ) : (
-                <Copy aria-hidden="true" size={12} />
+                <Copy aria-hidden="true" size={12} className="text-white" />
               )}
               {copied ? "Copied" : "Copy"}
             </button>
