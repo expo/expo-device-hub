@@ -864,7 +864,8 @@ async function runProcedureAsync(
         if (!launchUdid || installed.exitCode !== 0) return installed;
         try {
           const app = BundleId.safeParse(bundleId).data;
-          if (!app) throw new Error("Its Info.plist has no valid CFBundleIdentifier.");
+          if (!app)
+            throw new Error("Could not read a valid CFBundleIdentifier from its Info.plist.");
           // simctl install has already stopped a running copy of the app.
           await launchWithOneRetry(launchUdid, { bundleId: app, launchArgs: [], restart: false });
           return installed;
@@ -872,7 +873,10 @@ async function runProcedureAsync(
           const cause = error instanceof Error ? error.message : String(error);
           return {
             ...installed,
-            stderr: redactHostPaths(`${APP_NOT_OPENED}\n${cause}`),
+            // Keep install warnings, such as a cleanup failure, after the cause.
+            stderr: redactHostPaths(
+              [APP_NOT_OPENED, cause, installed.stderr.trim()].filter(Boolean).join("\n"),
+            ),
             exitCode: 1,
           };
         }

@@ -599,14 +599,16 @@ actionable Simulator-build error before installation. Regular files without a
 gzip header are also refused, including extensionless staged ZIP uploads.
 
 `app.install` takes an optional `launch` flag. With `launch: true`, after a
-successful install the host reads `CFBundleIdentifier` from the installed bundle and
-launches it as `app.launch` with `restart: false` and no arguments. `simctl install`
+successful install the host reads `CFBundleIdentifier` from the bundle it installed
+(the host `.app` or the extracted archive), before cleanup, and launches it as `app.launch` with `restart: false` and no arguments. `simctl install`
 has already stopped a running copy, so the launch starts a new process [observed:
 iOS 26.5 reinstall over a running fixture app, 2026-11-14]. `launch` needs a
 Simulator UDID; a device name is refused before installation. A failed install
 launches nothing. When the install succeeds but the bundle identifier is missing or
 the launch fails, the action replies with exit code 1 and `stderr` that starts with
 `The app was installed but did not open.` followed by the cause
+When the install used the whole action budget, the read still gets 5 s. A failed
+launch keeps any install warning, such as a cleanup failure, after the cause
 [observed: `host-actions.ts`, `app-install.ts`, `app-install-launch.test.ts`].
 
 The preview classifies `.tar.gz` and `.tgz` files as app drops, streams them through

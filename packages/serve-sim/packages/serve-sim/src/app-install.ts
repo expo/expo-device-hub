@@ -13,6 +13,7 @@ import { UPLOAD_DIR } from "./host-paths";
 
 const installArchive = createSerialQueue();
 const CLEANUP_GRACE_MS = 10_000;
+const BUNDLE_ID_GRACE_MS = 5_000;
 // One private path per serving process bounds leftovers even if removal fails.
 // The preparation child's exclusive mkdir refuses another extraction into it.
 let extractionDirectory: string | undefined;
@@ -53,8 +54,12 @@ export async function installAppAsync(
             timeoutMs: remaining(),
           });
           // Read before cleanup removes an extracted bundle. A missing id fails only the launch.
+          // Like cleanup, the read has a short grace when the install used the whole budget.
           if (readBundleId && result.exitCode === 0)
-            result.bundleId = await readBundleIdAsync(app, remaining());
+            result.bundleId = await readBundleIdAsync(
+              app,
+              Math.max(BUNDLE_ID_GRACE_MS, remaining()),
+            );
         }
       }
     } catch {

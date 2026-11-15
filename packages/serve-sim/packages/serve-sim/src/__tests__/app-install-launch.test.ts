@@ -1,8 +1,9 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { create } from "tar";
 import { APP_NOT_OPENED } from "../app-install-format";
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
 import { UPLOAD_DIR } from "../host-paths";
@@ -82,6 +83,25 @@ test("opens the app after it installs when launch is set", async () => {
   ]);
   expect(verbs()).not.toContain("terminate");
   expect(readLaunchState(UDID)).toMatchObject({ bundleId: "com.example.opens", launchArgs: [] });
+});
+
+test("reads the bundle identifier from an extracted archive before cleanup", async () => {
+  await app("Archived.app", "com.example.archived");
+  const archive = join(root, "archived.tgz");
+  await create({ cwd: root, file: archive, gzip: true }, ["Archived.app"]);
+  const result = await runHostActionAsync(
+    { action: "app.install", params: { udid: UDID, path: archive, launch: true } },
+    BIN,
+  );
+  expect(result).toMatchObject({ exitCode: 0 });
+  const [install, ...rest] = simctlCalls();
+  const extracted = install![2]!;
+  expect(extracted.startsWith(UPLOAD_DIR)).toBe(true);
+  expect(extracted).not.toBe(join(root, "Archived.app"));
+  expect(rest.filter(([verb]) => verb === "launch")).toEqual([
+    ["launch", UDID, "com.example.archived"],
+  ]);
+  expect(existsSync(extracted)).toBe(false);
 });
 
 test("only installs when launch is not set", async () => {
