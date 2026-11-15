@@ -8,7 +8,7 @@ import { APP_NOT_OPENED } from "../app-install-format";
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
 import { UPLOAD_DIR } from "../host-paths";
 import { readLaunchState } from "../launch-state";
-import { UDID, installShims, useTempStateDir } from "./helpers";
+import { UDID, installShims, useTempStateDir, withActionTimeoutAsync } from "./helpers";
 
 const BIN = fileURLToPath(new URL("../../dist/serve-sim.js", import.meta.url));
 let root: string;
@@ -24,6 +24,11 @@ beforeAll(async () => {
   shims = installShims({
     xcrun: `#!/usr/bin/env node
 require("fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");
+// SERVE_SIM_INSTALL_UNTIL (epoch ms) makes the install finish just before the action deadline.
+if (process.argv[3] === "install" && process.env.SERVE_SIM_INSTALL_UNTIL) {
+  const wait = Number(process.env.SERVE_SIM_INSTALL_UNTIL) - Date.now();
+  if (wait > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait);
+}
 if (process.argv[3] === process.env.SERVE_SIM_FAIL_VERB) {
   process.stderr.write("simctl " + process.argv[3] + " failed\\n");
   process.exit(4);
@@ -41,6 +46,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   delete process.env.SERVE_SIM_FAIL_VERB;
+  delete process.env.SERVE_SIM_INSTALL_UNTIL;
   state.restore();
 });
 
@@ -169,4 +175,46 @@ test("does not launch when the install fails", async () => {
   expect(result.exitCode).not.toBe(0);
   expect(result.stderr).not.toContain(APP_NOT_OPENED);
   expect(verbs()).toEqual(["install"]);
+});
+
+test("reads the bundle identifier when the install ends just before the deadline", async () => {
+  const bundle = await app("LateInstall.app", "com.example.late");
+  // plutil takes longer than the time the install leaves; the read has its own grace.
+  const slowPlutil = installShims({ plutil: '#!/bin/sh\nsleep 0.6\nexec /usr/bin/plutil "$@"\n' });
+  try {
+    await withActionTimeoutAsync(3000, async () => {
+      process.env.SERVE_SIM_INSTALL_UNTIL = String(Date.now() + 3000 - 200);
+      const result = await runHostActionAsync(
+        { action: "app.install", params: { udid: UDID, path: bundle, launch: true } },
+        BIN,
+      );
+      expect(result.stderr).toBe("");
+      expect(result.exitCode).toBe(0);
+    });
+    expect(simctlCalls().filter(([verb]) => verb === "launch")).toEqual([
+      ["launch", UDID, "com.example.late"],
+    ]);
+  } finally {
+    slowPlutil.restore();
+  }
+});
+
+test("keeps the install's cleanup warning when the launch fails", async () => {
+  const bundle = await app("CleanupFails.app", "com.example.cleanup");
+  const failingRm = installShims({ rm: "#!/bin/sh\nexit 1\n" });
+  process.env.SERVE_SIM_FAIL_VERB = "launch";
+  const stderr = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const result = await runHostActionAsync(
+      { action: "app.install", params: { udid: UDID, path: bundle, launch: true } },
+      BIN,
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toStartWith(`${APP_NOT_OPENED}\n`);
+    expect(result.stderr).toContain("simctl launch failed");
+    expect(result.stderr).toContain("Temporary app files could not be removed");
+  } finally {
+    stderr.mockRestore();
+    failingRm.restore();
+  }
 });
