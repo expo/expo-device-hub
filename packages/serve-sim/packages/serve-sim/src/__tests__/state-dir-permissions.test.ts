@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { ensureStateDir, stateDir } from "../state";
+import { ensureStateDir, stateDir, writeServeSimState } from "../state";
 import { writeLaunchState } from "../launch-state";
 import { withLaunchStateLock } from "../launch-state-lock";
 
@@ -48,6 +48,22 @@ describe("serve-sim state directory", () => {
     mkdirSync(stateDir());
     chmodSync(stateDir(), 0o755);
     ensureStateDir();
+    expect(mode(stateDir())).toBe(0o700);
+  });
+
+  test("publishing server state makes an older default directory private", () => {
+    delete process.env.SERVE_SIM_STATE_DIR;
+    process.env.TMPDIR = root;
+    mkdirSync(stateDir());
+    chmodSync(stateDir(), 0o755);
+    writeServeSimState({
+      pid: process.pid,
+      port: 3200,
+      device: "PRIVATE-STATE-PUBLISH",
+      url: "http://127.0.0.1:3200",
+      streamUrl: "http://127.0.0.1:3200/stream.mjpeg",
+      wsUrl: "ws://127.0.0.1:3200/ws",
+    });
     expect(mode(stateDir())).toBe(0o700);
   });
 

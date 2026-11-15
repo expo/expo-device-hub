@@ -130,6 +130,7 @@ export function serverBaseUrl(
  *  Writes atomically (temp file + rename) so a concurrent reader never observes
  *  a truncated or partially-written file. */
 export function writeServeSimState(state: ServeSimDeviceState): void {
+  ensureStateDir();
   // One poll reclaims stale locks without waiting on another process's native work.
   withLaunchStateLockSync(
     state.device,
