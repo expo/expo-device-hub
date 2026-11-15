@@ -15,6 +15,9 @@ import socket
 import threading
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from app_path_verdicts import app_path_verdicts  # noqa: E402
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--runtime', required=True)
 parser.add_argument('--evidence', type=Path, required=True)
@@ -297,15 +300,10 @@ try:
     for path, count in late.items():
         app_paths_results['block']['contacts'][path] = max(app_paths_results['block']['contacts'][path], count)
     listeners.close()
-    verdicts = {}
-    for path in ('urlSession', 'nwTcp', 'nwUdp', 'safari'):
-        blocked = app_paths_results['block']['contacts'][path]
-        passed = app_paths_results['passthrough']['contacts'][path]
-        verdicts[path] = 'gap' if blocked else 'enforced' if passed else 'inconclusive'
+    verdicts = app_path_verdicts(app_paths_results['block']['contacts'],
+                                 app_paths_results['passthrough']['contacts'])
     results['appPaths'] = app_paths_results | {'verdicts': verdicts,
                                                'scope': 'one probe per path on this machine; no remote traffic'}
-    if app_paths_results['block']['contacts']['untaggedTcp']:
-        verdicts['untaggedTcp'] = 'gap'
     if any(verdict != 'enforced' for verdict in verdicts.values()):
         raise RuntimeError(f'App path coverage not established: {verdicts}')
     results['status'] = 'PASS_MECHANISM_ONLY'

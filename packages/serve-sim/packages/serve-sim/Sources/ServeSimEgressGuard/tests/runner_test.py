@@ -122,5 +122,28 @@ class RunnerOwnershipTests(unittest.TestCase):
         self.check_failure_cleanup(True)
 
 
+
+class AppPathVerdictTests(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, str(RUNNER.parent))
+        self.addCleanup(sys.path.remove, str(RUNNER.parent))
+        from app_path_verdicts import app_path_verdicts
+        self.verdicts = app_path_verdicts
+        self.passed = {"urlSession": 1, "nwTcp": 1, "nwUdp": 1, "safari": 1}
+        self.blocked = {"urlSession": 0, "nwTcp": 0, "nwUdp": 0, "safari": 0, "untaggedTcp": 0}
+
+    def test_clean_block_and_working_pass_through_is_enforced(self):
+        self.assertEqual(set(self.verdicts(self.blocked, self.passed).values()), {"enforced"})
+
+    def test_untagged_tcp_contact_under_block_is_a_gap(self):
+        result = self.verdicts(self.blocked | {"untaggedTcp": 1}, self.passed)
+        self.assertEqual(result["untaggedTcp"], "gap")
+
+    def test_tagged_contact_under_block_is_a_gap(self):
+        self.assertEqual(self.verdicts(self.blocked | {"nwUdp": 1}, self.passed)["nwUdp"], "gap")
+
+    def test_no_pass_through_contact_is_inconclusive(self):
+        self.assertEqual(self.verdicts(self.blocked, self.passed | {"safari": 0})["safari"], "inconclusive")
+
 if __name__ == "__main__":
     unittest.main()
