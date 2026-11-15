@@ -1,4 +1,5 @@
 import { execSync } from "child_process";
+import { assertNoResidentEgress } from "./egress-resources";
 
 import { validatedAdditionalDylibs } from "./additional-dylibs";
 import { timeStartup } from "./startup-timing";
@@ -99,6 +100,7 @@ export function isDeviceNotBooted(error: unknown): boolean {
 }
 
 export async function shutdownDevice(udid: string): Promise<void> {
+  assertNoResidentEgress(udid, "Simulator shutdown");
   await simctl(["shutdown", udid], SHUTDOWN_TIMEOUT_MS).catch((error: unknown) => {
     if (!isAlreadyShutDown(error)) throw error;
   });

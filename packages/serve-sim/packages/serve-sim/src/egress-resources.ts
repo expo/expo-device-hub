@@ -415,8 +415,8 @@ async function prepareResidentEgressUnlocked(
           ? capabilityLoaderPath()
           : join(packaged, name);
       const destination = join(directory, name);
-      copyFileSync(source, destination);
       owned.push(destination);
+      copyFileSync(source, destination);
       chmodSync(destination, name.endsWith(".dylib") ? 0o400 : 0o500);
       hashes[name] = digest(destination);
     }
@@ -498,8 +498,7 @@ async function bootPreparedResidentEgressUnlocked(
   if (await simulatorEgressBoot(udid, dirname(guard.dylib)))
     throw new Error("Cannot retrofit resident egress into an already-booted Simulator");
   assertActive();
-  beforeBoot();
-  await simctl(["boot", udid], BOOT_TIMEOUT_MS);
+  await simctl(["boot", udid], { timeout: BOOT_TIMEOUT_MS, beforeSpawn: beforeBoot });
   const started = await simulatorEgressBoot(udid, dirname(guard.dylib));
   if (!started) throw new Error("Cannot identify the newly started Simulator boot");
   assertActive();
