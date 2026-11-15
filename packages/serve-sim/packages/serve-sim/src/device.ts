@@ -1,4 +1,5 @@
 import { execSync } from "child_process";
+import { assertNoResidentEgress } from "./egress-resources";
 
 import { BOOT_TIMEOUT_MS, simctl } from "./simctl";
 export { BOOT_TIMEOUT_MS } from "./simctl";

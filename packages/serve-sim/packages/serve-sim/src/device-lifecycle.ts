@@ -1,6 +1,7 @@
 import { assertNoResidentEgress } from "./egress-resources";
 import { checkResidentEgressBoot } from "./egress";
 import { bootDevice, confirmDeviceBooted, shutdownDevice } from "./device";
+import { assertNoResidentEgress } from "./egress-resources";
 import { retireDeviceSession } from "./device-session";
 import { captureRuntime } from "./capture";
 import { releaseSession } from "./launch-manager";

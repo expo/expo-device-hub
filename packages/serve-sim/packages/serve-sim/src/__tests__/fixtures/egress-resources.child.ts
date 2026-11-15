@@ -165,6 +165,112 @@ test("transaction cancellation after boot retains pending assets and releases th
   expect(acquired).toBe(true);
 });
 
+test.each([false, true])(
+  "a rejected boot environment restores preboot state and permits retry (previous=%s)",
+  async (existing) => {
+    if (existing) writeLaunchState(udid, { launchArgs: ["--keep"], capabilities: {} });
+    const previous = readLaunchState(udid);
+    const configPath = config.capabilityConfigPath(udid);
+    if (existing) writeFileSync(configPath, "previous config\n");
+    const original = process.env.SERVE_SIM_ADDITIONAL_DYLIBS;
+    const log = join(state.dir, "rejected-boot-environment");
+    try {
+      process.env.SERVE_SIM_ADDITIONAL_DYLIBS = join(state.dir, "missing.dylib");
+      await withShimsAsync({ xcrun: bootShim(log) }, async () => {
+        await expect(startResidentEgress(udid, "block", () => {})).rejects.toThrow(
+          "SERVE_SIM_ADDITIONAL_DYLIBS needs absolute paths",
+        );
+        expect(existsSync(log)).toBe(false);
+        expect(readLaunchState(udid)).toEqual(previous);
+        if (existing) expect(readFileSync(configPath, "utf8")).toBe("previous config\n");
+        else expect(existsSync(configPath)).toBe(false);
+        expect(readdirSync(state.dir).filter((name) => name.startsWith("egress-"))).toEqual([]);
+        delete process.env.SERVE_SIM_ADDITIONAL_DYLIBS;
+        await startResidentEgress(udid, "block", () => {});
+      });
+      await verifyResidentEgressPolicy(udid, "block");
+    } finally {
+      if (original === undefined) delete process.env.SERVE_SIM_ADDITIONAL_DYLIBS;
+      else process.env.SERVE_SIM_ADDITIONAL_DYLIBS = original;
+    }
+  },
+);
+
+test("a failed artifact copy removes its partial destination and permits retry", async () => {
+  const copy = spyOn(fileSystem, "copyFileSync").mockImplementationOnce((_source, destination) => {
+    writeFileSync(destination, "partial artifact");
+    throw new Error("partial artifact copy failed");
+  });
+  let failure: unknown;
+  try {
+    await prepareResidentEgress(udid, "block");
+  } catch (error) {
+    failure = error;
+  } finally {
+    copy.mockRestore();
+  }
+  expect(readdirSync(state.dir).filter((name) => name.startsWith("egress-"))).toEqual([]);
+  expect(String(failure)).toContain("partial artifact copy failed");
+  expect(readLaunchState(udid)).toBeNull();
+  expect(existsSync(config.capabilityConfigPath(udid))).toBe(false);
+  expect(await prepareResidentEgress(udid, "block")).toBe(true);
+});
+
+for (const shutdown of ["direct", "grid", "owned", "release", "retirement"] as const) {
+  test(`resident ${shutdown} shutdown refuses before local or native changes`, async () => {
+    await prepareResidentEgress(udid, "passthrough");
+    const { shutdownDevice } = await import("../../device");
+    const { stopDeviceInProcess, retireDevicesInBackground } =
+      await import("../../device-lifecycle");
+    const { releaseSession } = await import("../../launch-manager");
+    const { writeServeSimState, gridDeviceState, stateFileForDevice } = await import("../../state");
+    writeServeSimState(gridDeviceState(udid, 3200, "/"));
+    const discovery = readFileSync(stateFileForDevice(udid));
+    const metadata = readFileSync(join(state.dir, `launch-${udid}.json`));
+    const startup = readFileSync(config.capabilityConfigPath(udid));
+    const prepared = new Set([udid]);
+    const log = join(state.dir, "shutdown-calls");
+    let released = false;
+    const invoke = async () => {
+      switch (shutdown) {
+        case "direct":
+          return shutdownDevice(udid);
+        case "grid":
+          return stopDeviceInProcess(udid);
+        case "owned":
+          return stopDeviceInProcess(udid, process.pid);
+        case "release":
+          return releaseSession(
+            udid,
+            process.pid,
+            () => {
+              released = true;
+            },
+            { shutdown: true },
+          );
+        case "retirement":
+          return retireDevicesInBackground([udid], process.pid, prepared);
+      }
+    };
+    await withShimsAsync({ xcrun: bootShim(log) }, async () => {
+      if (shutdown === "release") {
+        // Persistent resident enrollment already refuses generic ownership release.
+        await expect(invoke()).rejects.toThrow(
+          `Cannot use Simulator ${udid}: another session still owns it.`,
+        );
+      } else {
+        await expect(invoke()).rejects.toThrow(/Simulator (shutdown|retirement) is unavailable/);
+      }
+    });
+    expect(existsSync(log)).toBe(false);
+    expect(released).toBe(false);
+    expect(prepared.has(udid)).toBe(true);
+    expect(readFileSync(stateFileForDevice(udid))).toEqual(discovery);
+    expect(readFileSync(join(state.dir, `launch-${udid}.json`))).toEqual(metadata);
+    expect(readFileSync(config.capabilityConfigPath(udid))).toEqual(startup);
+  });
+}
+
 test("transaction reuses a live boot and publishes the requested policy without booting", async () => {
   await withShimsAsync(
     {
