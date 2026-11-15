@@ -11,6 +11,9 @@ import sys
 import shutil
 import subprocess
 import tempfile
+import socket
+import threading
+import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--runtime', required=True)
@@ -74,6 +77,72 @@ def milestone():
     print(json.dumps(value), flush=True)
     return value
 
+class HostListeners:
+    """Host-side TCP and UDP peers on this machine's own address. Host processes are outside the guard."""
+
+    def __init__(self, address):
+        self.events = []
+        self.lock = threading.Lock()
+        self.stopping = threading.Event()
+        self.tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.tcp.bind((address, 0))
+        self.tcp.listen(16)
+        self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.udp.bind((address, 0))
+        self.tcp_port = self.tcp.getsockname()[1]
+        self.udp_port = self.udp.getsockname()[1]
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+
+    def record(self, kind, data):
+        with self.lock:
+            self.events.append({'at': time.monotonic(), 'kind': kind, 'first': data[:120].decode('latin-1')})
+
+    def serve(self):
+        while not self.stopping.is_set():
+            ready = select.select([self.tcp, self.udp], [], [], 0.2)[0]
+            for item in ready:
+                if item is self.udp:
+                    data, _ = self.udp.recvfrom(2048)
+                    self.record('udp', data)
+                    continue
+                connection, _ = self.tcp.accept()
+                connection.settimeout(2)
+                try:
+                    data = connection.recv(2048)
+                except OSError:
+                    data = b''
+                self.record('tcp', data)
+                try:
+                    connection.sendall(b'HTTP/1.0 200 OK\r\nConnection: close\r\nContent-Length: 2\r\n\r\nok')
+                except OSError:
+                    pass
+                connection.close()
+
+    def since(self, start):
+        with self.lock:
+            return [event for event in self.events if event['at'] >= start]
+
+    def close(self):
+        self.stopping.set()
+        self.thread.join(timeout=5)
+        self.tcp.close()
+        self.udp.close()
+
+
+def app_path_contacts(events, tag):
+    """Attribute contacts by the tag each probe sends. Safari is attributed by its time window."""
+    def first(event):
+        return event['first']
+    return {
+        'urlSession': sum(1 for e in events if e['kind'] == 'tcp' and f'/{tag}-urlsession' in first(e)),
+        'nwTcp': sum(1 for e in events if e['kind'] == 'tcp' and f'/{tag}-nwtcp' in first(e)),
+        'nwUdp': sum(1 for e in events if e['kind'] == 'udp' and first(e) == f'{tag}-nwudp'),
+    }
+
+
+listeners = None
+
 try:
     for name in ('ServeSimEgressGuard', 'ServeSimCapabilityLoader'):
         shutil.copytree(source.parent / name, work / name)
@@ -88,6 +157,11 @@ try:
     run(['xcrun', '--sdk', 'iphonesimulator', 'clang', '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror',
          '-Wconversion', '-Wshadow', '-arch', 'arm64', '-mios-simulator-version-min=15.0', '-isysroot', sdk,
          str(work / 'ServeSimEgressGuard/tests/simulator-test.c'), '-o', str(fixture)])
+    app_paths = output / 'app-paths'
+    run(['xcrun', '--sdk', 'iphonesimulator', 'clang', '-fobjc-arc', '-O2', '-Wall', '-Wextra', '-Werror',
+         '-Wshadow', '-arch', 'arm64', '-mios-simulator-version-min=15.0', '-isysroot', sdk,
+         '-framework', 'Foundation', '-framework', 'Network',
+         str(work / 'ServeSimEgressGuard/tests/app-paths.m'), '-o', str(app_paths)])
     results['xcode'] = run(['xcodebuild', '-version'])
     results['sdk'] = sdk
     results['host'] = run(['sw_vers'])
@@ -163,7 +237,8 @@ try:
     stderr = (evidence / 'fixture.stderr').open('w')
     client = subprocess.Popen(['xcrun', 'simctl', 'spawn', device, str(fixture), str(loader), str(guard), str(page)],
                               env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, text=True)
-    assert milestone()['phase'] == 'passthrough'
+    local_peer = milestone()
+    assert local_peer['phase'] == 'passthrough'
     results['blockPublication'] = json.loads(run([str(control), 'set', str(page), 'block']))
     client.stdin.write('b'); client.stdin.flush()
     assert milestone()['phase'] == 'block'
@@ -172,6 +247,38 @@ try:
     assert milestone()['phase'] == 'passthrough-again'
     if client.wait(timeout=10):
         raise RuntimeError('Simulator fixture failed')
+    # Ordinary app paths. Block runs first: a pass-through connection could stay open into block.
+    listeners = HostListeners(local_peer['localPeer'])
+    app_paths_results = {}
+    for tag, mode in (('block', 'block'), ('pass', 'passthrough')):
+        publication = json.loads(run([str(control), 'set', str(page), mode]))
+        start = time.monotonic()
+        probe = json.loads(run(['xcrun', 'simctl', 'spawn', device, str(app_paths), str(loader), str(guard),
+                                local_peer['localPeer'], str(listeners.tcp_port), str(listeners.udp_port), tag],
+                               timeout=60))
+        time.sleep(1)
+        contacts = app_path_contacts(listeners.since(start), tag)
+        safari_start = time.monotonic()
+        run(['xcrun', 'simctl', 'openurl', device,
+             f"http://{local_peer['localPeer']}:{listeners.tcp_port}/{tag}-safari"], timeout=60)
+        deadline = safari_start + (10 if mode == 'block' else 30)
+        while time.monotonic() < deadline:
+            if mode == 'passthrough' and any(e['kind'] == 'tcp' for e in listeners.since(safari_start)):
+                break
+            time.sleep(0.5)
+        contacts['safari'] = sum(1 for e in listeners.since(safari_start) if e['kind'] == 'tcp')
+        app_paths_results[mode] = {'publication': publication, 'probe': probe, 'contacts': contacts}
+        print(json.dumps({'appPaths': mode, 'contacts': contacts}), flush=True)
+    listeners.close()
+    verdicts = {}
+    for path in ('urlSession', 'nwTcp', 'nwUdp', 'safari'):
+        blocked = app_paths_results['block']['contacts'][path]
+        passed = app_paths_results['passthrough']['contacts'][path]
+        verdicts[path] = 'gap' if blocked else 'enforced' if passed else 'inconclusive'
+    results['appPaths'] = app_paths_results | {'verdicts': verdicts,
+                                               'scope': 'one probe per path on this machine; no remote traffic'}
+    if any(verdict != 'enforced' for verdict in verdicts.values()):
+        raise RuntimeError(f'App path coverage not established: {verdicts}')
     results['status'] = 'PASS_MECHANISM_ONLY'
 except BaseException as error:
     results['status'] = 'FAILED'
@@ -188,6 +295,8 @@ finally:
             results['status'] = 'FAILED_CLEANUP'
     if stderr:
         stderr.close()
+    if listeners:
+        listeners.close()
     safe = device is None and not creation_attempted
     if device is None and creation_attempted:
         results['cleanupError'] = 'Device creation status uncertain; retain private outputs for inspection'
