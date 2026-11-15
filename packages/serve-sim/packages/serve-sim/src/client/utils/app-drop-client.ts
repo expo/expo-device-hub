@@ -1,3 +1,4 @@
+import { isUnsupportedAppArchive, UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
 import {
   uploadDroppedFile,
   uploadDroppedAppFolder,
@@ -15,6 +16,8 @@ export function createAppDropClient(
 ) {
   return {
     async installFile(file: File, progress: (value: number | null) => void) {
+      // Device builds and zips get the specific Simulator-build message, as preview drops do.
+      if (isUnsupportedAppArchive(file.name)) throw new Error(UNSUPPORTED_INSTALL_FORMAT);
       if (dropKindFor(file) !== "app")
         throw new Error("Drop a Simulator .app folder or .tar.gz/.tgz archive.");
       await uploadDroppedFile(file, "app", udid, progress, transport);
