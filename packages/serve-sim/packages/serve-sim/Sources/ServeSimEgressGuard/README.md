@@ -66,7 +66,7 @@ the existing sockets continue. This checks one process's observation, not
 all-process observation. A separate short mapped-IPv6 TCP test checks
 zero-filled classification with denied and permitted loopback cases.
 
-Run the runner's cleanup tests without clang or networking:
+Run the runner's cleanup tests and the app-path verdict rule tests without clang or networking:
 
 ```sh
 python3 tests/runner_test.py
