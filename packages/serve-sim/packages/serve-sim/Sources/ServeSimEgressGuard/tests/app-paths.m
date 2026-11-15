@@ -29,16 +29,26 @@ static NSDictionary *urlSession(NSString *host, NSString *port, NSString *tag) {
   NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration];
   NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"http://%@:%@/%@-urlsession", host, port, tag]];
   dispatch_semaphore_t done = dispatch_semaphore_create(0);
-  __block NSDictionary *result = @{@"outcome": @"timeout"};
+  NSObject *lock = [NSObject new];
+  __block NSDictionary *result = nil;
   [[session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
     (void)data;
-    result = error ? @{@"outcome": @"failed", @"domain": error.domain, @"code": @(error.code)}
-                   : @{@"outcome": @"response", @"status": @(((NSHTTPURLResponse *)response).statusCode)};
+    NSDictionary *value = error ? @{@"outcome": @"failed", @"domain": error.domain, @"code": @(error.code)}
+                                : @{@"outcome": @"response", @"status": @(((NSHTTPURLResponse *)response).statusCode)};
+    @synchronized (lock) {
+      if (!result) result = value;
+    }
     dispatch_semaphore_signal(done);
   }] resume];
   dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, kTimeout + NSEC_PER_SEC));
+  // The first outcome wins; a completion after the timeout cannot change the report.
+  NSDictionary *snapshot;
+  @synchronized (lock) {
+    if (!result) result = @{@"outcome": @"timeout"};
+    snapshot = result;
+  }
   [session invalidateAndCancel];
-  return result;
+  return snapshot;
 }
 
 static NSDictionary *nwConnection(NSString *host, NSString *port, NSString *payload, BOOL udp) {
@@ -75,11 +85,16 @@ static NSDictionary *nwConnection(NSString *host, NSString *port, NSString *payl
   });
   nw_connection_start(connection);
   dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, kTimeout));
+  // Read and close the result on its queue, so later callbacks cannot change the report.
+  __block NSDictionary *snapshot;
+  dispatch_sync(queue, ^{
+    finished = YES;
+    snapshot = [result copy];
+  });
   // Let a sent TCP request reach the listener before cancellation.
-  if ([result[@"outcome"] isEqual:@"sent"]) [NSThread sleepForTimeInterval:0.5];
+  if ([snapshot[@"outcome"] isEqual:@"sent"]) [NSThread sleepForTimeInterval:0.5];
   nw_connection_cancel(connection);
-  dispatch_sync(queue, ^{});
-  return [result copy];
+  return snapshot;
 }
 
 int main(int argc, char **argv) {
