@@ -104,5 +104,6 @@ load through the WebKit networking process. Each probe targets host listeners on
 this machine's own address. Safari loads a warm-up page under pass-through first,
 so its launch time cannot hide inside the block window. A path passes only if
 block prevents contact, including a block-tagged contact that arrives late, and
-pass-through allows it. One probe per path is evidence for that path, not for
+pass-through allows it. An untagged TCP contact during a block probe also fails
+the check. One probe per path is evidence for that path, not for
 every framework or process.
