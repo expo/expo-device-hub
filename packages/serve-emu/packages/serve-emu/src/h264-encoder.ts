@@ -28,10 +28,21 @@ export type H264EncoderOpts = {
   inputFormat?: H264EncoderInputFormat;
   /** Android display rotation quarter turns applied before encoding. */
   quarterTurn?: QuarterTurn;
+  /**
+   * A fixed output frame. The even-cropped input is scaled to `content`'s size and drawn at
+   * its position on a black frame of this size. Without it, the output is the input's size.
+   */
+  canvas?: H264EncoderCanvas;
   fps: number;
   bitRate: number;
   /** Seconds between forced keyframes; 0 uses libx264's default keyint. */
   keyFrameInterval: number;
+  /**
+   * Also count `keyFrameInterval` in real time between the frames that arrive, not only in
+   * frames at `fps`, so a slow screen still gets a keyframe at most that often. libx264 only;
+   * needs an ffmpeg that `supportsTimedKeyFrames` accepts.
+   */
+  timedKeyFrames?: boolean;
   onFrame: (frame: VideoFrame) => void;
   /** Called once when ffmpeg or its output parser fails unexpectedly. */
   onExit: (reason: string) => void;
@@ -40,6 +51,12 @@ export type H264EncoderOpts = {
 };
 
 export type QuarterTurn = 0 | 1 | 2 | 3;
+
+export type H264EncoderCanvas = {
+  width: number;
+  height: number;
+  content: { x: number; y: number; width: number; height: number };
+};
 
 const NAL_IDR = 5;
 const NAL_SPS = 7;
@@ -110,6 +127,24 @@ function positiveInteger(value: number, name: string, max: number): number {
   return value;
 }
 
+function validateCanvas(canvas: H264EncoderCanvas): void {
+  const evenDimension = (value: number, name: string) => {
+    positiveInteger(value, name, MAX_DIMENSION);
+    if (value < 2 || value % 2 !== 0) throw new RangeError(`${name} must be even`);
+  };
+  evenDimension(canvas.width, "canvas width");
+  evenDimension(canvas.height, "canvas height");
+  evenDimension(canvas.content.width, "canvas content width");
+  evenDimension(canvas.content.height, "canvas content height");
+  const { x, y } = canvas.content;
+  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || x < 0 || y < 0) {
+    throw new RangeError("canvas content position must be non-negative integers");
+  }
+  if (x + canvas.content.width > canvas.width || y + canvas.content.height > canvas.height) {
+    throw new RangeError("canvas content must fit inside the canvas");
+  }
+}
+
 function validateOptions(opts: H264EncoderOpts): number | null {
   const width = positiveInteger(opts.width, "width", MAX_DIMENSION);
   const height = positiveInteger(opts.height, "height", MAX_DIMENSION);
@@ -132,6 +167,7 @@ function validateOptions(opts: H264EncoderOpts): number | null {
   if (!Number.isInteger(quarterTurn) || quarterTurn < 0 || quarterTurn > 3) {
     throw new RangeError("quarterTurn must be an integer from 0 through 3");
   }
+  if (opts.canvas) validateCanvas(opts.canvas);
 
   if (opts.encoderName !== undefined && !FFMPEG_ENCODER_NAMES.includes(opts.encoderName)) {
     throw new RangeError(`unsupported ffmpeg H.264 encoder ${opts.encoderName}`);
@@ -190,11 +226,18 @@ export function ffmpegInputArgs(
   ];
 }
 
-export function videoFilter(quarterTurn: QuarterTurn): string {
+export function videoFilter(quarterTurn: QuarterTurn, canvas?: H264EncoderCanvas): string {
   const filters = ["crop=trunc(iw/2)*2:trunc(ih/2)*2"];
   if (quarterTurn === 1) filters.push("transpose=cclock");
   else if (quarterTurn === 2) filters.push("hflip", "vflip");
   else if (quarterTurn === 3) filters.push("transpose=clock");
+  if (canvas) {
+    const { content } = canvas;
+    filters.push(
+      `scale=${content.width}:${content.height}`,
+      `pad=${canvas.width}:${canvas.height}:${content.x}:${content.y}:black`,
+    );
+  }
   return filters.join(",");
 }
 
@@ -205,10 +248,84 @@ type FfmpegEncoderArgsOptions = Pick<
   | "fps"
   | "bitRate"
   | "keyFrameInterval"
+  | "timedKeyFrames"
   | "quarterTurn"
   | "inputFormat"
   | "encoderName"
+  | "canvas"
 >;
+
+// @ref LLP 0018#recording-keyframes — at most a keyframe interval apart in real time, as serve-sim's recorder
+/**
+ * Real-time timestamps for each frame and a keyframe at the first frame a keyframe interval
+ * after the last one. Each input frame stays exactly one output frame, so the output parser
+ * still pairs access units with submitted timestamps in order. The interval allows half a frame
+ * at `fps` of timing jitter, so frames a full interval apart do not miss it.
+ */
+function timedKeyFrameArgs(
+  encoderName: FfmpegEncoderName,
+  opts: Pick<H264EncoderOpts, "fps" | "keyFrameInterval">,
+): { filter: string; args: string[] } {
+  if (encoderName !== "libx264") {
+    throw new RangeError("timed keyframes need the libx264 encoder");
+  }
+  if (!(opts.keyFrameInterval > 0)) {
+    throw new RangeError("timed keyframes need a positive keyFrameInterval");
+  }
+  const interval = Number(Math.max(0, opts.keyFrameInterval - 0.5 / opts.fps).toFixed(6));
+  return {
+    // Strictly increasing microseconds from the wall clock, for frames that arrive together too.
+    filter: "settb=AVTB,setpts='if(isnan(PREV_OUTPTS),0,max(RTCTIME-RTCSTART,PREV_OUTPTS+1))'",
+    args: [
+      "-fps_mode",
+      "passthrough",
+      "-enc_time_base",
+      "1:1000000",
+      "-force_key_frames",
+      `expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+${interval}))`,
+    ],
+  };
+}
+
+/** The options of `timedKeyFrameArgs` that an ffmpeg must know; older than 5.1 lacks -fps_mode. */
+const TIMED_KEY_FRAME_PROBE_ARGS = [
+  "-hide_banner",
+  "-fps_mode",
+  "passthrough",
+  "-enc_time_base",
+  "1:1000000",
+  "-force_key_frames",
+  "expr:1",
+  "-version",
+];
+
+/**
+ * Build an abortable check of whether ffmpeg knows the timed keyframe options. It caches each
+ * answer per binary, but not a probe that failed to run.
+ */
+export function createTimedKeyFrameProbe(
+  options: FfmpegAvailabilityProbeOptions = {},
+): (signal?: AbortSignal) => Promise<boolean> {
+  const resolveBinary = options.resolveBinary ?? resolveFfmpeg;
+  const runExec = options.runExec ?? execText;
+  const answers = new Map<string, boolean>();
+  return async (signal?: AbortSignal): Promise<boolean> => {
+    const binary = resolveBinary();
+    const known = answers.get(binary);
+    if (known !== undefined) return known;
+    const result = await runExec(binary, TIMED_KEY_FRAME_PROBE_ARGS, {
+      timeout: FFMPEG_PROBE_TIMEOUT_MS,
+      maxBuffer: FFMPEG_PROBE_MAX_BYTES,
+      signal,
+      lane: "background",
+    });
+    if (result.error || result.timedOut || result.status === null) return false;
+    answers.set(binary, result.status === 0);
+    return result.status === 0;
+  };
+}
+
+export const supportsTimedKeyFrames = createTimedKeyFrameProbe();
 
 export function resolveVaapiDevice(): string {
   return process.env.SERVE_EMU_VAAPI_DEVICE?.trim() || "/dev/dri/renderD128";
@@ -230,7 +347,10 @@ export function ffmpegEncoderArgs(
     "-bufsize",
     String(opts.bitRate),
   ];
-  const filter = videoFilter(opts.quarterTurn ?? 0);
+  const timed = opts.timedKeyFrames ? timedKeyFrameArgs(encoderName, opts) : null;
+  const filter = timed
+    ? `${timed.filter},${videoFilter(opts.quarterTurn ?? 0, opts.canvas)}`
+    : videoFilter(opts.quarterTurn ?? 0, opts.canvas);
   const args = ["-hide_banner", "-loglevel", "error"];
   if (encoderName === "h264_vaapi") {
     args.push("-init_hw_device", `vaapi=va:${vaapiDevice}`, "-filter_hw_device", "va");
@@ -240,6 +360,7 @@ export function ffmpegEncoderArgs(
     "-an",
     "-vf",
     encoderName === "h264_vaapi" ? `${filter},format=nv12,hwupload` : filter,
+    ...(timed?.args ?? []),
   );
   switch (encoderName) {
     case "libx264":
@@ -868,8 +989,8 @@ export class H264Encoder {
     const croppedWidth = opts.width - (opts.width % 2);
     const croppedHeight = opts.height - (opts.height % 2);
     const transposed = this.quarterTurn === 1 || this.quarterTurn === 3;
-    this.encodedWidth = transposed ? croppedHeight : croppedWidth;
-    this.encodedHeight = transposed ? croppedWidth : croppedHeight;
+    this.encodedWidth = opts.canvas?.width ?? (transposed ? croppedHeight : croppedWidth);
+    this.encodedHeight = opts.canvas?.height ?? (transposed ? croppedWidth : croppedHeight);
     this.#parser = new H264OutputParser({
       fps: opts.fps,
       onFrame: opts.onFrame,

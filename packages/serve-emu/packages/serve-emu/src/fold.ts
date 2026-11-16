@@ -3,6 +3,11 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { readEmuConsoleValue } from "./adb.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
+import {
+  EmulatorGrpcClient,
+  ensureEmulatorGrpcEndpoint,
+  PHYSICAL_MODEL_HINGE_ANGLE0,
+} from "./emulator-grpc.ts";
 import { execText } from "./exec.ts";
 import type { FoldPosture, FoldRequest, FoldStatus } from "./shared/api-contracts.ts";
 
@@ -15,7 +20,8 @@ const POSTURES: Record<string, FoldPosture> = {
   TENT: "tent",
 };
 
-type FoldState = Omit<FoldStatus, "hingeRange">;
+/** The hinge state of a device, without its range. */
+export type FoldState = Omit<FoldStatus, "hingeRange">;
 
 const UNSUPPORTED: FoldState = { supported: false, posture: null, hingeAngle: null };
 
@@ -35,7 +41,10 @@ export async function getFoldStatus(
 }
 
 /** The sensor's angle and the posture Android derives from it. */
-async function readFoldState(serial: string, runExec: typeof execText): Promise<FoldState> {
+export async function readFoldState(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<FoldState> {
   if (!isEmulatorSerial(serial)) return UNSUPPORTED;
 
   const sensor = await runExec("adb", ["-s", serial, "emu", "sensor", "get", "hinge-angle0"], {
@@ -93,14 +102,8 @@ async function readHingeRange(
   serial: string,
   runExec: typeof execText,
 ): Promise<FoldStatus["hingeRange"]> {
-  const avdPath = await readEmuConsoleValue(serial, ["avd", "path"], runExec);
-  if (!avdPath) return null;
-  let config: string;
-  try {
-    config = await readFile(join(avdPath, "hardware-qemu.ini"), "utf8");
-  } catch {
-    return null;
-  }
+  const config = await readHardwareConfig(serial, runExec);
+  if (config === null) return null;
   // The value lists one range per hinge, starting with hinge-angle0's.
   const range = config.match(
     /^hw\.sensor\.hinge\.ranges\s*=\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/m,
@@ -109,6 +112,129 @@ async function readHingeRange(
   const min = Number(range[1]);
   const max = Number(range[2]);
   return Number.isFinite(min) && Number.isFinite(max) && min < max ? { min, max } : null;
+}
+
+/**
+ * The hardware config that the emulator writes at launch, or null when this
+ * host cannot read it, for example when adb reaches an emulator on another host.
+ */
+async function readHardwareConfig(
+  serial: string,
+  runExec: typeof execText,
+): Promise<string | null> {
+  const avdPath = await readEmuConsoleValue(serial, ["avd", "path"], runExec);
+  if (!avdPath) return null;
+  try {
+    return await readFile(join(avdPath, "hardware-qemu.ini"), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** A display's size in its native pixels. */
+export type DisplaySize = { width: number; height: number };
+
+/** Hinge angles in degrees, from `min` to `max`. */
+export type HingeAngles = { min: number; max: number };
+
+/**
+ * The two displays of a foldable emulator: `inner` is the whole panel that the
+ * open device shows, and `outer` is the display region that the closed device
+ * shows, such as a Pixel Pro Fold's cover display. `closedHinge` is the closed
+ * posture's angles, at which the emulator shows `outer`, when its profile names them.
+ */
+export type FoldableDisplays = {
+  inner: DisplaySize;
+  outer: DisplaySize;
+  closedHinge?: HingeAngles;
+};
+
+/** The displays of a foldable emulator, or null for a device without a hinge and a fold region. */
+export async function readFoldableDisplays(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<FoldableDisplays | null> {
+  if (!isEmulatorSerial(serial)) return null;
+  const config = await readHardwareConfig(serial, runExec);
+  return config === null ? null : parseFoldableDisplays(config);
+}
+
+export function parseFoldableDisplays(config: string): FoldableDisplays | null {
+  const value = (key: string) =>
+    config.match(new RegExp(`^${key.replace(/\./g, "\\.")}\\s*=\\s*(.*?)\\s*$`, "m"))?.[1];
+  const size = (prefix: string): DisplaySize | null => {
+    const width = Number(value(`${prefix}.width`));
+    const height = Number(value(`${prefix}.height`));
+    return Number.isSafeInteger(width) && Number.isSafeInteger(height) && width > 0 && height > 0
+      ? { width, height }
+      : null;
+  };
+  if (!/^(?:true|yes)$/i.test(value("hw.sensor.hinge") ?? "")) return null;
+  // @ref LLP 0018#fold-canvas — only a device that shows region 0.1 while closed, as the Pixel folds do
+  // Posture 1 is the emulator's closed posture. A fold-out profile shows its region at another one.
+  if (value("hw.sensor.hinge.fold_to_displayRegion.0.1_at_posture") !== "1") return null;
+  const inner = size("hw.lcd");
+  // The emulator shows display region 0.1 of the panel while the device is folded.
+  const outer = size("hw.displayRegion.0.1");
+  if (!inner || !outer) return null;
+  const closedHinge = postureAngles(
+    value("hw.sensor.posture_list"),
+    value("hw.sensor.hinge_angles_posture_definitions"),
+    "1",
+  );
+  return closedHinge ? { inner, outer, closedHinge } : { inner, outer };
+}
+
+/**
+ * One posture's hinge angles from the profile's lists, such as `1, 2, 3` and
+ * `0-30, 30-150, 150-180`, where each range belongs to the posture at its index.
+ */
+function postureAngles(
+  postures: string | undefined,
+  definitions: string | undefined,
+  posture: string,
+): HingeAngles | null {
+  const index =
+    postures
+      ?.split(",")
+      .map((entry) => entry.trim())
+      .indexOf(posture) ?? -1;
+  if (index < 0) return null;
+  const range = definitions
+    ?.split(",")
+    [index]?.trim()
+    .match(/^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)$/);
+  if (!range) return null;
+  const min = Number(range[1]);
+  const max = Number(range[2]);
+  return min < max ? { min, max } : null;
+}
+
+/** A foldable emulator's hinge, read over its gRPC controller instead of two adb commands. */
+export type HingeSensor = {
+  /** The angle in degrees, or null when the emulator has no hinge. */
+  readAngle(signal?: AbortSignal): Promise<number | null>;
+  /**
+   * Calls `onChange` when the emulator pushes a posture change, until `signal` aborts. The
+   * emulator pushes no angle, so the caller reads it then.
+   */
+  watchPostures(onChange: () => void, signal: AbortSignal): Promise<void>;
+  close(): void;
+};
+
+/** A hinge read waits this long, so a stuck read does not hold the next one for long. */
+const HINGE_SENSOR_TIMEOUT_MS = 1_000;
+
+export async function openHingeSensor(serial: string, signal?: AbortSignal): Promise<HingeSensor> {
+  const client = new EmulatorGrpcClient(await ensureEmulatorGrpcEndpoint(serial, signal), {
+    unaryTimeoutMs: HINGE_SENSOR_TIMEOUT_MS,
+  });
+  return {
+    readAngle: async (readSignal) =>
+      (await client.getPhysicalModel(PHYSICAL_MODEL_HINGE_ANGLE0, readSignal))?.[0] ?? null,
+    watchPostures: (onChange, watchSignal) => client.streamPostures(() => onChange(), watchSignal),
+    close: () => client.close(),
+  };
 }
 
 export async function setFoldPosture(

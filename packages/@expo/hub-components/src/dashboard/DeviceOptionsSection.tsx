@@ -147,6 +147,14 @@ export function DeviceOptionsSection({
       : recordingLock === "status-unknown"
         ? "Unavailable until recording status is known."
         : "Unavailable because this would interrupt the recording.";
+  // A recording that follows folds leaves the fold controls on; see `DeviceFold.unavailable`.
+  const foldUnavailable = client?.fold?.unavailable;
+  const foldDisabledReason =
+    foldUnavailable === undefined
+      ? undefined
+      : foldUnavailable === "status-unknown"
+        ? "Unavailable until recording status is known."
+        : "Unavailable because this would interrupt the recording.";
   const shapeDescriptionId = useId();
   // The 3D model draws its own device, so the screen shape applies to the 2D
   // view only. The 3D view shows while 3D is chosen and its model loads.
@@ -216,7 +224,7 @@ export function DeviceOptionsSection({
         <FoldSettings
           fold={client.fold}
           controls={client.capabilities.fold}
-          disabledReason={recordingDisabledReason}
+          disabledReason={foldDisabledReason}
           preview={foldPreview}
         />
       )}

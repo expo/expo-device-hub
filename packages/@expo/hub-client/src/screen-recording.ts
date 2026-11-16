@@ -18,6 +18,27 @@ export function parseScreenRecordingStatus(value: unknown): DeviceScreenRecordin
   }
 }
 
+/**
+ * Whether the recording reported in a status keeps going when the device folds. Only an Android
+ * recording of a foldable that serve-emu encodes on a fixed canvas reports it.
+ */
+export function screenRecordingFollowsFold(value: unknown): boolean {
+  return (
+    !!value && typeof value === "object" && "followsFold" in value && value.followsFold === true
+  );
+}
+
+/**
+ * Why a fold could end the recording, or null: the recording lock, unless the recording reports
+ * that it follows folds.
+ */
+export function foldRecordingLock(
+  lock: DeviceRecordingLockReason | null,
+  followsFold: boolean,
+): DeviceRecordingLockReason | null {
+  return lock === "recording" && followsFold ? null : lock;
+}
+
 /** Why a rotation or stream change could end a recording with this status, or null. */
 export function recordingLockReason(
   status: DeviceScreenRecordingStatus | null,
