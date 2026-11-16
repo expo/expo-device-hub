@@ -1,9 +1,11 @@
 import { type CSSProperties, useRef } from "react";
 
-import { AndroidIcon, AppleIcon, WarningIcon } from "./icons";
-import { bg, radius, selection, text, textSize, tone, truncate } from "../theme/tokens";
+import { AndroidIcon, AppleIcon } from "./icons";
+import { bg, radius, selection, text, textSize, truncate } from "../theme/tokens";
 import { AgentDeviceStatus } from "./AgentDeviceStatus";
 import { PRESSABLE_CLASS, pressableStyle } from "./pressable";
+import { BUTTON_HEIGHTS } from "./Button";
+import { UnsupportedDeviceWarning } from "./UnsupportedDeviceWarning";
 import { useCompactAgentDeviceStatus } from "./useCompactAgentDeviceStatus";
 
 /** Height of a device row in the dashboard design. */
@@ -73,7 +75,7 @@ export function DeviceListItem({
     fontFamily: "inherit",
   };
 
-  return (
+  const row = (
     <button
       ref={buttonRef}
       type="button"
@@ -102,14 +104,10 @@ export function DeviceListItem({
         </span>
         {unsupported && (
           <span
-            role="img"
-            aria-label="Unsupported or untested device"
-            title="This device type is unsupported or untested."
+            aria-hidden="true"
             data-device-leading
-            style={{ display: "flex", flex: "0 0 auto", color: tone.warning.icon }}
-          >
-            <WarningIcon size={16} />
-          </span>
+            style={{ width: BUTTON_HEIGHTS["2xs"], flex: "0 0 auto" }}
+          />
         )}
         <span
           ref={nameRef}
@@ -143,5 +141,15 @@ export function DeviceListItem({
         {version}
       </span>
     </button>
+  );
+
+  if (!unsupported) return row;
+
+  // @ref LLP 0000#device-support-warning — warning details must not select or boot the row
+  return (
+    <div style={{ position: "relative", minWidth: 0, width: "100%" }}>
+      {row}
+      <UnsupportedDeviceWarning name={name} />
+    </div>
   );
 }
