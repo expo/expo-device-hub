@@ -27,6 +27,7 @@ export const DROP_MEDIA_MIME_TYPES = new Set([
 // and appended on its own, so chunks are independent of each other.
 export const DROP_CHUNK_BYTES = 196608;
 export const DROP_MAX_FILE_SIZE = 500 * 1024 * 1024;
+export const APP_ARCHIVE_TOO_LARGE = "App archive too large (max 500MB compressed)";
 
 // Custom drag flavor carrying a path that already exists on the host (e.g. the
 // screenshot pill). Dropping it on the simulator skips the upload and adds the
@@ -101,6 +102,7 @@ async function streamToHost(
   stream: ReadableStream<Uint8Array>,
   uploadId: string,
   onWritten?: (bytes: number) => void,
+  tooLarge = "File too large (max 500MB)",
 ) {
   const reader = stream.getReader();
   const buffer = new Uint8Array(DROP_CHUNK_BYTES);
@@ -111,8 +113,7 @@ async function streamToHost(
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
-      if (written + used + value.byteLength > DROP_MAX_FILE_SIZE)
-        throw new Error("File too large (max 500MB)");
+      if (written + used + value.byteLength > DROP_MAX_FILE_SIZE) throw new Error(tooLarge);
       for (let offset = 0; offset < value.byteLength; ) {
         const size = Math.min(buffer.length - used, value.length - offset);
         buffer.set(value.subarray(offset, offset + size), used);
@@ -174,7 +175,7 @@ export async function uploadDroppedAppFolder(
 ) {
   await installDroppedSource("app", udid, "tgz", onProgress, async (uploadId) => {
     const archive = await packAppInWorker(entry, onProgress);
-    await streamToHost(archive, uploadId);
+    await streamToHost(archive, uploadId, undefined, APP_ARCHIVE_TOO_LARGE);
   });
 }
 
