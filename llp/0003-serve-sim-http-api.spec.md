@@ -606,8 +606,9 @@ iOS 26.5 reinstall over a running fixture app, 2026-11-14]. `launch` needs a
 Simulator UDID; a device name is refused before installation. A failed install
 launches nothing. When the install succeeds but the bundle identifier is missing or
 the launch fails, the action replies with exit code 1 and `stderr` that starts with
-`The app was installed but did not open.` followed by the cause
-When the install used the whole action budget, the read still gets 5 s. A failed
+`The app was installed but did not open.` followed by the cause.
+When the install used the whole action budget, the bundle identifier read still
+gets 5 s. A failed
 launch keeps any install warning, such as a cleanup failure, after the cause
 [observed: `host-actions.ts`, `app-install.ts`, `app-install-launch.test.ts`].
 
