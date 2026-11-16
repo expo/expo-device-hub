@@ -148,3 +148,24 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/create-github-releases.ts
+
+      # EAS device sessions read expo-device-hub and @expo/serve-sim from this mirror first and
+      # from npm second, so a release that npm does not serve yet does not stop a session. The
+      # steps are skipped until the NPM_MIRROR_URL repository variable is set. See RELEASING.md.
+      - name: Authenticate to Google Cloud for the npm mirror
+        if: ${{ env.IS_CANARY != 'true' && vars.NPM_MIRROR_URL != '' }}
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: exponentjs
+          workload_identity_provider: projects/321830142373/locations/global/workloadIdentityPools/github/providers/expo
+
+      - name: Set up gcloud for the npm mirror
+        if: ${{ env.IS_CANARY != 'true' && vars.NPM_MIRROR_URL != '' }}
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Upload release tarballs to the npm mirror
+        if: ${{ env.IS_CANARY != 'true' && vars.NPM_MIRROR_URL != '' }}
+        env:
+          NPM_MIRROR_URL: ${{ vars.NPM_MIRROR_URL }}
+          NPM_MIRROR_PREDEFINED_ACL: ${{ vars.NPM_MIRROR_PREDEFINED_ACL }}
+        run: ./scripts/upload-npm-mirror.ts

@@ -98,3 +98,41 @@ first release. For every package that is not `private`:
 `changeset publish` publishes every public package in the same run. If one of them fails to
 publish, the workflow stops before it pushes tags or creates GitHub releases, even though the
 version commit is already on `main`.
+
+## npm mirror for EAS device sessions
+
+EAS device sessions start `expo-device-hub@latest` (Android) and `@expo/serve-sim@latest` (iOS).
+npm can list a new version before it serves the tarball, for example while the npm security
+scan runs, and then a session that starts in that window fails. So after **Create GitHub
+releases**, a real release copies the tarball of each of these packages that it published into a
+public bucket, the npm mirror, and EAS reads the mirror first and npm second. LLP 0019 describes
+the layout and the reasons.
+
+`scripts/upload-npm-mirror.ts` does the copy. For each package, it:
+
+1. packs the package (the same bytes as on npm) and stops if the sha512 is not npm's
+   `dist.integrity`;
+2. uploads `<name>/-/<npm tarball name>` and `<name>/<version>.json`, and never replaces them;
+3. reads the tarball back through its public URL and checks the sha512 again;
+4. then writes `<name>/latest.json`, only to a newer version, with `Cache-Control: no-cache`.
+
+The steps run only when the repository variable `NPM_MIRROR_URL` is set, for example
+`gs://turtle-v2/npm`. They sign in to Google Cloud with GitHub's OIDC token through the shared
+`expo` Workload Identity provider, so the `expo/expo-device-hub` repository needs write access to
+that bucket path. If the bucket uses fine-grained ACLs, also set `NPM_MIRROR_PREDEFINED_ACL` to
+`publicRead`.
+
+If the mirror steps fail, npm already has the release, and EAS sessions use npm until the next
+release. To copy a version later, run the script with Google Cloud credentials:
+
+```sh
+NPM_MIRROR_URL=gs://turtle-v2/npm ./scripts/upload-npm-mirror.ts expo-device-hub@0.24.0
+```
+
+To roll back a bad release, move the npm `latest` dist-tag and copy the previous version record
+over the pointer:
+
+```sh
+gcloud storage cp gs://turtle-v2/npm/expo-device-hub/0.23.0.json \
+  gs://turtle-v2/npm/expo-device-hub/latest.json --cache-control="no-cache, max-age=0"
+```

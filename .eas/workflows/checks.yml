@@ -59,6 +59,9 @@ jobs:
       - name: Test
         run: bunx turbo run test -- --retry=1
 
+      - name: Release script tests
+        run: bun test ./scripts
+
       - name: Serve-emu critical coverage
         run: bun run --filter serve-emu coverage
 
