@@ -5,7 +5,7 @@
 **Systems:** Hub, ServeEmu, EmulatorCapture, HubClient
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-13
-**Revised:** 2026-11-13 (decisions confirmed; the implementation in [As built](#as-built); device test results); 2026-11-14 (on Linux, one read on the capture thread for both roles; the Linux timing matrix in [Test plan and results](#test-plan-and-results)); by Claude Code, directed by Krystof Woldrich; 2026-11-14 (restack preserves inherited native failure guards, bounded socket reads and tail retry ownership; tail delivery shares each role's FPS budget), by Codex (gpt-6.1-sol), directed by Krystof Woldrich; 2026-11-14 (the timeline's orientation follows the pose that the screen shows; run 6 in [Test plan and results](#test-plan-and-results)), by Claude Code (Claude Opus 5.5), after an agent found the fault in the media run
+**Revised:** 2026-11-13 (decisions confirmed; the implementation in [As built](#as-built); device test results); 2026-11-14 (on Linux, one read on the capture thread for both roles; the Linux timing matrix in [Test plan and results](#test-plan-and-results)); by Claude Code, directed by Krystof Woldrich; 2026-11-14 (restack preserves inherited native failure guards, bounded socket reads and tail retry ownership; tail delivery shares each role's FPS budget), by Codex (gpt-6.1-sol), directed by Krystof Woldrich; 2026-11-14 (the timeline's orientation follows the pose that the screen shows; run 6 in [Test plan and results](#test-plan-and-results)), by Claude Code (Claude Opus 5.5), after an agent found the fault in the media run; 2026-11-16 (stack inherits the merged fold-recording implementation from main), by Codex (gpt-6.1-sol), directed by Krystof Woldrich
 **Related:** LLP 0001, LLP 0013, LLP 0018, LLP 0020, LLP 0021, LLP 0022 (attach to a running emulator, in a later PR of the stack)
 
 > File paths in `src/` are relative to the package that the text names. serve-emu is `packages/serve-emu/packages/serve-emu`, the agent is `packages/expo-emulator-capture`, and the Hub is `packages/expo-device-hub`.
@@ -110,11 +110,11 @@ The capture is off, the agent is missing, or the attach failed (LLP 0022, in a l
 
 ## Decision 3: order with PR 607
 
-PR 607 is open on `main` and changes the same files: `screen-recording.ts`, `middleware.ts` and `h264-encoder.ts` in serve-emu, and HubClient's recording lock. Its fixed canvas, `deviceStates` timeline, hinge feed and one-second keyframes are what requirement 7 needs.
+PR 607 merged into `main` as `3df743a8` [observed: git history, 2026-11-16]. It changes the same files: `screen-recording.ts`, `middleware.ts` and `h264-encoder.ts` in serve-emu, and HubClient's recording lock. Its fixed canvas, `deviceStates` timeline, hinge feed and one-second keyframes are what requirement 7 needs.
 
-**Recommendation:** merge PR 607 first, rebase the capture stack (https://github.com/expo/expo-device-hub/pull/570, https://github.com/expo/expo-device-hub/pull/571, https://github.com/expo/expo-device-hub/pull/574) on it, and build this change on top, so it reuses PR 607's canvas and timeline instead of a second copy of them.
+**Original recommendation:** merge PR 607 first, rebase the capture stack (https://github.com/expo/expo-device-hub/pull/570, https://github.com/expo/expo-device-hub/pull/571, https://github.com/expo/expo-device-hub/pull/574) on it, and build this change on top, so it reuses PR 607's canvas and timeline instead of a second copy of them.
 
-**Decision:** build on PR 607's work [confirmed: Krystof Woldrich, 2026-11-13]. The change sits on a temporary copy of PR 607 (https://github.com/expo/expo-device-hub/pull/621) at the top of the capture stack, and it reuses LLP 0018's canvas, timeline and hinge feed.
+**Decision:** build on PR 607's work [confirmed: Krystof Woldrich, 2026-11-13]. The implementation initially used a temporary copy of PR 607 (https://github.com/expo/expo-device-hub/pull/621). After the 2026-11-16 rebase, it builds directly on https://github.com/expo/expo-device-hub/pull/615 and inherits LLP 0018's canvas, timeline and hinge feed from `main`; the temporary copy is no longer needed [observed: `3df743a8` and the rebased capture stack].
 
 ## As built
 
