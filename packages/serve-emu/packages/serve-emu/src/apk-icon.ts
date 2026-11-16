@@ -133,22 +133,80 @@ export function parseAdaptiveForegroundId(xmltree: string): string | null {
   return null;
 }
 
-export function selectResourceFilePath(block: string): string | null {
-  let best: { density: number; path: string } | null = null;
-  let defaultConfig: string | null = null;
+/** What a resource config such as `xxxhdpi-v26` says about one bitmap. */
+export type ResourceConfig = {
+  /**
+   * `density`: names a density (`xxxhdpi`, `420dpi`), maybe with an API level.
+   * `default`: names no density (``, `v26`, `nodpi`, `anydpi`).
+   * `variant`: has any other qualifier (`night`, `round`, a locale…), so it is not the default look.
+   */
+  kind: "density" | "default" | "variant";
+  /** 0 when the config names none. */
+  density: number;
+  /**
+   * The `-vNN` minimum; 0 when absent. An APK whose minSdk is below 26 keeps `-v26` on its
+   * adaptive icon bitmaps, because adaptive icons need API 26.
+   */
+  apiLevel: number;
+};
+
+type BitmapFile = { path: string; config: ResourceConfig };
+
+const NO_DENSITY = new Set(["nodpi", "anydpi"]);
+
+function densityOf(part: string): number | undefined {
+  const numeric = /^(\d+)dpi$/.exec(part)?.[1];
+  return DENSITY_BY_QUALIFIER[part] ?? (numeric ? Number(numeric) : undefined);
+}
+
+export function readResourceConfig(qualifier: string): ResourceConfig {
+  let density: number | undefined;
+  let apiLevel = 0;
+  let isVariant = false;
+  for (const part of qualifier.split("-").filter(Boolean)) {
+    const version = /^v(\d+)$/.exec(part)?.[1];
+    const partDensity = densityOf(part);
+    if (version) apiLevel = Number(version);
+    else if (NO_DENSITY.has(part)) continue;
+    else if (partDensity !== undefined) density = partDensity;
+    else isVariant = true;
+  }
+  const kind = isVariant ? "variant" : density !== undefined ? "density" : "default";
+  return { kind, density: density ?? 0, apiLevel };
+}
+
+/** The `(config) (file) path` lines of an `aapt2 dump resources` block, without XML files. */
+function readBitmapFiles(block: string): BitmapFile[] {
+  const files: BitmapFile[] = [];
   for (const line of block.split("\n")) {
     const match = /^\((.*?)\)\s+\(file\)\s+(\S+)(?:\s+type=(\S+))?/.exec(line.trim());
     if (!match) continue;
     const [, qualifier = "", path = "", type] = match;
     if (type === "XML" || path.endsWith(".xml")) continue;
-    const density = DENSITY_BY_QUALIFIER[qualifier];
-    if (density === undefined) {
-      if (qualifier === "") defaultConfig ??= path;
-      continue;
-    }
-    if (!best || density > best.density) best = { density, path };
+    files.push({ path, config: readResourceConfig(qualifier) });
   }
-  return best?.path ?? defaultConfig;
+  return files;
+}
+
+const KIND_RANK = { density: 0, default: 1, variant: 2 } as const;
+
+/**
+ * Best first. Equal files keep their order, because `Array.prototype.sort` is stable. A current
+ * device shows the newest API level; `aapt2 dump badging` resolves the icon entry for the newest API
+ * too, so both steps agree.
+ */
+function compareBitmapFiles(a: BitmapFile, b: BitmapFile): number {
+  return (
+    KIND_RANK[a.config.kind] - KIND_RANK[b.config.kind] || // 1. the default look before variants
+    b.config.density - a.config.density || // 2. denser first
+    b.config.apiLevel - a.config.apiLevel // 3. newer API level first
+  );
+}
+
+/** The best bitmap of one resource, or null when it has only XML drawables. */
+export function selectResourceFilePath(block: string): string | null {
+  const [best] = readBitmapFiles(block).sort(compareBitmapFiles);
+  return best?.path ?? null;
 }
 
 export function iconMimeType(bytes: Uint8Array): AppIconMimeType | null {
