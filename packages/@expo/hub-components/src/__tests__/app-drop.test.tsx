@@ -169,7 +169,7 @@ test("dismisses a notice through the shared button with an accessible name", asy
         preventDefault() {},
         stopPropagation() {},
         dataTransfer: {
-          files: [new File([], "unsupported.zip")],
+          files: [new File([], "notes.txt")],
           items: [{ kind: "file", webkitGetAsEntry: () => null }],
         },
       } as unknown as DragEvent);
@@ -179,6 +179,42 @@ test("dismisses a notice through the shared button with an accessible name", asy
     expect(JSON.stringify(renderer.toJSON())).toContain("Drop a Simulator .app folder");
     await act(async () => renderer.root.findByType("button").props.onClick());
     expect(JSON.stringify(renderer.toJSON())).not.toContain("Drop a Simulator .app folder");
+  } finally {
+    await act(async () => renderer?.unmount());
+  }
+});
+
+test("names device builds and .zip archives before any upload", async () => {
+  const backend = { installFolder: mock(async () => {}), installFile: mock(async () => {}) };
+  let renderer!: ReactTestRenderer;
+  function Harness() {
+    const drop = useAppDrop(backend, true, "device-a");
+    return createElement("section", drop.props, drop.notice);
+  }
+  try {
+    await act(async () => {
+      renderer = create(createElement(Harness));
+    });
+    await act(async () => {
+      renderer.root.findByType("section").props.onDrop({
+        preventDefault() {},
+        stopPropagation() {},
+        dataTransfer: {
+          files: [new File([], "MyApp.ipa"), new File([], "Build.ZIP")],
+          items: [
+            { kind: "file", webkitGetAsEntry: () => ({ isDirectory: false, name: "MyApp.ipa" }) },
+            { kind: "file", webkitGetAsEntry: () => null },
+          ],
+        },
+      } as unknown as DragEvent);
+    });
+    const content = JSON.stringify(renderer.toJSON());
+    expect(content).toContain("MyApp.ipa: Simulator installs require");
+    expect(content).toContain("Build.ZIP: Simulator installs require");
+    expect(content).toContain("Device .ipa builds and .zip archives are not supported.");
+    expect(content).not.toContain("Use an archive for apps with symlinks");
+    expect(backend.installFile).toHaveBeenCalledTimes(0);
+    expect(backend.installFolder).toHaveBeenCalledTimes(0);
   } finally {
     await act(async () => renderer?.unmount());
   }

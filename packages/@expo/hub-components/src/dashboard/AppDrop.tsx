@@ -5,6 +5,9 @@ import { bg, border, Button, radius, text, textSize, CloseIcon } from "../primit
 
 const GUIDANCE =
   "Drop a Simulator .app folder or .tar.gz/.tgz archive. Use an archive for apps with symlinks: browsers may leave them out.";
+// Same text as serve-sim's UNSUPPORTED_INSTALL_FORMAT, so the Hub and the preview agree.
+const DEVICE_BUILD =
+  "Simulator installs require a Simulator .app bundle or .tar.gz/.tgz archive. Device .ipa builds and .zip archives are not supported.";
 
 export function useAppDrop(
   backend: DeviceClient["appInstall"],
@@ -33,6 +36,10 @@ export function useAppDrop(
       const entry = entries[index];
       const id = crypto.randomUUID();
       const folder = !!entry?.isDirectory;
+      if (!folder && /\.(ipa|zip)$/i.test(file.name)) {
+        update(id, `${file.name}: ${DEVICE_BUILD}`, true);
+        continue;
+      }
       if (folder ? !/\.app$/i.test(entry.name) : !/\.(tar\.gz|tgz)$/i.test(file.name)) {
         update(id, GUIDANCE, true);
         continue;
