@@ -21,3 +21,14 @@ export const SCREENSHOT_METADATA_HEADER = "X-Expo-Screenshot-Metadata";
 export function screenshotMetadataHeaders(metadata = screenshotMetadata()): Record<string, string> {
   return { [SCREENSHOT_METADATA_HEADER]: JSON.stringify(metadata) };
 }
+
+/** Reads the metadata header back; a missing or unreadable header means unknown values. */
+export function screenshotMetadataFromHeaders(headers: Headers): ScreenshotMetadata {
+  const value = headers.get(SCREENSHOT_METADATA_HEADER);
+  if (value === null) return screenshotMetadata();
+  try {
+    const metadata: unknown = JSON.parse(value);
+    if (metadata !== null && typeof metadata === "object") return metadata as ScreenshotMetadata;
+  } catch {}
+  return screenshotMetadata();
+}

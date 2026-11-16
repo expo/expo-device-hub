@@ -3,6 +3,7 @@ import { isWebOrigin, originMatches } from "../middleware-utils";
 import type { UpgradeHandlerWebSocket } from "./types";
 import type { StreamSettings } from "../stream-settings";
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
+import { screenshotMetadataFromHeaders } from "../screenshot-metadata";
 import {
   TOKEN_SUBPROTOCOL_PREFIX,
   acceptedTokenSubprotocol,
@@ -29,8 +30,10 @@ import {
 //   server → {ready:true}             auth accepted
 //   client → {id, action, params}      run one typed simulator action
 //   server → {id, stdout, stderr, exitCode}
-//   client → {id, action:"screenshot.capture", params:{udid?,display?,output:"binary"}}
-//   server → binary: uint32 BE id, then PNG bytes; errors use {id, error}
+//   client → {id, action:"screenshot.capture",
+//             params:{udid?,display?,maxWidth?,format?,quality?,automation?,output:"binary"}}
+//   server → binary: uint32 BE id, then PNG or JPEG bytes; errors use {id, error}
+//   server → {id, screenshotMetadata}  directly after each binary frame
 //   client → {id, ui:{…}}             simulator-settings request (in-process,
 //   server → {id, …} | {id, error}     no shell round-trip)
 //   client → {sub, path}              subscribe to a same-origin SSE route
@@ -273,12 +276,14 @@ function wireExecSocket(
             send({ id, error: body.error ?? "Screenshot failed" });
             return;
           }
-          const png = Buffer.from(await response.arrayBuffer());
+          const image = Buffer.from(await response.arrayBuffer());
           if (ws.readyState !== ws.OPEN) return;
-          const frame = Buffer.allocUnsafe(4 + png.length);
+          const frame = Buffer.allocUnsafe(4 + image.length);
           frame.writeUInt32BE(id);
-          png.copy(frame, 4);
+          image.copy(frame, 4);
           ws.send(frame);
+          // A binary frame has no room for metadata. Send it next, before any other reply for this id.
+          send({ id, screenshotMetadata: screenshotMetadataFromHeaders(response.headers) });
         })
         .catch(() => send({ id, error: "Screenshot failed" }))
         .finally(() => {
