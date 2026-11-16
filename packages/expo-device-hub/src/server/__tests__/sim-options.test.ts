@@ -101,13 +101,13 @@ describe("androidImagesToOptions", () => {
     });
   });
 
-  test("does not infer frame availability from the Pixel family name", () => {
+  test("marks Pixel Fold as supported independently of frame availability", () => {
     const models = androidImagesToOptions(
       [androidImage("android-36", "google_apis", "arm64-v8a")],
       [{ id: "pixel_fold", index: 0, name: "Pixel Fold", oem: "Google", tag: null }],
     ).runtimes[0]?.models;
 
-    expect(models).toEqual([{ value: "pixel_fold", label: "Pixel Fold", supported: false }]);
+    expect(models).toEqual([{ value: "pixel_fold", label: "Pixel Fold", supported: true }]);
   });
 
   test("pairs mobile and specialized images with compatible profile tags", () => {
