@@ -108,6 +108,16 @@ export async function openBrowser(url: string, directory: string) {
       sessionId,
     );
     await send("Page.navigate", { url }, sessionId);
+    const waitForHtml = async (check: (html: string) => boolean, label: string) => {
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        const { root } = await send("DOM.getDocument", {}, sessionId);
+        const { outerHTML } = await send("DOM.getOuterHTML", { nodeId: root.nodeId }, sessionId);
+        if (check(outerHTML)) return;
+        await pause(100);
+      }
+      throw new Error(`Dashboard did not show ${label}`);
+    };
     return {
       async dropFiles(paths: string[]) {
         const { root } = await send("DOM.getDocument", {}, sessionId);
@@ -127,15 +137,9 @@ export async function openBrowser(url: string, directory: string) {
           );
       },
       async waitForText(text: string) {
-        const deadline = Date.now() + 60000;
-        while (Date.now() < deadline) {
-          const { root } = await send("DOM.getDocument", {}, sessionId);
-          const { outerHTML } = await send("DOM.getOuterHTML", { nodeId: root.nodeId }, sessionId);
-          if (outerHTML.includes(text)) return;
-          await pause(100);
-        }
-        throw new Error(`Dashboard did not show ${text}`);
+        await waitForHtml((html) => html.includes(text), text);
       },
+      waitForHtml,
       async screenshot() {
         return (await send("Page.captureScreenshot", { format: "png" }, sessionId)).data as string;
       },

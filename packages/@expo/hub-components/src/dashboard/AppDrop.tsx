@@ -87,6 +87,7 @@ export function useAppDrop(
       <>
         {enabled && backend && over === deviceId && (
           <div
+            data-testid="app-drop-overlay"
             style={{
               position: "absolute",
               inset: 0,

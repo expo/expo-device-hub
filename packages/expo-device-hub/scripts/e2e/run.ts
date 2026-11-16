@@ -195,7 +195,13 @@ try {
       );
     }
     await browser.dropFiles([join(artifacts, "dashboard")]);
-    await browser.waitForText("Drop a Simulator .app folder or .tar.gz/.tgz archive");
+    // The drag overlay shows the same guidance; only a handled drop removes it.
+    await browser.waitForHtml(
+      (html) =>
+        html.includes("Drop a Simulator .app folder or .tar.gz/.tgz archive") &&
+        !html.includes('data-testid="app-drop-overlay"'),
+      "the invalid folder guidance notice",
+    );
     await writeFile(
       join(artifacts, "dashboard-app-drop.png"),
       Buffer.from(await browser.screenshot(), "base64"),
