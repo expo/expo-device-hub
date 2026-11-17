@@ -1,0 +1,33 @@
+{
+  "host": "EAS Linux VM, Intel, 22 vCPUs, no GPU",
+  "emulator": "37.1.11",
+  "device": "Pixel 6",
+  "renderer": "-gpu lavapipe",
+  "dates": ["2026-11-05", "2026-11-06"],
+  "scope": "Three runs per stream size, earlier synchronous read inside the render post; predates capture-worker and tail fixes. A web page cycled through eight colors and each decoded frame was checked.",
+  "rows": [
+    {
+      "size": [576, 1280],
+      "fpsRange": [54.4, 55.5],
+      "frameCountRange": [544, 555],
+      "torn": 0,
+      "skippedRange": [19, 22],
+      "repeatedRange": [62, 77]
+    },
+    {
+      "size": [1080, 2400],
+      "fpsRange": [53.4, 54.1],
+      "frameCountRange": [533, 540],
+      "torn": 0,
+      "skippedRange": [19, 28],
+      "repeatedRange": [71, 95]
+    }
+  ],
+  "readbackMsRange": [5.9, 6.9],
+  "scaledConversionAndEncodingMsRange": [9.5, 9.8],
+  "source": {
+    "repository": "expo/expo-device-hub",
+    "commit": "c36d542974fc2fd4250cf1ec9202000752f060c8",
+    "path": "packages/expo-emulator-capture/README.md"
+  }
+}
