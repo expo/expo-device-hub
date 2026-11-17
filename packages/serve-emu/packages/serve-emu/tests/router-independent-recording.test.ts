@@ -106,6 +106,90 @@ const switchSource = (router: ReturnType<typeof createRouter>, mode: StreamMode)
   );
 
 describe("router recording with the capture agent", () => {
+  for (const stage of ["hardware read", "agent handshake"] as const) {
+    test(`releases a recording when shutdown starts during its ${stage}`, async () => {
+      let entered!: () => void;
+      const entering = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let resume!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      let recorder!: AgentRecorder;
+      let closes = 0;
+      let cancelled = 0;
+      const orientationSignals: AbortSignal[] = [];
+      const { router, created, options, manifest } = await setup(
+        async (source) => {
+          recorder = source.recorder;
+          agentFrame(recorder);
+          await recorder.ready;
+          if (stage === "agent handshake") {
+            entered();
+            await gate;
+          }
+          return {
+            canvas: { width: 1080, height: 2424 },
+            close: () => {
+              closes++;
+            },
+          };
+        },
+        {
+          readHardwareConfig: async () => {
+            if (stage === "hardware read") {
+              entered();
+              await gate;
+            }
+            return "hw.lcd.width = 1080\nhw.lcd.vsync = 60\n";
+          },
+          watchOrientationEvents: (serial, onChange, signal) => {
+            orientationSignals.push(signal);
+            return watchNoOrientationEvents(serial, onChange, signal);
+          },
+        },
+      );
+      const starting = router
+        .startScreenRecording({
+          ...options,
+          createWriter: async (writerOptions) => {
+            const writer = await options.createWriter!(writerOptions);
+            return {
+              ...writer,
+              cancel: async () => {
+                cancelled++;
+                await writer.cancel();
+              },
+            };
+          },
+        })
+        .then(
+          () => null,
+          (error: Error) => error,
+        );
+      await entering;
+      const stopping = router.stopAll();
+      resume();
+      try {
+        await stopping;
+        expect(await starting).toMatchObject({ message: "serve-emu router is stopped" });
+        expect(recorder.active).toBe(false);
+        expect(closes).toBe(1);
+        expect(orientationSignals.every((signal) => signal.aborted)).toBe(true);
+        expect(cancelled).toBe(1);
+        expect(created).toEqual([]);
+        expect(await manifest()).toMatchObject({
+          status: "failed",
+          error: "serve-emu router is stopped",
+        });
+      } finally {
+        await router.finishScreenRecording().catch(() => {});
+        await router.stopAll();
+      }
+    });
+  }
+
   test("gives the recording its own source, apart from every app", async () => {
     const sources: CaptureRecordingSourceOptions[] = [];
     let closes = 0;
