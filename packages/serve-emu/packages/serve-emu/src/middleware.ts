@@ -3091,6 +3091,8 @@ export function createRouter(
       try {
         const independent = await startIndependentRecording(serial, recorder, options);
         recording = { ...recording, ...independent };
+        // Shutdown can begin while the source opens, before stopAll can see this recording.
+        if (stopped) throw new Error("serve-emu router is stopped");
         screenRecording = recording;
         if (!independent) {
           // A viewer could have created the app during the awaits above; that app has no
@@ -3113,6 +3115,7 @@ export function createRouter(
       } catch (error) {
         recorder.fail(error);
         releaseRecording(recording);
+        await recorder.finish().catch(() => {});
         throw error;
       }
     })();
