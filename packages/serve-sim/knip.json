@@ -11,6 +11,8 @@
       "entry": [
         "src/index.ts",
         "src/client/client.tsx",
+        "src/client/utils/app-drop-client.ts",
+        "src/client/utils/app-drop-worker.ts",
         "src/client/global.css",
         "scripts/build-trails.ts",
         "src/**/__tests__/**/*.test.{ts,tsx}",
