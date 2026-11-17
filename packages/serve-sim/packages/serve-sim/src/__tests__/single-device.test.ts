@@ -31,6 +31,8 @@ describe("single-device policy", () => {
       enabled: true,
     });
     expect(() => policy.scopeAction("capture.reboot", { udid: OTHER })).toThrow();
+    expect(() => policy.scopeAction("egress.set", { udid: OTHER, enabled: true })).toThrow();
+    expect(policy.scopeAction("egress.status", {})).toEqual({ udid: DEVICE });
     for (const action of ["server.detach", "server.kill", "home.watch"]) {
       expect(() => policy.scopeAction(action, {})).toThrow("single-device");
     }
