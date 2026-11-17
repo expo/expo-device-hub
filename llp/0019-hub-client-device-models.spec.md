@@ -27,7 +27,7 @@
 | `@expo/hub-client/models/catalog`    | `resolveDeviceModel`, `deviceModelFor`, `DEVICE_MODELS`, `DEVICE_MODEL_IDS`, `isDeviceModelId`, `deviceModelStreamable`, `deviceModelPreview`, `modelStageMaxSide`, and their types | no             |
 | `@expo/hub-client/models/<file>.glb` | One GLB file per model: `iphone-duo`, `iphone-18-pro`, `pixel-9-pro`, `pixel-9-pro-fold`, each typed as its URL                                                                     | no             |
 
-`DeviceModelScreen` takes the place of `DeviceScreen`. It takes the device client, a model description from the catalog, and the URL of the model's GLB file. It reports a model that cannot load with `onUnavailable`, and the consumer then shows the flat screen [observed: `src/models/DeviceModelScreen.tsx`].
+`DeviceModelScreen` takes the place of `DeviceScreen`. A consumer must not put it under `visibility: hidden`: the browser then presents no frames of the hidden stream elements, so `framePresented` stays false and the model never shows [observed: the expo.dev website, expo/universe#33612, which hides its stage with `opacity: 0` for that reason]. It takes the device client, a model description from the catalog, and the URL of the model's GLB file. It reports a model that cannot load with `onUnavailable`, and the consumer then shows the flat screen [observed: `src/models/DeviceModelScreen.tsx`].
 
 ## Two entries
 

@@ -292,6 +292,10 @@ available, `onUnavailable` runs: show the flat `DeviceScreen` then.
 The iPhone Duo's model needs `client.fold` and `client.displays`, which
 `deviceModelStreamable` checks. The other models show the flat stream on their display.
 
+Do not hide the element around `DeviceModelScreen` with `visibility: hidden`, for example
+while your own loading UI shows. The browser then presents no video frames, so the model
+never gets its first frame and stays hidden. Use `opacity: 0`.
+
 A page with a Content Security Policy must allow two things for the models:
 
 - `blob:` in `connect-src`. three.js fetches the textures inside a model file from blob
