@@ -128,3 +128,56 @@
 .hub-log-scroll::-webkit-scrollbar-thumb:hover {
   background-color: var(--expo-theme-border-default);
 }
+
+/*
+ * Tooltip entrance. The tooltip slides 8px toward its place from the side of
+ * its child, with the timing of the website's `slide*AndFade` animations.
+ */
+.hub-tooltip {
+  animation-duration: 400ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+}
+.hub-tooltip[data-side="top"] {
+  animation-name: hub-tooltip-from-below;
+}
+.hub-tooltip[data-side="bottom"] {
+  animation-name: hub-tooltip-from-above;
+}
+.hub-tooltip[data-side="left"] {
+  animation-name: hub-tooltip-from-right;
+}
+.hub-tooltip[data-side="right"] {
+  animation-name: hub-tooltip-from-left;
+}
+
+@keyframes hub-tooltip-from-below {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes hub-tooltip-from-above {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes hub-tooltip-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+@keyframes hub-tooltip-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-tooltip {
+    animation: none;
+  }
+}

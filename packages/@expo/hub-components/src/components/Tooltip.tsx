@@ -1,7 +1,7 @@
 import { Content, Portal, Provider, Root, Trigger } from "@radix-ui/react-tooltip";
 import { type ComponentProps, type ReactElement, type ReactNode } from "react";
 
-import { bg, layer, radius, shadow, text, textSize } from "../theme/tokens";
+import { bg, border, layer, radius, shadow, text, textSize } from "../theme/tokens";
 
 export type TooltipProps = {
   /** The text of the tooltip. Without it, the child renders alone. */
@@ -19,17 +19,20 @@ export type TooltipProps = {
 /**
  * A short label that appears next to its child while the pointer is over it
  * or it has keyboard focus. Every tooltip in the Hub uses this component, so
- * they share one look. It is for sighted pointer and keyboard users only: it
- * gives the child no accessible name and no description, so give the child
- * its own `aria-label`, and an `aria-description` for text that is more than
- * its name.
+ * they share one look: the website's tooltip (`ui/components/Tooltip`). It is
+ * always dark, in both themes, and slides in from the side of its child. The
+ * `.hub-tooltip` rules in `theme.css` hold that animation.
+ *
+ * It is for sighted pointer and keyboard users only: it gives the child no
+ * accessible name and no description, so give the child its own `aria-label`,
+ * and an `aria-description` for text that is more than its name.
  */
 export function Tooltip({
   content,
   children,
   side = "top",
   align = "center",
-  sideOffset = 8,
+  sideOffset = 4,
   delayMs = 0,
 }: TooltipProps) {
   if (content === undefined || content === null || content === "") return children;
@@ -55,15 +58,20 @@ export function Tooltip({
             align={align}
             sideOffset={sideOffset}
             collisionPadding={8}
+            // `dark-theme` gives the tokens below their dark values in a light dashboard too.
+            className="dark-theme hub-tooltip"
             style={{
               ...textSize.xs,
               zIndex: layer.top,
-              maxWidth: "min(260px, calc(100vw - 16px))",
-              padding: "4px 8px",
+              maxWidth: "min(320px, calc(100vw - 16px))",
+              padding: "6px 12px",
+              border: `0.5px solid ${border.default}`,
               borderRadius: radius.md,
-              backgroundColor: text.default,
-              color: bg.default,
+              backgroundColor: bg.overlay,
+              color: text.default,
               boxShadow: shadow.md,
+              textAlign: "center",
+              overflowWrap: "break-word",
             }}
           >
             {content}

@@ -153,13 +153,29 @@ export function StreamPanel({
   // Command+V in the device screen reports through the clipboard toasts, as in serve-sim.
   const screenClient: DeviceClient = { ...client, pasteText: clipboard.pasteText };
 
+  const [savingScreenshot, setSavingScreenshot] = useState(false);
+  const saveScreenshot = async () => {
+    setSavingScreenshot(true);
+    try {
+      await captureScreenshot();
+    } finally {
+      setSavingScreenshot(false);
+    }
+  };
+  // Android has its own navigation buttons; iOS has only Home.
+  const android = client.platform === "android";
+
   const controls = (
     <StreamControls
       orientationUnavailable={client.orientationUnavailable}
+      onBack={android ? () => client.pressButton("back") : undefined}
       onHome={() => client.pressButton("home")}
+      onRecents={android ? () => client.pressButton("recents") : undefined}
+      onDismissKeyboard={android ? () => client.pressButton("hideKeyboard") : undefined}
       onReload={() => client.reload()}
       onRotate={() => client.rotate()}
-      onSave={captureScreenshot}
+      onSave={() => void saveScreenshot()}
+      saving={savingScreenshot}
       clipboard={client.capabilities.clipboard}
       clipboardPending={client.clipboardPending}
       onPaste={() => void clipboard.pasteFromDevice()}
