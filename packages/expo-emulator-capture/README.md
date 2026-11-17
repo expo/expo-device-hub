@@ -11,30 +11,6 @@ This package is separate from the Hub, not a dependency of it. The Hub installs 
 you turn the capture on. The design is in
 [LLP 0020](../../llp/0020-emulator-capture-macos.explainer.md).
 
-## How it works
-
-```text
-Emulator display post → GL texture → GPU copy into an IOSurface
-  → VideoToolbox rotation, scale and NV12 conversion → H.264 (hardware) → Unix socket
-  → serve-emu → Device Hub (WebCodecs or WebRTC)
-```
-
-- A small agent library is preloaded into the emulator's QEMU process with
-  `DYLD_INSERT_LIBRARIES`. It hooks the renderer's display post with Frida Gum.
-  The emulator itself is not modified.
-- With `-gpu host`, the renderer's frames are OpenGL textures. The agent copies each
-  frame into an IOSurface on the GPU; the CPU never touches the pixels.
-- With a software renderer (`-gpu auto` on a headless Mac picks SwANGLE), the agent
-  reads the pixels back instead. Encoding still uses the hardware encoder.
-- A Mac without a usable hardware encoder gets the VideoToolbox software encoder.
-  The `configured` record and the agent log say which encoder runs.
-- A consumer connects to the agent's socket, sets the stream size, frame rate and bit
-  rate, and receives H.264. Consumers can disconnect and reconnect at any time.
-- When a foldable folds or unfolds, the display size changes. The agent reconfigures
-  the encoder and tells the consumer the new size.
-- When Android turns the display, the consumer sends the display rotation, and the agent
-  turns the picture upright before it encodes it.
-
 ## Use with Expo Device Hub
 
 Turn on the capture with the flag, or with the variable for `expo start`:
@@ -68,6 +44,47 @@ EXPO_DEVICE_HUB_EMULATOR_CAPTURE_LIBRARY="$PWD/dist/darwin-arm64/libexpo_emulato
 
 `/health` on the serve-emu routes reports `captureBackend: "expo-emulator-capture"` and
 the capture diagnostics (`framePath`, encoder, native and stream size, resizes, rotation).
+
+![Expo Device Hub with its sidebar and Stream options open, showing Emulator capture over WebRTC.](https://raw.githubusercontent.com/expo/expo-device-hub/d66897959c6d81d2d3042181d6d9885a6a97ae3d/packages/expo-emulator-capture/docs/device-hub-emulator-capture.png)
+
+## Measurements
+
+Mac mini M2 (8 GB), Pixel 10, Android Emulator 37.2.7; historical measurements from
+2026-11-04–05.
+
+![Capture frame rate: host GPU reaches 59.33–59.84 FPS versus 32.06–33.36 with software rendering.](https://raw.githubusercontent.com/expo/expo-device-hub/d66897959c6d81d2d3042181d6d9885a6a97ae3d/packages/expo-emulator-capture/docs/macos-frame-rate.png)
+
+60 FPS requested over 20-second animation sessions; values are encoded stream packet rates.
+
+![CPU above the no-stream baseline: capture uses 0.248/0.320 cores versus 0.597/1.315 for gRPC at scaled/native sizes.](https://raw.githubusercontent.com/expo/expo-device-hub/d66897959c6d81d2d3042181d6d9885a6a97ae3d/packages/expo-emulator-capture/docs/macos-cpu-overhead.png)
+
+CPU overhead was about 58% lower at 1280 and 76% lower at native size (three rounds,
+both `-gpu host`). System-wide measurements include background activity; CLI recording
+versus gRPC + x264, not full Hub/WebRTC or CPU per frame. [Data and methods](https://raw.githubusercontent.com/expo/expo-device-hub/d66897959c6d81d2d3042181d6d9885a6a97ae3d/packages/expo-emulator-capture/docs/measurements.json).
+
+## How it works
+
+```text
+Emulator display post → GL texture → GPU copy into an IOSurface
+  → VideoToolbox rotation, scale and NV12 conversion → H.264 (hardware) → Unix socket
+  → serve-emu → Device Hub (WebCodecs or WebRTC)
+```
+
+- A small agent library is preloaded into the emulator's QEMU process with
+  `DYLD_INSERT_LIBRARIES`. It hooks the renderer's display post with Frida Gum.
+  The emulator itself is not modified.
+- With `-gpu host`, the renderer's frames are OpenGL textures. The agent copies each
+  frame into an IOSurface on the GPU; the CPU never touches the pixels.
+- With a software renderer (`-gpu auto` on a headless Mac picks SwANGLE), the agent
+  reads the pixels back instead. Encoding still uses the hardware encoder.
+- A Mac without a usable hardware encoder gets the VideoToolbox software encoder.
+  The `configured` record and the agent log say which encoder runs.
+- A consumer connects to the agent's socket, sets the stream size, frame rate and bit
+  rate, and receives H.264. Consumers can disconnect and reconnect at any time.
+- When a foldable folds or unfolds, the display size changes. The agent reconfigures
+  the encoder and tells the consumer the new size.
+- When Android turns the display, the consumer sends the display rotation, and the agent
+  turns the picture upright before it encodes it.
 
 ## Start an emulator without the Hub
 
@@ -122,29 +139,6 @@ bun run test    # protocol unit tests (C++ and JavaScript)
 
 On other hosts the build scripts print a warning and produce no binary. The release
 builds the agent on an EAS macOS job, and a publish without the binary fails.
-
-## Measurements
-
-Mac mini M2 (8 GB), Android Emulator 37.2.7, Pixel 10 profile, the same script of
-opening apps and a web page with a CSS animation, 2026-11-05. CPU is in cores, above the
-same emulator with no stream:
-
-| Source and size            | CPU above no stream | Where it runs                      |
-| -------------------------- | ------------------- | ---------------------------------- |
-| Hub gRPC stream, 570×1280  | 0.60                | Emulator, ffmpeg (x264), serve-emu |
-| Hub gRPC stream, 1080×2424 | 1.31                | Emulator, ffmpeg (x264), serve-emu |
-| This capture, 570×1280     | 0.25                | Emulator (GPU copy, VideoToolbox)  |
-| This capture, 1080×2424    | 0.32                | Emulator (GPU copy, VideoToolbox)  |
-
-With `-gpu host`, the emulator itself used 0.6 cores during the script. Without the
-capture, the Hub starts emulators with `-gpu auto`; a headless Mac then uses a software
-renderer, and the emulator used 4.4 cores. Earlier frame rate measurements (2026-11-04):
-
-| Renderer    | Stream              | Frames                    | Render thread per frame | Notes                                     |
-| ----------- | ------------------- | ------------------------- | ----------------------- | ----------------------------------------- |
-| `-gpu host` | 1080×2424 at 60 FPS | 59–60 FPS in 10 s windows | 0.11 ms                 | GPU frame path, hardware encoder          |
-| `-gpu host` | 570×1280 at 60 FPS  | 59.3 FPS                  | 0.12 ms                 | Scaled by VideoToolbox                    |
-| `-gpu auto` | 1080×2424 at 60 FPS | 30–34 FPS                 | 25 ms                   | Software renderer; CPU readback limits it |
 
 ## Limitations
 
