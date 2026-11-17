@@ -108,12 +108,9 @@ export { LogControls } from "./dashboard/LogControls";
 export { LogList } from "./dashboard/LogList";
 export { LogRow } from "./dashboard/LogRow";
 export { StreamControls } from "./dashboard/StreamControls";
-export {
-  FoldSettings,
-  MODEL_UNAVAILABLE_DESCRIPTION,
-  type FoldPreviewOption,
-} from "./dashboard/FoldSettings";
+export { FoldSettings, type FoldPreviewOption } from "./dashboard/FoldSettings";
 export { FOLD_POSE_OPTIONS, selectedFoldPose } from "./dashboard/foldPoses";
+export { useModelPreviewMode } from "./dashboard/useModelPreviewMode";
 export {
   DEVICE_MODELS,
   deviceModelFor,

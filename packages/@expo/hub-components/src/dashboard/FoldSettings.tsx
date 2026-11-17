@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { type DeviceFold, type DeviceFoldCapabilities } from "@expo/hub-client";
 import {
@@ -23,10 +23,12 @@ import { SidebarSwitch } from "./SidebarSwitch";
  * consumer. Pass them only for a device and client that can feed the 3D model.
  */
 export type FoldPreviewOption = {
+  /**
+   * The mode that the preview shows. A consumer whose 3D model failed passes
+   * `2d`, as if 2D was chosen, and tries the model again when 3D is chosen.
+   */
   mode: FoldPreviewMode;
   onModeChange: (mode: FoldPreviewMode) => void;
-  /** The model failed to load in this session; the flat screen shows until 3D is selected again. */
-  unavailable?: boolean;
   /** Freeze the departing panel's last frame while the device folds. Shown only for a foldable that streams each display on its own. */
   cacheScreenOnFold: boolean;
   onCacheScreenOnFoldChange: (enabled: boolean) => void;
@@ -34,8 +36,6 @@ export type FoldPreviewOption = {
   sizeMode: "physical" | "fill";
   onSizeModeChange: (mode: "physical" | "fill") => void;
 };
-
-export const MODEL_UNAVAILABLE_DESCRIPTION = "3D preview unavailable. Select 3D to retry.";
 
 const PREVIEW_MODE_OPTIONS: ReadonlyArray<SelectOption<FoldPreviewMode>> = [
   { value: "3d", label: "3D" },
@@ -237,19 +237,12 @@ export function ModelPreviewSettings({
   /** Offer "Cache screen on fold". */
   cacheScreenOnFold?: boolean;
 }) {
-  const previewDescriptionId = useId();
-  // An unavailable model shows the flat screen until 3D is selected again.
-  const viewMode: FoldPreviewMode = preview.mode === "3d" && !preview.unavailable ? "3d" : "2d";
+  const viewMode = preview.mode;
   return (
     <>
-      <SidebarRow
-        label="Preview mode"
-        description={preview.unavailable ? MODEL_UNAVAILABLE_DESCRIPTION : undefined}
-        descriptionId={preview.unavailable ? previewDescriptionId : undefined}
-      >
+      <SidebarRow label="Preview mode">
         <Select
           ariaLabel="Preview mode"
-          ariaDescribedBy={preview.unavailable ? previewDescriptionId : undefined}
           options={PREVIEW_MODE_OPTIONS}
           value={viewMode}
           onChange={preview.onModeChange}

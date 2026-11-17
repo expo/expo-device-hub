@@ -192,7 +192,7 @@ export function DeviceOptionsSection({
   // The 3D model draws its own device, so the screen shape applies to the 2D
   // view only. The 3D view shows while 3D is chosen and its model loads.
   // @ref LLP 0017#hub-dashboard — the shape option applies to the 2D view only
-  const shapeIn3D = foldPreview?.mode === "3d" && !foldPreview.unavailable;
+  const shapeIn3D = foldPreview?.mode === "3d";
   const shapeDescription = !screenShape?.available
     ? NO_DEVICE_SHAPE_DESCRIPTION
     : shapeIn3D

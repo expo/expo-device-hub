@@ -27,6 +27,7 @@ import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
 import { deviceScreenLoading } from "./DeviceScreenStatus";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
 import { PhoneFrame, type PhoneFrameFoldPreview } from "./PhoneFrame";
+import { useModelUnavailableToast } from "./ModelPreviewToast";
 import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
 import { useElementHeight } from "./useElementHeight";
@@ -145,6 +146,20 @@ export function StreamPanel({
   // PhoneFrame also knows whether the 3D model is loaded; until then the pill says Loading too.
   const [screenLoading, setScreenLoading] = useState(() => deviceScreenLoading(client));
   const captureScreenshot = useScreenshotToast(client, device.name);
+  // A consumer that handles a failed 3D model shows 2D from then on, so a notice
+  // that leaves by itself tells why. Without a handler the model keeps its own notice.
+  const notifyModelUnavailable = useModelUnavailableToast(device.id);
+  const onModelUnavailable = foldPreview?.onUnavailable;
+  const framePreview =
+    foldPreview && onModelUnavailable
+      ? {
+          ...foldPreview,
+          onUnavailable: () => {
+            notifyModelUnavailable();
+            onModelUnavailable();
+          },
+        }
+      : foldPreview;
   // Leave presentation in the same update that opens the inspector, restoring its
   // sibling interactivity before the Clipboard section can take focus.
   const clipboard = useClipboardToast(
@@ -317,7 +332,7 @@ export function StreamPanel({
             DeviceScreen={DeviceScreen}
             DeviceModelScreen={DeviceModelScreen}
             DeviceShape={DeviceShape}
-            foldPreview={foldPreview}
+            foldPreview={framePreview}
             displayScreen={displayScreen}
             showScreenShape={showScreenShape}
             deviceModelAssets={deviceModelAssets}

@@ -28,6 +28,7 @@ import {
   type Device,
   type DeviceModelAssets,
   deviceModelPreview,
+  useModelPreviewMode,
   type FoldPreviewOption,
   type SidebarProps,
 } from "@expo/hub-components";
@@ -130,7 +131,6 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   const setDuoPreview = useDashboardStore((state) => state.setDuoPreview);
   // The device's model failed to load (or WebGL did); show the flat screen
   // until the viewer picks 3D again, as serve-sim does.
-  const [duoModelUnavailableFor, setDuoModelUnavailableFor] = useState<string | null>(null);
   const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
     streamMode === "mjpeg" ? "mjpeg" : streamMode === "h264" ? "h264" : "auto",
   );
@@ -215,10 +215,8 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     chooseStreamMode(mode, selectedStreamModeAvailability);
   };
 
-  const duoModelUnavailable = !!selected && duoModelUnavailableFor === selected.id;
-  // Like serve-sim, switching devices retries the model.
-  const selectedDeviceId = selected?.id ?? null;
-  useEffect(() => setDuoModelUnavailableFor(null), [selectedDeviceId]);
+  // Like serve-sim, switching devices retries a model that failed.
+  const modelPreview = useModelPreviewMode(selected?.id ?? null, duoPreview.mode);
   // One shared connection to the serve-sim/serve-emu server, wired to the
   // selected device. Null until the user picks one, so nothing connects (or
   // boots) on load. An iPhone Duo streams both displays only while its 3D
@@ -236,13 +234,12 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   // The 3D choices apply only to a device with a model that its client can feed.
   const modelAvailable = deviceModelPreview(selected, client, DEVICE_MODEL_ASSETS) !== null;
   const foldPreview: FoldPreviewOption = {
-    mode: duoPreview.mode,
+    mode: modelPreview.mode,
     onModeChange: (mode) => {
       setDuoPreview({ mode });
       // Selecting 3D retries loading the model.
-      setDuoModelUnavailableFor(null);
+      modelPreview.retry();
     },
-    unavailable: duoModelUnavailable,
     cacheScreenOnFold: duoPreview.cacheScreenOnFold,
     onCacheScreenOnFoldChange: (cacheScreenOnFold) => setDuoPreview({ cacheScreenOnFold }),
     sizeMode: duoPreview.sizeMode,
@@ -362,10 +359,10 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           DeviceModelScreen={DeviceModelScreen}
           DeviceShape={DeviceShape}
           foldPreview={{
-            mode: duoPreview.mode === "3d" && !duoModelUnavailable ? "3d" : "2d",
+            mode: modelPreview.mode,
             cacheScreenOnFold: duoPreview.cacheScreenOnFold,
             sizeMode: duoPreview.sizeMode,
-            onUnavailable: () => setDuoModelUnavailableFor(selected.id),
+            onUnavailable: modelPreview.reportUnavailable,
           }}
           displayScreen={displayScreen}
           framed={framed}
