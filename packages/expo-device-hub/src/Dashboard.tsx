@@ -37,7 +37,7 @@ import { AnimatedDockedSidebar } from "./dashboard/AnimatedDockedSidebar";
 import { dashboardHideBootDevice } from "./boot-device";
 import { basePath } from "./dashboard/basePath";
 import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from "./dashboard/dashboardStore";
-import { useScreenShapeAvailable } from "./dashboard/useScreenShapeAvailable";
+import { useDeviceScreenShape } from "./dashboard/useDeviceScreenShape";
 import { useColorScheme } from "./dashboard/useColorScheme";
 import { useDashboardDevices } from "./dashboard/useDashboardDevices";
 import {
@@ -214,7 +214,10 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       : null,
     basePath(),
   );
-  const screenShapeAvailable = useScreenShapeAvailable(client, selected);
+  const { shape: screenShape, available: screenShapeAvailable } = useDeviceScreenShape(
+    client,
+    selected,
+  );
   // The 3D choices apply only to a device that can feed the model.
   const modelAvailable = !!client.fold && !!client.displays && !!client.deviceModelUrl;
   const foldPreview: FoldPreviewOption = {
@@ -352,6 +355,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           displayScreen={displayScreen}
           framed={framed}
           showScreenShape={showScreenShape}
+          screenShape={screenShape}
           onClipboardFallback={handleClipboardFallback}
         />
       ) : (

@@ -138,7 +138,8 @@ import { tone, StatusDot } from "@expo/hub-components";
 ```
 
 - `tone.success | warning | danger | info`, each with `text`, `icon`, `border`, `bg`.
-- `StatusDot` is the dot beside a status label. `SectionNote` is the small line of text in a
+- `StatusDot` is the dot beside a status label; `pulse` adds the ring that grows from the dot of
+  a status that is in progress. `SectionNote` is the small line of text in a
   sidebar section; `role="alert"` gives it the danger tone, and `tone` picks another.
 - The chart series colors (`icon.success`, `icon.info`, `icon.preview`) are not statuses.
 

@@ -236,6 +236,12 @@ export const layer = {
   top: 610,
 } as const;
 
+/**
+ * The glass of a device screen that has no picture: `palette-black` in both
+ * themes, as on the website.
+ */
+export const screenOff = "var(--expo-color-black)";
+
 /** Colors of a dim layer over live device content. They do not follow the theme. */
 export const scrim = {
   /** The dim layer itself. */

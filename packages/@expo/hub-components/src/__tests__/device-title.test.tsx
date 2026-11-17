@@ -44,6 +44,30 @@ describe("device title", () => {
     expect(markup).toContain(`title="${name}"`);
   });
 
+  test.each([
+    ["connecting", true],
+    ["streaming", true],
+    ["reconnecting", true],
+    ["idle", false],
+    ["error", false],
+  ] as const)("the dot of the %s status pulses: %p", (status, pulses) => {
+    const markup = renderToStaticMarkup(
+      <DeviceTitle device={{ id: "emulator-5554", name: "Pixel" }} status={status} />,
+    );
+    // A status in progress pulses, as on the website. A status that ended is still.
+    expect(markup.includes('class="hub-status-pulse"')).toBe(pulses);
+  });
+
+  test("keeps one live region and lets the label inside it animate", () => {
+    const markup = renderToStaticMarkup(
+      <DeviceTitle device={{ id: "emulator-5554", name: "Pixel" }} status="streaming" />,
+    );
+    // A screen reader announces a change inside a live region that stays in the page.
+    expect(markup).toMatch(
+      /<span aria-live="polite"[^>]*><span class="hub-status-label"[^>]*>Live</,
+    );
+  });
+
   test("labels a live stream that is re-establishing its transport", () => {
     const markup = renderToStaticMarkup(
       <DeviceTitle device={{ id: "emulator-5554", name: "Pixel" }} status="reconnecting" />,

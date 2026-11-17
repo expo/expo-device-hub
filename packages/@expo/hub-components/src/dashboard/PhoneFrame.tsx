@@ -6,26 +6,27 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
-import type { DeviceShapeProps } from "@expo/hub-client/shapes";
+import type { DeviceShapeProps, ScreenShape } from "@expo/hub-client/shapes";
 import { duoStageMaxSide } from "../foldable/duo-stage";
 import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
-import { bg, layer, motion } from "../primitives";
+import { layer, motion } from "../primitives";
 import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
 import { type Device } from "./data";
+import {
+  DeviceScreenStageLayers,
+  deviceScreenStage,
+  screenShapeBorderRadius,
+} from "./DeviceScreenStage";
 import { DeviceScreenStatus, deviceScreenLoading } from "./DeviceScreenStatus";
 import { deviceViewportStyle } from "./deviceViewport";
 import { deviceScreenCornersClipPath, type ScreenCornerRadiiCqw } from "./deviceScreenClipPath";
 
 // No solid layer stays under a presented stream. The browser blends the
 // anti-aliased clipped edge of every layer it clips, so a solid layer under the
-// stream shows as a thin line along the screen's edge. The surface is its own
-// layer, shown only until the stream presents its first frame.
+// stream shows as a thin line along the screen's edge. Each stage of the screen
+// is its own layer, and the last one goes when the live picture has faded in.
 // @ref LLP 0017#hub-dashboard — no solid layer under the stream; the shape moves in by 1px
-const SCREEN_SURFACE_STYLE: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  backgroundColor: bg.element,
-};
+const STREAM_STYLE: CSSProperties = { position: "absolute", inset: 0 };
 
 // A stream can paint up to about 0.75 CSS px short of its box, so a known screen
 // shape moves in by this much and the picture reaches past its edges.
@@ -77,9 +78,10 @@ const PLACEHOLDER_RATIO: Record<Device["platform"], number> = {
  * The selected device's screen. When a {@link DeviceClient} connection is active
  * (a serve-sim/serve-emu server is selected) it renders the live, interactive
  * `DeviceScreen` — injected by the consumer from `@expo/hub-client` so this
- * library stays free of a runtime dependency on it; otherwise it shows an empty
- * idle surface. It draws the screen's loading spinner and errors over both
- * renderers, which draw neither.
+ * library stays free of a runtime dependency on it; otherwise the screen is
+ * off. It draws the stages of the screen and its errors, which the renderers
+ * do not draw: the flat screen glows until its first frame, and the 3D stage
+ * shows a spinner.
  *
  * The phone stays as large as fits (short side capped at {@link MAX_SHORT_SIDE},
  * shrinking to the available height or panel width), with the stream's exact
@@ -101,6 +103,7 @@ export function PhoneFrame({
   foldPreview,
   displayScreen,
   showScreenShape = true,
+  screenShape,
   onLoadingChange,
 }: {
   device: Device;
@@ -130,7 +133,13 @@ export function PhoneFrame({
    * stream shows as the whole video rectangle. Defaults to on.
    */
   showScreenShape?: boolean;
-  /** Whether the screen shows its first-load spinner, for a status label beside the frame. */
+  /**
+   * The device's screen shape as the viewer sees it, from `useScreenShape` of
+   * `@expo/hub-client/shapes`. It gives the frame its proportions before the
+   * stream reports its size, and the loading glow its corners.
+   */
+  screenShape?: ScreenShape | null;
+  /** Whether the screen is in its first load, for a status label beside the frame. */
   onLoadingChange?: (loading: boolean) => void;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -142,8 +151,15 @@ export function PhoneFrame({
   // Prefer the live screen's aspect ratio once known, so the stream fills the
   // frame 1:1 instead of being stretched to the placeholder's body ratio. Uses
   // the orientation-corrected (display) size so a rotated device shows landscape.
+  // Until then, a known screen shape gives the frame the device's proportions,
+  // so the frame does not change its size when the stream starts.
   const display = client ? displayScreen(client.screen) : null;
-  const ratio = display && display.height > 0 ? display.width / display.height : fallbackRatio;
+  const ratio =
+    display && display.height > 0
+      ? display.width / display.height
+      : screenShape
+        ? screenShape.width / screenShape.height
+        : fallbackRatio;
 
   // The pixel cap applies to the short side: in portrait (ratio < 1) it caps the
   // width directly; in landscape it caps the height (width / ratio), so the
@@ -196,26 +212,10 @@ export function PhoneFrame({
   useLayoutEffect(() => {
     onLoadingChange?.(loading);
   }, [onLoadingChange, loading]);
-  const screenStatus = live ? (
-    <DeviceScreenStatus
-      loading={loading}
-      error={client.status === "error" ? (client.error ?? "Disconnected") : null}
-      inputError={client.inputError}
-    />
-  ) : null;
+  const error = live && client.status === "error" ? (client.error ?? "Disconnected") : null;
   const overlayVisible =
     !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
 
-  const deviceSurface = live ? (
-    <DeviceScreen
-      client={client}
-      agentInteraction={agentInteraction}
-      onCopy={onCopy}
-      preserveKeyboardFocus={preserveKeyboardFocus}
-    />
-  ) : (
-    <div style={SCREEN_SURFACE_STYLE} />
-  );
   const takeoverOverlay = (
     <div
       data-testid="agent-device-overlay-clip"
@@ -256,12 +256,21 @@ export function PhoneFrame({
             onModelSettledChange={(settled) => setModelSettledDevice(settled ? device.id : null)}
             {...modelOptions}
           />
-          {screenStatus}
+          <DeviceScreenStatus loading={loading} error={error} inputError={client.inputError} />
           {takeoverOverlay}
         </div>
       </div>
     );
   }
+
+  // The flat screen shows its stage under the stream: black while it is off, the
+  // glow until the first frame, and the reason when the session fails before it.
+  const stage = deviceScreenStage(live ? client : null);
+  const stageRadius = !showScreenShape
+    ? undefined
+    : screenShape
+      ? screenShapeBorderRadius(screenShape)
+      : borderRadius;
 
   const screenStyle: CSSProperties = {
     position: "absolute",
@@ -273,13 +282,34 @@ export function PhoneFrame({
 
   const screenContent = (
     <>
-      {live && !client.framePresented ? (
-        <div data-testid="device-screen-surface" style={SCREEN_SURFACE_STYLE} />
-      ) : null}
-      <div data-testid="device-screen-stream" style={{ position: "absolute", inset: 0 }}>
-        {deviceSurface}
+      <DeviceScreenStageLayers
+        stage={stage}
+        error={error}
+        ratio={ratio}
+        borderRadius={stageRadius}
+      />
+      {/* The live picture fades in above the glow, which stays opaque until then. */}
+      <div
+        data-testid="device-screen-stream"
+        className="hub-screen-stream"
+        data-presented={stage === "live" ? "true" : undefined}
+        style={STREAM_STYLE}
+      >
+        {live && (
+          <DeviceScreen
+            client={client}
+            agentInteraction={agentInteraction}
+            onCopy={onCopy}
+            preserveKeyboardFocus={preserveKeyboardFocus}
+          />
+        )}
       </div>
-      {screenStatus}
+      {live &&
+        stage !== "unavailable" && (
+          // An error after the first frame shows over the picture. An input error shows at any
+          // time: input can work while video fails. The `unavailable` stage has its own text.
+          <DeviceScreenStatus loading={false} error={error} inputError={client.inputError} />
+        )}
       {takeoverOverlay}
     </>
   );

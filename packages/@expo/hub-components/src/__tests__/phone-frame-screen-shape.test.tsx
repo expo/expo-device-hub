@@ -143,8 +143,9 @@ describe("PhoneFrame screen shape", () => {
         />,
       );
     expect(clipStyle(markup(false))).not.toContain("background-color");
-    expect(markup(false)).toContain('data-testid="device-screen-surface"');
+    expect(markup(false)).toContain('data-testid="device-screen-loading"');
     expect(clipStyle(markup(true))).not.toContain("background-color");
+    expect(markup(true)).not.toContain('data-testid="device-screen-loading"');
     expect(markup(true)).not.toContain('data-testid="device-screen-surface"');
   });
 

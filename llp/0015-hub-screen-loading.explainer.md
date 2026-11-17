@@ -5,14 +5,14 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-11-03 (deep review: the MJPEG effect, not `attachVideo`, stops a detached `<img>`; Claude Code, approved by Krystof Woldrich); 2026-11-03 (round-3 review: the MJPEG effect follows the attached `<img>`; Claude Code, directed by Krystof Woldrich); 2026-11-03 (round-2 review: one hook owns the session status, and a 3D scene that fails after it loads falls back; Claude Code, directed by Krystof Woldrich); 2026-11-02 (decision 6 confirmed by Krystof Woldrich, with a minor version bump; Claude Code, directed by Krystof Woldrich); 2026-11-02 (an unavailable 3D model ends the first-load wait; Claude Code, directed by Krystof Woldrich); 2026-10-29 (the iOS screen session is keyed on the device that `/api` resolved; Claude Code, directed by Krystof Woldrich); 2026-10-21 (round-1 review: MJPEG frame keeping, helper restarts, the iOS drop limit, the model timeout; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-11-18 (the flat screen's first load is the website's glow on a black screen, with the stages in [Stages](#stages); Claude Code (Claude Fable 5.2), directed by Krystof Woldrich); 2026-11-03 (deep review: the MJPEG effect, not `attachVideo`, stops a detached `<img>`; Claude Code, approved by Krystof Woldrich); 2026-11-03 (round-3 review: the MJPEG effect follows the attached `<img>`; Claude Code, directed by Krystof Woldrich); 2026-11-03 (round-2 review: one hook owns the session status, and a 3D scene that fails after it loads falls back; Claude Code, directed by Krystof Woldrich); 2026-11-02 (decision 6 confirmed by Krystof Woldrich, with a minor version bump; Claude Code, directed by Krystof Woldrich); 2026-11-02 (an unavailable 3D model ends the first-load wait; Claude Code, directed by Krystof Woldrich); 2026-10-29 (the iOS screen session is keyed on the device that `/api` resolved; Claude Code, directed by Krystof Woldrich); 2026-10-21 (round-1 review: MJPEG frame keeping, helper restarts, the iOS drop limit, the model timeout; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0004, LLP 0012, LLP 0013
 
 ## Summary
 
-A device screen shows one spinner until its first frame. After that frame, a lost stream keeps the last frame on screen and shows no spinner. Errors replace the spinner. This applies to iOS and Android, to every transport, and to the flat screen and the iPhone Duo's 3D preview.
+A device screen has one loading state until its first frame. The flat screen shows it as a glow that moves around a black screen, as on the expo.dev website; the iPhone Duo's 3D preview shows it as one spinner. After the first frame, a lost stream keeps the last frame on screen and shows no loading state. Errors replace the loading state. This applies to iOS and Android and to every transport.
 
-`@expo/hub-client` decides the state. `@expo/hub-components` draws the spinner and the error notice.
+`@expo/hub-client` decides the state. `@expo/hub-components` draws the stages of the screen and the error notice.
 
 > **Provenance.** An agent wrote this document from the code it changed. `[observed]` claims give their source. File paths are relative to `packages/@expo/hub-client/src` or `packages/@expo/hub-components/src`. The direction came from Krystof Woldrich in the agent brief. The orchestrating agent made the decisions in [Decisions for review](#decisions-for-review); a human has not reviewed them yet, so this document stays `Draft`.
 
@@ -25,6 +25,14 @@ Krystof Woldrich asked for this behavior on 2026-10-21, through the agent brief 
 - One spinner until the 2D screen or the 3D preview has loaded for the first time.
 - No spinner when the stream drops temporarily after it loaded. The last frame stays.
 - Errors stay errors. A spinner must not hide a failure forever.
+
+On 2026-11-17, through the agent brief for the dashboard design stack, he asked for the website's loading presentation in the dashboard:
+
+- The device shape shows at once when a device is selected, as on the website.
+- Before the stream connects, the black device shape shows the website's colorful animation.
+- The website's other animations and states of the screen come over too.
+
+This replaces two points of 2026-10-21 for the flat screen: the screen is black while it loads, and the loading presentation is the glow, not a spinner. The other points stay: one loading presentation, no loading state over a loaded screen that reconnects, and errors stay errors. [Stages](#stages) says how the dashboard draws this, and where it differs from the website.
 
 ## Screen sessions
 
@@ -48,20 +56,47 @@ Each adapter keeps its own status in `useSessionStatus`, which resets it to `con
 
 `useScreenPresentation` maps each adapter's own status onto what a consumer sees [observed: `presentScreen` in `screen-presentation.ts`]:
 
-| Returned `status` | `framePresented` | The screen shows                                       | Status pill  |
-| ----------------- | ---------------- | ------------------------------------------------------ | ------------ |
-| `idle`            | false            | the idle surface                                       | Offline      |
-| `connecting`      | false            | the spinner on the empty device surface                | Loading      |
-| `streaming`       | true             | live frames                                            | Live         |
-| `reconnecting`    | true             | the last frame, with nothing over it                   | Reconnecting |
-| `error`           | false or true    | the error notice, over the empty surface or last frame | Error        |
+| Returned `status` | `framePresented` | The screen shows                                          | Status pill  |
+| ----------------- | ---------------- | --------------------------------------------------------- | ------------ |
+| `idle`            | false            | a black screen                                            | Offline      |
+| `connecting`      | false            | the glow on the black screen (3D preview: the spinner)    | Loading      |
+| `streaming`       | true             | live frames                                               | Live         |
+| `reconnecting`    | true             | the last frame, with nothing over it                      | Reconnecting |
+| `error`           | false or true    | the reason on the screen, or a notice over the last frame | Error        |
 
 - Before the first frame, an adapter's `connecting` or `reconnecting` is `connecting`.
 - After the first frame, an adapter's `connecting` or `reconnecting` is `reconnecting`. A session that showed a frame never returns to `connecting`.
-- `framePresented` stays true while the session reconnects or fails. Outside `idle` and `error`, it is false exactly while the status is `connecting`, so the first-load spinner follows `connecting` [observed: `deviceScreenLoading` in `dashboard/DeviceScreenStatus.tsx`].
+- `framePresented` stays true while the session reconnects or fails. Outside `idle` and `error`, it is false exactly while the status is `connecting`, so the first-load state follows `connecting` [observed: `deviceScreenLoading` in `dashboard/DeviceScreenStatus.tsx`, `deviceScreenStage` in `dashboard/DeviceScreenStage.tsx`].
 - Until `framePresented` is true, `DeviceScreen` keeps its media element transparent, because the element can still hold a previous session's frame [observed: `deviceScreenMediaStyle` in `DeviceScreen.tsx`]. Opacity, not `visibility` or `display`, keeps the element laid out, so the browser keeps decoding into it [inferred]. Its `<img>` has an empty `alt`, so a failed request never shows a broken-image text; the input surface names the screen [observed: `DeviceScreen.tsx`].
 
 The 3D preview loads until Xcode's model is loaded into the scene **and** the active display has a frame. Until then it is transparent, so it never shows a model with black displays; it also takes no focus, is not announced, and gives up the focus when it hides again, for example after a transport switch [observed: `tabIndex`, `aria-hidden`, and `useReleaseFocusWhenHidden` in `foldable/FoldableDeviceScreen.tsx`]; and the status pill says Loading even while the client already streams [observed: `hidden` in `foldable/FoldableDeviceScreen.tsx`, `modelSettledDevice` in `dashboard/PhoneFrame.tsx`, `screenLoading` in `dashboard/StreamPanel.tsx`]. A model that is unavailable ends this wait as well, because the preview then shows the flat display, which has its own frame; the spinner then follows only the first frame, also when the consumer gives no `onUnavailable`. That flat fallback also stays transparent, unfocusable, and inert until the session's first frame, because its element can still hold a previous session's pixels [observed: `modelSettled` and `hidden` in `foldable/FoldableDeviceScreen.tsx`].
+
+## Stages
+
+The flat screen draws one opaque layer per stage under its stream, in the look of the website's simulator preview (`SimulatorPreviewScreen.tsx` and `simulator-preview-screen.module.css` in expo/universe, at `d24ccaa940`) [observed: `DeviceScreenStageLayers` in `dashboard/DeviceScreenStage.tsx`, the `hub-screen-*` rules in `theme/theme.css`]:
+
+| Stage         | When                                  | The screen shows                                                                      |
+| ------------- | ------------------------------------- | ------------------------------------------------------------------------------------- |
+| `off`         | no client, or the client is `idle`    | black, like a device that is off                                                      |
+| `connecting`  | the session has no frame and no error | the glow: a light along the edge of the black screen, with colors that move around it |
+| `live`        | the session presented a frame         | the stream, or its last frame; no layer under it                                      |
+| `unavailable` | the session has an error and no frame | a phone icon, "Device screen unavailable", and the error text                         |
+
+- **The shape shows at once.** The frame takes the proportions of the device's screen shape before the stream reports its size, so it does not change its size when the stream starts. The Hub looks the shape up from the model that the server sends [observed: `useDeviceScreenShape` in `expo-device-hub/src/dashboard/useDeviceScreenShape.ts`, `screenShape` and `ratio` in `dashboard/PhoneFrame.tsx`]. A device without a known shape keeps the placeholder proportions and shows the glow in the whole rectangle.
+- **The glow follows the screen.** Its lengths are a share of the screen's short side, the share that the website's lengths have of its 18rem device, so a large frame glows like a small one. Its corners take the circle that is closest to each superellipse corner of the shape; the clip of `DeviceShape` still gives the exact outline [observed: `screenShapeBorderRadius` in `dashboard/DeviceScreenStage.tsx`, `--hub-screen-unit` in `theme/theme.css`].
+- **The first frame fades in.** The live picture fades in above the glow in 550 ms. The glow stays opaque for that time, so the page never shows through, then it fades out in 650 ms and its layer goes [observed: `useLingering` in `dashboard/useLingering.ts`]. After that no solid layer is under the stream (LLP 0017, [Hub dashboard](0017-hub-client-screen-shapes.spec.md#hub-dashboard)).
+- **A loaded screen never returns to the glow.** The stage follows `framePresented`, so a reconnect or an error after the first frame keeps the `live` stage, and the error notice covers the last frame as before.
+- **The status pill** has the website's indicator: the dot of a status that is in progress (Loading, Reconnecting, Live) sends out a ring that grows and fades; Offline and Error are still. A new status label enters with a short fade [observed: `STATUS_APPEARANCE` in `dashboard/DeviceTitle.tsx`, `pulse` in `components/StatusDot.tsx`].
+- **Reduced motion.** The glow does not move, the picture and the notice do not fade, and the dot does not pulse.
+- **Announcements.** The glow is a status region with the hidden text "Loading", as the spinner was. The reason of the `unavailable` stage is an alert.
+
+The dashboard differs from the website in these points:
+
+- The website shows the glow again while a loaded stream reconnects. The dashboard keeps the last frame, by the direction of 2026-10-21.
+- The website's `boot` stage (the Expo mark with three rings, while a cloud simulator starts) and its `ending` stage ("Session ended") have no state in the dashboard: a device that boots shows its progress in the add-device menu, and a device that shuts down leaves the list.
+- The glow's colors fade in over 400 ms on the black screen. On the website they show at once with the page; in the dashboard a device switch would cut from a live picture to the full glow.
+- The iPhone Duo's 3D stage keeps the spinner. The stage is a square that holds the model, so it has no screen edge for the glow.
+- The animations are CSS. The website uses `framer-motion` for them; the dashboard needs no layout animation and no per-frame values for these stages, so it takes no new dependency.
 
 ## Temporary drops
 
@@ -103,7 +138,7 @@ On iOS, a temporary drop stays `reconnecting` until the stream returns, the adap
 LLP 0004 [3D preview in the Hub](0004-serve-sim-hinge-controls.explainer.md#3d-preview-in-the-hub) and LLP 0013 [Input feedback](0013-hub-client-input-and-control.explainer.md#input-feedback) give the rule: hub-client supplies controls, streams, and state; product notices belong to consumers.
 
 - **hub-client** decides the state: `status`, `error`, and `framePresented` on `DeviceClient` and `DeviceScreenClient` [observed: `types.ts`, `useDeviceScreenClient.ts`]. `DeviceScreen` draws no background, spinner, or error; it only hides media without a session frame [observed: `DeviceScreen.tsx`]. A consumer that uses `DeviceScreen` without `PhoneFrame`, such as the Expo website, draws loading and errors itself.
-- **hub-components** draws them. `ActivityIndicator` is the spinner; its status region holds the label "Loading" as visually hidden text, and the status pill uses the same label [observed: `components/ActivityIndicator.tsx`, `dashboard/DeviceTitle.tsx`]. `DeviceScreenStatus` draws the spinner and one error notice, over the flat screen and over the 3D stage, with the input notice's tokens [observed: `dashboard/DeviceScreenStatus.tsx`, `dashboard/PhoneFrame.tsx`]. `PhoneFrame` puts `bg.element` under the live screen, so an empty screen is never black.
+- **hub-components** draws them. `DeviceScreenStageLayers` draws the stages of the flat screen (see [Stages](#stages)). `ActivityIndicator` is the spinner of the 3D stage; its status region holds the label "Loading" as visually hidden text, and the glow and the status pill use the same label [observed: `components/ActivityIndicator.tsx`, `dashboard/DeviceScreenStage.tsx`, `dashboard/DeviceTitle.tsx`]. `DeviceScreenStatus` draws that spinner and one error notice, over the 3D stage and over a flat screen that has a frame, with the input notice's tokens [observed: `dashboard/DeviceScreenStatus.tsx`, `dashboard/PhoneFrame.tsx`].
 - **The Hub** renders `StreamPanel` and needs no code of its own for this.
 
 ## Decisions for review
@@ -116,8 +151,17 @@ The orchestrating agent decided these on 2026-10-21. A human has not reviewed th
 4. Xcode's model gets the same 30 s, counted in a visible tab, before the 3D preview falls back to 2D (round-1 review, 2026-10-21).
 5. A transport switch counts as a first load.
 6. `DeviceScreen` loses its overlay; a consumer that uses it without `PhoneFrame` must draw loading and errors. Krystof Woldrich confirmed this and kept it a minor version bump, because the packages are in an early phase and the Expo website draws its own connecting, reconnecting, and failure states [confirmed] (Krystof Woldrich, 2026-11-02). The rule is in LLP 0013 [Input feedback](0013-hub-client-input-and-control.explainer.md#input-feedback).
-7. The spinner's look is not compared with the website's `ActivityIndicator`, whose source is not in this repository.
+7. The spinner's look is not compared with the website's `ActivityIndicator`, whose source is not in this repository. Since 2026-11-18 only the 3D stage shows the spinner.
 8. The status pill does not say Live while the 3D preview loads.
+
+Claude Code (Claude Fable 5.2) decided these on 2026-11-18, for the direction of 2026-11-17. A human has not reviewed them yet.
+
+9. An error before the first frame takes the layout of the website's "Live preview unavailable" state, with the client's error as its text, on `bg.element`. The notice at the bottom of the screen stays for an error after the first frame and for an input error.
+10. A reconnect of a loaded screen keeps the last frame and does not show the glow, which the website shows. The direction of 2026-10-21 stays in force for it.
+11. An idle screen is black, not `bg.element`, so a screen that starts to connect does not change its color.
+12. The website's `boot` and `ending` stages are not ported, because the dashboard has no state for them.
+13. The 3D stage keeps the spinner.
+14. The stages are CSS, without `framer-motion`.
 
 One consequence of 2 and the rule in [States](#states): on Android, after its grace and a source-switch timeout without an error, the adapter's `connecting` used to reach the screen as `connecting`. It is now `reconnecting`, because `connecting` means a first load.
 

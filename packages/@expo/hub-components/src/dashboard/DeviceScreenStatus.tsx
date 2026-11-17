@@ -3,9 +3,9 @@ import { type CSSProperties } from "react";
 
 import { ActivityIndicator, layer, textSize, tone } from "../primitives";
 
-// @ref LLP 0015#states — one spinner until the first frame; no spinner while a loaded screen reconnects
+// @ref LLP 0015#states — one loading state until the first frame; none while a loaded screen reconnects
 /**
- * Whether the device screen shows its first-load spinner: the screen session
+ * Whether the device screen is in its first load: the screen session
  * is `connecting`, which means that it has not presented a frame, or it shows
  * frames while the consumer's own preview, such as the 3D model, is not ready.
  */
@@ -43,9 +43,11 @@ const NOTICE_STYLE: CSSProperties = {
 };
 
 /**
- * The loading and error layer over a device screen, 2D or 3D. It covers
- * nothing while the stream reconnects, so the last frame stays visible. A
- * stream error replaces an input error, which needs a stream to matter.
+ * The spinner and the notices over a device screen: the 3D stage, and a flat
+ * screen that has a frame. A flat screen without a frame draws its own stages
+ * (`DeviceScreenStageLayers`). It covers nothing while the stream reconnects,
+ * so the last frame stays visible. A stream error replaces an input error,
+ * which needs a stream to matter.
  */
 export function DeviceScreenStatus({
   loading,
