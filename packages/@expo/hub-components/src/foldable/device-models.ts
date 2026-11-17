@@ -64,6 +64,12 @@ export interface DeviceModelDescription {
    */
   bezelMaterials?: readonly string[];
   /**
+   * The matte black materials around the displays, such as a rubber seal, named
+   * as in the GLB. The rig lowers their reflectance, of the lights and of the
+   * room, so they stay as near the stream's black as a glass bezel.
+   */
+  matteBorderMaterials?: readonly string[];
+  /**
    * How the client streams the device: each display on its own (`client.displays`,
    * the iPhone Duo on serve-sim), or one flat screen that shows the active display.
    */
@@ -98,6 +104,11 @@ export const DEVICE_MODELS: Readonly<Record<DeviceModelId, DeviceModelDescriptio
       },
     },
     hinge: { bend: "duo", left: "Leaf L • outer display", right: "Leaf R • rear cameras" },
+    // The inner display's seal, and the cover display's rim.
+    matteBorderMaterials: [
+      "Elastomer • graphite perimeter seal",
+      "Optical barrel • anodized black",
+    ],
     streams: "displays",
   },
   "ios:iphone-18-pro": {

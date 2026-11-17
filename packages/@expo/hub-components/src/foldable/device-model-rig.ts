@@ -27,6 +27,15 @@ export const SCENE_UNITS_PER_METER = 100;
  */
 export const CLEAR_GLASS_OPACITY = 0.1;
 
+/**
+ * How metallic the rig makes a matte black border. A standard material has no
+ * other control of its reflectance: at 0 it reflects 4% of the lights and the
+ * room, which showed gray beside the stream, and toward 1 it reflects its own
+ * near-black color. At 0.85 the iPhone Duo's borders are as dark as the iPhone
+ * 18 Pro's glass bezel.
+ */
+export const MATTE_BORDER_METALNESS = 0.85;
+
 /** The leaves' rotations about the hinge, as the scene's views set them. */
 export type DeviceModelFolds = { left: number; right: number };
 
@@ -352,13 +361,18 @@ export function rigDeviceModel(description: DeviceModelDescription, gltf: GLTF):
     material.depthWrite = false;
     material.needsUpdate = true;
   }
-  const bezels = (description.bezelMaterials ?? []).map((name) => {
+  const named = (name: string) => {
     const material = materials.find((candidate) => candidate.name === name);
     if (!(material instanceof THREE.MeshStandardMaterial)) {
       throw new Error(`The ${description.name} model has no ${name} material`);
     }
     return material;
-  });
+  };
+  const bezels = (description.bezelMaterials ?? []).map(named);
+  // @ref LLP 0004#3d-preview-in-the-hub — a matte black border reflects less, of the lights too
+  for (const name of description.matteBorderMaterials ?? []) {
+    named(name).metalness = MATTE_BORDER_METALNESS;
+  }
 
   // A phone turns around its center. A foldable keeps its hinge on the Y axis,
   // and the scene centers its folded body every frame.

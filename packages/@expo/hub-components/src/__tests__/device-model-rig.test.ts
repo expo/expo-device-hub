@@ -6,6 +6,7 @@ import { type GLTF, GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DEVICE_MODELS, type DeviceModelDescription } from "../foldable/device-models";
 import {
   CLEAR_GLASS_OPACITY,
+  MATTE_BORDER_METALNESS,
   type DeviceModelRig,
   indexDeviceModel,
   loadDeviceModel,
@@ -190,6 +191,32 @@ describe.skipIf(!available)("the other models", () => {
     const phone = DEVICE_MODELS["android:pixel-9-pro"];
     await expect(rig({ ...phone, bezelMaterials: ["Missing glass"] })).rejects.toThrow(
       "has no Missing glass material",
+    );
+  });
+
+  test("the iPhone Duo's matte black borders reflect less, and no other material changes", async () => {
+    const duo = DEVICE_MODELS["ios:iphone-duo"];
+    const { rig: loaded } = await rig(duo);
+    const materials = new Set<THREE.MeshStandardMaterial>();
+    loaded.model.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      for (const material of [object.material].flat()) {
+        if (material instanceof THREE.MeshStandardMaterial) materials.add(material);
+      }
+    });
+    const borders = [...materials].filter(
+      (material) => material.metalness === MATTE_BORDER_METALNESS,
+    );
+    expect(borders.map((material) => material.name).sort()).toEqual(
+      [...(duo.matteBorderMaterials ?? [])].sort(),
+    );
+    expect(borders.length).toBe(2);
+    for (const material of borders) {
+      // Black in the model: the border's gray in the scene was what it reflects.
+      expect(Math.max(material.color.r, material.color.g, material.color.b)).toBeLessThan(0.01);
+    }
+    await expect(rig({ ...duo, matteBorderMaterials: ["Missing seal"] })).rejects.toThrow(
+      "has no Missing seal material",
     );
   });
 
