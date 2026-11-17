@@ -160,49 +160,6 @@ On macOS, set the variables on the emulator command itself. A protected system p
 in between, such as `nohup` or a `/bin/sh` that receives the variables, removes `DYLD_*`
 variables, and then the agent does not load.
 
-### On EAS
-
-EAS workflows start emulators with `eas/start_android_emulator`, before the Hub starts.
-Give that step the agent in its environment:
-
-```yaml
-jobs:
-  test:
-    runs_on: linux-large-nested-virtualization
-    image: ubuntu-26.04-jdk-17-ndk-r27b-sdk-58
-    steps:
-      - uses: eas/checkout
-      - name: Install the capture agent
-        # Pin the agent to the version that your expo-device-hub release installs: the
-        # Hub uses this agent instead of its own (EXPO_DEVICE_HUB_EMULATOR_CAPTURE_LIBRARY).
-        run: npm install --prefix /tmp/emulator-capture expo-emulator-capture@<version>
-      - uses: eas/start_android_emulator
-        with:
-          system_image_package: system-images;android-36;google_apis;x86_64
-        env:
-          LD_PRELOAD: /tmp/emulator-capture/node_modules/expo-emulator-capture/dist/linux-x64/libexpo_emulator_capture.so
-          EXPO_EMULATOR_CAPTURE_SOCKET: /tmp/expo-emulator-capture/emulator-5554.sock
-          ANDROID_EMULATOR_EXTRA_ARGS: -gpu lavapipe
-      - name: Start the Hub
-        run: |
-          EXPO_DEVICE_HUB_EMULATOR_CAPTURE_LIBRARY=/tmp/emulator-capture/node_modules/expo-emulator-capture/dist/linux-x64/libexpo_emulator_capture.so \
-            npx expo-device-hub@<version> --experimental-emulator-capture --platform android &
-```
-
-- The first emulator gets the console port 5554, so its serial is `emulator-5554`. EAS
-  does not set `TMPDIR`, so the Hub looks for the socket in `/tmp/expo-emulator-capture`.
-  On a host that sets `TMPDIR`, use the path from
-  `npx expo-emulator-capture socket-path --port 5554`.
-- The step passes its environment to every program that it starts, also to `sdkmanager`,
-  `avdmanager` and `adb`. The agent stays idle in every process that is not QEMU.
-- `EXPO_DEVICE_HUB_EMULATOR_CAPTURE_LIBRARY` lets the Hub use the same agent for emulators
-  that it boots itself, instead of installing the package again.
-- The image already has x264 build 165. On another Ubuntu 26.04 image, add
-  `sudo apt-get install -y libx264-165` before the emulator step.
-- One socket serves one emulator, so the step's `count` input, which starts several
-  emulators with the same environment, does not work with the agent.
-- Use the agent and the Hub from one release. Nothing checks that they match.
-
 ### On a host that several users share
 
 The socket directory, `<tmpdir>/expo-emulator-capture`, must belong to the user alone (mode
