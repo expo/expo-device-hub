@@ -1,19 +1,19 @@
 import { type DeviceClient } from "@expo/hub-client";
 import type { ScreenCorner, ScreenShape } from "@expo/hub-client/shapes";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { type CSSProperties } from "react";
+import { type CSSProperties, useState } from "react";
 
 import { LOADING_LABEL, PhoneIcon, bg, icon, screenOff, text, textSize } from "../primitives";
 import { useLingering } from "./useLingering";
 
 // The two times are also in `theme.css`, as `--hub-screen-live-fade` and
-// `--hub-screen-glow-exit`; keep both in step.
+// `--hub-screen-stage-exit`; keep both in step.
 /** How long the live picture takes to fade in over the stage that it replaces, as on the website. */
 const LIVE_FADE_MS = 550;
-/** How long the glow takes to fade out, after the live picture covers it. */
-const GLOW_EXIT_MS = 650;
-/** How long the glow stays after the first frame: under the picture that fades in, and then for its own exit. */
-const GLOW_LINGER_MS = LIVE_FADE_MS + GLOW_EXIT_MS;
+/** How long a stage layer takes to fade out, after the live picture covers it. */
+const STAGE_EXIT_MS = 650;
+/** How long a stage layer stays after the first frame: under the picture that fades in, and then for its own exit. */
+const STAGE_LINGER_MS = LIVE_FADE_MS + STAGE_EXIT_MS;
 
 /**
  * What the flat device screen shows:
@@ -74,12 +74,13 @@ const UNAVAILABLE_STYLE: CSSProperties = {
 };
 
 /**
- * The layers under the stream of a flat device screen, one per stage. They are
+ * The layer under the stream of a flat device screen: one per stage, and
  * opaque, so the page never shows through the screen. The `live` stage has no
- * layer: a solid layer under a presented stream shows as a thin line along the
- * clipped edge of the screen.
+ * layer of its own, because a solid layer under a presented stream shows as a
+ * thin line along the clipped edge of the screen. The layer of the stage
+ * before it stays until the live picture has faded in.
  */
-// @ref LLP 0015#stages — the glow stays opaque until the live picture has faded in above it
+// @ref LLP 0015#stages — a stage layer stays opaque until the live picture has faded in above it
 export function DeviceScreenStageLayers({
   stage,
   error,
@@ -94,52 +95,64 @@ export function DeviceScreenStageLayers({
   /** The corners of the screen, so that the glow follows them. */
   borderRadius?: string;
 }) {
-  const connecting = stage === "connecting";
-  // With reduced motion the glow does not fade, and it goes after the same time.
-  const glow = useLingering(connecting, GLOW_LINGER_MS);
+  const live = stage === "live";
+  // The stage that the screen leaves for the live picture, with what it showed. Its layer
+  // stays opaque under the picture while that fades in, and then fades out.
+  const [last, setLast] = useState({ stage, error });
+  if (!live && (stage !== last.stage || error !== last.error)) setLast({ stage, error });
+  // With reduced motion nothing fades, and the layer goes after the same time.
+  const shown = useLingering(!live, STAGE_LINGER_MS);
+  if (!shown) return null;
 
+  const layer = live ? last : { stage, error };
+  // A layer that leaves says nothing: its state is over.
+  const leaving = live ? { "data-leaving": "true", "aria-hidden": true } : null;
+  const testId = (id: string) => (live ? "device-screen-stage-leaving" : id);
+
+  if (layer.stage === "connecting") {
+    return (
+      <div
+        className="hub-screen-stage hub-screen-glow"
+        data-testid={testId("device-screen-loading")}
+        role={live ? undefined : "status"}
+        {...leaving}
+        style={
+          {
+            ...LAYER_STYLE,
+            borderRadius,
+            // 1% of the screen's short side: the unit of the glow's lengths.
+            "--hub-screen-unit": `${(1 / Math.max(ratio, 1)).toFixed(4)}cqw`,
+          } as CSSProperties
+        }
+      >
+        {!live && <VisuallyHidden>{LOADING_LABEL}</VisuallyHidden>}
+      </div>
+    );
+  }
+  if (layer.stage === "unavailable") {
+    return (
+      <div
+        className="hub-screen-stage"
+        data-testid={testId("device-screen-unavailable")}
+        {...leaving}
+        style={UNAVAILABLE_STYLE}
+      >
+        <PhoneIcon size={32} color={icon.secondary} />
+        <div role={live ? undefined : "alert"}>
+          <p style={{ ...textSize.sm, fontWeight: 600, color: text.default, margin: 0 }}>
+            Device screen unavailable
+          </p>
+          <p style={{ ...textSize.sm, color: text.secondary, margin: "8px 0 0" }}>{layer.error}</p>
+        </div>
+      </div>
+    );
+  }
   return (
-    <>
-      {stage === "off" && (
-        <div
-          data-testid="device-screen-surface"
-          style={{ ...LAYER_STYLE, backgroundColor: screenOff }}
-        />
-      )}
-      {glow && (
-        <div
-          className="hub-screen-glow"
-          data-testid={connecting ? "device-screen-loading" : "device-screen-glow-leaving"}
-          data-leaving={connecting ? undefined : "true"}
-          role={connecting ? "status" : undefined}
-          aria-hidden={connecting ? undefined : true}
-          style={
-            {
-              ...LAYER_STYLE,
-              borderRadius,
-              // 1% of the screen's short side: the unit of the glow's lengths.
-              "--hub-screen-unit": `${(1 / Math.max(ratio, 1)).toFixed(4)}cqw`,
-            } as CSSProperties
-          }
-        >
-          {connecting && <VisuallyHidden>{LOADING_LABEL}</VisuallyHidden>}
-        </div>
-      )}
-      {stage === "unavailable" && (
-        <div
-          className="hub-screen-unavailable"
-          data-testid="device-screen-unavailable"
-          style={UNAVAILABLE_STYLE}
-        >
-          <PhoneIcon size={32} color={icon.secondary} />
-          <div role="alert">
-            <p style={{ ...textSize.sm, fontWeight: 600, color: text.default, margin: 0 }}>
-              Device screen unavailable
-            </p>
-            <p style={{ ...textSize.sm, color: text.secondary, margin: "8px 0 0" }}>{error}</p>
-          </div>
-        </div>
-      )}
-    </>
+    <div
+      className="hub-screen-stage"
+      data-testid={testId("device-screen-surface")}
+      {...leaving}
+      style={{ ...LAYER_STYLE, backgroundColor: screenOff }}
+    />
   );
 }

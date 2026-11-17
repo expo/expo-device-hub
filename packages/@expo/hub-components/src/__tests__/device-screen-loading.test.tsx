@@ -200,7 +200,7 @@ describe("PhoneFrame first load", () => {
   test("glows on the black screen until the first frame, and the picture fades in above the glow", async () => {
     const { render, reported } = await frame(client("connecting", false));
     const glow = renderer!.root.findByProps({ "data-testid": "device-screen-loading" });
-    expect(glow.props.className).toBe("hub-screen-glow");
+    expect(glow.props.className).toBe("hub-screen-stage hub-screen-glow");
     // A status region announces its text: the one loading label, hidden inside it.
     expect(glow.props.role).toBe("status");
     expect(glow.findByType("span").children).toEqual([LOADING_LABEL]);
@@ -218,10 +218,25 @@ describe("PhoneFrame first load", () => {
     expect(stream().props.className).toBe("hub-screen-stream");
     expect(stream().props["data-presented"]).toBe("true");
     // The glow stays under the picture while that fades in. It announces nothing then.
-    const leaving = renderer!.root.findByProps({ "data-testid": "device-screen-glow-leaving" });
+    const leaving = renderer!.root.findByProps({ "data-testid": "device-screen-stage-leaving" });
+    expect(leaving.props.className).toBe("hub-screen-stage hub-screen-glow");
     expect(leaving.props["data-leaving"]).toBe("true");
     expect(leaving.props.role).toBeUndefined();
     expect(leaving.props["aria-hidden"]).toBe(true);
+  });
+
+  test("a session that recovers keeps its notice under the picture while that fades in", async () => {
+    const { render } = await frame(client("error", false));
+    expect(testIds(renderer!)).toContain("device-screen-unavailable");
+
+    // A retry presents the first frame. Without a layer under it, the page would show through the fade.
+    await render(client("streaming", true));
+    expect(testIds(renderer!)).not.toContain("device-screen-unavailable");
+    const leaving = renderer!.root.findByProps({ "data-testid": "device-screen-stage-leaving" });
+    expect(leaving.props["data-leaving"]).toBe("true");
+    // The notice still shows its text, and it is not an alert any more.
+    expect(leaving.findAllByType("p")[1]!.children).toEqual(["WebRTC offer failed: HTTP 403."]);
+    expect(renderer!.root.findAllByProps({ role: "alert" })).toHaveLength(0);
   });
 
   test("an input error shows over the glow, because input can work before the video", async () => {

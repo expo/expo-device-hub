@@ -36,7 +36,7 @@
   --hub-motion-base: 150ms;
   /* The stages of the device screen. `DeviceScreenStage.tsx` waits for the same times. */
   --hub-screen-live-fade: 550ms;
-  --hub-screen-glow-exit: 650ms;
+  --hub-screen-stage-exit: 650ms;
   /*
    * The keyboard focus ring: the website's `outline-icon-info`. It is an
    * outline, not a shadow, so that forced-colors mode keeps it, and its blue
@@ -392,9 +392,12 @@
   --hub-glow-highlight-blur: calc(var(--hub-screen-unit, 2.88px) * 4.86);
   --hub-glow-highlight-spread: calc(var(--hub-screen-unit, 2.88px) * 0.69);
 }
-/* The glow stays opaque until the live picture has faded in above it, then it fades out. */
-.hub-screen-glow[data-leaving="true"] {
-  animation: hub-fade-out var(--hub-screen-glow-exit) ease var(--hub-screen-live-fade) forwards;
+/*
+ * The layer of the stage before the live picture stays opaque until the picture
+ * has faded in above it, so the page never shows through. Then it fades out.
+ */
+.hub-screen-stage[data-leaving="true"] {
+  animation: hub-fade-out var(--hub-screen-stage-exit) ease var(--hub-screen-live-fade) forwards;
 }
 
 /* The light along the edge of the screen. */
@@ -495,11 +498,6 @@
   }
 }
 
-/* The notice of a session that failed before its first frame. */
-.hub-screen-unavailable {
-  animation: hub-fade-in 300ms ease;
-}
-
 /* ---- Status pill --------------------------------------------------------- */
 
 /* The ring that grows from the dot of a status that is in progress. */
@@ -537,8 +535,7 @@
   }
   .hub-screen-glow::before,
   .hub-screen-glow::after,
-  .hub-screen-glow[data-leaving="true"],
-  .hub-screen-unavailable,
+  .hub-screen-stage[data-leaving="true"],
   .hub-status-label {
     animation: none;
   }
