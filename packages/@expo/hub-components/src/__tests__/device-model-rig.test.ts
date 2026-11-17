@@ -4,7 +4,12 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { type GLTF, GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 import { DEVICE_MODELS, type DeviceModelDescription } from "../foldable/device-models";
-import { type DeviceModelRig, loadDeviceModel, rigDeviceModel } from "../foldable/device-model-rig";
+import {
+  CLEAR_GLASS_OPACITY,
+  type DeviceModelRig,
+  loadDeviceModel,
+  rigDeviceModel,
+} from "../foldable/device-model-rig";
 import { duoViewFolds } from "../foldable/duo-view";
 import { FILES, MODELS, MODELS_AVAILABLE, withoutTextures } from "./glb-fixtures";
 
@@ -141,6 +146,32 @@ describe.skipIf(!available)("the other models", () => {
       expect(bounds(phone.displays.main[0]!).max.z).toBeCloseTo(body.max.z, 1);
       phone.fold(folds(0));
       expect(bounds(phone.model).equals(body)).toBe(true);
+    }
+  });
+
+  test("no model has a transmissive material, which would draw the scene twice per frame", async () => {
+    for (const model of Object.values(DEVICE_MODELS)) {
+      const { rig: loaded, gltf } = await rig(model);
+      const materials = new Set<THREE.Material>();
+      loaded.model.traverse((object) => {
+        if (object instanceof THREE.Mesh)
+          for (const material of [object.material].flat()) materials.add(material);
+      });
+      // The GLBs author their camera glass as transmissive.
+      const authored = (
+        gltf.parser.json.materials as { extensions?: Record<string, unknown> }[]
+      ).filter((material) => material.extensions?.KHR_materials_transmission);
+      expect(authored.length).toBeGreaterThan(0);
+      for (const material of materials) {
+        if (!(material instanceof THREE.MeshPhysicalMaterial)) continue;
+        expect(material.transmission).toBe(0);
+      }
+      const glass = [...materials].filter((material) => material.opacity === CLEAR_GLASS_OPACITY);
+      expect(glass.length).toBe(authored.length);
+      for (const material of glass) {
+        expect(material.transparent).toBe(true);
+        expect(material.depthWrite).toBe(false);
+      }
     }
   });
 

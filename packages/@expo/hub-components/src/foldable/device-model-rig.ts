@@ -19,6 +19,13 @@ import { type DeviceModelDescription, type DeviceModelDisplay } from "./device-m
  */
 export const SCENE_UNITS_PER_METER = 100;
 
+/**
+ * The opacity of camera glass that the models author as transmissive. Clear
+ * glass shows what lies behind it, so a tenth of its near-white color keeps
+ * the lenses and the flash as the authored glass shows them.
+ */
+export const CLEAR_GLASS_OPACITY = 0.1;
+
 /** The leaves' rotations about the hinge, as the scene's views set them. */
 export type DeviceModelFolds = { left: number; right: number };
 
@@ -277,6 +284,19 @@ export function rigDeviceModel(description: DeviceModelDescription, gltf: GLTF):
   const materials = meshesUnder(asset).flatMap((mesh) =>
     Array.isArray(mesh.material) ? mesh.material : [mesh.material],
   );
+  // @ref LLP 0004#3d-preview-in-the-hub — camera glass is transparent, not transmissive
+  // Any transmissive material makes three.js draw the whole scene again every
+  // frame, into a multisampled target of the canvas's size with mipmaps, which
+  // took most of the GPU time; the models' only transmissive parts are small
+  // pieces of camera glass. Plain transparency keeps their look.
+  for (const material of new Set(materials)) {
+    if (!(material instanceof THREE.MeshPhysicalMaterial) || material.transmission <= 0) continue;
+    material.transmission = 0;
+    material.transparent = true;
+    material.opacity = CLEAR_GLASS_OPACITY;
+    material.depthWrite = false;
+    material.needsUpdate = true;
+  }
   const bezels = (description.bezelMaterials ?? []).map((name) => {
     const material = materials.find((candidate) => candidate.name === name);
     if (!(material instanceof THREE.MeshStandardMaterial)) {
