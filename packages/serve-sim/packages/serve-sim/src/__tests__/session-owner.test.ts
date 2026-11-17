@@ -313,3 +313,85 @@ test("owner shutdown cancels and drains in-flight configuration before returning
     state.restore();
   }
 });
+
+test("resident compatibility follows the selected device before consuming adoption", async () => {
+  const selected = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+  let configured = 0;
+  await fixture(
+    async () => {
+      configured++;
+    },
+    async ({ socket, secret, identity, claims, adopt }) => {
+      const { writeLaunchState } = await import("../launch-state");
+      writeLaunchState(selected, {
+        launchArgs: [],
+        capabilities: {
+          egressGuard: {
+            name: "egressGuard",
+            dylib: "/resident/guard.dylib",
+            env: { SERVE_SIM_EGRESS_POLICY_FILE: "/resident/policy" },
+            scope: "allProcesses",
+            loadPhase: "startup",
+            ownerPid: null,
+            bundleId: null,
+            resident: {
+              boot: { pid: 123, startedAt: "1720000000:42" },
+              warmupPolicy: "passthrough",
+            },
+          },
+        },
+      });
+      const response = await request(socket, {
+        secret,
+        method: "configure",
+        identity,
+        configuration: { ...configuration, device: selected },
+      });
+      expect(response.ok).toBe(false);
+      expect(claims()).toBe(0);
+      expect(configured).toBe(0);
+      await adopt();
+      expect(claims()).toBe(1);
+      expect(configured).toBe(1);
+    },
+  );
+});
+
+test("an enrolled owner refuses a device switch before consuming the claim", async () => {
+  const selected = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+  await fixture(
+    async () => {
+      throw new Error("configuration must not run");
+    },
+    async ({ socket, secret, identity, claims }) => {
+      const { writeLaunchState } = await import("../launch-state");
+      writeLaunchState(UDID, {
+        launchArgs: [],
+        capabilities: {
+          egressGuard: {
+            name: "egressGuard",
+            dylib: "/resident/guard.dylib",
+            env: { SERVE_SIM_EGRESS_POLICY_FILE: "/resident/policy" },
+            scope: "allProcesses",
+            loadPhase: "startup",
+            ownerPid: null,
+            bundleId: null,
+            resident: {
+              boot: { pid: 123, startedAt: "1720000000:42" },
+              warmupPolicy: "passthrough",
+            },
+          },
+        },
+      });
+      expect(
+        await request(socket, {
+          secret,
+          method: "configure",
+          identity,
+          configuration: { ...configuration, device: selected },
+        }),
+      ).toMatchObject({ ok: false });
+      expect(claims()).toBe(0);
+    },
+  );
+});

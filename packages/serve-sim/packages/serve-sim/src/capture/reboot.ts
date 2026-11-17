@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { bootDevice, shutdownDevice } from "../device";
 import { devicesArmedHere, rearmCapabilityLoader } from "../launch-manager";
 import { stateDir } from "../state";
+import { assertNoResidentEgress } from "../egress-resources";
 import { CaptureEnableError, captureRuntime, type CaptureRuntime } from "./runtime";
 import { type CaptureField } from "./fields";
 import { type CaptureMeta } from "./store";
@@ -82,6 +83,7 @@ export async function rebootWithCapture(
   /** What the new session keeps instead of the server's default; only used when enabling. */
   fields?: readonly CaptureField[],
 ): Promise<CaptureMeta> {
+  assertNoResidentEgress(udid, "Capture reboot");
   const runtime = deps.runtime ?? captureRuntime;
   // Resolved now, so an omitted list and the same list given explicitly share one reboot.
   const sessionFields = fields ?? runtime.defaultFields();
@@ -96,6 +98,8 @@ export async function rebootWithCapture(
     await running.promise.catch(() => {});
     if (latestRequest.get(udid) !== request) return runtime.metaFor(udid);
   }
+
+  assertNoResidentEgress(udid, "Capture reboot");
 
   // Loaded when a reboot runs: the CLI imports this module at startup, and the device session
   // loads the native capture and HID code.

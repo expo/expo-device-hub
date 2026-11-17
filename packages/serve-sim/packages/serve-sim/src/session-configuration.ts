@@ -73,6 +73,7 @@ export const sessionConfigurationSchema = z
       })
       .strict()
       .optional(),
+    egressPolicy: z.enum(["block", "passthrough"]).optional(),
     networkCapture: z.boolean(),
     networkCaptureFields: z.array(z.enum(CAPTURE_FIELDS)).max(4),
     networkCaptureProxy: z

@@ -1,5 +1,6 @@
-import { bootDevice, confirmDeviceBooted, shutdownDevice } from "./device";
 import { assertNoResidentEgress } from "./egress-resources";
+import { checkResidentEgressBoot } from "./egress";
+import { bootDevice, confirmDeviceBooted, shutdownDevice } from "./device";
 import { retireDeviceSession } from "./device-session";
 import { captureRuntime } from "./capture";
 import { releaseSession } from "./launch-manager";
@@ -23,10 +24,17 @@ export async function startDeviceInProcess(
 ): Promise<void> {
   const { signal } = options;
   signal?.throwIfAborted();
+  const resident = await checkResidentEgressBoot(udid);
   await bootDevice(udid, { allowBootedRecovery: !options.requireReady });
   signal?.throwIfAborted();
+  // @ref LLP 0011#resident-egress-startup — refuse setup on an already-replaced resident boot
+  if (resident) {
+    await checkResidentEgressBoot(udid, resident);
+    signal?.throwIfAborted();
+  }
   await onBoot?.();
   signal?.throwIfAborted();
+  if (resident) await checkResidentEgressBoot(udid, resident);
   writeServeSimState(gridDeviceState(udid, port, base, streamSettings, sessionToken));
 }
 
@@ -72,6 +80,8 @@ export async function prepareDeviceOnce(
       preparedDevices.delete(key);
     }
   }
+  // Shared preparation never enrolls a device or inherits a server warmup policy.
+  assertNoResidentEgress(udid, "Device preparation");
   await prepare();
   preparedDevices.add(key);
 }

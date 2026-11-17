@@ -5,6 +5,7 @@ let failStop: string | undefined;
 let notBooted: string | undefined;
 const pendingStops: (() => void)[] = [];
 mock.module("../../egress-resources", () => ({ assertNoResidentEgress: () => {} }));
+mock.module("../../egress", () => ({ checkResidentEgressBoot: async () => null }));
 mock.module("../../device", () => ({
   bootDevice: async () => {},
   shutdownDevice: async () => {},

@@ -1,12 +1,13 @@
 import { execSync } from "child_process";
-import { assertNoResidentEgress } from "./egress-resources";
 
+import { BOOT_TIMEOUT_MS, simctl } from "./simctl";
+export { BOOT_TIMEOUT_MS } from "./simctl";
+import { checkResidentEgressBoot } from "./egress";
 import { validatedAdditionalDylibs } from "./additional-dylibs";
 import { timeStartup } from "./startup-timing";
-import { simctl } from "./simctl";
+import { assertNoResidentEgress } from "./egress-resources";
 
 const SHUTDOWN_TIMEOUT_MS = 60_000;
-export const BOOT_TIMEOUT_MS = 120_000;
 const CONFIRM_BOOTED_TIMEOUT_MS = 10_000;
 
 /**
@@ -120,6 +121,12 @@ export async function bootDevice(
   udid: string,
   options: { allowBootedRecovery?: boolean } = {},
 ): Promise<void> {
+  const resident = await checkResidentEgressBoot(udid);
+  if (resident) {
+    await simctl(["bootstatus", udid], BOOT_TIMEOUT_MS);
+    await checkResidentEgressBoot(udid, resident);
+    return;
+  }
   validatedAdditionalDylibs();
   await timeStartup(
     "simulator-boot",
@@ -159,9 +166,11 @@ export async function bootDevice(
  * does not boot a device that shut down, which would lose its capability loader; it times out.
  */
 export async function confirmDeviceBooted(udid: string): Promise<void> {
+  const resident = await checkResidentEgressBoot(udid);
   await timeStartup(
     "simulator-bootstatus",
     () => simctl(["bootstatus", udid], CONFIRM_BOOTED_TIMEOUT_MS),
     udid,
   );
+  if (resident) await checkResidentEgressBoot(udid, resident);
 }

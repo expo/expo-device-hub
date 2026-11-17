@@ -123,6 +123,13 @@ const CaptureFieldList = z
   .refine((fields) => new Set(fields).size === fields.length, "list each capture field once");
 
 const ACTION_SCHEMAS = {
+  // @ref LLP 0003#egress-policy-controls — policy actions cannot enroll or claim a session
+  "egress.status": z
+    .object({ udid: DeviceUdid })
+    .meta({ description: "Read egress policy for this device." }),
+  "egress.set": z
+    .object({ udid: DeviceUdid, enabled: z.boolean() })
+    .meta({ description: "Block or allow new external connection attempts." }),
   "clipboard.read": z
     .object({ udid: ClipboardDevice })
     .meta({ description: "Read simulator clipboard text." }),
@@ -467,6 +474,8 @@ type HostActionName = keyof typeof ACTION_SCHEMAS;
  * here instead.
  */
 const PROCEDURE_ACTIONS = [
+  "egress.status",
+  "egress.set",
   "actions.describe",
   "clipboard.read",
   "clipboard.write",
@@ -759,6 +768,25 @@ async function runProcedureAsync(
   deviceName?: (udid: string) => string | undefined,
 ): Promise<HostActionResult> {
   switch (action) {
+    case "egress.status":
+    case "egress.set": {
+      const p = parseParams(action, raw);
+      const { egressControlStatus, setEgressControl } = await import("./egress");
+      try {
+        const status =
+          "enabled" in p
+            ? await setEgressControl(p.udid, p.enabled)
+            : await egressControlStatus(p.udid);
+        return ok(JSON.stringify(status));
+      } catch (error) {
+        console.error(`[serve-sim] ${action} failed`, error);
+        return {
+          stdout: "",
+          stderr: error instanceof Error ? error.message : String(error),
+          exitCode: 1,
+        };
+      }
+    }
     case "clipboard.read":
     case "clipboard.write":
     case "clipboard.copy":
@@ -871,9 +899,7 @@ async function runProcedureAsync(
       } catch (error) {
         return {
           stdout: "",
-          stderr:
-            `Could not reboot the device: ${error instanceof Error ? error.message : String(error)}. ` +
-            "The device may now be shut down, so boot it from the sidebar and try again.",
+          stderr: `Could not reboot the device: ${error instanceof Error ? error.message : String(error)}`,
           exitCode: 1,
         };
       }

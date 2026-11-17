@@ -26,6 +26,7 @@ import {
   type ServeSimDeviceState,
 } from "./state";
 import { isLoopbackHost } from "./middleware-utils";
+import { preflightEgressAdoption, requiredEgressAdoption } from "./egress";
 
 const MAX_MESSAGE_BYTES = 64 * 1024;
 // Adoption may drain a background boot and then boot the selected device.
@@ -182,6 +183,19 @@ export async function startSessionOwner(
           respond({ ok: false, error: "session_already_configured" });
           return;
         }
+        // Compatibility may wait for the device lock/native probes; it is configuration work.
+        socket.setTimeout(CONFIGURATION_TIMEOUT_MS, () => socket.destroy());
+        const requestedDevice = sessionConfigurationSchema.shape.device.safeParse(
+          request.configuration?.device,
+        );
+        await preflightEgressAdoption(
+          requestedDevice.success ? (requestedDevice.data ?? device) : device,
+          request.configuration?.egressPolicy,
+          process.pid,
+          device,
+        );
+        // Preflight may await native identity reads. A competing claim or disconnect must win.
+        if (claimed || closed || socket.destroyed) return;
         // Reserve before parsing or awaiting native setup. Failure requires a new process.
         claimed = true;
         server.close();
@@ -194,7 +208,15 @@ export async function startSessionOwner(
         const cancel = () => cancellation.abort();
         socket.once("close", cancel);
         try {
-          configurationTask = configure(configuration, cancellation.signal);
+          configurationTask = (async () => {
+            await requiredEgressAdoption(
+              configuration.device ?? device,
+              configuration.egressPolicy,
+              cancellation.signal,
+            );
+            cancellation.signal.throwIfAborted();
+            await configure(configuration, cancellation.signal);
+          })();
           await configurationTask;
           cancellation.signal.throwIfAborted();
           if (!closed)
@@ -375,6 +397,7 @@ export async function adoptSession(
       "Prepared serve-sim identity or startup environment is incompatible; use a cold start",
     );
   }
+  await preflightEgressAdoption(device, configuration.egressPolicy, state.pid, expected.device);
   const result = await localOwnerRequest(socketPath, secret, {
     method: "configure",
     identity: expected,
