@@ -104,7 +104,9 @@ export const DEVICE_MODELS: Readonly<Record<DeviceModelId, DeviceModelDescriptio
       },
     },
     hinge: { bend: "duo", left: "Leaf L • outer display", right: "Leaf R • rear cameras" },
-    // The inner display's seal, and the cover display's rim.
+    // The inner display's seal, and the cover display's rim. The GLB also uses
+    // them for recesses: gaskets, camera barrels, the speaker and microphone
+    // cavities, and the inside of the USB-C port, which turn from gray to black.
     matteBorderMaterials: [
       "Elastomer • graphite perimeter seal",
       "Optical barrel • anodized black",

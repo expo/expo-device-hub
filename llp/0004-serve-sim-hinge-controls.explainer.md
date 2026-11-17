@@ -753,7 +753,12 @@ files, their source commit, and their sizes are in
   10 and the rim at 12, beside 10 for the iPhone 18 Pro's bezel [observed:
   front renders of the open and the closed Duo with one value changed at a
   time, 2026-11-17; `matteBorderMaterials` in `device-models.ts`,
-  `MATTE_BORDER_METALNESS` in `device-model-rig.ts`].
+  `MATTE_BORDER_METALNESS` in `device-model-rig.ts`]. The GLB uses the same
+  two materials for recesses: gaskets, camera barrels, the speaker and
+  microphone cavities, and the inside of the USB-C port. They turn from gray
+  to black as well, which suits a recess, and the USB-C contacts stay visible
+  [observed: close renders of those parts at metalness 0 and 0.85,
+  2026-11-17].
 - **Streams.** The iPhone Duo streams each display on its own, and keeps its
   fold events, presets, and hinge handles. Every other model shows the flat
   stream. The frame's shape names the display it shows. The Pixel 9 Pro Fold
