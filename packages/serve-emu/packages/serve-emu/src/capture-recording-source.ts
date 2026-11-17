@@ -214,6 +214,8 @@ export async function startCaptureRecordingSource(
   };
 
   const onRecord = (record: GpuRecord, socket: Socket) => {
+    // Finalization owns the accepted frames now; late source events cannot invalidate them.
+    if (!recorder.active) return close();
     if (!canvas || offsetUs === null) throw new Error("Capture recording arrived before hello");
     if (record.flags === GPU_RECORD.replaced) {
       close();
@@ -294,7 +296,7 @@ export async function startCaptureRecordingSource(
       let started = false;
       let received = 0;
       const timer = setTimeout(
-        () => fail(new GpuCaptureUnavailableError("The emulator capture agent did not answer")),
+        () => fail(new CaptureAgentGoneError("The emulator capture agent did not answer")),
         options.helloTimeoutMs ?? HELLO_TIMEOUT_MS,
       );
       timer.unref?.();
@@ -362,7 +364,7 @@ export async function startCaptureRecordingSource(
         try {
           reader.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
         } catch (error) {
-          if (started && current === socket) recorder.fail(error);
+          if (started && current === socket && recorder.active) recorder.fail(error);
           fail(error);
         }
       });
@@ -393,7 +395,7 @@ export async function startCaptureRecordingSource(
     } catch (error) {
       if (error instanceof CaptureAgentGoneError) return ended(error.message);
       close();
-      recorder.fail(error);
+      if (recorder.active) recorder.fail(error);
     }
   };
 

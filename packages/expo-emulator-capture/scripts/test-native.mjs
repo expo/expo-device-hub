@@ -15,6 +15,8 @@ await $`${compiler} -std=c++17 -O2 -Wall -Wextra -I tests/fixtures/gum tests/gfx
 await $`./build/gfxstream-startup-test`;
 
 if (process.platform === "darwin" && process.arch === "arm64") {
-  await $`clang++ -std=c++17 -fobjc-arc -O2 -Wall -Wextra tests/videotoolbox.test.mm src/native/encoder-videotoolbox.mm -framework Foundation -framework CoreFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework VideoToolbox -o build/videotoolbox-test`;
-  await $`./build/videotoolbox-test`;
+  for (const test of ["videotoolbox", "videotoolbox-letterbox"]) {
+    await $`clang++ -std=c++17 -fobjc-arc -O2 -Wall -Wextra tests/${test}.test.mm src/native/encoder-videotoolbox.mm -framework Foundation -framework CoreFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework VideoToolbox -o build/${test}-test`;
+    await $`./build/${test}-test`;
+  }
 }

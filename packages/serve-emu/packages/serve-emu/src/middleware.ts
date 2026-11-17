@@ -3093,12 +3093,11 @@ export function createRouter(
         recording = { ...recording, ...independent };
         // Shutdown can begin while the source opens, before stopAll can see this recording.
         if (stopped) throw new Error("serve-emu router is stopped");
+        // An app created during startup has no recording; reject rather than publish stale status.
+        if (apps.size || pending.size)
+          throw new Error("Screen recording must start before device capture.");
         screenRecording = recording;
         if (!independent) {
-          // A viewer could have created the app during the awaits above; that app has no
-          // recorder, and a recording of the stream's packets needs it.
-          if (apps.size || pending.size)
-            throw new Error("Screen recording must start before device capture.");
           await ensure(serial);
         }
         await Promise.race([

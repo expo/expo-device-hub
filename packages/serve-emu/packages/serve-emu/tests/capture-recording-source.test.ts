@@ -124,7 +124,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function setup() {
+async function setup(options: { finish?(): Promise<void> } = {}) {
   const root = await mkdtemp(join(tmpdir(), "capture-recording-"));
   roots.push(root);
   const agent = await fakeAgent(root);
@@ -143,7 +143,9 @@ async function setup() {
         add: async (sample) => {
           samples.push({ isKey: sample.isKey, timestamp: sample.timestamp });
         },
-        finish: async () => {},
+        finish: async () => {
+          await options.finish?.();
+        },
         cancel: async () => {},
       };
     },
@@ -183,6 +185,103 @@ const until = async (condition: () => boolean, timeoutMs = 2_000) => {
 };
 
 describe("capture recording source", () => {
+  for (const event of ["replacement", "invalid packet", "failed reconnect"] as const) {
+    test(`a late ${event} cannot fail a recording that is finalizing`, async () => {
+      let finishingWriter!: () => void;
+      const writerEntered = new Promise<void>((resolve) => {
+        finishingWriter = resolve;
+      });
+      let releaseWriter!: () => void;
+      const writerGate = new Promise<void>((resolve) => {
+        releaseWriter = resolve;
+      });
+      const { agent, start, recorder, manifest, advance } = await setup({
+        finish: async () => {
+          finishingWriter();
+          await writerGate;
+        },
+      });
+      agent.onConnect((socket, index) => {
+        if (index === 0) socket.write(hello({ protocol: 3, clockUs: 1_000_000 }));
+      });
+      const source = await start();
+      agent.peers[0]!.write(
+        Buffer.concat([
+          configured(
+            { width: 1080, height: 2424 },
+            { x: 0, y: 0, width: 1080, height: 2424 },
+            1_000_100,
+          ),
+          record(GPU_RECORD.keyFrame, keyFrame, 1_000_100n, 1080, 2424),
+        ]),
+      );
+      await recorder.ready;
+      advance(1_000_000n);
+      if (event === "failed reconnect") {
+        agent.peers[0]!.destroy();
+        await until(() => agent.peers.length === 2);
+      }
+      const finishing = recorder.finish();
+      // Attach the rejection handler before the injected event, including on the old code.
+      const outcome = finishing.then(
+        () => "complete",
+        (error: Error) => error.message,
+      );
+      await writerEntered;
+      const peer = agent.peers[event === "failed reconnect" ? 1 : 0]!;
+      try {
+        peer.write(
+          event === "replacement"
+            ? record(GPU_RECORD.replaced, Buffer.alloc(0), 0n, 0, 0)
+            : event === "failed reconnect"
+              ? hello({ protocol: 2 })
+              : Buffer.alloc(32, 0xff),
+        );
+        await until(() => peer.destroyed);
+        expect(recorder.snapshot().status).toBe("finalizing");
+      } finally {
+        releaseWriter();
+        await outcome;
+        source.close();
+        await agent.close();
+      }
+      expect(await outcome).toBe("complete");
+      expect(await manifest()).toMatchObject({ status: "complete", recording: "recording.mp4" });
+    });
+  }
+
+  test("a reconnect without hello finishes the existing recording with device-ended", async () => {
+    const { agent, start, recorder, manifest, advance } = await setup();
+    agent.onConnect((socket, index) => {
+      if (index === 0) socket.write(hello({ protocol: 3, clockUs: 1_000_000 }));
+    });
+    const source = await start({ helloTimeoutMs: 30 });
+    try {
+      agent.peers[0]!.write(
+        Buffer.concat([
+          configured(
+            { width: 1080, height: 2424 },
+            { x: 0, y: 0, width: 1080, height: 2424 },
+            1_000_100,
+          ),
+          record(GPU_RECORD.keyFrame, keyFrame, 1_000_100n, 1080, 2424),
+        ]),
+      );
+      await recorder.ready;
+      advance(1_000_000n);
+      agent.peers[0]!.destroy();
+      await until(() => !recorder.active && recorder.snapshot().status !== "finalizing");
+      expect(recorder.snapshot().status).toBe("complete");
+      expect(await manifest()).toMatchObject({
+        stopReason: "device-ended",
+        recording: "recording.mp4",
+      });
+    } finally {
+      source.close();
+      await agent.close();
+    }
+  });
+
   test("takes the recording role with its canvas and its own settings", async () => {
     const { agent, start, recorder, samples } = await setup();
     agent.onConnect((socket) => socket.write(hello({ protocol: 3, clockUs: 1_000_000 })));
@@ -350,6 +449,95 @@ describe("capture recording source", () => {
     );
     await expect(start()).rejects.toBeInstanceOf(GpuCaptureEncoderError);
     await agent.close();
+  });
+
+  test("a delayed frame keeps its old geometry after the next fold is configured", async () => {
+    const { agent, start, recorder, manifest, advance } = await setup();
+    agent.onConnect((socket) =>
+      socket.write(hello({ protocol: 3, clockUs: 1_000_000 }, 2076, 2152)),
+    );
+    const source = await start({ displays: PIXEL_9_PRO_FOLD });
+    const canvas = source.canvas;
+    try {
+      agent.peers[0]!.write(
+        Buffer.concat([
+          configured(canvas, { x: 0, y: 136, width: 2076, height: 2152 }, 1_000_100),
+          record(GPU_RECORD.keyFrame, keyFrame, 1_000_100n, 2076, 2424),
+        ]),
+      );
+      await recorder.ready;
+      agent.peers[0]!.write(
+        Buffer.concat([
+          record(GPU_RECORD.resized, Buffer.alloc(0), 0n, 1080, 2424),
+          configured(canvas, { x: 498, y: 0, width: 1080, height: 2424 }, 2_000_100),
+          // The asynchronous encoder delivers the old display's frame after the new config.
+          record(GPU_RECORD.frame, delta, 1_500_100n, 2076, 2424),
+          record(GPU_RECORD.keyFrame, keyFrame, 2_000_100n, 2076, 2424),
+        ]),
+      );
+      await until(() => (recorder.snapshot() as { frames?: number }).frames === 3);
+      advance(2_000_000n);
+      await recorder.finish();
+      expect((await manifest()).deviceStates).toEqual([
+        {
+          timeMs: 0,
+          state: {
+            width: 2076,
+            height: 2152,
+            screen: "inner",
+            contentRect: { x: 0, y: 136, width: 2076, height: 2152 },
+          },
+        },
+        {
+          timeMs: 1000,
+          state: {
+            width: 1080,
+            height: 2424,
+            screen: "outer",
+            contentRect: { x: 498, y: 0, width: 1080, height: 2424 },
+          },
+        },
+      ]);
+    } finally {
+      source.close();
+      await agent.close();
+    }
+  });
+
+  test("stops reconnecting after three retries within a minute", async () => {
+    const { agent, start, recorder } = await setup();
+    agent.onConnect((socket, index) =>
+      socket.write(hello({ protocol: 3, clockUs: (index + 1) * 1_000_000 })),
+    );
+    const source = await start();
+    try {
+      agent.peers[0]!.write(
+        Buffer.concat([
+          configured(
+            { width: 1080, height: 2424 },
+            { x: 0, y: 0, width: 1080, height: 2424 },
+            1_000_100,
+          ),
+          record(GPU_RECORD.keyFrame, keyFrame, 1_000_100n, 1080, 2424),
+        ]),
+      );
+      await recorder.ready;
+      for (let index = 0; index < 3; index++) {
+        agent.peers[index]!.destroy();
+        await agent.commandsOf(index + 1, 3);
+        expect(recorder.active).toBe(true);
+      }
+      agent.peers[3]!.destroy();
+      await until(() => !recorder.active);
+      expect(agent.peers).toHaveLength(4);
+      expect(recorder.snapshot()).toMatchObject({
+        status: "failed",
+        error: expect.stringContaining("keeps closing the recording"),
+      });
+    } finally {
+      source.close();
+      await agent.close();
+    }
   });
 
   test("refuses a socket that nothing answers", async () => {
