@@ -106,6 +106,50 @@ const switchSource = (router: ReturnType<typeof createRouter>, mode: StreamMode)
   );
 
 describe("router recording with the capture agent", () => {
+  test("rejects a recording when a viewer creates an app during its handshake", async () => {
+    let entered!: () => void;
+    const entering = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let resume!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    let recorder!: AgentRecorder;
+    let closes = 0;
+    const { router, created, options, manifest } = await setup(async (source) => {
+      entered();
+      await gate;
+      recorder = source.recorder;
+      agentFrame(recorder);
+      await recorder.ready;
+      return {
+        canvas: { width: 1080, height: 2424 },
+        close: () => {
+          closes++;
+        },
+      };
+    });
+    const starting = router.startScreenRecording(options).then(
+      () => null,
+      (error: Error) => error,
+    );
+    await entering;
+    await router.ensure("emulator-5554");
+    resume();
+    try {
+      expect(await starting).toMatchObject({
+        message: "Screen recording must start before device capture.",
+      });
+      expect(closes).toBe(1);
+      expect(recorder.active).toBe(false);
+      expect(created).toHaveLength(1);
+      expect(await manifest()).toMatchObject({ status: "failed" });
+    } finally {
+      await router.stopAll();
+    }
+  });
+
   for (const stage of ["hardware read", "agent handshake"] as const) {
     test(`releases a recording when shutdown starts during its ${stage}`, async () => {
       let entered!: () => void;
