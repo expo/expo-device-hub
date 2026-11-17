@@ -242,7 +242,8 @@
   box-shadow: var(--expo-theme-shadows-sm);
 }
 .hub-slider:focus-visible {
-  box-shadow: var(--hub-focus-ring);
+  outline: var(--hub-focus-outline);
+  outline-offset: 2px;
 }
 
 /*
@@ -259,7 +260,9 @@
     background-color: var(--expo-theme-background-subtle);
   }
 }
+/* The row spans the sidebar, so its focus outline is inside it, as the website's inset ring. */
 .hub-section-trigger:focus-visible {
+  outline: var(--hub-focus-outline);
+  outline-offset: -2px;
   background-color: var(--expo-theme-background-subtle);
-  box-shadow: inset 0 0 0 2px var(--expo-theme-icon-info);
 }
