@@ -4,6 +4,7 @@ const calls: string[] = [];
 let failStop: string | undefined;
 let notBooted: string | undefined;
 const pendingStops: (() => void)[] = [];
+mock.module("../../egress-resources", () => ({ assertNoResidentEgress: () => {} }));
 mock.module("../../device", () => ({
   bootDevice: async () => {},
   shutdownDevice: async () => {},
