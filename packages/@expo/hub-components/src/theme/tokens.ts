@@ -188,8 +188,10 @@ export const accent = {
   default: "var(--blue-10)",
   /** The thumb of a slider: `palette-blue9`. */
   thumb: "var(--blue-9)",
-  /** The knob of a switch and the ring of a slider thumb: `palette-white`. */
+  /** The knob of a switch that is on, and the ring of a slider thumb: `palette-white`. */
   knob: "var(--expo-color-white)",
+  /** The knob of a switch that is off: white, and `palette-gray11` in the dark theme. */
+  knobOff: "var(--hub-switch-knob-off)",
 } as const;
 
 /** Opacity of a state, not of a color. */

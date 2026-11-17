@@ -39,6 +39,9 @@
    */
   --hub-focus-outline: 2px solid var(--expo-theme-icon-info);
 
+  /* Knob of a switch that is off: white, and gray in the dark theme, as the website's Switch. */
+  --hub-switch-knob-off: var(--expo-color-white);
+
   /* Agent takeover prompt — stays bright against the dark status overlay. */
   --expo-theme-button-agent-overlay-background: var(--expo-color-white);
   --expo-theme-button-agent-overlay-border: transparent;
@@ -50,6 +53,7 @@
 }
 
 .dark-theme {
+  --hub-switch-knob-off: var(--slate-11);
   --expo-theme-button-agent-overlay-background: var(--slate-3);
   --expo-theme-button-agent-overlay-border: transparent;
   --expo-theme-button-agent-overlay-hover: var(--slate-5);

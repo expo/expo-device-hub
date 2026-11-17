@@ -73,7 +73,7 @@ export function SidebarSwitch({
             height: SWITCH_KNOB,
             margin: SWITCH_INSET,
             borderRadius: radius.full,
-            backgroundColor: accent.knob,
+            backgroundColor: checked ? accent.knob : accent.knobOff,
             boxShadow: shadow.xs,
             transform: `translateX(${checked ? SWITCH_TRAVEL : 0}px)`,
             transition: `transform ${motion.base} ${motion.easeInOut}`,
