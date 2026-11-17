@@ -183,17 +183,41 @@ try {
     ]);
     const archive = join(artifacts, "Hub Drop.tgz");
     execFileSync("tar", ["-czf", archive, "-C", artifacts, "Hub Drop.app"]);
+    // The fixture writes a "start" row on each launch. Its data survives the reinstall.
+    const dropLaunches = async () => {
+      try {
+        const data = execFileSync(
+          "xcrun",
+          ["simctl", "get_app_container", udid, "dev.expo.hub.drop-fixture", "data"],
+          { encoding: "utf8", stdio: "pipe" },
+        ).trim();
+        const rows = await readFile(join(data, "Documents/launches.tsv"), "utf8");
+        return rows.match(/^start\t/gm)?.length ?? 0;
+      } catch {
+        return 0;
+      }
+    };
     for (const source of [archive, dropApp]) {
+      const before = await dropLaunches();
       await browser.dropFiles([source]);
       await browser.waitForText(
-        `Installed ${source.endsWith(".tgz") ? "Hub Drop.tgz" : "Hub Drop.app"}`,
+        `Installed and opened ${source.endsWith(".tgz") ? "Hub Drop.tgz" : "Hub Drop.app"}`,
       );
       execFileSync(
         "xcrun",
         ["simctl", "get_app_container", udid, "dev.expo.hub.drop-fixture", "app"],
         { stdio: "pipe" },
       );
+      const deadline = Date.now() + 30000;
+      while ((await dropLaunches()) <= before) {
+        if (Date.now() > deadline) throw new Error(`The ${source} drop did not open the app`);
+        await pause(100);
+      }
     }
+    await writeFile(
+      join(artifacts, "dashboard-app-opened.png"),
+      Buffer.from(await browser.screenshot(), "base64"),
+    );
     await browser.dropFiles([join(artifacts, "dashboard")]);
     // The drag overlay shows the same guidance; only a handled drop removes it.
     await browser.waitForHtml(
@@ -206,7 +230,9 @@ try {
       join(artifacts, "dashboard-app-drop.png"),
       Buffer.from(await browser.screenshot(), "base64"),
     );
-    console.log("Dashboard archive and folder drops installed; invalid folder guidance visible.");
+    console.log(
+      "Dashboard archive and folder drops installed and opened the app; invalid folder guidance visible.",
+    );
   }
   await writeFile(join(artifacts, "verification.json"), JSON.stringify(verification, null, 2));
   await writeFile(join(artifacts, "wire.json"), JSON.stringify(proxy.snapshot(), null, 2));

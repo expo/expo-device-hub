@@ -225,10 +225,11 @@ async function installDroppedSource(
 
     // install/addmedia gives no progress signal — flip to indeterminate.
     onProgress(null);
-    const result = await transport(kind === "app" ? "app.install" : "media.add", {
-      udid,
-      uploadId,
-    });
+    // A dropped app opens after it installs.
+    const result = await transport(
+      kind === "app" ? "app.install" : "media.add",
+      kind === "app" ? { udid, uploadId, launch: true } : { udid, uploadId },
+    );
     if (result.exitCode !== 0) {
       const label = kind === "app" ? "install" : "addmedia";
       throw new Error(result.stderr || `${label} failed (exit ${result.exitCode})`);

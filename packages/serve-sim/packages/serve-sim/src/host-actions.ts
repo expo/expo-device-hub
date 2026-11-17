@@ -5,6 +5,7 @@ import { rm, stat } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
 import { installAppAsync } from "./app-install";
+import { APP_NOT_OPENED } from "./app-install-format";
 import { AppRelativePath, runAppFileAction } from "./app-files";
 
 import { CAPTURE_FIELDS } from "./capture/fields";
@@ -385,10 +386,15 @@ const ACTION_SCHEMAS = {
     .object({ path: ConfinedPath })
     .meta({ description: "Read an Info.plist as JSON." }),
   "app.install": z
-    .object({ udid: Device })
+    .object({
+      udid: Device,
+      // Opens the app after it installs, as app.launch with restart: false does.
+      launch: z.boolean().default(false),
+    })
     .and(FileSource)
     .meta({
-      description: "Install a simulator .app bundle or a .tar.gz/.tgz app archive.",
+      description:
+        "Install a simulator .app bundle or a .tar.gz/.tgz app archive. With launch, open the app after it installs.",
       args: ["path"],
       upload: "path",
       uploadArchive: "tar.gz",
@@ -530,6 +536,17 @@ function isHostActionName(action: string): action is HostActionName {
 }
 
 type ParamsFor<A extends HostActionName> = z.infer<(typeof ACTION_SCHEMAS)[A]>;
+
+async function launchWithOneRetry(udid: string, options: Parameters<typeof launchApp>[1]) {
+  try {
+    await launchApp(udid, options);
+  } catch (error) {
+    // A simctl call that hit its time limit gets one more try; other failures and a second stall do not.
+    if (!isSimctlTimeout(error)) throw error;
+    console.error(`app.launch on ${udid}: retrying once after ${(error as Error).message}`);
+    await launchApp(udid, options);
+  }
+}
 
 function parseParams<A extends HostActionName>(action: A, raw: unknown): ParamsFor<A> {
   const result = ACTION_SCHEMAS[action].safeParse(raw ?? {});
@@ -828,17 +845,42 @@ async function runProcedureAsync(
     }
     case "app.install": {
       const p = parseParams(action, raw);
+      // Launch state and locks use simctl's canonical uppercase UDID, so a launch needs one.
+      const launchUdid = p.launch ? DeviceUdid.safeParse(p.udid).data?.toUpperCase() : undefined;
+      if (p.launch && !launchUdid)
+        throw new InvalidHostActionError(`${action}: udid must be a simulator udid to launch`);
       const path = fileSourcePath(p);
       const uploadId = "uploadId" in p ? p.uploadId : getStagedUploadId(path);
       const deadline = Date.now() + actionTimeoutMs();
+      const options = { readBundleId: p.launch };
       try {
-        return uploadId === undefined
-          ? await installAppAsync(p.udid, path, deadline, serveSimBinPath)
-          : await withStagedUploadSnapshotAsync(
-              uploadId,
-              (source) => installAppAsync(p.udid, source, deadline, serveSimBinPath),
-              deadline,
-            );
+        const { bundleId, ...installed } =
+          uploadId === undefined
+            ? await installAppAsync(p.udid, path, deadline, serveSimBinPath, options)
+            : await withStagedUploadSnapshotAsync(
+                uploadId,
+                (source) => installAppAsync(p.udid, source, deadline, serveSimBinPath, options),
+                deadline,
+              );
+        if (!launchUdid || installed.exitCode !== 0) return installed;
+        try {
+          const app = BundleId.safeParse(bundleId).data;
+          if (!app)
+            throw new Error("Could not read a valid CFBundleIdentifier from its Info.plist.");
+          // simctl install has already stopped a running copy of the app.
+          await launchWithOneRetry(launchUdid, { bundleId: app, launchArgs: [], restart: false });
+          return installed;
+        } catch (error) {
+          const cause = error instanceof Error ? error.message : String(error);
+          return {
+            ...installed,
+            // Keep install warnings, such as a cleanup failure, after the cause.
+            stderr: redactHostPaths(
+              [APP_NOT_OPENED, cause, installed.stderr.trim()].filter(Boolean).join("\n"),
+            ),
+            exitCode: 1,
+          };
+        }
       } catch (error) {
         return {
           stdout: "",
@@ -853,17 +895,7 @@ async function runProcedureAsync(
         action,
         async () => {
           try {
-            const launch = () => launchApp(udid, { bundleId, launchArgs, restart, openUrl });
-            try {
-              await launch();
-            } catch (error) {
-              // A simctl call that hit its time limit gets one more try; other failures and a second stall do not.
-              if (!isSimctlTimeout(error)) throw error;
-              console.error(
-                `app.launch on ${udid}: retrying once after ${(error as Error).message}`,
-              );
-              await launch();
-            }
+            await launchWithOneRetry(udid, { bundleId, launchArgs, restart, openUrl });
             return ok();
           } catch (error) {
             return {

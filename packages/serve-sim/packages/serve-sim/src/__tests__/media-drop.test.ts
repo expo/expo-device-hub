@@ -8,10 +8,12 @@ import type { AppFolderEntry } from "../client/utils/app-drop-folder";
 import { packAppFolder } from "../client/utils/app-drop-folder";
 
 const actions: string[] = [];
+const sentParams = new Map<string, Record<string, unknown>>();
 let failure: string | undefined;
 let failureMessage = "host operation failed";
 beforeEach(() => {
   actions.length = 0;
+  sentParams.clear();
   failure = undefined;
   failureMessage = "host operation failed";
 });
@@ -20,8 +22,9 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 void mock.module("../client/utils/pack-app-in-worker", () => ({ packAppInWorker: packAppFolder }));
 
 void mock.module("../socket/client-control", () => ({
-  runHostAction: async (action: string) => {
+  runHostAction: async (action: string, params: Record<string, unknown> = {}) => {
     actions.push(action);
+    sentParams.set(action, params);
     if (failure === "disconnect" && action === "upload.append")
       throw new Error("channel disconnected");
     return action === failure
@@ -273,6 +276,8 @@ test("a mixed drop reports rejected files while valid media completes and is cle
   expect(ends[0]).toMatchObject({ ok: false, message: UNSUPPORTED_INSTALL_FORMAT });
   expect(ends[1]).toMatchObject({ ok: true });
   expect(actions).toEqual(["upload.append", "media.add", "upload.remove"]);
+  // Only app installs ask the host to open what they added.
+  expect(sentParams.get("media.add")).not.toHaveProperty("launch");
 });
 
 test("a host screenshot takes precedence over files and reports host failure without uploading", async () => {
@@ -306,5 +311,6 @@ test.each(["build.tar.gz", "build.tgz", "BUILD.TAR.GZ"])(
       expect.objectContaining({ ok: true }),
     ]);
     expect(actions).toEqual(["upload.append", "app.install", "upload.remove"]);
+    expect(sentParams.get("app.install")).toMatchObject({ launch: true });
   },
 );

@@ -165,6 +165,8 @@ test("streams bounded upload chunks, installs only after packing, and removes th
     chunks.every((c) => Buffer.from(String(c.params.data), "base64").length <= DROP_CHUNK_BYTES),
   ).toBe(true);
   expect(calls.slice(-2).map((c) => c.action)).toEqual(["app.install", "upload.remove"]);
+  // The dropped app opens after it installs.
+  expect(calls.at(-2)?.params).toMatchObject({ udid: "UDID", launch: true });
 });
 
 test.each(["directory", "file", "contents"])(

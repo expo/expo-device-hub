@@ -40,7 +40,8 @@ HUB_E2E_UDID=<owned-booted-udid> bun run --filter expo-device-hub test:e2e:clien
 ```
 
 Add `--app-drop` to also drop a real app archive and `.app` folder through the
-dashboard, verify their installed container, and capture `dashboard-app-drop.png`.
+dashboard, verify their installed container and that each drop opened the app, and
+capture `dashboard-app-opened.png` and `dashboard-app-drop.png`.
 This uses the same built serve-sim assets and authenticated control connection
 as the dashboard. It requires the archive-support stack and the headless browser,
 so it cannot be combined with `--interactive`.

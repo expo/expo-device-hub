@@ -90,7 +90,9 @@ export function UploadToastContent({
             !transferring &&
             (toast.kind === "app" ? `Installing ${toast.name}…` : `Adding ${toast.name}…`)}
           {toast.status === "success" &&
-            (toast.kind === "app" ? `Installed ${toast.name}` : `Added ${toast.name} to Photos`)}
+            (toast.kind === "app"
+              ? `Installed and opened ${toast.name}`
+              : `Added ${toast.name} to Photos`)}
         </span>
       </div>
       {isUploading && (

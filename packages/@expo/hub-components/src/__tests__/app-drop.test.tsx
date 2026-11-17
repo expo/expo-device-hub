@@ -153,6 +153,39 @@ test("accepts archives and gives folder guidance without the directory entry API
   }
 });
 
+test.each([
+  [{ opened: true }, "Installed and opened Opened.tgz"],
+  // An older Simulator server installs without opening the app.
+  [undefined, "Installed Opened.tgz"],
+])("reports whether the dropped app opened: %p", async (result, text) => {
+  const backend = {
+    installFolder: mock(async () => result),
+    installFile: mock(async (_file: File) => result),
+  };
+  let renderer!: ReactTestRenderer;
+  function Harness() {
+    const drop = useAppDrop(backend, true, "device-a");
+    return createElement("section", drop.props, drop.notice);
+  }
+  try {
+    await act(async () => {
+      renderer = create(createElement(Harness));
+    });
+    await act(async () => {
+      renderer.root.findByType("section").props.onDrop({
+        preventDefault() {},
+        stopPropagation() {},
+        dataTransfer: { files: [new File([], "Opened.tgz")], items: [{ kind: "file" }] },
+      } as unknown as DragEvent);
+    });
+    const html = JSON.stringify(renderer.toJSON());
+    expect(html).toContain(text);
+    if (!result) expect(html).not.toContain("opened");
+  } finally {
+    await act(async () => renderer?.unmount());
+  }
+});
+
 test("dismisses a notice through the shared button with an accessible name", async () => {
   const backend = { installFolder: mock(async () => {}), installFile: mock(async () => {}) };
   let renderer!: ReactTestRenderer;

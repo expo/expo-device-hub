@@ -868,6 +868,12 @@ export type ScreenshotCapture = {
   metadata?: ScreenshotMetadata;
 };
 
+/** The outcome of an app drop. Older Simulator servers resolve without it. */
+export type AppInstallResult = {
+  /** True when the app opened after it installed. */
+  opened?: boolean;
+};
+
 /**
  * The live state + controls for one device connection. Returned by the hook and
  * consumed by {@link DeviceScreen} (for video + input) and by the surrounding
@@ -876,11 +882,14 @@ export type ScreenshotCapture = {
 export interface DeviceClient {
   /** iOS Simulator installs; absent for backends that do not support app drops. */
   appInstall?: {
-    installFile: (file: File, progress: (value: number | null) => void) => Promise<void>;
+    installFile: (
+      file: File,
+      progress: (value: number | null) => void,
+    ) => Promise<AppInstallResult | void>;
     installFolder: (
       entry: FileSystemEntry,
       progress: (value: number | null) => void,
-    ) => Promise<void>;
+    ) => Promise<AppInstallResult | void>;
   } | null;
   platform: DevicePlatform;
   status: ConnectionStatus;

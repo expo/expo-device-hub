@@ -1,4 +1,4 @@
-import { UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
+import { APP_NOT_OPENED, UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
 import { APP_FOLDER_GUIDANCE, APP_FOLDER_UNREADABLE } from "./app-drop-folder";
 import type { DropKind } from "./drop";
 
@@ -44,6 +44,14 @@ export function describeUploadError(name: string, kind: DropKind, message = ""):
     return {
       title: `Cannot read ${name}`,
       body: "Drop a .tar.gz archive instead. Folder drops can lose symlinks and file permissions.",
+      details: cause || undefined,
+    };
+  }
+  if (text.startsWith(APP_NOT_OPENED)) {
+    const cause = text.slice(APP_NOT_OPENED.length).trim();
+    return {
+      title: `Installed ${name}`,
+      body: "The app did not open. Open it from the Home Screen.",
       details: cause || undefined,
     };
   }
