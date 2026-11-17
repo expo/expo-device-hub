@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode } from "react";
+import { type ButtonHTMLAttributes, type CSSProperties, type ReactNode, type Ref } from "react";
 
 import { radius, textSize } from "../theme/tokens";
 import { cx } from "./cx";
@@ -80,23 +80,24 @@ export const BUTTON_HEIGHTS: Record<ButtonSize, number> = {
 };
 
 // Height / horizontal padding / radius / font size per size — mirrors the
-// website's getSizeClasses (h-N, px-N, rounded, text-*).
+// website's getSizeClasses (h-N, px-N, rounded, text-*). The website rounds a
+// button by its own height, so every size is a pill.
 const SIZE_STYLES: Record<ButtonSize, CSSProperties> = {
   "2xs": {
     height: BUTTON_HEIGHTS["2xs"],
     paddingInline: 8,
-    borderRadius: radius.lg,
+    borderRadius: radius.full,
     ...textSize.xs,
   },
-  xs: { height: BUTTON_HEIGHTS.xs, paddingInline: 12, borderRadius: radius.lg, ...textSize.xs },
-  sm: { height: BUTTON_HEIGHTS.sm, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
-  md: { height: BUTTON_HEIGHTS.md, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
-  lg: { height: BUTTON_HEIGHTS.lg, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
-  xl: { height: BUTTON_HEIGHTS.xl, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
+  xs: { height: BUTTON_HEIGHTS.xs, paddingInline: 12, borderRadius: radius.full, ...textSize.xs },
+  sm: { height: BUTTON_HEIGHTS.sm, paddingInline: 16, borderRadius: radius.full, ...textSize.sm },
+  md: { height: BUTTON_HEIGHTS.md, paddingInline: 16, borderRadius: radius.full, ...textSize.sm },
+  lg: { height: BUTTON_HEIGHTS.lg, paddingInline: 24, borderRadius: radius.full, ...textSize.base },
+  xl: { height: BUTTON_HEIGHTS.xl, paddingInline: 24, borderRadius: radius.full, ...textSize.base },
   "2xl": {
     height: BUTTON_HEIGHTS["2xl"],
     paddingInline: 24,
-    borderRadius: radius.lg,
+    borderRadius: radius.full,
     ...textSize.lg,
   },
 };
@@ -120,7 +121,12 @@ export type ButtonProps = {
   onClick?: () => void;
   className?: string;
   style?: CSSProperties;
-};
+  /** The `<button>` element. Not passed to a link. */
+  ref?: Ref<HTMLButtonElement>;
+} & Pick<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  "id" | "title" | "aria-label" | "aria-describedby" | "aria-pressed" | "aria-expanded"
+>;
 
 export function Button({
   children,
@@ -136,6 +142,8 @@ export function Button({
   onClick,
   className,
   style,
+  ref,
+  ...aria
 }: ButtonProps) {
   const t = BUTTON_THEME_TOKENS[theme];
 
@@ -149,12 +157,13 @@ export function Button({
     justifyContent: "center",
     gap: size === "2xs" ? 4 : size === "xs" ? 6 : 8,
     border: "1px solid",
-    fontWeight: 500,
     whiteSpace: "nowrap",
     cursor: disabled ? "default" : "pointer",
     textDecoration: "none",
     width: block ? "100%" : undefined,
     ...SIZE_STYLES[size],
+    // After the size's text style, whose weight is the body weight: a button label is medium.
+    fontWeight: 500,
     borderColor: disabled ? t.disabledBorder : t.border,
     color: disabled ? t.disabledText : t.text,
     opacity: disabled ? 0.8 : 1,
@@ -180,6 +189,7 @@ export function Button({
         className={pressableClassName}
         style={baseStyle}
         onClick={disabled ? undefined : onClick}
+        {...aria}
       >
         {content}
       </a>
@@ -188,11 +198,13 @@ export function Button({
 
   return (
     <button
+      ref={ref}
       type={type}
       className={pressableClassName}
       style={baseStyle}
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
+      {...aria}
     >
       {content}
     </button>

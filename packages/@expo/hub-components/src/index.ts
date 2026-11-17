@@ -38,7 +38,6 @@ export { Dropdown } from "./components/Dropdown";
 export { DropdownItem } from "./components/DropdownItem";
 export { IconButton, type IconButtonProps } from "./components/IconButton";
 export { Logo } from "./components/Logo";
-export { PillButton, type PillButtonProps } from "./components/PillButton";
 export { ResizeHandle } from "./components/ResizeHandle";
 export { Select, type SelectOption, type SelectProps } from "./components/Select";
 export { SidebarToggle } from "./components/SidebarToggle";

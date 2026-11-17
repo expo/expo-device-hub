@@ -6,11 +6,12 @@ import {
   PlusIcon,
   bg,
   border,
-  icon,
+  heading,
   radius,
   text,
   textSize,
 } from "../primitives";
+import { SIDEBAR_SECTION_INSET } from "./CollapsibleSection";
 import { RecentDevicesModal } from "./RecentDevicesModal";
 import {
   type AddDeviceOutcome,
@@ -21,8 +22,10 @@ import {
 
 /**
  * A titled, selectable list of devices (Simulators or Emulators) with an add
- * button. Selection is controlled by the parent so it can be shared across
- * sections — only one device is "open" at a time. The add button opens the
+ * button at the right of the title, from the dashboard design. A hairline
+ * separates it from what is above, like an inspector section. Selection is
+ * controlled by the parent so it can be shared across sections — only one
+ * device is "open" at a time. The add button opens the
  * "Add a simulator/emulator" picker; the chosen (or newly configured) device is
  * reported via `onAdd`.
  */
@@ -65,29 +68,49 @@ export function DeviceSection({
   const candidates = recent.filter((device) => !shownIds.has(device.id));
 
   return (
-    <section style={{ display: "grid", gap: 12, minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>{title}</span>
+    <section
+      aria-label={title}
+      style={{
+        display: "grid",
+        gap: 16,
+        minWidth: 0,
+        boxSizing: "border-box",
+        padding: SIDEBAR_SECTION_INSET,
+        borderTop: `0.5px solid ${border.default}`,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          // The title's line box, so that the add button does not change the row's height.
+          height: 20,
+        }}
+      >
+        <span style={{ ...heading.sm, color: text.default }}>{title}</span>
         {!!onAdd && (
           <IconButton
-            variant="outline"
-            size={26}
+            size={24}
             label={addLabel}
-            icon={<PlusIcon size={18} color={icon.secondary} />}
+            icon={<PlusIcon size={16} strokeWidth={2} />}
             onClick={() => setModalOpen(true)}
+            // The plus glyph, not the button's box, lines up with the right edge of the rows.
+            style={{ marginRight: -4 }}
           />
         )}
       </div>
 
-      <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
+      <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
         {devices.length === 0 ? (
           <p
             style={{
               ...textSize.sm,
               color: text.secondary,
               margin: 0,
-              padding: "12px 16px",
-              borderRadius: radius.xl,
+              padding: "7px 8px",
+              borderRadius: radius.lg,
               border: `1px dashed ${border.default}`,
               backgroundColor: bg.default,
             }}
@@ -100,6 +123,7 @@ export function DeviceSection({
               key={device.id}
               name={device.name}
               version={device.version}
+              platform={device.platform}
               unsupported={!device.supported}
               usedByAgent={agentDeviceIds.includes(device.id)}
               selected={device.id === selectedId}

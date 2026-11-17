@@ -133,6 +133,57 @@ the device's appearance is the inspector's Appearance setting. [observed: Hub
 `StreamControls.tsx`] [confirmed: Billy Roh, 2026-10-29, requested moving the right pane
 into the left pane and removing the Theme button]
 
+#### Sidebar look
+
+The sidebar has the look of the website's preview settings. A hairline separates each section;
+a section's title row is 52px high and takes the subtle surface under the pointer; an option
+is a label with its control at the right, 20px from the next option. A select is a box of
+36px with 8px corners and one shared width, a switch turns blue when on, and a button is a
+pill. [observed: HubComponents `CollapsibleSection.tsx`, `SidebarRow.tsx`, `Select.tsx`,
+`SidebarSwitch.tsx`, `Button.tsx`; universe `SimulatorPreviewSection.tsx`,
+`SimulatorPreviewOptions.tsx`, `ui/components/Select.tsx`, `ui/components/Switch` at
+`d24ccaa940`] [confirmed: Krystof Woldrich, 2026-11-17, requested the website's font, sizes,
+selects, sliders and buttons for the sidebar, with the Hub's own sections and options]
+
+The device lists are the Hub's own, because the website shows one device per preview. A list
+has its title with the add button at the right, and one 36px row per device with the
+platform's mark, the name, and the OS version. The selected row has the info surface and
+border. [observed: HubComponents `DeviceSection.tsx`, `DeviceListItem.tsx`]
+[confirmed: Krystof Woldrich, 2026-11-17, gave the design frames of the lists]
+
+#### Steady inspector
+
+The inspector does not add or remove sections and rows while a device connects or
+reconnects. [confirmed: Krystof Woldrich, 2026-11-17, requested that options stay displayed
+and only change their value or lock]
+
+- **Sections.** A selected device always has Current app, Device options, Stream options
+  and Logs, and the sections of its platform: Accessibility, Location, Clipboard and Events
+  on iOS; Camera, Accessibility, Location, Permissions and Events on Android. A section whose
+  capability the device does not report says that it is not available, in place of its
+  controls. [observed: `PLATFORM_SECTIONS` in `InspectorSections.tsx`]
+- **Rows.** Device options has one fixed list of rows per platform. A row that the device
+  cannot change now is locked: while the settings load, without a reason; while the Hub
+  cannot read them, or on a device that does not have the setting, with the reason in a
+  tooltip. A select whose value is not known shows a placeholder.
+  [observed: `SELECT_SETTINGS`, `SWITCH_SETTINGS` and `lockReason` in `DeviceOptionsSection.tsx`]
+- **Kept values.** A client reports its capabilities, device settings, stream capabilities,
+  stream settings, stream source, orientation and fold as absent while it connects, and again
+  on each reconnect. On iOS the settings are cleared whenever the exec channel's URL or token
+  changes. [observed: the settings effect in HubClient `useIosDevice.ts`] The inspector keeps
+  the last value of those fields for each device and shows it, and locks the rows that hold
+  a kept value until the client reports again. A device that has not reported yet starts
+  with the capabilities of the last device of its platform, so its sections are in place
+  before it connects. The kept values are only for the layout: commands and the fields that
+  say whether a control can be used are always the live ones.
+  [observed: `useSteadyClient.ts`]
+
+The website does the same for its fixed set of options: it shows every option of the
+platform while the settings load and disables them.
+[observed: universe `SimulatorPreviewOptions.tsx` at `d24ccaa940`] The Hub differs in one
+point: it does not hide an option that the device reports as unsupported, because a row
+that leaves after the first read is also a change of the list.
+
 ### Hub toolbar
 
 The toolbar under the device has the look of the website's device controls: one rounded bar

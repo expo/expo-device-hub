@@ -20,11 +20,21 @@ import { SectionNote } from "./SectionNote";
 import { SidebarRow } from "./SidebarRow";
 import { type StreamModeAvailability } from "./data";
 import { StreamStatistics } from "./StreamStatistics";
+import { type SteadyField } from "./useSteadyClient";
 
 type StreamTransport = "http" | "websocket" | "webrtc";
 
+const NOTHING_STALE: ReadonlySet<SteadyField> = new Set();
+
+/** Why a stream setting is locked while the device does not report its stream settings. */
+export const STREAM_SETTINGS_UNAVAILABLE_REASON =
+  "Stream settings are available once the device reconnects.";
+
 export type StreamOptionsSectionProps = {
+  /** The client to read from. Pass the client of `useSteadyClient` to keep rows over a reconnect. */
   client: DeviceClient;
+  /** The fields of `client` that hold a kept value. Their rows lock. */
+  stale?: ReadonlySet<SteadyField>;
   /** Whether the section is initially expanded. */
   defaultOpen?: boolean;
   streamMode?: DeviceStreamMode;
@@ -177,6 +187,7 @@ function withCurrentValue(
 /** Viewer transport, backend-supported codecs, and optional runtime encoder controls. */
 export function StreamOptionsSection({
   client,
+  stale = NOTHING_STALE,
   defaultOpen = false,
   streamMode = "mjpeg",
   httpCodec,
@@ -216,9 +227,18 @@ export function StreamOptionsSection({
   const inputSourceOptions = GRPC_INPUT_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableInputSources.includes(option.value),
   );
-  const settingsReady = client.streamSettings !== null;
+  // A kept copy of the settings shows their last values, but only live settings can change.
+  const settingsReady = client.streamSettings !== null && !stale.has("streamSettings");
   const settingsDisabled =
     recordingControlsLocked || !settingsReady || client.streamSettingsPending;
+  const settingsDisabledReason =
+    recordingDisabledReason ??
+    (stale.has("streamSettings") ? STREAM_SETTINGS_UNAVAILABLE_REASON : undefined);
+  const sourceDisabled =
+    recordingControlsLocked || client.streamSourcePending || stale.has("streamSource");
+  const sourceDisabledReason =
+    recordingDisabledReason ??
+    (stale.has("streamSource") ? STREAM_SETTINGS_UNAVAILABLE_REASON : undefined);
   const transport: StreamTransport = activeStreamMode === "webrtc" ? "webrtc" : primaryTransport;
   const setStreamStatsEnabled = client.setStreamStatsEnabled;
   const httpAvailable = availability.mjpeg || availability.h264;
@@ -293,8 +313,8 @@ export function StreamOptionsSection({
             ariaLabel="Stream source"
             options={sourceOptions}
             value={streamSource.mode}
-            disabled={recordingControlsLocked || client.streamSourcePending}
-            disabledReason={recordingDisabledReason}
+            disabled={sourceDisabled}
+            disabledReason={sourceDisabledReason}
             onChange={client.setStreamSource}
           />
         </SidebarRow>
@@ -307,8 +327,8 @@ export function StreamOptionsSection({
                 ariaLabel="Input source"
                 options={inputSourceOptions}
                 value={streamSource.inputSource}
-                disabled={recordingControlsLocked || client.streamSourcePending}
-                disabledReason={recordingDisabledReason}
+                disabled={sourceDisabled}
+                disabledReason={sourceDisabledReason}
                 onChange={client.setGrpcInputSource}
               />
             </SidebarRow>
@@ -318,8 +338,8 @@ export function StreamOptionsSection({
               ariaLabel="gRPC image mode"
               options={GRPC_IMAGE_MODE_OPTIONS}
               value={streamSource.grpcImageMode}
-              disabled={recordingControlsLocked || client.streamSourcePending}
-              disabledReason={recordingDisabledReason}
+              disabled={sourceDisabled}
+              disabledReason={sourceDisabledReason}
               onChange={client.setGrpcImageMode}
             />
           </SidebarRow>
@@ -331,8 +351,8 @@ export function StreamOptionsSection({
                 disabled: !streamSource.availableEncoders.includes(option.value),
               }))}
               value={streamSource.encoder}
-              disabled={recordingControlsLocked || client.streamSourcePending}
-              disabledReason={recordingDisabledReason}
+              disabled={sourceDisabled}
+              disabledReason={sourceDisabledReason}
               onChange={client.setGrpcEncoder}
             />
           </SidebarRow>
@@ -403,7 +423,7 @@ export function StreamOptionsSection({
                   (activeFor === "mjpeg" && transport !== "http") ||
                   (activeFor === "h264" && !h264Active)
                 }
-                disabledReason={recordingDisabledReason}
+                disabledReason={settingsDisabledReason}
                 onChange={(value) => patchSetting(key, Number(value))}
               />
             </SidebarRow>

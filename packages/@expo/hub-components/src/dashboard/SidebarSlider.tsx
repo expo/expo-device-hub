@@ -1,4 +1,6 @@
-import { opacity, text } from "../primitives";
+import { type CSSProperties } from "react";
+
+import { opacity } from "../primitives";
 
 const SLIDER_ADJUST_KEYS = new Set([
   "ArrowLeft",
@@ -12,7 +14,10 @@ const SLIDER_ADJUST_KEYS = new Set([
 ]);
 
 /**
- * A compact range input for numeric inspector rows. `onAdjustStart`/`onAdjustEnd`
+ * A compact range input for numeric inspector rows. The `.hub-slider` rules in
+ * `theme.css` draw it in the look of the website's sliders: a thin track, and
+ * a blue thumb with a white ring. The filled part of the track follows
+ * `--hub-slider-fill`. `onAdjustStart`/`onAdjustEnd`
  * bracket a pointer drag or key hold, so a caller can keep showing the dragged
  * value while each step awaits the device's acknowledgement.
  */
@@ -63,14 +68,15 @@ export function SidebarSlider({
       }}
       onKeyUp={onAdjustEnd}
       onBlur={onAdjustEnd}
-      style={{
-        width,
-        margin: 0,
-        flexShrink: 0,
-        accentColor: text.default,
-        cursor: disabled ? "default" : "pointer",
-        opacity: disabled ? opacity.disabled : 1,
-      }}
+      className="hub-slider"
+      style={
+        {
+          "--hub-slider-fill": `${max > min ? ((value - min) / (max - min)) * 100 : 0}%`,
+          width,
+          cursor: disabled ? "default" : "pointer",
+          opacity: disabled ? opacity.disabled : 1,
+        } as CSSProperties
+      }
     />
   );
 }

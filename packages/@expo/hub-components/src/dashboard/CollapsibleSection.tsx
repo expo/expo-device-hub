@@ -13,8 +13,12 @@ import {
 /** Horizontal inset shared by every right-sidebar section. */
 export const SIDEBAR_SECTION_INSET = 16;
 
-/** How long a section takes to open or close: `motion.panel`, as a number for the unmount timer. */
-export const SECTION_TRANSITION_MS = Number.parseInt(motion.panel, 10);
+/** How long a section takes to open or close: the website's 150ms, as a number for the unmount timer. */
+export const SECTION_TRANSITION_MS = Number.parseInt(motion.base, 10);
+/** The easing of the website's `collapsibleOpen` and `collapsibleClosed` animations. */
+const SECTION_EASING = "ease-out";
+/** Height of the title row: the website's `h-13`. */
+const SECTION_TRIGGER_HEIGHT = 52;
 
 /**
  * Keep closing content mounted until its collapse transition has finished, so
@@ -41,10 +45,12 @@ function useCollapsePresence(open: boolean, reducedMotion: boolean) {
 /**
  * An inspector section whose entire title row toggles its contents.
  *
- * Sections stack with a hairline separator above each title. The separator
- * spans the full sidebar width while the title and content keep the shared
- * {@link SIDEBAR_SECTION_INSET}. The title is vertically centered in its row,
- * and the content animates open and closed.
+ * It has the look of a section of the website's preview settings
+ * (`SimulatorPreviewSection`). Sections stack with a hairline separator above
+ * each title. The separator and the title row span the full sidebar width,
+ * and the title row takes the subtle surface under the pointer. The title and
+ * the content keep the shared {@link SIDEBAR_SECTION_INSET}. The content
+ * animates open and closed.
  */
 export function CollapsibleSection({
   title,
@@ -70,8 +76,7 @@ export function CollapsibleSection({
       style={{
         minWidth: 0,
         boxSizing: "border-box",
-        padding: `0 ${SIDEBAR_SECTION_INSET}px`,
-        borderTop: divider ? `1px solid ${border.default}` : undefined,
+        borderTop: divider ? `0.5px solid ${border.default}` : undefined,
       }}
     >
       <button
@@ -79,16 +84,18 @@ export function CollapsibleSection({
         aria-expanded={open}
         aria-controls={contentId}
         onClick={() => onOpenChange(!open)}
+        // The class gives the row the hover fill and the inset focus ring of the website's sections.
+        className="hub-section-trigger"
         style={{
           display: "flex",
           width: "100%",
+          height: SECTION_TRIGGER_HEIGHT,
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 12,
-          padding: "18px 0",
+          gap: 16,
+          padding: `0 ${SIDEBAR_SECTION_INSET}px`,
           boxSizing: "border-box",
           border: 0,
-          backgroundColor: "transparent",
           color: text.default,
           fontFamily: "inherit",
           textAlign: "left",
@@ -98,12 +105,12 @@ export function CollapsibleSection({
         <span style={{ ...heading.sm, minWidth: 0, color: text.default }}>{title}</span>
         <ChevronDownIcon
           size={16}
-          strokeWidth={1.5}
-          color={icon.default}
+          strokeWidth={2}
+          color={icon.secondary}
           style={{
             flexShrink: 0,
             transform: open ? "rotate(0deg)" : "rotate(-90deg)",
-            transition: reducedMotion ? undefined : `transform ${motion.panel} ${motion.easeOut}`,
+            transition: reducedMotion ? undefined : `transform ${motion.base} ${motion.ease}`,
           }}
         />
       </button>
@@ -113,7 +120,7 @@ export function CollapsibleSection({
           gridTemplateRows: open ? "1fr" : "0fr",
           transition: reducedMotion
             ? undefined
-            : `grid-template-rows ${motion.panel} ${motion.easeOut}`,
+            : `grid-template-rows ${motion.base} ${SECTION_EASING}`,
         }}
       >
         <div
@@ -125,10 +132,14 @@ export function CollapsibleSection({
             overflow: "clip",
             overflowClipMargin: 4,
             opacity: open ? 1 : 0,
-            transition: reducedMotion ? undefined : `opacity ${motion.panel} ${motion.ease}`,
+            transition: reducedMotion ? undefined : `opacity ${motion.base} ${SECTION_EASING}`,
           }}
         >
-          {present && <div style={{ minWidth: 0, paddingBottom: 12 }}>{children}</div>}
+          {present && (
+            <div style={{ minWidth: 0, padding: `0 ${SIDEBAR_SECTION_INSET}px 8px` }}>
+              {children}
+            </div>
+          )}
         </div>
       </div>
     </section>

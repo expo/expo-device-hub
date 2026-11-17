@@ -37,7 +37,7 @@ const STREAMING_CLIENT = {
 describe("agent device status", () => {
   test("labels active device rows and renders the blue status badge", () => {
     const markup = renderToStaticMarkup(
-      <DeviceListItem name="iPhone 16 Pro" version="iOS 18.6" usedByAgent />,
+      <DeviceListItem platform="ios" name="iPhone 16 Pro" version="iOS 18.6" usedByAgent />,
     );
 
     expect(markup).toContain('aria-label="iPhone 16 Pro, iOS 18.6, used by agent"');
@@ -47,7 +47,9 @@ describe("agent device status", () => {
   });
 
   test("keeps inactive status space reserved without exposing the status", () => {
-    const markup = renderToStaticMarkup(<DeviceListItem name="iPhone 16" version="iOS 26.5" />);
+    const markup = renderToStaticMarkup(
+      <DeviceListItem platform="ios" name="iPhone 16" version="iOS 26.5" />,
+    );
 
     expect(markup).toContain('data-agent-device-status="inactive"');
     expect(markup).toContain("visibility:hidden");
@@ -56,7 +58,12 @@ describe("agent device status", () => {
 
   test("keeps long device rows contained and compacts agent status when needed", () => {
     const markup = renderToStaticMarkup(
-      <DeviceListItem name="Medium_Phone_API_36.1" version="Android 16.0" usedByAgent />,
+      <DeviceListItem
+        platform="ios"
+        name="Medium_Phone_API_36.1"
+        version="Android 16.0"
+        usedByAgent
+      />,
     );
     const buttonTag = markup.slice(0, markup.indexOf(">") + 1);
 

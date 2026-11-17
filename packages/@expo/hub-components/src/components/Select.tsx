@@ -25,9 +25,9 @@ import {
   textSize,
   truncate,
 } from "../theme/tokens";
-import { CheckIcon, ChevronDownIcon } from "./icons";
-import { pillControlProps } from "./pill";
 import { DisabledControlHint } from "./DisabledControlHint";
+import { FIELD_HEIGHT, FIELD_WIDTH, fieldControlProps } from "./field";
+import { CheckIcon, ChevronDownIcon } from "./icons";
 
 export type SelectOption<Value extends string = string> = {
   value: Value;
@@ -46,9 +46,14 @@ export type SelectProps<Value extends string> = {
   onChange: (value: Value) => void;
   /** Re-apply an already selected action, without changing ordinary select behavior. */
   onReselect?: (value: Value) => void;
+  /** Shown in place of the value while it is unknown, such as before the device reports it. */
+  placeholder?: string;
+  /** Width of the trigger in px. Every select of a column has the same width. */
+  width?: number;
 };
 
-const ITEM_HEIGHT = 28;
+/** What a select shows for a value that is not known: the website's placeholder. */
+export const SELECT_PLACEHOLDER = "—";
 
 type SelectRegistration = {
   trigger: HTMLButtonElement | null;
@@ -74,11 +79,12 @@ function selectAtPoint(x: number, y: number, except: SelectRegistration) {
 }
 
 /**
- * A compact single-value select rendered as a soft pill: the current value
- * followed by a chevron. The closed trigger is only as wide as the selected
- * value; the open menu grows to fit its widest option instead of wrapping.
- * Clicking another select while this one is open closes this menu and opens
- * the other in the same click.
+ * A compact single-value select in the look of the website's preview options:
+ * a bordered box of a fixed width with the current value and a chevron. A
+ * value that is longer than the box ends in an ellipsis; the open menu grows
+ * to fit its widest option instead of wrapping. A value that is not one of
+ * the options shows the placeholder. Clicking another select while this one
+ * is open closes this menu and opens the other in the same click.
  * The offered option labels are exposed on the trigger as `data-test-options`
  * (newline-separated) so tests can read them, since the menu only renders
  * while open.
@@ -92,11 +98,14 @@ export function Select<Value extends string>({
   disabledReason,
   onChange,
   onReselect,
+  placeholder = SELECT_PLACEHOLDER,
+  width = FIELD_WIDTH,
 }: SelectProps<Value>) {
   const [open, setOpen] = useState(false);
-  const selectedLabel = options.find((option) => option.value === value)?.label ?? value;
+  const selectedOption = options.find((option) => option.value === value);
+  const selectedLabel = selectedOption?.label ?? (value || placeholder);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const pill = pillControlProps({ disabled, pressScale: 1 });
+  const field = fieldControlProps({ disabled, width });
   const pointerType = useRef("touch");
   const reselect = (option: SelectOption<Value>) => {
     if (!disabled && !option.disabled && option.value === value) onReselect?.(option.value);
@@ -140,36 +149,40 @@ export function Select<Value extends string>({
           aria-label={ariaLabel}
           aria-describedby={ariaDescribedBy}
           data-test-options={options.map((option) => option.label).join("\n")}
-          className={pill.className}
-          style={{
-            ...pill.style,
-            width: "max-content",
-            maxWidth: "100%",
-            justifyContent: "space-between",
-            padding: "0 8px 0 10px",
-          }}
+          className={field.className}
+          style={{ ...field.style, maxWidth: "100%" }}
         >
-          <span style={{ ...truncate, minWidth: 0 }}>
-            <Value>{selectedLabel}</Value>
+          <span
+            style={{
+              ...truncate,
+              minWidth: 0,
+              flex: 1,
+              textAlign: "left",
+              // The website shows a value that is not known in the quaternary color.
+              color: selectedOption || value ? undefined : text.quaternary,
+            }}
+          >
+            {/* Radix shows the placeholder, not the children, while the value is empty. */}
+            <Value placeholder={placeholder}>{selectedLabel}</Value>
           </span>
           <SelectIcon
             aria-hidden="true"
             style={{
               display: "flex",
               flexShrink: 0,
-              color: icon.default,
+              color: icon.secondary,
               transform: open ? "rotate(180deg)" : undefined,
               transition: `transform ${motion.fast} ${motion.ease}`,
             }}
           >
-            <ChevronDownIcon size={16} strokeWidth={1.5} />
+            <ChevronDownIcon size={16} strokeWidth={2} />
           </SelectIcon>
         </Trigger>
       </DisabledControlHint>
       <Portal>
         <Content
           position="popper"
-          align="end"
+          align="start"
           sideOffset={4}
           collisionPadding={8}
           onPointerDownOutside={(event) => {
@@ -186,7 +199,6 @@ export function Select<Value extends string>({
           className="will-change-[opacity,transform] data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade data-[side=right]:animate-slideLeftAndFade data-[side=top]:animate-slideDownAndFade"
           style={{
             ...textSize.sm,
-            fontWeight: 500,
             zIndex: layer.popover,
             width: "max-content",
             minWidth: "var(--radix-select-trigger-width)",
@@ -194,7 +206,6 @@ export function Select<Value extends string>({
             maxHeight: "var(--radix-select-content-available-height)",
             boxSizing: "border-box",
             overflow: "hidden",
-            padding: 4,
             border: `1px solid ${border.default}`,
             borderRadius: radius.lg,
             outline: "none",
@@ -232,17 +243,16 @@ export function Select<Value extends string>({
                     reselect(option);
                   }
                 }}
-                className="data-[highlighted]:bg-hover data-[state=checked]:bg-element"
+                className="data-[highlighted]:bg-element"
                 style={{
                   display: "flex",
                   width: "100%",
-                  height: ITEM_HEIGHT,
+                  minHeight: FIELD_HEIGHT,
                   alignItems: "center",
                   justifyContent: "space-between",
                   gap: 8,
                   boxSizing: "border-box",
-                  padding: "0 6px",
-                  borderRadius: radius.md,
+                  padding: "8px 12px",
                   outline: "none",
                   color: text.default,
                   cursor: option.disabled ? "default" : "pointer",
@@ -264,15 +274,15 @@ export function Select<Value extends string>({
                   aria-hidden="true"
                   style={{
                     display: "flex",
-                    width: 14,
+                    width: 16,
                     flexShrink: 0,
                     alignItems: "center",
                     justifyContent: "center",
-                    color: icon.default,
+                    color: icon.secondary,
                   }}
                 >
                   <ItemIndicator>
-                    <CheckIcon size={12} />
+                    <CheckIcon size={16} />
                   </ItemIndicator>
                 </span>
               </Item>

@@ -1,10 +1,10 @@
 import { type ReactNode } from "react";
 
-import { DisabledControlHint, PillButton } from "../primitives";
+import { Button, DisabledControlHint } from "../primitives";
 
 /**
- * The action control on an inspector row (Toggle, Press, Shut down, Remove):
- * a {@link PillButton}, so it matches the select pills on neighbouring rows.
+ * The action control on an inspector row (Toggle, Press, Shut down, Remove): a
+ * small secondary {@link Button}, as the website uses beside its options.
  */
 export function SidebarActionButton({
   children,
@@ -18,7 +18,7 @@ export function SidebarActionButton({
   disabled?: boolean;
   descriptionId?: string;
   disabledReason?: string;
-  /** Color the label as a destructive action (e.g. removing a device). */
+  /** Color the button as a destructive action (e.g. removing a device). */
   destructive?: boolean;
   onClick: () => void;
 }) {
@@ -27,14 +27,16 @@ export function SidebarActionButton({
       reason={disabled ? disabledReason : undefined}
       label={typeof children === "string" ? children : undefined}
     >
-      <PillButton
+      <Button
+        theme={destructive ? "secondary-destructive" : "secondary"}
+        size="xs"
         disabled={disabled}
         aria-describedby={descriptionId}
-        destructive={destructive}
         onClick={onClick}
+        style={{ flexShrink: 0 }}
       >
         {children}
-      </PillButton>
+      </Button>
     </DisabledControlHint>
   );
 }

@@ -1,17 +1,24 @@
 import { type DeviceClient, type DeviceHttpCodec, type DeviceStreamMode } from "@expo/hub-client";
+import { type ReactNode, useState } from "react";
+
 import { AccessibilitySection } from "./AccessibilitySection";
 import { CameraSection } from "./CameraSection";
 import { ClipboardSection } from "./ClipboardSection";
 import { type ClipboardRequest } from "./ClipboardToast";
 import { PermissionsSection } from "./PermissionsSection";
+import { CollapsibleSection } from "./CollapsibleSection";
 import { CurrentAppSection } from "./CurrentAppSection";
 import { DeviceOptionsSection } from "./DeviceOptionsSection";
 import { type FoldPreviewOption } from "./FoldSettings";
 import { EventsSection } from "./EventsSection";
 import { LocationSection } from "./LocationSection";
 import { LogsSection } from "./LogsSection";
+import { SectionNote } from "./SectionNote";
 import { StreamOptionsSection } from "./StreamOptionsSection";
-import { type Device, type StreamModeAvailability } from "./data";
+import { type Device, type Platform, type StreamModeAvailability } from "./data";
+import { type SteadyField, useSteadyClient } from "./useSteadyClient";
+
+const NOTHING_STALE: ReadonlySet<SteadyField> = new Set();
 
 export type InspectorSectionsProps = {
   /** Active device connection — feeds the inspector sections. */
@@ -49,13 +56,56 @@ export type InspectorSectionsProps = {
   foldPreview?: FoldPreviewOption;
 };
 
+// @ref LLP 0000#steady-inspector — a platform's sections are fixed, so they do not come and go with the connection
+/** The sections that every device of a platform has, also before the device reports its capabilities. */
+const PLATFORM_SECTIONS: Record<Platform, ReadonlySet<CapabilitySection>> = {
+  ios: new Set(["accessibility", "location", "clipboard", "events"]),
+  android: new Set(["camera", "accessibility", "location", "permissions", "events"]),
+};
+
+type CapabilitySection =
+  | "camera"
+  | "accessibility"
+  | "location"
+  | "permissions"
+  | "clipboard"
+  | "events";
+
+const SECTION_TITLES: Record<CapabilitySection, string> = {
+  camera: "Camera",
+  accessibility: "Accessibility",
+  location: "Location",
+  permissions: "Permissions",
+  clipboard: "Clipboard",
+  events: "Events",
+};
+
+/** What a section says while its device does not offer the capability. */
+export const SECTION_UNAVAILABLE_NOTE = "Not available for this device at the moment.";
+
+/** A section of a capability that the device does not offer now. It keeps the section's place. */
+function UnavailableSection({ title }: { title: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <CollapsibleSection title={title} open={open} onOpenChange={setOpen}>
+      <SectionNote>{SECTION_UNAVAILABLE_NOTE}</SectionNote>
+    </CollapsibleSection>
+  );
+}
+
 /**
  * The inspector for the selected device: current app, device and stream options,
  * and the other capability sections, ending with the logs. The dashboard's left
  * sidebar embeds it below the device lists.
+ *
+ * Its sections do not come and go while the device connects or reconnects. A
+ * selected device always has Device options, Stream options, and the sections
+ * of its platform. The inspector reads the client through
+ * {@link useSteadyClient}, so a section keeps its rows and their last values
+ * while the client reports none, and locks them instead.
  */
 export function InspectorSections({
-  client,
+  client: liveClient,
   device,
   showScreenShape = true,
   onShowScreenShapeChange,
@@ -71,6 +121,11 @@ export function InspectorSections({
   onClipboardRequestHandled,
   foldPreview,
 }: InspectorSectionsProps) {
+  const steady = useSteadyClient(liveClient, device);
+  const client = steady?.client;
+  const stale = steady?.stale ?? NOTHING_STALE;
+  // The device list knows the platform at once; the client only after it connects.
+  const platform = device?.platform ?? client?.platform;
   const screenShape = device
     ? {
         available: screenShapeAvailable,
@@ -81,26 +136,36 @@ export function InspectorSections({
   // Physical devices cannot be deleted from the host.
   const onRemoveDevice = device?.physical ? undefined : onRemove;
 
+  // A section shows for a capability of the device's platform, or one that the device reported.
+  const section = (name: CapabilitySection, content: (client: DeviceClient) => ReactNode) => {
+    if (!client) return null;
+    if (client.capabilities[name]) return content(client);
+    if (!device || !PLATFORM_SECTIONS[device.platform].has(name)) return null;
+    return <UnavailableSection key={name} title={SECTION_TITLES[name]} />;
+  };
+
   return (
     <>
       <CurrentAppSection client={client} />
-      {(client?.capabilities.deviceSettings ||
+      {(device ||
+        client?.capabilities.deviceSettings ||
         client?.capabilities.fold ||
         client?.platform === "android" ||
-        screenShape ||
         (client && (onShutdown || onRemoveDevice))) && (
         <DeviceOptionsSection
           client={client}
+          platform={platform}
+          stale={stale}
           screenShape={screenShape}
           foldPreview={foldPreview}
-          showDeviceSettings={client?.capabilities.deviceSettings ?? false}
           onShutdown={onShutdown}
           onRemove={onRemoveDevice}
         />
       )}
-      {client?.streamCapabilities && (
+      {client && (device || client.streamCapabilities) && (
         <StreamOptionsSection
           client={client}
+          stale={stale}
           streamMode={streamMode}
           httpCodec={httpCodec}
           streamModeAvailability={streamModeAvailability}
@@ -108,19 +173,29 @@ export function InspectorSections({
           onHttpCodecChange={onHttpCodecChange}
         />
       )}
-      {client?.capabilities.camera && <CameraSection client={client} />}
-      {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
-      {client?.capabilities.location && <LocationSection key={device?.id} client={client} />}
-      {client?.capabilities.permissions && <PermissionsSection client={client} />}
-      {client?.capabilities.clipboard && (
+      {section("camera", (client) => (
+        <CameraSection client={client} />
+      ))}
+      {section("accessibility", (client) => (
+        <AccessibilitySection client={client} />
+      ))}
+      {section("location", (client) => (
+        <LocationSection key={device?.id} client={client} />
+      ))}
+      {section("permissions", (client) => (
+        <PermissionsSection client={client} />
+      ))}
+      {section("clipboard", (client) => (
         <ClipboardSection
           key={`clipboard:${device?.id}`}
           client={client}
           request={clipboardRequest}
           onRequestHandled={onClipboardRequestHandled}
         />
-      )}
-      {client?.capabilities.events && <EventsSection client={client} />}
+      ))}
+      {section("events", (client) => (
+        <EventsSection client={client} />
+      ))}
       <LogsSection client={client} />
     </>
   );
