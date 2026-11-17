@@ -72,6 +72,11 @@
   :root {
     interpolate-size: allow-keywords;
   }
+  /* Sonner measures a toast by setting height: auto and reading it at once. A
+     keyword transition would return the old height, so a taller toast overflows. */
+  [data-sonner-toast] {
+    interpolate-size: numeric-only;
+  }
 }
 
 details.lem-section::details-content {

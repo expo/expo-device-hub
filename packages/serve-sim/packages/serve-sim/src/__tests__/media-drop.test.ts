@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { createElement, type DragEvent } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { APP_FOLDER_GUIDANCE, APP_FOLDER_UNREADABLE } from "../client/utils/app-drop-folder";
 import { UNSUPPORTED_INSTALL_FORMAT } from "../app-install-format";
 import type { AppFolderEntry } from "../client/utils/app-drop-folder";
 
@@ -57,6 +58,14 @@ describe("startHostPathDrop", () => {
 });
 
 type DropEvent = { type: string; name?: string; id?: string; ok?: boolean; message?: string };
+
+test("rejects a non-app folder without staging or cleanup requests", async () => {
+  const events = await dropFiles([new File([], "Photos")], {
+    entries: [{ name: "Photos", isDirectory: true, isFile: false }],
+  });
+  expect(events.at(-1)).toMatchObject({ type: "end", ok: false, message: APP_FOLDER_GUIDANCE });
+  expect(actions).toEqual([]);
+});
 
 // Mount the real hook and wait for each file's completion callback, not a timer.
 async function dropFiles(
@@ -202,30 +211,19 @@ test.each(["upload.append", "app.install"])(
   },
 );
 
-test.each(["OtherFolder", "Build.app"])(
-  "unreadable or unsupported %s gives archive guidance",
-  async (name) => {
-    const result = await dropFiles([new File([], name)], {
-      entries: [{ name, isDirectory: true, isFile: false }],
-    });
-    expect(result.at(-1)).toMatchObject({
-      type: "end",
-      ok: false,
-      message: expect.stringContaining(".tar.gz/.tgz"),
-    });
-    expect(actions.some((action) => action === "upload.append" || action === "app.install")).toBe(
-      false,
-    );
-  },
-);
+test("an unreadable Build.app folder gives archive advice", async () => {
+  const result = await dropFiles([new File([], "Build.app")], {
+    entries: [{ name: "Build.app", isDirectory: true, isFile: false }],
+  });
+  expect(result.at(-1)).toMatchObject({ type: "end", ok: false, message: APP_FOLDER_UNREADABLE });
+  expect(actions.some((action) => action === "upload.append" || action === "app.install")).toBe(
+    false,
+  );
+});
 
 test("a browser without folder entries gives an archive alternative", async () => {
   const result = await dropFiles([new File([], "Build.app")]);
-  expect(result.at(-1)).toMatchObject({
-    type: "end",
-    ok: false,
-    message: expect.stringContaining(".tar.gz/.tgz"),
-  });
+  expect(result.at(-1)).toMatchObject({ type: "end", ok: false, message: APP_FOLDER_UNREADABLE });
   expect(actions).toEqual([]);
 });
 
