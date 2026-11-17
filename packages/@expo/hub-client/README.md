@@ -292,6 +292,13 @@ available, `onUnavailable` runs: show the flat `DeviceScreen` then.
 The iPhone Duo's model needs `client.fold` and `client.displays`, which
 `deviceModelStreamable` checks. The other models show the flat stream on their display.
 
+A page with a Content Security Policy must allow two things for the models:
+
+- `blob:` in `connect-src`. three.js fetches the textures inside a model file from blob
+  URLs that it makes.
+- `'wasm-unsafe-eval'` in `script-src`. The model files are compressed with Meshopt, and
+  three.js decodes them with WebAssembly.
+
 ### Fold a foldable device
 
 `client.fold` has the fold state of a foldable device, such as the iPhone Duo, and is
