@@ -155,6 +155,8 @@ mock.module("../../foldable/device-model-rig", () => ({
     const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
     const gltf = await loader.parseAsync(withoutTextures(MODELS + FILES[description.id]), "");
     rig = rigModule.rigDeviceModel(description, gltf);
+    // As the real loader does, so the scene's hit tests use the triangle index.
+    await rigModule.indexDeviceModel(rig.model);
     return rig;
   },
 }));
@@ -476,7 +478,7 @@ test.skipIf(!MODELS_AVAILABLE)(
 );
 
 test.skipIf(!MODELS_AVAILABLE)(
-  "a resting pointer does not hit-test the whole model on every frame",
+  "a hovering pointer is hit-tested once per frame, and a resting one not at all",
   async () => {
     const source = stream(portrait.width, portrait.height);
     markCanvasFrame(source as unknown as HTMLCanvasElement);
@@ -486,15 +488,28 @@ test.skipIf(!MODELS_AVAILABLE)(
       // Let the first pose and the zoom settle.
       scene.tick(300);
       const center = onDisplay(scene.rig().displays.main, 0.5, 0.5);
+      // Pointer events can arrive several times per frame; the loop tests the last point once.
+      const before = intersect.mock.calls.length;
+      scene.pointer("pointermove", center.x - 20, center.y);
+      scene.pointer("pointermove", center.x - 10, center.y);
       scene.pointer("pointermove", center.x, center.y);
-      const afterMove = intersect.mock.calls.length;
-      expect(afterMove).toBeGreaterThan(0);
-      scene.tick(30);
-      expect(intersect.mock.calls.length).toBe(afterMove);
+      expect(intersect.mock.calls.length).toBe(before);
+      scene.tick(1);
+      expect(intersect.mock.calls.length).toBe(before + 1);
       expect(scene.renderer.domElement.style.cursor).toBe("pointer");
-      // A moved pointer is tested again.
+      scene.tick(30);
+      expect(intersect.mock.calls.length).toBe(before + 1);
+      // A moved pointer is tested again, on the next frame.
       scene.pointer("pointermove", center.x + 10, center.y);
-      expect(intersect.mock.calls.length).toBe(afterMove + 1);
+      scene.tick(1);
+      expect(intersect.mock.calls.length).toBe(before + 2);
+      // A drag needs each point at once, to send it to the device.
+      scene.pointer("pointerdown", center.x, center.y);
+      const pressed = intersect.mock.calls.length;
+      scene.pointer("pointermove", center.x, center.y + 30);
+      expect(intersect.mock.calls.length).toBe(pressed + 1);
+      expect(scene.touches.at(-1)?.phase).toBe("move");
+      scene.pointer("pointerup", center.x, center.y + 30);
     } finally {
       intersect.mockRestore();
       scene.dispose();

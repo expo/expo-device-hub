@@ -9,6 +9,7 @@
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { type GLTF, GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { acceleratedRaycast, MeshBVH } from "three-mesh-bvh";
 
 import { createFlexDeformer, type FlexDeformer } from "./device-model-bend";
 import { type DeviceModelDescription, type DeviceModelDisplay } from "./device-models";
@@ -47,6 +48,12 @@ export interface DeviceModelRig {
   fold(folds: DeviceModelFolds, bend?: boolean): void;
   /** The center of the folded body in model coordinates. */
   center(out: THREE.Vector3): THREE.Vector3;
+  /**
+   * Bring the hit-test index of the bent meshes up to date, for at most
+   * `budget` milliseconds; without a budget, all of it. Returns whether the
+   * index is current. A model without an index is always current.
+   */
+  refitBounds(budget?: number): boolean;
   dispose(): void;
 }
 
@@ -69,7 +76,9 @@ export async function loadDeviceModel(
     const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
     const gltf = await loader.parseAsync(await bytes, "");
     try {
-      return rigDeviceModel(description, gltf);
+      const rig = rigDeviceModel(description, gltf);
+      await indexDeviceModel(rig.model);
+      return rig;
     } catch (error) {
       // A model that cannot be rigged would otherwise keep its decoded images
       // until garbage collection, on every attempt to show it.
@@ -101,6 +110,48 @@ export function disposeParsedModel(object: THREE.Object3D) {
       }
     }
     material.dispose();
+  }
+}
+
+/** Let the browser handle input and paint; a message is not slowed in a background tab as a timer is. */
+function pause(): Promise<void> {
+  return new Promise((resolve) => {
+    const { port1, port2 } = new MessageChannel();
+    port1.onmessage = () => {
+      port1.close();
+      resolve();
+    };
+    port2.postMessage(null);
+  });
+}
+
+/** The longest that {@link indexDeviceModel} works before it lets the browser run. */
+const INDEX_SLICE_MS = 8;
+
+/**
+ * Index every mesh's triangles for hit tests. A pointer is tested against the
+ * whole device, so that the chassis hides a display behind it, and these
+ * models have 160,000 to 680,000 triangles: without an index one test takes 6
+ * to 30 ms, on every pointer move. With one it takes about a tenth of a
+ * millisecond. Building takes 50 to 330 ms, in slices between which the
+ * browser runs.
+ */
+// @ref LLP 0004#3d-preview-in-the-hub — hit tests use a triangle index, built when the model loads
+export async function indexDeviceModel(model: THREE.Object3D): Promise<void> {
+  const indexed = new Set<THREE.BufferGeometry>();
+  let started = performance.now();
+  for (const mesh of meshesUnder(model)) {
+    const geometry = mesh.geometry;
+    if (!indexed.has(geometry)) {
+      indexed.add(geometry);
+      // Indirect: the index keeps its own triangle order and leaves the geometry as loaded.
+      geometry.boundsTree = new MeshBVH(geometry, { indirect: true });
+      if (performance.now() - started >= INDEX_SLICE_MS) {
+        await pause();
+        started = performance.now();
+      }
+    }
+    mesh.raycast = acceleratedRaycast;
   }
 }
 
@@ -222,6 +273,8 @@ export function rigDeviceModel(description: DeviceModelDescription, gltf: GLTF):
     return object;
   };
   const hinge = description.hinge;
+  // The bent geometries whose hit-test index is older than their shape.
+  const stale = new Set<THREE.BufferGeometry>();
   let pose = (_angle: number) => {};
   let bend = (_angle: number) => {};
   let mixer: THREE.AnimationMixer | undefined;
@@ -260,6 +313,8 @@ export function rigDeviceModel(description: DeviceModelDescription, gltf: GLTF):
         for (const mesh of job.meshes) {
           mesh.geometry.boundingBox = null;
           mesh.geometry.boundingSphere = null;
+          // The hit-test index still holds the old shape; it is refit on demand.
+          if (mesh.geometry.boundsTree) stale.add(mesh.geometry);
         }
       }
       // Only a finished bend is kept, so a failed one is not mistaken for done.
@@ -360,6 +415,15 @@ export function rigDeviceModel(description: DeviceModelDescription, gltf: GLTF):
       pointIn(model, halves.left, left.copy(anchors[0]!));
       pointIn(model, halves.right, right.copy(anchors[1]!));
       return out.addVectors(left, right).multiplyScalar(0.5);
+    },
+    refitBounds(budget = Number.POSITIVE_INFINITY) {
+      const started = performance.now();
+      for (const geometry of stale) {
+        if (performance.now() - started >= budget) return false;
+        geometry.boundsTree?.refit();
+        stale.delete(geometry);
+      }
+      return true;
     },
     dispose() {
       mixer?.stopAllAction();

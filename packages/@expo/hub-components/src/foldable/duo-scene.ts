@@ -53,6 +53,9 @@ import { type DuoHingeCommands } from "./useDuoFraming";
  */
 export const BEZEL_REFLECTION = 0.25;
 
+/** The longest that one frame refits the bent meshes' hit-test index, once the fold rests. */
+const REFIT_SLICE_MS = 4;
+
 /** What the scene reads from React on every frame; the component supplies the latest values. */
 export interface DuoSceneState {
   /** The model that the scene draws. The scene reads it once, when it starts. */
@@ -541,6 +544,8 @@ export function createDuoScene(
   }
 
   const raycaster = new THREE.Raycaster();
+  // The model's triangle index answers with each mesh's nearest hit only.
+  raycaster.firstHitOnly = true;
   const pointer = new THREE.Vector2();
   type Point = { x: number; y: number };
   type ScreenHit = {
@@ -561,8 +566,7 @@ export function createDuoScene(
     raycaster.setFromCamera(pointer, camera);
     return true;
   }
-  // Intersecting the whole device takes a few milliseconds for these models,
-  // and the loop repeats it on every frame under a resting pointer. Reuse the
+  // The loop repeats the test on every frame under a resting pointer. Reuse the
   // last intersection while the ray, the device's pose, and its folds are the same.
   let lastIntersection: { key: string; hit: THREE.Intersection | undefined } | undefined;
   function intersectDevice() {
@@ -584,6 +588,8 @@ export function createDuoScene(
       rig?.folds.right,
     ].join();
     if (lastIntersection?.key !== key) {
+      // A press or a drag needs the bent meshes' index now, whatever it costs.
+      rig?.refitBounds();
       lastIntersection = { key, hit: raycaster.intersectObject(root, true)[0] };
     }
     return lastIntersection.hit;
@@ -790,11 +796,12 @@ export function createDuoScene(
   const move = (event: PointerEvent) => {
     validateGesture();
     hoverPoint = { x: event.clientX, y: event.clientY };
+    const contact = gesture?.contacts.get(event.pointerId);
+    // A pointer that only hovers is hit-tested by the loop, once per frame.
+    if (!gesture || !contact) return;
     const result = screenHit(event.clientX, event.clientY);
     updateCursor(result);
     const hit = result === "waiting" ? null : result;
-    const contact = gesture?.contacts.get(event.pointerId);
-    if (!gesture || !contact) return;
     const point = hit?.point ?? pointOnPanel(contact.hit, event.clientX, event.clientY);
     if (!point) return;
     contact.point = boundedPoint(point);
@@ -1000,6 +1007,7 @@ export function createDuoScene(
   window.addEventListener("blur", blur);
   document.addEventListener("visibilitychange", onVisibilityChange);
   let previous = performance.now();
+  let boundsCurrent = true;
   renderer.setAnimationLoop((now) => {
     if (disposed || failed || document.hidden) return;
     const dt = Math.min((now - previous) / 1000, 0.05);
@@ -1013,7 +1021,9 @@ export function createDuoScene(
       fail();
       return;
     }
-    if (hoverPoint && !gesture && !hingeDrag) updateCursor();
+    // While the fold moves, the bent meshes' index is stale, and a refit on
+    // every frame would cost more than the fold itself; the cursor waits.
+    if (hoverPoint && !gesture && !hingeDrag && boundsCurrent) updateCursor();
     const view = viewFor(current);
     // A non-finite angle would leave the spring at NaN for good.
     const requested = Number.isFinite(current.angle) ? current.angle : undefined;
@@ -1049,6 +1059,9 @@ export function createDuoScene(
     try {
       // The bend can throw, so it falls back to the flat view as rendering does.
       applyPanelFolds(duoViewFolds(fold, anchoredView ?? view, anchorWeight));
+      // Once the fold rests, refit the index a few milliseconds per frame.
+      boundsCurrent =
+        !rig || rig.refitBounds(fold === targetFold && velocity === 0 ? REFIT_SLICE_MS : 0);
       // Only a window resize reallocates the buffer. Apply it with rendering
       // because changing canvas dimensions clears the previously drawn frame.
       if (resizePending) {

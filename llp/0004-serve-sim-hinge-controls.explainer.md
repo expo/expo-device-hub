@@ -5,7 +5,7 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient, HubComponents
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-17 (the model frames an observed physical pose as the flat view does, a press keeps an open mobile keyboard, and camera glass is transparent instead of transmissive; Claude Code, directed by Krystof Woldrich); 2026-11-12 (the black glass around a display reflects a quarter of the room; Claude Code, directed by Krystof Woldrich); 2026-11-12 (the reboot pause is not shown to fix the Xcode 27 reboot failure); 2026-11-11 (pose observation pauses during capture reboots, Claude Code, directed by Gabe Debes); 2026-11-06 (the rendered fold settles on its target, a bend error falls back to the flat view, and the scene skips an unchanged Android canvas and ignores a non-finite view; Claude Code, directed by Krystof Woldrich); 2026-11-05 (an emulator without profile metadata gets no 3D model; Claude Code, directed by Krystof Woldrich); 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (the foldables bend with the models repository's tighter-fold runtimes, which keep the display's spacing over the hinge; Claude Code, directed by Krystof Woldrich); 2026-11-04 (the 3D scene draws an MJPEG `<img>` on every frame; Claude Code, directed by Krystof Woldrich); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-03 (the 3D scene turns its environment so that a device facing the camera does not mirror its brightest panel; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub draws Expo's device models instead of Xcode's, also for the iPhone 18 Pro, Pixel 9 Pro, and Pixel 9 Pro Fold; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-11-17 (the model frames an observed physical pose as the flat view does, a press keeps an open mobile keyboard, camera glass is transparent instead of transmissive, and hit tests use a triangle index; Claude Code, directed by Krystof Woldrich); 2026-11-12 (the black glass around a display reflects a quarter of the room; Claude Code, directed by Krystof Woldrich); 2026-11-12 (the reboot pause is not shown to fix the Xcode 27 reboot failure); 2026-11-11 (pose observation pauses during capture reboots, Claude Code, directed by Gabe Debes); 2026-11-06 (the rendered fold settles on its target, a bend error falls back to the flat view, and the scene skips an unchanged Android canvas and ignores a non-finite view; Claude Code, directed by Krystof Woldrich); 2026-11-05 (an emulator without profile metadata gets no 3D model; Claude Code, directed by Krystof Woldrich); 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (the foldables bend with the models repository's tighter-fold runtimes, which keep the display's spacing over the hinge; Claude Code, directed by Krystof Woldrich); 2026-11-04 (the 3D scene draws an MJPEG `<img>` on every frame; Claude Code, directed by Krystof Woldrich); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-03 (the 3D scene turns its environment so that a device facing the camera does not mirror its brightest panel; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub draws Expo's device models instead of Xcode's, also for the iPhone 18 Pro, Pixel 9 Pro, and Pixel 9 Pro Fold; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001, LLP 0016
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -787,6 +787,33 @@ files, their source commit, and their sizes are in
   the lenses and the flash as the authored glass shows them [observed:
   `CLEAR_GLASS_OPACITY` in `device-model-rig.ts`; renders of the iPhone 18
   Pro's back, 2026-11-17].
+- **Hit tests.** After that change, he still saw the 3D view stutter while he
+  used it, where the 2D view stayed smooth [confirmed] (Krystof Woldrich,
+  2026-11-17). A pointer is tested against the whole device, so that the
+  chassis hides a display behind it, and every pointer move ran that test
+  over every triangle: 162,000 for the Pixel 9 Pro and 679,000 for the iPhone
+  Duo, 6 to 30 ms per test. With a dragging pointer on the iPhone 18 Pro, a
+  pointer move took a median of 10.1 ms, and 172 of 480 frames came more than
+  25 ms after the one before; the 2D view had none [observed: timings of the
+  rigs in Bun, and of the Hub in headless Chrome at 1338 x 1570 with a stream
+  that changes on every frame, 2026-11-17]. The loader now builds a triangle
+  index (a bounding volume hierarchy, from three-mesh-bvh) for every mesh, in
+  slices of 8 ms so the page stays responsive; that takes 50 to 330 ms. A test
+  then takes about 0.1 ms, 0.8 ms for the iPhone Duo, and gives the same
+  nearest hit. A pointer that only hovers is tested once per frame, by the
+  loop, and not in its event. A bend moves the flexible meshes, so their index
+  is refit: 4 ms per frame once the fold rests, and at once for a press or a
+  drag; while the fold moves, a hovering pointer keeps its cursor. The same
+  drag then took a median of 0.3 ms per pointer move, with 1 late frame of 480
+  [observed: `indexDeviceModel` and `refitBounds` in `device-model-rig.ts`,
+  `intersectDevice` and the loop in `duo-scene.ts`; the same measurements,
+  2026-11-17]. What remains is MJPEG: the scene draws the stream's `<img>`
+  into its texture, and the browser decodes each new frame for that on the
+  main thread, about 7.5 ms for a full-size iPhone 18 Pro frame with dense
+  content, while the 2D view's decode runs off it. `createImageBitmap` of the
+  `<img>` also decodes on the main thread, so a decode off it needs the
+  frame's bytes from hub-client [observed: the texture upload's time in the
+  same runs; `createImageBitmap` blocked for 40 ms].
 - **Keyboard focus.** A press on the model takes the keyboard focus, as on the
   flat screen, unless `preserveKeyboardFocus` is set: the Hub sets it while a
   mobile browser's keyboard is open, so its capture input keeps the focus

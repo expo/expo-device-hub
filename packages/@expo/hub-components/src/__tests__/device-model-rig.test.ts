@@ -7,6 +7,7 @@ import { DEVICE_MODELS, type DeviceModelDescription } from "../foldable/device-m
 import {
   CLEAR_GLASS_OPACITY,
   type DeviceModelRig,
+  indexDeviceModel,
   loadDeviceModel,
   rigDeviceModel,
 } from "../foldable/device-model-rig";
@@ -206,6 +207,66 @@ describe.skipIf(!available)("the other models", () => {
         expect(Math.abs(glass.x / glass.y - frame) / frame).toBeLessThan(0.02);
       }
     }
+  });
+});
+
+/** The nearest hit of each ray in a grid over the model, as the scene's hit test reads it. */
+function firstHits(model: THREE.Object3D, firstHitOnly: boolean) {
+  const camera = new THREE.PerspectiveCamera(36, 1, 8, 64);
+  camera.position.set(0, 0, 31);
+  camera.updateMatrixWorld(true);
+  model.updateMatrixWorld(true);
+  const raycaster = new THREE.Raycaster();
+  raycaster.firstHitOnly = firstHitOnly;
+  const hits: string[] = [];
+  for (let row = 0; row < 9; row++) {
+    for (let column = 0; column < 9; column++) {
+      raycaster.setFromCamera(new THREE.Vector2(column / 8 - 0.5, (row / 8 - 0.5) * 1.2), camera);
+      const hit = raycaster.intersectObject(model, true)[0];
+      hits.push(
+        hit
+          ? `${hit.object.name} ${hit.distance.toFixed(4)} ${hit.uv?.x.toFixed(4)},${hit.uv?.y.toFixed(4)}`
+          : "none",
+      );
+    }
+  }
+  return hits;
+}
+
+describe.skipIf(!available)("the hit-test index", () => {
+  test("gives the same nearest hit as testing every triangle, also after a bend", async () => {
+    for (const model of Object.values(DEVICE_MODELS)) {
+      const { rig: plain } = await rig(model);
+      const { rig: indexed } = await rig(model);
+      await indexDeviceModel(indexed.model);
+      const meshes: THREE.Mesh[] = [];
+      indexed.model.traverse((object) => {
+        if (object instanceof THREE.Mesh) meshes.push(object);
+      });
+      expect(meshes.every((mesh) => mesh.geometry.boundsTree)).toBe(true);
+      const open = firstHits(plain.model, false);
+      expect(open.filter((hit) => hit !== "none").length).toBeGreaterThan(10);
+      expect(firstHits(indexed.model, true)).toEqual(open);
+      expect(indexed.refitBounds(0)).toBe(true);
+      if (!model.hinge) continue;
+      // A bend moves the flexible meshes, and their index follows after a refit.
+      plain.fold(folds(110));
+      indexed.fold(folds(110));
+      expect(indexed.refitBounds(0)).toBe(false);
+      expect(indexed.refitBounds()).toBe(true);
+      const bent = firstHits(plain.model, false);
+      expect(bent).not.toEqual(open);
+      expect(firstHits(indexed.model, true)).toEqual(bent);
+      // A fold without a bend, as for a projection that the scene undoes, leaves the index current.
+      indexed.fold(folds(60), false);
+      expect(indexed.refitBounds(0)).toBe(true);
+    }
+  }, 30_000);
+
+  test("a model without an index is always current", async () => {
+    const { rig: fold } = await rig(DEVICE_MODELS["android:pixel-9-pro-fold"]);
+    fold.fold(folds(90));
+    expect(fold.refitBounds(0)).toBe(true);
   });
 });
 
