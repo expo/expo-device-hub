@@ -167,16 +167,31 @@ and only change their value or lock]
   cannot read them, or on a device that does not have the setting, with the reason in a
   tooltip. A select whose value is not known shows a placeholder.
   [observed: `SELECT_SETTINGS`, `SWITCH_SETTINGS` and `lockReason` in `DeviceOptionsSection.tsx`]
+  Stream options has a fixed list of encoder rows per platform too: Max size, Video FPS and
+  Video bitrate, and on iOS also MJPEG FPS and MJPEG quality. A setting that the client does
+  not report, or reports no value for, is a locked row.
+  [observed: `ENCODER_SETTINGS` in `StreamOptionsSection.tsx`]
 - **Kept values.** A client reports its capabilities, device settings, stream capabilities,
   stream settings, stream source, orientation and fold as absent while it connects, and again
   on each reconnect. On iOS the settings are cleared whenever the exec channel's URL or token
   changes. [observed: the settings effect in HubClient `useIosDevice.ts`] The inspector keeps
   the last value of those fields for each device and shows it, and locks the rows that hold
-  a kept value until the client reports again. A device that has not reported yet starts
-  with the capabilities of the last device of its platform, so its sections are in place
-  before it connects. The kept values are only for the layout: commands and the fields that
-  say whether a control can be used are always the live ones.
+  a kept value until the client reports again. The kept values are only for the layout:
+  commands and the fields that say whether a control can be used are always the live ones.
   [observed: `useSteadyClient.ts`]
+- **The guess.** A device that has not reported yet starts with the capabilities of the last
+  device of its kind that streamed, so its sections are in place before it connects. A kind
+  is a platform and whether the device is physical: a physical phone does not take what an
+  emulator can do. A client reads some capabilities after its stream starts, and it reports
+  one that it has not read yet like one that the device does not have. So the guess holds
+  for 5 seconds after the device streams. From then on only the device's own reports count,
+  and a control that the device does not have goes. [observed: `GUESS_GRACE_MS` and
+  `deviceKind` in `useSteadyClient.ts`]
+- **A device switch.** In the render that selects another device, the client still holds the
+  reports of the device before, because its adapter clears them in an effect. The inspector
+  does not read the client's reports in that render, so they are not kept under the new
+  device. [observed: `reportingDevice` in `useSteadyClient.ts`; the settings effects in
+  HubClient `useIosDevice.ts` and `useAndroidDevice.ts`]
 
 The website does the same for its fixed set of options: it shows every option of the
 platform while the settings load and disables them.

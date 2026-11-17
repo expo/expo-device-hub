@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
+import { useEffect, useState } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -11,7 +12,11 @@ import {
   SETTINGS_UNAVAILABLE_REASON,
 } from "../dashboard/DeviceOptionsSection";
 import { InspectorSections, SECTION_UNAVAILABLE_NOTE } from "../dashboard/InspectorSections";
-import { useSteadyClient } from "../dashboard/useSteadyClient";
+import {
+  STREAM_SETTING_UNKNOWN_REASON,
+  StreamOptionsSection,
+} from "../dashboard/StreamOptionsSection";
+import { GUESS_GRACE_MS, useSteadyClient } from "../dashboard/useSteadyClient";
 import { createGlobalStubs } from "./test-globals";
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
@@ -173,6 +178,75 @@ describe("useSteadyClient", () => {
     expect(JSON.parse(probe()["data-location"])).toEqual({ clear: true });
   });
 
+  test("a device switch does not file the last device's reports under the next device", async () => {
+    // Like hub-client's adapters: the settings are state, and an effect clears them for another device.
+    let report: (settings: DeviceClient["deviceSettings"]) => void = () => {};
+    function Adapter({ device }: { device: Device }) {
+      const [settings, setSettings] = useState<DeviceClient["deviceSettings"]>(null);
+      useEffect(() => {
+        setSettings(null);
+        report = setSettings;
+      }, [device.id]);
+      const client = { ...STREAMING, deviceSettings: settings } as DeviceClient;
+      return <Probe client={client} device={device} />;
+    }
+    await act(async () => {
+      renderer = create(<Adapter device={IPHONE} />);
+    });
+    await act(async () => report(STREAMING.deviceSettings));
+    expect(JSON.parse(probe()["data-settings"])).toEqual(STREAMING.deviceSettings);
+
+    // The render that selects the other device still holds the iPhone's settings.
+    const other: Device = { ...IPHONE, id: "other" };
+    await act(async () => renderer!.update(<Adapter device={other} />));
+    expect(probe()["data-settings"]).toBe("null");
+    expect(probe()["data-stale"]).toBe("");
+
+    // The iPhone has its own settings again when it is selected again.
+    await act(async () => renderer!.update(<Adapter device={IPHONE} />));
+    expect(JSON.parse(probe()["data-settings"])).toEqual(STREAMING.deviceSettings);
+    expect(probe()["data-stale"]).toBe("deviceSettings");
+  });
+
+  test("a physical device does not take the capabilities of a simulator or an emulator", async () => {
+    await act(async () => {
+      renderer = create(<Probe client={STREAMING} device={IPHONE} />);
+    });
+    const phone: Device = { ...IPHONE, id: "phone", physical: true };
+    await act(async () => renderer!.update(<Probe client={CONNECTING} device={phone} />));
+    expect(probe()["data-location"]).toBe("false");
+  });
+
+  test("a guess ends after the device has streamed for the grace time, so an unsupported control goes", async () => {
+    jest.useFakeTimers();
+    try {
+      await act(async () => {
+        renderer = create(<Probe client={STREAMING} device={IPHONE} />);
+      });
+      // Another simulator streams, and it reports no location support.
+      const other: Device = { ...IPHONE, id: "other" };
+      const withoutLocation = {
+        ...STREAMING,
+        capabilities: { ...STREAMING.capabilities, location: false },
+      } as unknown as DeviceClient;
+      await act(async () => renderer!.update(<Probe client={withoutLocation} device={other} />));
+      // The client may not have read the capability yet, so the guess holds at first.
+      expect(JSON.parse(probe()["data-location"])).toEqual({ clear: true });
+
+      await act(async () => {
+        jest.advanceTimersByTime(GUESS_GRACE_MS);
+      });
+      expect(probe()["data-location"]).toBe("false");
+
+      // The device's own reports stay over its reconnects, as before.
+      await act(async () => renderer!.update(<Probe client={CONNECTING} device={other} />));
+      expect(probe()["data-location"]).toBe("false");
+      expect(JSON.parse(probe()["data-settings"])).toEqual(STREAMING.deviceSettings);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test("settles when a client builds an equal object again on each render", async () => {
     // hub-client's iOS adapter creates `streamCapabilities` anew on each render.
     const rebuilt = () =>
@@ -266,6 +340,66 @@ describe("InspectorSections", () => {
       "Current app",
       "Logs",
     ]);
+  });
+});
+
+describe("StreamOptionsSection rows", () => {
+  const ENCODER_ROWS = {
+    ios: ["Max size", "MJPEG FPS", "MJPEG quality", "Video FPS", "Video bitrate"],
+    android: ["Max size", "Video FPS", "Video bitrate"],
+  };
+  const encoderRows = () => rowLabels().filter((label) => ENCODER_ROWS.ios.includes(label));
+  const select = (label: string) =>
+    renderer!.root.find(
+      (node) =>
+        typeof node.type === "function" &&
+        node.type.name === "Select" &&
+        node.props.ariaLabel === label,
+    ).props;
+
+  test.each(["ios", "android"] as const)(
+    "an %s device has its encoder rows before the client reports what it can change",
+    async (platform) => {
+      // The first device of a session: no other device has given a guess.
+      const connecting = { ...CONNECTING, platform } as DeviceClient;
+      await act(async () => {
+        renderer = create(<StreamOptionsSection client={connecting} defaultOpen />);
+      });
+      expect(encoderRows()).toEqual(ENCODER_ROWS[platform]);
+      // A row without a value is locked, with the placeholder and a reason.
+      expect(select("Max size").value).toBe("");
+      expect(select("Max size").disabled).toBe(true);
+      expect(select("Max size").disabledReason).toBe(STREAM_SETTING_UNKNOWN_REASON);
+
+      const streaming = {
+        ...STREAMING,
+        platform,
+        capabilities: {
+          ...STREAMING.capabilities,
+          streamSettings: { maxDimension: true, h264Fps: true, h264Bitrate: true },
+        },
+      } as unknown as DeviceClient;
+      await act(async () =>
+        renderer!.update(<StreamOptionsSection client={streaming} defaultOpen />),
+      );
+      expect(encoderRows()).toEqual(ENCODER_ROWS[platform]);
+      expect(select("Max size").value).toBe("1280");
+      expect(select("Max size").disabled).toBe(false);
+    },
+  );
+
+  test("a setting that the backend cannot change stays as a locked row", async () => {
+    // serve-sim reports no stream settings for a server that is locked to WebRTC.
+    const locked = {
+      ...STREAMING,
+      capabilities: { ...STREAMING.capabilities, streamSettings: false },
+    } as unknown as DeviceClient;
+    await act(async () => {
+      renderer = create(<StreamOptionsSection client={locked} defaultOpen />);
+    });
+    expect(encoderRows()).toEqual(ENCODER_ROWS.ios);
+    expect(select("Video bitrate").disabled).toBe(true);
+    expect(select("Video bitrate").disabledReason).toBe(STREAM_SETTING_UNKNOWN_REASON);
   });
 });
 

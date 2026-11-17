@@ -18,7 +18,7 @@ import { CollapsibleSection } from "./CollapsibleSection";
 import { RECORDING_FINISH_REASON, recordingLockText } from "./recording-lock";
 import { SectionNote } from "./SectionNote";
 import { SidebarRow } from "./SidebarRow";
-import { type StreamModeAvailability } from "./data";
+import { type Platform, type StreamModeAvailability } from "./data";
 import { StreamStatistics } from "./StreamStatistics";
 import { type SteadyField } from "./useSteadyClient";
 
@@ -29,6 +29,10 @@ const NOTHING_STALE: ReadonlySet<SteadyField> = new Set();
 /** Why a stream setting is locked while the device does not report its stream settings. */
 export const STREAM_SETTINGS_UNAVAILABLE_REASON =
   "Stream settings are available once the device reconnects.";
+
+/** Why an encoder setting is locked while the client reports no value for it, or cannot change it. */
+export const STREAM_SETTING_UNKNOWN_REASON =
+  "This setting is not available for this device at the moment.";
 
 export type StreamOptionsSectionProps = {
   /** The client to read from. Pass the client of `useSteadyClient` to keep rows over a reconnect. */
@@ -124,17 +128,24 @@ const BITRATE_OPTIONS: SelectOption[] = [
   { value: "16000000", label: "16 Mbps" },
 ];
 
+const BOTH_PLATFORMS: readonly Platform[] = ["ios", "android"];
+
 /**
- * The runtime encoder settings, in the order of their rows. `activeFor` names
- * the codec that reads the setting: the row is disabled while the stream uses
- * another one. A setting without it applies to every stream.
+ * The runtime encoder settings, in the order of their rows. `platforms` names
+ * the platforms whose backend has the setting: a platform has a fixed list of
+ * rows, which does not wait for the client to report what it can change.
+ * `activeFor` names the codec that reads the setting: the row is disabled
+ * while the stream uses another one. A setting without it applies to every
+ * stream.
  */
+// @ref LLP 0000#steady-inspector — a platform's rows are fixed; a setting that the client does not report is locked
 const ENCODER_SETTINGS: ReadonlyArray<{
   key: keyof DeviceStreamEncoderSettings;
   label: string;
   options: SelectOption[];
   /** The label of a current value that is not one of `options`. */
   format: (value: number) => string;
+  platforms: readonly Platform[];
   activeFor?: "mjpeg" | "h264";
 }> = [
   {
@@ -142,12 +153,14 @@ const ENCODER_SETTINGS: ReadonlyArray<{
     label: "Max size",
     options: MAX_DIMENSION_OPTIONS,
     format: (value) => (value === 0 ? "Full" : `${value} px`),
+    platforms: BOTH_PLATFORMS,
   },
   {
     key: "mjpegFps",
     label: "MJPEG FPS",
     options: FPS_OPTIONS,
     format: (value) => `${value} FPS`,
+    platforms: ["ios"],
     activeFor: "mjpeg",
   },
   {
@@ -155,6 +168,7 @@ const ENCODER_SETTINGS: ReadonlyArray<{
     label: "MJPEG quality",
     options: QUALITY_OPTIONS,
     format: (value) => `${Math.round(value * 100)}%`,
+    platforms: ["ios"],
     activeFor: "mjpeg",
   },
   {
@@ -162,6 +176,7 @@ const ENCODER_SETTINGS: ReadonlyArray<{
     label: "Video FPS",
     options: FPS_OPTIONS,
     format: (value) => `${value} FPS`,
+    platforms: BOTH_PLATFORMS,
     activeFor: "h264",
   },
   {
@@ -169,6 +184,7 @@ const ENCODER_SETTINGS: ReadonlyArray<{
     label: "Video bitrate",
     options: BITRATE_OPTIONS,
     format: (value) => `${value / 1_000_000} Mbps`,
+    platforms: BOTH_PLATFORMS,
     activeFor: "h264",
   },
 ];
@@ -227,8 +243,9 @@ export function StreamOptionsSection({
   const inputSourceOptions = GRPC_INPUT_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableInputSources.includes(option.value),
   );
+  const settingsKnown = client.streamSettings !== null;
   // A kept copy of the settings shows their last values, but only live settings can change.
-  const settingsReady = client.streamSettings !== null && !stale.has("streamSettings");
+  const settingsReady = settingsKnown && !stale.has("streamSettings");
   const settingsDisabled =
     recordingControlsLocked || !settingsReady || client.streamSettingsPending;
   const settingsDisabledReason =
@@ -410,25 +427,34 @@ export function StreamOptionsSection({
           Start the standalone server with --transport webrtc to enable WebRTC.
         </SectionNote>
       )}
-      {settingsCapabilities &&
-        ENCODER_SETTINGS.map(({ key, label, options, format, activeFor }) =>
-          settingsCapabilities[key] ? (
+      {ENCODER_SETTINGS.filter(({ platforms }) => platforms.includes(client.platform)).map(
+        ({ key, label, options, format, activeFor }) => {
+          // The client reports what its backend can change only after it connects, and a
+          // server that is locked to one transport reports nothing.
+          const supported = !!settingsCapabilities && settingsCapabilities[key];
+          return (
             <SidebarRow key={key} label={label}>
               <Select
                 ariaLabel={label}
-                value={String(settings[key])}
+                // A value that is not known shows the placeholder of the select.
+                value={settingsKnown ? String(settings[key]) : ""}
                 options={withCurrentValue(settings[key], options, format)}
                 disabled={
                   settingsDisabled ||
+                  !supported ||
                   (activeFor === "mjpeg" && transport !== "http") ||
                   (activeFor === "h264" && !h264Active)
                 }
-                disabledReason={settingsDisabledReason}
+                disabledReason={
+                  settingsDisabledReason ??
+                  (supported && settingsKnown ? undefined : STREAM_SETTING_UNKNOWN_REASON)
+                }
                 onChange={(value) => patchSetting(key, Number(value))}
               />
             </SidebarRow>
-          ) : null,
-        )}
+          );
+        },
+      )}
       {transport === "webrtc" && (
         <StreamStatistics stats={client.streamStats} platform={client.platform} />
       )}
