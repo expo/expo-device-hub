@@ -267,7 +267,10 @@
     "appVersion": "1.0.3",
     "appBuildNumber": 14,
     "buildId": "1414a765-a0c0-4ffd-a3bd-042da97bc589",
-    "theme": "dark",
-    "arrangement": "Set by Krystof Woldrich; captured unchanged"
+    "arrangement": "Set by Krystof Woldrich; captured unchanged",
+    "variants": {
+      "dark": "device-hub-emulator-capture.png",
+      "light": "device-hub-emulator-capture-light.png"
+    }
   }
 }
