@@ -224,9 +224,9 @@ export const layer = {
   floatingToggle: 15,
   /** The stream panel in a phone's full-screen presentation. */
   presentation: 20,
-  /** Dialog backdrop. The same number as the `z-dialogOverlay-600` class. */
+  /** The backdrop of a modal. */
   dialogOverlay: 600,
-  /** Dialog content. The same number as the `z-dialogContent-601` class. */
+  /** The card of a modal. */
   dialogContent: 601,
   /** Menus and select lists, which can open from a dialog. */
   popover: 605,

@@ -1,18 +1,11 @@
 import { useState } from "react";
 
-import {
-  DeviceListItem,
-  IconButton,
-  PlusIcon,
-  bg,
-  border,
-  heading,
-  radius,
-  text,
-  textSize,
-} from "../primitives";
+import { DeviceListItem, bg, border, heading, radius, text, textSize } from "../primitives";
+import { AddDeviceMenu } from "./AddDeviceMenu";
+import { BootErrorModal } from "./BootErrorModal";
 import { SIDEBAR_SECTION_INSET } from "./CollapsibleSection";
-import { RecentDevicesModal } from "./RecentDevicesModal";
+import { NewDeviceModal } from "./NewDeviceModal";
+import { byLastUsed } from "./new-device";
 import {
   type AddDeviceOutcome,
   type AddDeviceTarget,
@@ -25,9 +18,9 @@ import {
  * button at the right of the title, from the dashboard design. A hairline
  * separates it from what is above, like an inspector section. Selection is
  * controlled by the parent so it can be shared across sections — only one
- * device is "open" at a time. The add button opens the
- * "Add a simulator/emulator" picker; the chosen (or newly configured) device is
- * reported via `onAdd`.
+ * device is "open" at a time. The add button opens a menu of the recent
+ * devices; a click boots one, and its last row opens the form that creates a
+ * new device. Both report through `onAdd`.
  */
 export type DeviceSectionProps = {
   title: string;
@@ -61,11 +54,25 @@ export function DeviceSection({
   onSelect,
   onAdd,
 }: DeviceSectionProps) {
-  const [modalOpen, setModalOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [bootError, setBootError] = useState<{ deviceName: string; message: string } | null>(null);
 
   // Don't offer devices that are already in this section's list.
   const shownIds = new Set(devices.map((device) => device.id));
-  const candidates = recent.filter((device) => !shownIds.has(device.id));
+  const recents = byLastUsed(recent.filter((device) => !shownIds.has(device.id)));
+
+  // The menu has no room for a failure, so a failed boot opens a dialog with the host's reason.
+  async function bootRecent(device: Device) {
+    if (!onAdd) return;
+    let error: string | null = null;
+    try {
+      const outcome = await onAdd({ kind: "recent", device });
+      if (!outcome.ok) error = outcome.error;
+    } catch (thrown) {
+      error = thrown instanceof Error ? thrown.message : String(thrown);
+    }
+    if (error !== null) setBootError({ deviceName: device.name, message: error });
+  }
 
   return (
     <section
@@ -91,13 +98,12 @@ export function DeviceSection({
       >
         <span style={{ ...heading.sm, color: text.default }}>{title}</span>
         {!!onAdd && (
-          <IconButton
-            size={24}
+          <AddDeviceMenu
             label={addLabel}
-            icon={<PlusIcon size={16} strokeWidth={2} />}
-            onClick={() => setModalOpen(true)}
-            // The plus glyph, not the button's box, lines up with the right edge of the rows.
-            style={{ marginRight: -4 }}
+            kind={kind}
+            recents={recents}
+            onBoot={bootRecent}
+            onCreate={() => setCreating(true)}
           />
         )}
       </div>
@@ -133,13 +139,21 @@ export function DeviceSection({
         )}
       </div>
 
-      <RecentDevicesModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        kind={kind}
-        devices={candidates}
-        options={options}
-        onAdd={onAdd || (async () => ({ ok: false, error: "Device actions are unavailable." }))}
+      {!!onAdd && (
+        <NewDeviceModal
+          open={creating}
+          onClose={() => setCreating(false)}
+          kind={kind}
+          existing={[...devices, ...recent]}
+          options={options}
+          onAdd={onAdd}
+        />
+      )}
+      <BootErrorModal
+        open={bootError !== null}
+        onClose={() => setBootError(null)}
+        deviceName={bootError?.deviceName ?? ""}
+        message={bootError?.message ?? ""}
       />
     </section>
   );

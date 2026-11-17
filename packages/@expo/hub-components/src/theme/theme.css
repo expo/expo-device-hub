@@ -266,3 +266,90 @@
   outline-offset: -2px;
   background-color: var(--expo-theme-background-subtle);
 }
+
+/*
+ * Modal. The backdrop fades and the card slides up into place, with the
+ * timing of the website's dialog.
+ */
+.hub-modal-overlay {
+  background-color: rgb(0 0 0 / 50%);
+}
+.hub-modal-overlay[data-state="open"] {
+  animation: hub-fade-in 150ms ease-out;
+}
+.hub-modal-overlay[data-state="closed"] {
+  animation: hub-fade-out 150ms ease-in;
+}
+.hub-modal[data-state="open"] {
+  animation: hub-modal-in 200ms ease-out;
+}
+
+@keyframes hub-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes hub-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes hub-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+
+/*
+ * A menu that opens from a control: it slides 8px toward its place, like the
+ * tooltip, with the website's dropdown timing.
+ */
+.hub-menu {
+  animation-duration: 400ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+}
+.hub-menu[data-side="top"] {
+  animation-name: hub-tooltip-from-below;
+}
+.hub-menu[data-side="bottom"] {
+  animation-name: hub-tooltip-from-above;
+}
+
+/* The thin scrollbar of a menu's list, from the dashboard design. */
+.hub-menu-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.hub-menu-scroll::-webkit-scrollbar-track {
+  border-radius: 3px;
+  background: var(--expo-theme-background-element);
+}
+.hub-menu-scroll::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--expo-theme-border-default);
+}
+
+/* A menu row, and a form field whose label darkens while its control has focus. */
+.hub-menu-item {
+  outline: none;
+  background-color: transparent;
+}
+.hub-menu-item[data-highlighted] {
+  background-color: var(--expo-theme-background-element);
+}
+.hub-form-label {
+  color: var(--expo-theme-text-secondary);
+  transition: color var(--hub-motion-base) ease;
+}
+.hub-form-field:focus-within .hub-form-label {
+  color: var(--expo-theme-text-default);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-modal-overlay,
+  .hub-modal,
+  .hub-menu {
+    animation: none !important;
+  }
+}

@@ -10,8 +10,9 @@
  *   - Hover, press and keyboard focus come from the `.hub-pressable` rules in
  *     `./theme/theme.css` ({@link pressableStyle}), not from React state.
  *   - The components ported 1:1 from the website ({@link Dropdown},
- *     {@link Dialog}, the `Select` menu) keep the website's Tailwind classes,
- *     which the consumer's stylesheet must generate (Expo Hub's `global.css`).
+ *     {@link DropdownItem}, the `Select` menu) keep the website's Tailwind
+ *     classes, which the consumer's stylesheet must generate (Expo Hub's
+ *     `global.css`).
  *
  * Import `@expo/hub-components/theme.css` once: it defines the CSS variables
  * and the component rules above.
@@ -26,18 +27,11 @@ export {
 export { Button, type ButtonProps, type ButtonTheme, type ButtonSize } from "./components/Button";
 export { ControlButton, type ControlButtonProps } from "./components/ControlButton";
 export { DeviceListItem, type DeviceListItemProps } from "./components/DeviceListItem";
-export {
-  DialogRoot,
-  DialogContent,
-  DialogTitle,
-  DialogContentContainer,
-  DialogFooter,
-  DialogClose,
-} from "./components/Dialog";
 export { Dropdown } from "./components/Dropdown";
 export { DropdownItem } from "./components/DropdownItem";
 export { IconButton, type IconButtonProps } from "./components/IconButton";
 export { Logo } from "./components/Logo";
+export { Modal, type ModalProps } from "./components/Modal";
 export { ResizeHandle } from "./components/ResizeHandle";
 export { Select, type SelectOption, type SelectProps } from "./components/Select";
 export { SidebarToggle } from "./components/SidebarToggle";
@@ -124,7 +118,8 @@ export {
   StreamOptionsSection,
   type StreamOptionsSectionProps,
 } from "./dashboard/StreamOptionsSection";
-export { RecentDevicesModal, type RecentDevicesModalProps } from "./dashboard/RecentDevicesModal";
+export { AddDeviceMenu, type AddDeviceMenuProps } from "./dashboard/AddDeviceMenu";
+export { NewDeviceModal, type NewDeviceModalProps } from "./dashboard/NewDeviceModal";
 export { BootErrorModal, type BootErrorModalProps } from "./dashboard/BootErrorModal";
 export {
   ServerConnectionOverlay,
