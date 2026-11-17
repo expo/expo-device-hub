@@ -67,9 +67,11 @@ export function AppIcon({
 export function AppDetectionTool({
   udid,
   currentApp,
+  isRunningOnEAS = false,
 }: {
   udid: string;
   currentApp: { bundleId: string; isReactNative: boolean; pid?: number } | null;
+  isRunningOnEAS?: boolean;
 }) {
   const [details, setDetails] = useState<AppDetails | null>(null);
   const [open, setOpen] = useState(false);
@@ -80,22 +82,13 @@ export function AppDetectionTool({
       return;
     }
     let cancelled = false;
-    setDetails({
-      bundleId: currentApp.bundleId,
-      isReactNative: currentApp.isReactNative,
-      pid: currentApp.pid,
-      loading: true,
-    });
-    fetchAppDetails(udid, currentApp.bundleId).then((extra) => {
-      if (cancelled) return;
-      setDetails({
-        bundleId: currentApp.bundleId,
-        isReactNative: currentApp.isReactNative,
-        pid: currentApp.pid,
-        loading: false,
-        ...extra,
+    setDetails({ ...currentApp, loading: true });
+    fetchAppDetails(udid, currentApp.bundleId)
+      .catch(() => ({ error: "Unable to read app details" }))
+      .then((extra) => {
+        if (cancelled) return;
+        setDetails({ ...currentApp, loading: false, ...extra });
       });
-    });
     return () => {
       cancelled = true;
     };
@@ -106,56 +99,69 @@ export function AppDetectionTool({
   }
 
   return (
-    <CollapsibleSection
-      open={open}
-      onOpenChange={setOpen}
-      summaryClassName="flex items-center gap-3 text-left"
-      summary={
-        <>
-          <AppIcon bundleId={details.bundleId} iconDataUrl={details.iconDataUrl} />
-          <AppSummaryLabel bundleId={details.bundleId} displayName={details.displayName} />
-        </>
-      }
-    >
-      {details.error && (
-        <div className="bg-danger/10 border border-danger/20 text-danger-soft text-[11px] px-2 py-1.5 rounded-md">
-          {details.error}
-        </div>
-      )}
+    <div className="flex flex-col gap-2">
+      <CollapsibleSection
+        open={open}
+        onOpenChange={setOpen}
+        summaryClassName="flex items-center gap-3 text-left"
+        summary={
+          <>
+            <AppIcon bundleId={details.bundleId} iconDataUrl={details.iconDataUrl} />
+            <AppSummaryLabel bundleId={details.bundleId} displayName={details.displayName} />
+          </>
+        }
+      >
+        {details.error && (
+          <div className="bg-danger/10 border border-danger/20 text-danger-soft text-[11px] px-2 py-1.5 rounded-md">
+            Unable to read app details
+          </div>
+        )}
 
-      <dl className="m-0 flex flex-col gap-1.5">
-        <Row
-          label="Version"
-          value={
-            details.shortVersion
-              ? `${details.shortVersion} (${details.bundleVersion ?? "—"})`
-              : details.loading
-                ? "…"
-                : "—"
-          }
-        />
-        <Row label="Min iOS" value={details.minOS ?? (details.loading ? "…" : "—")} />
-        <Row label="Executable" value={details.executable ?? (details.loading ? "…" : "—")} />
-        <Row label="PID" value={details.pid != null ? String(details.pid) : "—"} />
-        {details.isReactNative && <Row label="React Native" value="Yes" />}
-        <Row
-          label="App path"
-          value={details.appPath ?? (details.loading ? "…" : "—")}
-          mono
-          action={
-            details.appPath
-              ? {
-                  title: "Reveal in Finder",
-                  onClick: () => {
-                    runHostAction("reveal", { path: details.appPath! });
-                  },
-                  icon: <ArrowUpRight size={11} strokeWidth={2.2} />,
-                }
-              : undefined
-          }
-        />
-      </dl>
-    </CollapsibleSection>
+        <dl className="m-0 flex flex-col gap-1.5">
+          <Row
+            label="Version"
+            value={
+              details.shortVersion
+                ? `${details.shortVersion} (${details.bundleVersion ?? "—"})`
+                : details.loading
+                  ? "…"
+                  : "—"
+            }
+          />
+          <Row label="Min iOS" value={details.minOS ?? (details.loading ? "…" : "—")} />
+          <Row label="Executable" value={details.executable ?? (details.loading ? "…" : "—")} />
+          <Row label="PID" value={details.pid != null ? String(details.pid) : "—"} />
+          {details.isReactNative && <Row label="React Native" value="Yes" />}
+          <Row
+            label="App path"
+            value={details.appPath ?? (details.loading ? "…" : "—")}
+            mono
+            action={
+              details.appPath
+                ? {
+                    title: "Reveal in Finder",
+                    onClick: () => {
+                      runHostAction("reveal", { path: details.appPath! });
+                    },
+                    icon: <ArrowUpRight size={11} strokeWidth={2.2} />,
+                  }
+                : undefined
+            }
+          />
+        </dl>
+      </CollapsibleSection>
+      {details.bundleId === "com.apple.springboard" && (
+        <p className="m-0 px-3 text-[11px] leading-relaxed text-white/55">
+          Drop a Simulator <code className="font-mono">.app</code> onto the preview to install it.
+          {isRunningOnEAS && (
+            <>
+              {" "}
+              Or use <code className="font-mono">eas simulator:control</code>.
+            </>
+          )}
+        </p>
+      )}
+    </div>
   );
 }
 

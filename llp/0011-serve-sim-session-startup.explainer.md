@@ -9,6 +9,15 @@
 
 ## Scope
 
+The preview shows `com.apple.springboard` with the SpringBoard name and default
+system app icon, without requesting ordinary app metadata. A hint below the card
+directs users to drop a Simulator `.app` onto the preview; hosted EAS workers also
+show the `eas simulator:control` option. The server supplies the EAS context using
+`isRunningOnEAS`, excluding local EAS builds. Other metadata lookup
+failures show “Unable to read app details” in the expanded app card [observed:
+`src/client/components/app-detection-tool.tsx`, `src/client/utils/app-icon.ts`,
+`src/environment.ts`, `src/middleware.ts`].
+
 The foreground CLI can boot a simulator, install a local `.app`, launch an installed
 app with arguments, and open a deep link before starting the preview server. The caller
 downloads the app and supplies its path; serve-sim owns the simulator operations
