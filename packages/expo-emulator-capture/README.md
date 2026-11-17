@@ -80,10 +80,10 @@ EAS Linux VM (22 vCPUs, no GPU), Pixel 6, Emulator 37.1.11, `-gpu lavapipe`,
 2026-11-05–06. Three runs per size, using the earlier synchronous read; these predate
 the capture-worker and tail fixes. [Newer timing matrix](../../llp/0021-emulator-capture-linux.explainer.md#frame-path).
 
-![Linux frame rates range from 54.4–55.5 FPS at 576×1280 and 53.4–54.1 FPS at native size.](https://raw.githubusercontent.com/expo/expo-device-hub/71137b8c7bc424dd5b552c89dd28829119439cc7/packages/expo-emulator-capture/docs/linux-frame-rate.png)
+![Linux frame rates range from 54.4–55.5 FPS at 576×1280 and 53.4–54.1 FPS at native size.](https://raw.githubusercontent.com/expo/expo-device-hub/12b42cbbd37279c27e06a1bbeb17fe19d01dd3ce/packages/expo-emulator-capture/docs/linux-frame-rate.png)
 
 Every decoded animation frame was checked; none was torn. Readback took 5.9–6.9 ms;
-conversion and encoding took 9.5–9.8 ms at 576×1280. [Data and methods](https://raw.githubusercontent.com/expo/expo-device-hub/71137b8c7bc424dd5b552c89dd28829119439cc7/packages/expo-emulator-capture/docs/linux-measurements.json).
+conversion and encoding took 9.5–9.8 ms at 576×1280. [Data and methods](https://raw.githubusercontent.com/expo/expo-device-hub/12b42cbbd37279c27e06a1bbeb17fe19d01dd3ce/packages/expo-emulator-capture/docs/linux-measurements.json).
 
 ## How it works
 
