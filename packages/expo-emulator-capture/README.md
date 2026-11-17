@@ -124,8 +124,7 @@ then:  Unix socket → serve-emu → Device Hub (WebCodecs or WebRTC)
 | Linux x86-64               | `-gpu lavapipe`               | x264 build 165, from the system | Ubuntu 26.04: `sudo apt install libx264-165` |
 
 x264 changes its interface with every build, so the Linux agent supports build 165 only.
-Ubuntu 26.04 ships it; Ubuntu 24.04 ships build 164, which does not work. The EAS Linux
-image `ubuntu-26.04-jdk-17-ndk-r27b-sdk-58` has it installed. Without it, the agent
+Ubuntu 26.04 ships it; Ubuntu 24.04 ships build 164, which does not work. Without it, the agent
 reports the install command. The Hub preflight checks standard paths and the loader cache;
 a confirmed absence boots without the agent and shows the command below the source select.
 An inconclusive preflight lets the agent try the actual loader.
