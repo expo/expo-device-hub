@@ -258,9 +258,16 @@
   "screenshot": {
     "date": "2026-11-17",
     "hubCommit": "8b08dff78a1a21d287861aa6c1b757781d18ed7a",
-    "device": "Pixel 10",
+    "device": "Pixel 9 Pro Fold",
     "source": "Emulator capture",
     "transport": "WebRTC",
-    "codec": "H.264"
+    "codec": "H.264",
+    "app": "Expo Services",
+    "appId": "dev.expo.services",
+    "appVersion": "1.0.3",
+    "appBuildNumber": 14,
+    "buildId": "1414a765-a0c0-4ffd-a3bd-042da97bc589",
+    "theme": "dark",
+    "arrangement": "Set by Krystof Woldrich; captured unchanged"
   }
 }
