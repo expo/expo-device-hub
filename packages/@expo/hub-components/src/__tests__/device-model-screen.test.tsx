@@ -54,7 +54,7 @@ describe("DeviceModelScreen", () => {
     expect(open).toContain('aria-disabled="true"');
   });
 
-  test("folds the Pixel 9 Pro Fold to Android's hinge angle, with handles that stop while recording", () => {
+  test("folds the Pixel 9 Pro Fold to Android's hinge angle, with handles that stop while folds are unavailable", () => {
     const model = DEVICE_MODELS["android:pixel-9-pro-fold"];
     const android = client({
       screen: { width: 2076, height: 2152 },
@@ -75,8 +75,16 @@ describe("DeviceModelScreen", () => {
     // The handles take input only once the model loads, which server rendering
     // never does, so the gate is checked on its own.
     expect(canMoveModelHinge(model, android)).toBe(true);
-    expect(canMoveModelHinge(model, { ...android, recordingLock: "recording" })).toBe(false);
-    expect(canMoveModelHinge(model, { ...android, recordingLock: "status-unknown" })).toBe(false);
+    const fold = android.fold!;
+    expect(
+      canMoveModelHinge(model, { ...android, fold: { ...fold, unavailable: "recording" } }),
+    ).toBe(false);
+    expect(
+      canMoveModelHinge(model, { ...android, fold: { ...fold, unavailable: "status-unknown" } }),
+    ).toBe(false);
+    // A recording that follows folds locks other controls but leaves the hinge free, as the sidebar does.
+    const followsFolds: DeviceClient = { ...android, recordingLock: "recording" };
+    expect(canMoveModelHinge(model, followsFolds)).toBe(true);
     expect(canMoveModelHinge(model, { ...android, fold: null })).toBe(false);
     expect(canMoveModelHinge(DEVICE_MODELS["android:pixel-9-pro"], android)).toBe(false);
   });

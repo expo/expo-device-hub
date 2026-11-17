@@ -130,19 +130,19 @@ function ScreenSource({ client }: { client: DeviceClient }) {
 
 /**
  * Whether the model's hinge handles may move the device's hinge: a foldable
- * whose client takes angles. Like the sidebar's fold controls, they stop while a
- * recording locks the controls.
+ * whose client takes angles. Like the sidebar's fold controls, they stop while
+ * `fold.unavailable` is set: a recording that does not follow folds.
  */
 export function canMoveModelHinge(
   model: Pick<DeviceModelDescription, "hinge">,
-  client: Pick<DeviceClient, "fold" | "capabilities" | "recordingLock">,
+  client: Pick<DeviceClient, "fold" | "capabilities">,
 ): boolean {
   return (
     !!model.hinge &&
     !!client.fold &&
+    !client.fold.unavailable &&
     !!client.capabilities.fold &&
-    !!client.capabilities.fold.angle &&
-    !client.recordingLock
+    !!client.capabilities.fold.angle
   );
 }
 
