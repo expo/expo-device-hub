@@ -8,6 +8,7 @@ import {
   type DeviceOrientation,
   displayDeltaForRawDelta,
   displayPointForRawPoint,
+  type ScreenSize,
   streamGeometry,
   type FoldPose,
 } from "@expo/hub-client";
@@ -42,6 +43,49 @@ export function orientationDegrees(orientation: DeviceOrientation | null | undef
     default:
       return 0;
   }
+}
+
+/** As in UIKit, a physical landscape shows the opposite landscape interface. */
+function interfaceForPhysical(orientation: DeviceOrientation): DeviceOrientation {
+  if (orientation === "landscape_left") return "landscape_right";
+  if (orientation === "landscape_right") return "landscape_left";
+  return orientation;
+}
+
+/**
+ * The orientation that frames a screen, named as an interface orientation, as
+ * `orientationDegrees` names it. With an observed physical pose, hub-client's
+ * `streamGeometry` frames the stream by that pose, even when the interface
+ * stays portrait, so the model does too; without one, the reported orientation.
+ */
+// @ref LLP 0004#3d-preview-in-the-hub — the model frames the screen by the physical pose, as the flat view does
+export function modelFramingOrientation(screen: ScreenSize): DeviceOrientation | undefined {
+  switch (screen.deviceOrientation) {
+    case undefined:
+      return screen.orientation;
+    case "portrait":
+      return "portrait";
+    case "pud":
+      return "portrait_upside_down";
+    case "landscape-left":
+      return "landscape_right";
+    case "landscape-right":
+      return "landscape_left";
+    default:
+      return screen.screenOrientation ?? undefined;
+  }
+}
+
+/**
+ * The orientation that rolls a model without fold events, in the convention of
+ * {@link modelFramingOrientation}. Once serve-sim observes the physical pose,
+ * iOS names `client.orientation` physically, so its landscapes swap.
+ */
+export function modelRollOrientation(
+  orientation: DeviceOrientation | null | undefined,
+  screen: Pick<ScreenSize, "deviceOrientation"> | null | undefined,
+): DeviceOrientation | null | undefined {
+  return orientation && screen?.deviceOrientation ? interfaceForPhysical(orientation) : orientation;
 }
 
 /** Camera-axis roll that makes the active panel's native UI readable. */
@@ -139,7 +183,7 @@ export function modelFrameRotation(
   const mount = modelDisplay(description, config.screenId === 1 ? 1 : 3)?.mount ?? 0;
   const turn =
     description.streams === "screen"
-      ? orientationDegrees(config.orientation) - streamGeometry(config).rotationDegrees
+      ? orientationDegrees(modelFramingOrientation(config)) - streamGeometry(config).rotationDegrees
       : 0;
   return ((mount * 90 - turn) * Math.PI) / 180;
 }

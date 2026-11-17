@@ -27,6 +27,7 @@ import {
 
 import { type DeviceModelDescription, modelDisplay } from "./device-models";
 import { DUO_PANEL_FOR_DISPLAY, duoStreamConfig } from "./duo-displays";
+import { modelFramingOrientation, modelRollOrientation } from "./duo-pose";
 import { DUO_PANEL_SIZE } from "./duo-stage";
 import { deviceModelView } from "./duo-view";
 import { type DuoModelStatus, DuoModelView } from "./DuoModelView";
@@ -61,6 +62,11 @@ export interface DeviceModelScreenProps {
   onModelSettledChange?: (settled: boolean) => void;
   /** Copy the device app's selected text, as on `DeviceScreen`. */
   onCopy?: () => Promise<void>;
+  /**
+   * Leave the focus where it is when the screen is pressed, as on `DeviceScreen`:
+   * a consumer's keyboard capture input keeps a mobile browser's keyboard open.
+   */
+  preserveKeyboardFocus?: boolean;
 }
 
 const HOST_STYLE: CSSProperties = {
@@ -155,6 +161,7 @@ export function DeviceModelScreen({
   onUnavailable,
   onModelSettledChange,
   onCopy,
+  preserveKeyboardFocus = false,
 }: DeviceModelScreenProps) {
   const {
     fold: reportedFold,
@@ -186,7 +193,11 @@ export function DeviceModelScreen({
   const streamedScreenId = streamConfig?.screenId === 1 ? 1 : 3;
   const angle = fold?.angle ?? (model.hinge && streamedScreenId === 1 ? 0 : 180);
   const mount = modelDisplay(model, streamedScreenId)?.mount ?? 0;
-  const orientation = client.orientation ?? streamConfig?.orientation;
+  const orientation = client.orientation
+    ? modelRollOrientation(client.orientation, screen)
+    : streamConfig
+      ? modelFramingOrientation(streamConfig)
+      : undefined;
   const orientationView = useMemo(
     () => deviceModelView(angle, mount, orientation),
     [angle, mount, orientation],
@@ -247,7 +258,9 @@ export function DeviceModelScreen({
       aria-hidden={hidden || undefined}
       inert={hidden || undefined}
       style={hidden ? { ...HOST_STYLE, opacity: 0, pointerEvents: "none" } : HOST_STYLE}
-      onPointerDownCapture={() => hostRef.current?.focus({ preventScroll: true })}
+      onPointerDownCapture={() => {
+        if (!preserveKeyboardFocus) hostRef.current?.focus({ preventScroll: true });
+      }}
       onBlur={releasePressedKeys}
       onKeyDown={onKeyDown}
       onKeyUp={onKeyUp}

@@ -58,10 +58,11 @@ const MODEL_PREVIEW = {
 } as const;
 
 const FlatScreen = () => <div data-testid="flat-screen" />;
-const ModelScreen = (props: { sizeMode?: string }) => (
+const ModelScreen = (props: { sizeMode?: string; preserveKeyboardFocus?: boolean }) => (
   <div
     data-testid="model-screen"
     data-size-mode={props.sizeMode}
+    data-preserve-keyboard-focus={props.preserveKeyboardFocus ? "true" : undefined}
     data-mode={(props as { mode?: string }).mode}
   />
 );
@@ -107,6 +108,22 @@ describe("PhoneFrame with an iPhone Duo", () => {
     // controls. No aspect ratio, so any pose or rotation fits.
     expect(markup).toContain("width:min(762.369px, 100cqw);height:min(762.369px, 100cqh)");
     expect(markup).not.toContain("aspect-ratio");
+    expect(markup).not.toContain("data-preserve-keyboard-focus");
+    // An open mobile keyboard keeps its focus when the 3D screen is pressed, as on the flat screen.
+    expect(
+      renderToStaticMarkup(
+        <PhoneFrame
+          device={device}
+          client={client({})}
+          DeviceScreen={FlatScreen}
+          DeviceModelScreen={ModelScreen}
+          foldPreview={MODEL_PREVIEW}
+          displayScreen={(screen) => screen ?? null}
+          deviceModelAssets={MODEL_ASSETS}
+          preserveKeyboardFocus
+        />,
+      ),
+    ).toContain('data-preserve-keyboard-focus="true"');
   });
 
   test("never resizes the 3D stage while the device folds, rotates, or changes displays", () => {

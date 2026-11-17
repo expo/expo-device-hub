@@ -262,6 +262,7 @@ export function PhoneFrame({
             model={modelPreview.model}
             modelUrl={modelPreview.url}
             onCopy={onCopy}
+            preserveKeyboardFocus={preserveKeyboardFocus}
             onModelSettledChange={(settled) => setModelSettledDevice(settled ? device.id : null)}
             {...modelOptions}
           />

@@ -10,7 +10,13 @@ import {
   modelDisplay,
 } from "../foldable/device-models";
 import { duoStreamConfig, streamedPanel } from "../foldable/duo-displays";
-import { duoScreenMapping, modelFrameRotation, orientationDegrees } from "../foldable/duo-pose";
+import {
+  duoScreenMapping,
+  modelFrameRotation,
+  modelFramingOrientation,
+  modelRollOrientation,
+  orientationDegrees,
+} from "../foldable/duo-pose";
 import { duoStageMaxSide, modelStageMaxSide } from "../foldable/duo-stage";
 import { deviceModelView } from "../foldable/duo-view";
 
@@ -184,6 +190,55 @@ describe("a turned device", () => {
     };
     expect(Math.round((modelFrameRotation(duo, inner) * 180) / Math.PI)).toBe(
       (modelDisplay(duo, 3)?.mount ?? 0) * 90,
+    );
+  });
+
+  test("a native physical pose rolls and frames the model as the flat view frames it", () => {
+    // Once serve-sim observes the pose, iOS names `client.orientation` physically,
+    // and `streamGeometry` frames the stream by that pose: as in UIKit, physical
+    // landscape-left shows the landscape_right interface. The roll and the frame's
+    // turn onto the glass must agree, or the screen shows upside down.
+    const phone = DEVICE_MODELS["ios:iphone-18-pro"];
+    const native = [
+      ["landscape-left", "landscape_left", "landscape_right"],
+      ["landscape-right", "landscape_right", "landscape_left"],
+    ] as const;
+    for (const [pose, physical, shown] of native) {
+      // simScreenSize's output for a turned interface with upright landscape pixels.
+      const config = {
+        width: 2622,
+        height: 1206,
+        orientation: shown,
+        screenOrientation: shown,
+        deviceOrientation: pose,
+        screenId: 3,
+      };
+      expect(modelRollOrientation(physical, config)).toBe(shown);
+      expect(modelFramingOrientation(config)).toBe(shown);
+      // The same turn onto the glass as before the native pose, which the Hub showed upright.
+      const legacy = { width: 2622, height: 1206, orientation: shown, screenId: 3 };
+      expect(modelFrameRotation(phone, config)).toBeCloseTo(modelFrameRotation(phone, legacy));
+    }
+    // An interface locked to portrait: the flat view turns the raw portrait frame
+    // with the device, so the model rolls with the device and paints the frame unturned.
+    const locked = {
+      width: 1206,
+      height: 2622,
+      orientation: "portrait" as const,
+      screenOrientation: "portrait" as const,
+      deviceOrientation: "landscape-left" as const,
+      screenId: 3,
+    };
+    expect(streamGeometry(locked).rotationDegrees).toBe(-90);
+    expect(modelRollOrientation("landscape_left", locked)).toBe("landscape_right");
+    expect(modelFramingOrientation(locked)).toBe("landscape_right");
+    expect(modelFrameRotation(phone, locked)).toBeCloseTo(0);
+    // Without an observed pose, `client.orientation` is the interface already.
+    expect(modelRollOrientation("landscape_left", { deviceOrientation: undefined })).toBe(
+      "landscape_left",
+    );
+    expect(modelRollOrientation("landscape_left", { deviceOrientation: null })).toBe(
+      "landscape_left",
     );
   });
 });
