@@ -97,6 +97,9 @@ export function AddDeviceMenu({ label, kind, recents, onBoot, onCreate }: AddDev
             zIndex: layer.popover,
             display: "flex",
             width: `min(${MENU_WIDTH}px, calc(100vw - 16px))`,
+            // On a short screen the menu takes the height that is free, and its list scrolls,
+            // so the create row stays in reach.
+            maxHeight: "var(--radix-dropdown-menu-content-available-height)",
             flexDirection: "column",
             gap: 4,
             boxSizing: "border-box",
@@ -112,7 +115,12 @@ export function AddDeviceMenu({ label, kind, recents, onBoot, onCreate }: AddDev
         >
           <div
             className="hub-menu-scroll"
-            style={{ maxHeight: ITEM_HEIGHT * VISIBLE_ITEMS, overflowY: "auto" }}
+            style={{
+              flex: "0 1 auto",
+              minHeight: 0,
+              maxHeight: ITEM_HEIGHT * VISIBLE_ITEMS,
+              overflowY: "auto",
+            }}
           >
             {recents.length === 0 ? (
               <p
@@ -176,6 +184,7 @@ export function AddDeviceMenu({ label, kind, recents, onBoot, onCreate }: AddDev
               ...textSize.sm,
               display: "flex",
               height: ITEM_HEIGHT,
+              flexShrink: 0,
               alignItems: "center",
               gap: 8,
               boxSizing: "border-box",

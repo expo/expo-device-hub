@@ -226,7 +226,8 @@ import { radius, shadow } from "@expo/hub-components";
 <div style={{ borderRadius: radius.xl, boxShadow: shadow.sm }} />;
 ```
 
-- `radius`: `xs` 2 · `sm` 4 · `md` 6 · `lg` 8 · `xl` 16 · `2xl` 20 · `3xl` 24 · `full`.
+- `radius`: `xs` 2 · `sm` 4 · `md` 6 · `lg` 8 · `xl` 16 · `2xl` 20 · `3xl` 24 · `full`, and
+  `modal` 40 for the card of a modal.
   Buttons are pills (`full`), as on the website; form controls on a sidebar row use `lg`;
   cards/panels typically `xl`.
 - `shadow`: `none`, `xs`, `sm`, `md`, `lg`, `xl` (theme-aware — heavier in dark mode).

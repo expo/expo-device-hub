@@ -79,6 +79,8 @@ export const radius = {
   "2xl": "var(--expo-radius-2xl)",
   "3xl": "var(--expo-radius-3xl)",
   full: "var(--expo-radius-full)",
+  /** The card of a modal in the dashboard design: 40px, past the end of the styleguide's scale. */
+  modal: "var(--hub-radius-modal)",
 } as const;
 
 /** Box shadows. Tailwind: `shadow-*`. */

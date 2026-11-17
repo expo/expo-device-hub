@@ -123,6 +123,38 @@ describe("NewDeviceModal form", () => {
     expect(root.findByType("input").props.placeholder).toBe("iPhone 17 2");
   });
 
+  test("selects the first runtime and model when the host reports them after the form opens", async () => {
+    const targets: AddDeviceTarget[] = [];
+    const form = (options: NewDeviceOptions) => (
+      <NewDeviceForm
+        kind="simulator"
+        existing={[]}
+        options={options}
+        onAdd={async (target) => {
+          targets.push(target);
+          return { ok: true };
+        }}
+        onClose={() => {}}
+      />
+    );
+    // The form opens before the host has answered: there is nothing to select.
+    await act(async () => {
+      renderer = create(form({ runtimes: [] }));
+    });
+    const selects = () =>
+      renderer!.root.findAll((node) => node.props.size === "lg" && "options" in node.props);
+    expect(selects().some((node) => node.props.value)).toBe(false);
+
+    await act(async () => renderer!.update(form(OPTIONS)));
+    expect(selects().map((node) => node.props.value)).toEqual(["ios-27-0", "iphone-17"]);
+    await act(async () =>
+      renderer!.root.findByType("form").props.onSubmit({ preventDefault() {} }),
+    );
+    expect(targets.map((target) => target.kind === "new" && target.device.deviceType)).toEqual([
+      "iphone-17",
+    ]);
+  });
+
   test("creates the device with the suggested name and closes on success", async () => {
     const targets: AddDeviceTarget[] = [];
     let closed = 0;

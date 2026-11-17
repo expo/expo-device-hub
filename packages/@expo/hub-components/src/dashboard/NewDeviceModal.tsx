@@ -18,6 +18,7 @@ import {
   text,
   textSize,
   tone,
+  radius,
 } from "../primitives";
 import {
   type AddDeviceOutcome,
@@ -72,8 +73,12 @@ export function NewDeviceForm({
   const firstRuntime = options.runtimes[0];
   const firstModel = firstRuntime?.models[0];
   // The model is free on Android and narrows the system images. On iOS the runtime narrows the models.
-  const [runtime, setRuntime] = useState(firstRuntime?.value ?? "");
-  const [model, setModel] = useState(firstModel?.value ?? "");
+  // Until the viewer chooses, the first runtime and its first model are selected. They are not
+  // copied into state, because the host can report its runtimes after the form has opened.
+  const [chosenRuntime, setRuntime] = useState<string | null>(null);
+  const [chosenModel, setModel] = useState<string | null>(null);
+  const runtime = chosenRuntime ?? firstRuntime?.value ?? "";
+  const model = chosenModel ?? firstModel?.value ?? "";
   // An empty name means the suggested one, which follows the model until the viewer types.
   const [typedName, setTypedName] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -232,7 +237,7 @@ export function NewDeviceForm({
             margin: "0 0 16px",
             padding: "8px 12px",
             border: `1px solid ${tone.danger.border}`,
-            borderRadius: 12,
+            borderRadius: radius.lg,
             backgroundColor: tone.danger.bg,
             color: tone.danger.text,
             whiteSpace: "pre-wrap",

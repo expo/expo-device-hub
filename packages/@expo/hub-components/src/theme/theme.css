@@ -28,6 +28,8 @@
   --expo-radius-2xl: 20px;
   --expo-radius-3xl: 24px;
   --expo-radius-full: 9999px;
+  /* The card of a modal in the dashboard design. The preset's scale ends at 24px. */
+  --hub-radius-modal: 40px;
 
   /* The `press` and `base` durations of `motion` in tokens.ts. */
   --hub-motion-press: 100ms;

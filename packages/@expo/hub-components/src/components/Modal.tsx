@@ -2,12 +2,10 @@ import { Close, Content, Description, Overlay, Portal, Root, Title } from "@radi
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { type ReactNode, type RefObject } from "react";
 
-import { bg, border, font, heading, layer, shadow, text } from "../theme/tokens";
+import { bg, border, font, heading, layer, radius, shadow, text } from "../theme/tokens";
 import { IconButton } from "./IconButton";
 import { CloseIcon } from "./icons";
 
-/** Corner radius of the modal in the dashboard design. */
-const MODAL_RADIUS = 40;
 /** Space between the modal's edge and its content. */
 export const MODAL_PADDING = 24;
 
@@ -75,7 +73,7 @@ export function Modal({ open, onClose, title, width = 500, initialFocus, childre
               overflowY: "auto",
               padding: MODAL_PADDING,
               border: `1px solid ${border.default}`,
-              borderRadius: MODAL_RADIUS,
+              borderRadius: radius.modal,
               outline: "none",
               backgroundColor: bg.screen,
               boxShadow: shadow.sm,
