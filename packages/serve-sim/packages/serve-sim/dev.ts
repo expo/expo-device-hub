@@ -273,6 +273,18 @@ async function devMiddleware(request: Request): Promise<Response | undefined> {
   const url = new URL(request.url);
   const path = url.pathname;
 
+  if (path === "/app-drop-worker.js") {
+    const result = await Bun.build({
+      entrypoints: [resolve(import.meta.dir, "src/client/utils/app-drop-worker.ts")],
+      target: "browser",
+      format: "esm",
+    });
+    if (!result.success) return new Response("App packer build failed", { status: 500 });
+    return new Response(result.outputs[0], {
+      headers: { "Content-Type": "text/javascript", "Cache-Control": "no-store" },
+    });
+  }
+
   if (path === "/__dev/reload") return handleDevReload();
   if (path === "/" || path === "") {
     const device = url.searchParams.get("device");
