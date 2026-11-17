@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { createServer } from "net";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -12,11 +12,15 @@ export const SCREENSHOT_SHIM =
   '#!/bin/sh\nif [ "$1" = simctl ] && [ "$2" = list ]; then printf \'{ "devices": {} }\'; exit 0; fi\nfor output; do :; done\nprintf PNG > "$output"\n';
 
 /** Puts throwaway executables first on PATH; `restore` puts PATH back and removes them. */
-export function installShims(shims: Record<string, string>): { dir: string; restore(): void } {
+export function installShims(shims: Record<string, string | { sourceFile: string }>): {
+  dir: string;
+  restore(): void;
+} {
   const dir = mkdtempSync(join(tmpdir(), "serve-sim-shims-"));
   for (const [name, body] of Object.entries(shims)) {
     const shim = join(dir, name);
-    writeFileSync(shim, body);
+    if (typeof body === "string") writeFileSync(shim, body);
+    else copyFileSync(body.sourceFile, shim);
     chmodSync(shim, 0o755);
   }
   const originalPath = process.env.PATH;
@@ -32,7 +36,7 @@ export function installShims(shims: Record<string, string>): { dir: string; rest
 }
 
 export async function withShimsAsync(
-  shims: Record<string, string>,
+  shims: Record<string, string | { sourceFile: string }>,
   run: () => Promise<void>,
 ): Promise<void> {
   const installed = installShims(shims);

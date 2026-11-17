@@ -48,16 +48,20 @@ export interface SimctlOptions {
   timeout?: number;
   env?: NodeJS.ProcessEnv;
   maxBuffer?: number;
+  /** Called after synchronous environment validation, immediately before attempting spawn. */
+  beforeSpawn?: () => void;
 }
 
 function optionsFor(
   value: number | SimctlOptions,
-): Required<Pick<SimctlOptions, "timeout" | "maxBuffer">> & Pick<SimctlOptions, "env"> {
+): Required<Pick<SimctlOptions, "timeout" | "maxBuffer">> &
+  Pick<SimctlOptions, "env" | "beforeSpawn"> {
   const options = typeof value === "number" ? { timeout: value } : value;
   return {
     timeout: options.timeout ?? DEFAULT_TIMEOUT_MS,
     maxBuffer: options.maxBuffer ?? DEFAULT_MAX_BUFFER,
     ...(options.env ? { env: options.env } : {}),
+    ...(options.beforeSpawn ? { beforeSpawn: options.beforeSpawn } : {}),
   };
 }
 
@@ -74,16 +78,18 @@ export async function simctlRaw(
   timeoutOrOptions: number | SimctlOptions = {},
 ): Promise<string> {
   const options = optionsFor(timeoutOrOptions);
+  const env = {
+    ...(args[0] === "boot" || args[0] === "bootstatus"
+      ? simulatorBootEnv(args[1]!, commandCanBoot(args))
+      : process.env),
+    ...options.env,
+  };
+  options.beforeSpawn?.();
   const { stdout } = await execFileAsync("xcrun", ["simctl", ...args], {
     encoding: "utf-8",
     timeout: options.timeout,
     maxBuffer: options.maxBuffer,
-    env: {
-      ...(args[0] === "boot" || args[0] === "bootstatus"
-        ? simulatorBootEnv(args[1]!, commandCanBoot(args))
-        : process.env),
-      ...options.env,
-    },
+    env,
   }).catch((error: unknown) => {
     // stdout can hold clipboard text, which must not reach logs.
     if (error instanceof Error && "stdout" in error) delete (error as { stdout?: unknown }).stdout;
@@ -111,17 +117,19 @@ export async function simctl(
 export function simctlSync(args: string[], timeoutOrOptions: number | SimctlOptions = {}): string {
   const options = optionsFor(timeoutOrOptions);
   try {
+    const env = {
+      ...(args[0] === "boot" || args[0] === "bootstatus"
+        ? simulatorBootEnv(args[1]!, commandCanBoot(args))
+        : process.env),
+      ...options.env,
+    };
+    options.beforeSpawn?.();
     const stdout = execFileSync("xcrun", ["simctl", ...args], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: options.timeout,
       maxBuffer: options.maxBuffer,
-      env: {
-        ...(args[0] === "boot" || args[0] === "bootstatus"
-          ? simulatorBootEnv(args[1]!, commandCanBoot(args))
-          : process.env),
-        ...options.env,
-      },
+      env,
     });
     return commandOutput(args, stdout);
   } catch (error) {

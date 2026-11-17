@@ -1,4 +1,5 @@
 import { bootDevice, confirmDeviceBooted, shutdownDevice } from "./device";
+import { assertNoResidentEgress } from "./egress-resources";
 import { retireDeviceSession } from "./device-session";
 import { captureRuntime } from "./capture";
 import { releaseSession } from "./launch-manager";
@@ -31,6 +32,7 @@ export async function startDeviceInProcess(
 
 /** Stop local consumers and the device; private adoption also checks and releases its ownership. */
 export async function stopDeviceInProcess(udid: string, ownerPid?: number): Promise<void> {
+  assertNoResidentEgress(udid, "Simulator shutdown");
   await retireDeviceSession(udid);
   // The grid keeps its existing capture-cleanup retry; private adoption must drain before shutdown.
   if (ownerPid === undefined) await shutdownDevice(udid);
@@ -85,6 +87,7 @@ export function retireDevicesInBackground(
   // A boot already started by warmup must finish before its device shuts down.
   warmup: Promise<unknown> = Promise.resolve(),
 ): Promise<unknown[]> {
+  for (const udid of udids) assertNoResidentEgress(udid, "Simulator retirement");
   for (const udid of udids) {
     preparedDevices.delete(udid.toUpperCase());
     clearServeSimState(udid, ownerPid);
