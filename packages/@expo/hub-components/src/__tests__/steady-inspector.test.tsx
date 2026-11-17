@@ -15,6 +15,7 @@ import { InspectorSections, SECTION_UNAVAILABLE_NOTE } from "../dashboard/Inspec
 import {
   STREAM_SETTING_UNKNOWN_REASON,
   StreamOptionsSection,
+  TRANSPORT_UNAVAILABLE_REASON,
 } from "../dashboard/StreamOptionsSection";
 import { GUESS_GRACE_MS, useSteadyClient } from "../dashboard/useSteadyClient";
 import { createGlobalStubs } from "./test-globals";
@@ -387,6 +388,36 @@ describe("StreamOptionsSection rows", () => {
       expect(select("Max size").disabled).toBe(false);
     },
   );
+
+  test("the codec rows and the Android source row stay when the server offers nothing for them", async () => {
+    // serve-sim on HTTP has no WebRTC codecs, and a WebRTC server has no HTTP codecs.
+    const httpOnly = {
+      ...STREAMING,
+      streamCapabilities: {
+        modeAvailability: { mjpeg: true, h264: true, webrtc: false },
+        httpCodecs: ["auto", "h264", "mjpeg"],
+        webRtcCodecs: [],
+      },
+    } as unknown as DeviceClient;
+    await act(async () => {
+      renderer = create(<StreamOptionsSection client={httpOnly} defaultOpen />);
+    });
+    expect(rowLabels().slice(0, 3)).toEqual(["Transport", "HTTP codec", "WebRTC codec"]);
+    expect(select("WebRTC codec").disabled).toBe(true);
+    expect(select("WebRTC codec").disabledReason).toBe(TRANSPORT_UNAVAILABLE_REASON);
+
+    // An Android device has the Source row before its client reports the sources.
+    const android = { ...CONNECTING, platform: "android" } as DeviceClient;
+    await act(async () => renderer!.update(<StreamOptionsSection client={android} defaultOpen />));
+    expect(rowLabels().slice(0, 4)).toEqual([
+      "Source",
+      "Transport",
+      "WebSocket codec",
+      "WebRTC codec",
+    ]);
+    expect(select("Stream source").disabled).toBe(true);
+    expect(select("Stream source").disabledReason).toBe(STREAM_SETTING_UNKNOWN_REASON);
+  });
 
   test("a setting that the backend cannot change stays as a locked row", async () => {
     // serve-sim reports no stream settings for a server that is locked to WebRTC.

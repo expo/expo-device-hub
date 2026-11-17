@@ -34,6 +34,13 @@ export const STREAM_SETTINGS_UNAVAILABLE_REASON =
 export const STREAM_SETTING_UNKNOWN_REASON =
   "This setting is not available for this device at the moment.";
 
+/** Why a codec row is locked on a server that does not offer its transport. */
+export const TRANSPORT_UNAVAILABLE_REASON =
+  "The server of this device does not offer this transport.";
+
+/** Why the Source row is locked on an Android device that has one capture source. */
+export const SINGLE_SOURCE_REASON = "This device has one stream source.";
+
 export type StreamOptionsSectionProps = {
   /** The client to read from. Pass the client of `useSteadyClient` to keep rows over a reconnect. */
   client: DeviceClient;
@@ -324,14 +331,23 @@ export function StreamOptionsSection({
 
   return (
     <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
-      {streamSource && sourceOptions.length > 1 && (
+      {client.platform === "android" && (
+        // Only Android has capture sources. The row stays for a device with one source, and
+        // while the client has not reported its sources: it is then locked.
         <SidebarRow label="Source">
           <Select
             ariaLabel="Stream source"
             options={sourceOptions}
-            value={streamSource.mode}
-            disabled={sourceDisabled}
-            disabledReason={sourceDisabledReason}
+            value={(streamSource?.mode ?? "") as DeviceStreamSource}
+            disabled={sourceDisabled || sourceOptions.length < 2}
+            disabledReason={
+              sourceDisabledReason ??
+              (sourceOptions.length >= 2
+                ? undefined
+                : streamSource
+                  ? SINGLE_SOURCE_REASON
+                  : STREAM_SETTING_UNKNOWN_REASON)
+            }
             onChange={client.setStreamSource}
           />
         </SidebarRow>
@@ -390,31 +406,35 @@ export function StreamOptionsSection({
           onChange={changeTransport}
         />
       </SidebarRow>
-      {httpCodecOptions.length > 0 && (
-        <SidebarRow label={`${primaryTransportLabel} codec`}>
-          <Select
-            ariaLabel={`${primaryTransportLabel} codec`}
-            options={httpCodecOptions.map((option) => ({
-              ...option,
-              disabled: !httpCodecAvailable(option.value),
-            }))}
-            value={selectedHttpCodec}
-            disabled={transport === "webrtc" || !onHttpCodecChange}
-            onChange={changeHttpCodec}
-          />
-        </SidebarRow>
-      )}
-      {webRtcCodecOptions.length > 0 && (
-        <SidebarRow label="WebRTC codec">
-          <Select
-            ariaLabel="WebRTC codec"
-            options={webRtcCodecOptions}
-            value={selectedWebRtcCodec}
-            disabled={transport !== "webrtc" || !availability.webrtc}
-            onChange={(codec: DeviceWebRtcCodec) => client.setWebRtcCodec(codec)}
-          />
-        </SidebarRow>
-      )}
+      {/* Both codec rows stay. A server that is locked to one transport has no codecs for the
+          other one, and that row is then locked. */}
+      <SidebarRow label={`${primaryTransportLabel} codec`}>
+        <Select
+          ariaLabel={`${primaryTransportLabel} codec`}
+          options={httpCodecOptions.map((option) => ({
+            ...option,
+            disabled: !httpCodecAvailable(option.value),
+          }))}
+          value={(httpCodecOptions.length > 0 ? selectedHttpCodec : "") as DeviceHttpCodec}
+          disabled={transport === "webrtc" || !onHttpCodecChange || httpCodecOptions.length === 0}
+          disabledReason={httpCodecOptions.length === 0 ? TRANSPORT_UNAVAILABLE_REASON : undefined}
+          onChange={changeHttpCodec}
+        />
+      </SidebarRow>
+      <SidebarRow label="WebRTC codec">
+        <Select
+          ariaLabel="WebRTC codec"
+          options={webRtcCodecOptions}
+          value={(webRtcCodecOptions.length > 0 ? selectedWebRtcCodec : "") as DeviceWebRtcCodec}
+          disabled={
+            transport !== "webrtc" || !availability.webrtc || webRtcCodecOptions.length === 0
+          }
+          disabledReason={
+            webRtcCodecOptions.length === 0 ? TRANSPORT_UNAVAILABLE_REASON : undefined
+          }
+          onChange={(codec: DeviceWebRtcCodec) => client.setWebRtcCodec(codec)}
+        />
+      </SidebarRow>
       {restricted && (
         <SectionNote>
           {client.platform === "android" || !backend.modeAvailability.mjpeg

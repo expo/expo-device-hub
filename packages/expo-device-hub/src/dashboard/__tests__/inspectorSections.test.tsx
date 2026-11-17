@@ -656,7 +656,7 @@ test("shows an Android capture source failure below the switch", () => {
   expect(html).toContain("Unable to change stream source: Emulator gRPC endpoint is unavailable");
 });
 
-test("hides the Android capture source row when gRPC is unavailable", () => {
+test("locks the Android capture source row when gRPC is unavailable", () => {
   const client = {
     ...inspectorClient("android"),
     streamSource: {
@@ -673,7 +673,9 @@ test("hides the Android capture source row when gRPC is unavailable", () => {
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
-  expect(html).not.toContain('aria-label="Stream source"');
+  // The row stays, so the section has the same rows for every Android device.
+  expect(selectValue(html, "Stream source")).toBe("scrcpy");
+  expect(selectMarkup(html, "Stream source")).toContain('disabled=""');
 });
 
 test("disables Android encoder controls while a stream restart is pending", () => {

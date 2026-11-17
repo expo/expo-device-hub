@@ -167,10 +167,13 @@ and only change their value or lock]
   cannot read them, or on a device that does not have the setting, with the reason in a
   tooltip. A select whose value is not known shows a placeholder.
   [observed: `SELECT_SETTINGS`, `SWITCH_SETTINGS` and `lockReason` in `DeviceOptionsSection.tsx`]
-  Stream options has a fixed list of encoder rows per platform too: Max size, Video FPS and
-  Video bitrate, and on iOS also MJPEG FPS and MJPEG quality. A setting that the client does
-  not report, or reports no value for, is a locked row.
-  [observed: `ENCODER_SETTINGS` in `StreamOptionsSection.tsx`]
+  Stream options has a fixed list of rows per platform too: Transport, the two codec rows,
+  Max size, Video FPS and Video bitrate; on iOS also MJPEG FPS and MJPEG quality; on Android
+  also Source. A row that the server or the device has nothing for is locked with a reason: a
+  codec of a transport that the server does not offer, an encoder setting that the client
+  does not report, and the source of a device that has one source. Only the rows of the gRPC
+  source follow a value: they show while that source is selected.
+  [observed: `ENCODER_SETTINGS` and the Source and codec rows in `StreamOptionsSection.tsx`]
 - **Kept values.** A client reports its capabilities, device settings, stream capabilities,
   stream settings, stream source, orientation and fold as absent while it connects, and again
   on each reconnect. On iOS the settings are cleared whenever the exec channel's URL or token
