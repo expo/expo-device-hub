@@ -19,8 +19,10 @@ export type TooltipProps = {
 /**
  * A short label that appears next to its child while the pointer is over it
  * or it has keyboard focus. Every tooltip in the Hub uses this component, so
- * they share one look. It is not an accessible name: give the child its own
- * `aria-label` or `aria-description`.
+ * they share one look. It is for sighted pointer and keyboard users only: it
+ * gives the child no accessible name and no description, so give the child
+ * its own `aria-label`, and an `aria-description` for text that is more than
+ * its name.
  */
 export function Tooltip({
   content,
@@ -35,7 +37,18 @@ export function Tooltip({
   return (
     <Provider delayDuration={delayMs}>
       <Root>
-        <Trigger asChild>{children}</Trigger>
+        <Trigger
+          asChild
+          // Radix links the open tooltip as the child's description. A tooltip that repeats
+          // the child's name would then be read twice, so the child describes itself.
+          aria-describedby={undefined}
+          onPointerMove={(event) => {
+            // A pen that touches the screen is a press, not a hover. Radix leaves out touch only.
+            if (event.pointerType === "pen" && event.buttons !== 0) event.preventDefault();
+          }}
+        >
+          {children}
+        </Trigger>
         <Portal>
           <Content
             side={side}

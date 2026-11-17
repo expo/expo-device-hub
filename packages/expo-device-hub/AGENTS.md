@@ -158,7 +158,8 @@ import { PRESSABLE_CLASS, pressableStyle, bg } from "@expo/hub-components";
 
 The rules in `theme.css` then own `background-color`, `box-shadow`, `transform`, `transition`
 and `outline` of that element, so its inline style must not set them. Every pressable gets the
-same press scale (0.98), the same durations, and the same focus ring. `disabled` and
+same press scale (0.98), the same durations, and the same focus ring: a 2px outline in the
+info icon color (the website's `outline-icon-info`), 2px from the control. `disabled` and
 `aria-disabled="true"` turn hover and press off. Pass `pressScale: 1` for a control that must
 not move, such as a text field.
 

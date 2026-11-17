@@ -29,10 +29,15 @@
   --expo-radius-3xl: 24px;
   --expo-radius-full: 9999px;
 
-  /* The `press` and `base` durations of `motion` in tokens.ts, and the keyboard focus ring. */
+  /* The `press` and `base` durations of `motion` in tokens.ts. */
   --hub-motion-press: 100ms;
   --hub-motion-base: 150ms;
-  --hub-focus-ring: 0 0 0 2px var(--expo-theme-border-secondary);
+  /*
+   * The keyboard focus ring: the website's `outline-icon-info`. It is an
+   * outline, not a shadow, so that forced-colors mode keeps it, and its blue
+   * has a contrast of more than 3:1 against the surfaces of both themes.
+   */
+  --hub-focus-outline: 2px solid var(--expo-theme-icon-info);
 
   /* Agent takeover prompt — stays bright against the dark status overlay. */
   --expo-theme-button-agent-overlay-background: var(--expo-color-white);
@@ -60,8 +65,8 @@
  * An inline style cannot say `:hover`, `:active` or `:focus-visible`. A control
  * therefore takes the `hub-pressable` class and passes its colors as custom
  * properties (see `components/pressable.ts`). These rules own the background,
- * the box shadow, the press scale and the transition of such a control, so the
- * control must not set those four properties in its inline style.
+ * the box shadow, the press scale, the transition and the outline of such a
+ * control, so the control must not set those properties in its inline style.
  *
  * A disabled control keeps its resting look: `disabled` and
  * `aria-disabled="true"` turn hover and press off.
@@ -88,7 +93,8 @@
 }
 
 .hub-pressable:focus-visible {
-  box-shadow: var(--hub-focus-ring), var(--hub-pressable-shadow, 0 0 #0000);
+  outline: var(--hub-focus-outline);
+  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

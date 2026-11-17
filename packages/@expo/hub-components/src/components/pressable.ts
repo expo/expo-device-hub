@@ -11,7 +11,7 @@ export type PressableColors = {
   background?: string;
   /** Background under the pointer. The resting background when omitted. */
   hoverBackground?: string;
-  /** Resting box shadow. The keyboard focus ring is drawn above it. */
+  /** Resting box shadow. */
   shadow?: string;
   /** Scale while pressed. Pass 1 for a control that must not move, such as a text field. */
   pressScale?: number;
