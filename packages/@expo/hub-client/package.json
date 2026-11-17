@@ -25,7 +25,9 @@
   "files": [
     "dist",
     "src",
-    "!src/__tests__"
+    "!src/__tests__",
+    "models/*.glb",
+    "models/README.md"
   ],
   "type": "module",
   "sideEffects": false,
@@ -42,7 +44,18 @@
       "types": "./dist/shapes/index.d.ts",
       "import": "./dist/shapes/index.mjs",
       "default": "./dist/shapes/index.mjs"
-    }
+    },
+    "./models": {
+      "types": "./dist/models/index.d.ts",
+      "import": "./dist/models/index.mjs",
+      "default": "./dist/models/index.mjs"
+    },
+    "./models/catalog": {
+      "types": "./dist/models/catalog.d.ts",
+      "import": "./dist/models/catalog.mjs",
+      "default": "./dist/models/catalog.mjs"
+    },
+    "./models/*.glb": "./models/*.glb"
   },
   "publishConfig": {
     "access": "public"
@@ -67,16 +80,29 @@
     "@types/react": "~19.2.2",
     "@types/react-dom": "19.2.3",
     "@types/react-test-renderer": "19.1.0",
+    "@types/three": "^0.186.0",
     "@types/use-sync-external-store": "1.5.0",
     "happy-dom": "^20.14.5",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
     "react-dom": "19.2.3",
     "react-test-renderer": "19.2.3",
+    "three": "^0.186.0",
+    "three-mesh-bvh": "^0.9.18",
     "typescript": "~6.0.3"
   },
   "peerDependencies": {
-    "react": ">=18.0.0"
+    "react": ">=18.0.0",
+    "three": "^0.186.0",
+    "three-mesh-bvh": "^0.9.18"
+  },
+  "peerDependenciesMeta": {
+    "three": {
+      "optional": true
+    },
+    "three-mesh-bvh": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=18"

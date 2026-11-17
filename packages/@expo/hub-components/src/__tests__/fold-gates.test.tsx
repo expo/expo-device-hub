@@ -1,17 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { type DeviceClient, type DeviceFold } from "@expo/hub-client";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { DeviceOptionsSection } from "../dashboard/DeviceOptionsSection";
 import { InspectorSections } from "../dashboard/InspectorSections";
-import { DuoModelView } from "../foldable/DuoModelView";
-import { DEVICE_MODELS } from "../foldable/device-models";
-import { DeviceModelScreen } from "../foldable/DeviceModelScreen";
 import { DUO_FOLD_CONTROLS } from "./duo-fixtures";
-import { createGlobalStubs } from "./test-globals";
-
-const { stubGlobal, restoreGlobals } = createGlobalStubs();
 
 const BASE_CLIENT: DeviceClient = {
   platform: "ios",
@@ -210,41 +203,5 @@ describe("the 2D/3D choice", () => {
     expect(markup).toContain('aria-label="Fold settings"');
     expect(markup).toContain('aria-label="Preview mode"');
     expect(markup).not.toContain("Cache screen on fold");
-  });
-});
-
-describe("the 3D model's hinge handles", () => {
-  let renderer: ReactTestRenderer | undefined;
-  beforeEach(() => {
-    stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
-    stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
-  });
-  afterEach(async () => {
-    if (renderer) await act(async () => renderer?.unmount());
-    renderer = undefined;
-    restoreGlobals();
-  });
-
-  async function handleCallback(client: DeviceClient) {
-    // Without host elements the scene does not start, so no WebGL is needed.
-    await act(async () => {
-      const element = (
-        <DeviceModelScreen
-          client={client}
-          model={DEVICE_MODELS["ios:iphone-duo"]}
-          modelUrl="https://hub.test/assets/iphone-duo.glb"
-        />
-      );
-      if (renderer) renderer.update(element);
-      else renderer = create(element);
-    });
-    return renderer!.root.findByType(DuoModelView).props.onHingeAngleChange;
-  }
-
-  test("move the hinge only when the device accepts angles", async () => {
-    expect(await handleCallback(duo(DUO_FOLD_CONTROLS))).toBeFunction();
-    expect(await handleCallback(duo({ ...DUO_FOLD_CONTROLS, angle: false }))).toBeUndefined();
-    expect(await handleCallback(duo(false))).toBeUndefined();
   });
 });

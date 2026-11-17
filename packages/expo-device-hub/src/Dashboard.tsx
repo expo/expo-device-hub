@@ -10,6 +10,15 @@ import {
   type DeviceHttpCodec,
   type DeviceStreamMode,
 } from "@expo/hub-client";
+import {
+  DeviceModelScreen,
+  type DeviceModelAssets,
+  deviceModelPreview,
+} from "@expo/hub-client/models";
+import iphone18ProModel from "@expo/hub-client/models/iphone-18-pro.glb";
+import iphoneDuoModel from "@expo/hub-client/models/iphone-duo.glb";
+import pixel9ProFoldModel from "@expo/hub-client/models/pixel-9-pro-fold.glb";
+import pixel9ProModel from "@expo/hub-client/models/pixel-9-pro.glb";
 import { DeviceShape } from "@expo/hub-client/shapes";
 import {
   EmptyState,
@@ -26,20 +35,13 @@ import {
   text,
   type ClipboardRequest,
   type Device,
-  type DeviceModelAssets,
-  deviceModelPreview,
   useModelPreviewMode,
   type FoldPreviewOption,
   type SidebarProps,
 } from "@expo/hub-components";
-import { DeviceModelScreen } from "@expo/hub-components/foldable";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import iphone18ProModel from "../assets/device-models/iphone-18-pro.glb";
-import iphoneDuoModel from "../assets/device-models/iphone-duo.glb";
-import pixel9ProFoldModel from "../assets/device-models/pixel-9-pro-fold.glb";
-import pixel9ProModel from "../assets/device-models/pixel-9-pro.glb";
 import { dashboardSingleDevice } from "./single-device";
 import { AnimatedDockedSidebar } from "./dashboard/AnimatedDockedSidebar";
 import { dashboardHideBootDevice } from "./boot-device";
@@ -70,12 +72,18 @@ const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
 
-// The 3D preview's models ship with the dashboard; `expo export` copies them into dist/client.
+// `expo export` writes the URL of an asset outside this package as `.//assets/…`.
+// The file is at `./assets/…`, and a host can refuse the empty path segment.
+function modelAssetUrl(asset: unknown): string {
+  return String(asset).replace(/^\.\/\//, "./");
+}
+
+// The 3D preview's models come from `@expo/hub-client/models`; `expo export` copies them into dist/client.
 const DEVICE_MODEL_ASSETS: DeviceModelAssets = {
-  "ios:iphone-duo": String(iphoneDuoModel),
-  "ios:iphone-18-pro": String(iphone18ProModel),
-  "android:pixel-9-pro": String(pixel9ProModel),
-  "android:pixel-9-pro-fold": String(pixel9ProFoldModel),
+  "ios:iphone-duo": modelAssetUrl(iphoneDuoModel),
+  "ios:iphone-18-pro": modelAssetUrl(iphone18ProModel),
+  "android:pixel-9-pro": modelAssetUrl(pixel9ProModel),
+  "android:pixel-9-pro-fold": modelAssetUrl(pixel9ProFoldModel),
 };
 
 /**

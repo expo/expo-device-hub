@@ -6,14 +6,14 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
-import type { DeviceShapeProps, ScreenShape } from "@expo/hub-client/shapes";
+import type { DeviceModelScreenProps } from "@expo/hub-client/models";
 import {
   type DeviceModelAssets,
   type DeviceModelDescription,
   deviceModelPreview,
-} from "../foldable/device-models";
-import type { DeviceModelScreenProps } from "../foldable/DeviceModelScreen";
-import { modelStageMaxSide } from "../foldable/duo-stage";
+  modelStageMaxSide,
+} from "@expo/hub-client/models/catalog";
+import type { DeviceShapeProps, ScreenShape } from "@expo/hub-client/shapes";
 import { layer, motion } from "../primitives";
 import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
 import { type Device } from "./data";
@@ -122,7 +122,7 @@ export function PhoneFrame({
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
   /**
-   * 3D renderer from `@expo/hub-components/foldable`, injected so that this
+   * 3D renderer from `@expo/hub-client/models`, injected so that this
    * entry never loads three.js; without it every device stays flat.
    */
   DeviceModelScreen?: ComponentType<DeviceModelScreenProps>;

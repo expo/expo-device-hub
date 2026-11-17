@@ -7,22 +7,9 @@
  */
 
 import { type DeviceStreamMode } from "@expo/hub-client";
+import { type DeviceModelId } from "@expo/hub-client/models/catalog";
 
 export type Platform = "ios" | "android";
-
-/** Exact device model that the 3D preview can draw. */
-export const DEVICE_MODEL_IDS = [
-  "ios:iphone-duo",
-  "ios:iphone-18-pro",
-  "android:pixel-9-pro",
-  "android:pixel-9-pro-fold",
-] as const;
-export type DeviceModelId = (typeof DEVICE_MODEL_IDS)[number];
-
-/** Fail closed when a newer or stale server sends an unknown model id. */
-export function isDeviceModelId(value: unknown): value is DeviceModelId {
-  return DEVICE_MODEL_IDS.some((modelId) => modelId === value);
-}
 
 /** Which stream modes can be used: by the browser context, by the backend, or by both. */
 export type StreamModeAvailability = Record<DeviceStreamMode, boolean>;

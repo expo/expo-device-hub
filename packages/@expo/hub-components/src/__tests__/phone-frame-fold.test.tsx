@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { PhoneFrame } from "../dashboard/PhoneFrame";
 import { type Device } from "../dashboard/data";
-import { type DeviceModelAssets } from "../foldable/device-models";
+import { type DeviceModelAssets } from "@expo/hub-client/models/catalog";
 
 const device: Device = {
   id: "duo-1",

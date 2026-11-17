@@ -5,8 +5,8 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient, HubComponents
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-17 (the iPhone Duo's matte black borders reflect less; Claude Code, directed by Krystof Woldrich); 2026-11-17 (the model frames an observed physical pose as the flat view does, a press keeps an open mobile keyboard, camera glass is transparent instead of transmissive, and hit tests use a triangle index; Claude Code, directed by Krystof Woldrich); 2026-11-12 (the black glass around a display reflects a quarter of the room; Claude Code, directed by Krystof Woldrich); 2026-11-12 (the reboot pause is not shown to fix the Xcode 27 reboot failure); 2026-11-11 (pose observation pauses during capture reboots, Claude Code, directed by Gabe Debes); 2026-11-06 (the rendered fold settles on its target, a bend error falls back to the flat view, and the scene skips an unchanged Android canvas and ignores a non-finite view; Claude Code, directed by Krystof Woldrich); 2026-11-05 (an emulator without profile metadata gets no 3D model; Claude Code, directed by Krystof Woldrich); 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (the foldables bend with the models repository's tighter-fold runtimes, which keep the display's spacing over the hinge; Claude Code, directed by Krystof Woldrich); 2026-11-04 (the 3D scene draws an MJPEG `<img>` on every frame; Claude Code, directed by Krystof Woldrich); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-03 (the 3D scene turns its environment so that a device facing the camera does not mirror its brightest panel; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub draws Expo's device models instead of Xcode's, also for the iPhone 18 Pro, Pixel 9 Pro, and Pixel 9 Pro Fold; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
-**Related:** LLP 0001, LLP 0016
+**Revised:** 2026-11-17 (the 3D preview moves into `@expo/hub-client/models`, LLP 0019; Claude Code, directed by Krystof Woldrich); 2026-11-17 (the iPhone Duo's matte black borders reflect less; Claude Code, directed by Krystof Woldrich); 2026-11-17 (the model frames an observed physical pose as the flat view does, a press keeps an open mobile keyboard, camera glass is transparent instead of transmissive, and hit tests use a triangle index; Claude Code, directed by Krystof Woldrich); 2026-11-12 (the black glass around a display reflects a quarter of the room; Claude Code, directed by Krystof Woldrich); 2026-11-12 (the reboot pause is not shown to fix the Xcode 27 reboot failure); 2026-11-11 (pose observation pauses during capture reboots, Claude Code, directed by Gabe Debes); 2026-11-06 (the rendered fold settles on its target, a bend error falls back to the flat view, and the scene skips an unchanged Android canvas and ignores a non-finite view; Claude Code, directed by Krystof Woldrich); 2026-11-05 (an emulator without profile metadata gets no 3D model; Claude Code, directed by Krystof Woldrich); 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (the foldables bend with the models repository's tighter-fold runtimes, which keep the display's spacing over the hinge; Claude Code, directed by Krystof Woldrich); 2026-11-04 (the 3D scene draws an MJPEG `<img>` on every frame; Claude Code, directed by Krystof Woldrich); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-03 (the 3D scene turns its environment so that a device facing the camera does not mirror its brightest panel; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub draws Expo's device models instead of Xcode's, also for the iPhone 18 Pro, Pixel 9 Pro, and Pixel 9 Pro Fold; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Related:** LLP 0001, LLP 0016, LLP 0019
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -600,13 +600,16 @@ when a command timeout causes the final JSON report to record a timeout.
 The Hub shows the iPhone Duo as serve-sim's 3D preview does, with Expo's own
 model instead of Xcode's, and it also shows the iPhone 18 Pro, the Pixel 9 Pro,
 and the Pixel 9 Pro Fold in 3D (see [Device models](#device-models)).
-serve-sim's own preview keeps Xcode's model. `@expo/hub-client` supplies
-only the device controls and streams, and the 3D renderer in
-`@expo/hub-components/foldable` is a consumer of them [confirmed] (Krystof
-Woldrich, 2026-10-21). hub-client does not depend on three.js, and a consumer
-that does not import the `foldable` entry does not load it [observed:
-`packages/@expo/hub-client/package.json`, `exports` in
-`packages/@expo/hub-components/package.json`].
+serve-sim's own preview keeps Xcode's model. The main `@expo/hub-client`
+entry supplies only the device controls and streams, and the 3D renderer is a
+consumer of them [confirmed] (Krystof Woldrich, 2026-10-21). The renderer is
+the `@expo/hub-client/models` entry, moved there from
+`@expo/hub-components/foldable` so that the expo.dev website can use it
+[confirmed] (Krystof Woldrich, 2026-11-17). three.js is an optional peer
+dependency of hub-client, and a consumer that does not import the `models`
+entry does not load it [observed: `exports` and `peerDependenciesMeta` in
+`packages/@expo/hub-client/package.json`].
+[LLP 0019](0019-hub-client-device-models.spec.md) specifies the entry.
 
 The contract [observed: `DeviceFold`, `DeviceDisplay`, and `DeviceClient` in
 `packages/@expo/hub-client/src/types.ts`]. [LLP 0016](0016-hub-client-foldable-devices.spec.md)
@@ -637,8 +640,8 @@ specifies its platform-neutral parts and how serve-sim and serve-emu map onto th
 - `DeviceClient.deviceModelUrl` is the `grid/api/devicekit-model` route with
   the connection's base path, proxy mapping, and session token, which only the
   client knows. The Hub no longer reads it: the model comes from the device's
-  identity and the consumer's model files [observed: `deviceModelPreview` in
-  `packages/@expo/hub-components/src/foldable/device-models.ts`].
+  identity and the package's model files [observed: `deviceModelPreview` in
+  `packages/@expo/hub-client/src/models/device-models.ts`].
 
 The 3D component keeps the presentation state that serve-sim's client keeps
 beside its hinge state: the model's framing, the framing restored after a
@@ -648,7 +651,7 @@ the model the same way whether it comes from Fold settings or from a keyboard
 shortcut on the model. It takes each preset's hinge angle from
 `capabilities.fold.poses` and keeps serve-sim's display IDs (1 and 3) for its
 own geometry only [observed: `useDuoFraming.ts`, `duo-displays.ts`, and
-`DeviceModelScreen.tsx` in `packages/@expo/hub-components/src/foldable`].
+`DeviceModelScreen.tsx` in `packages/@expo/hub-client/src/models`].
 A physical pose that another client or the Simulator selects frames the model as
 a local preset does. The client reports it only after a local Rotate has landed. The framing reads the
 client's fold state, so it follows the native observation [observed:
@@ -656,12 +659,12 @@ client's fold state, so it follows the native observation [observed:
 
 ### Device models
 
-Expo authored the models in expo/expo-simulators-3d-models, and the Hub ships
-them as GLB files with its dashboard. Krystof Woldrich asked for them to replace
+Expo authored the models in expo/expo-simulators-3d-models, and hub-client
+ships them as GLB files, which the Hub bundles with its dashboard. Krystof Woldrich asked for them to replace
 Xcode's model and to cover the iPhone 18 Pro, the Pixel 9 Pro, and the Pixel 9
 Pro Fold [confirmed] (Krystof Woldrich, 2026-11-03, in the agent brief). The
 files, their source commit, and their sizes are in
-`packages/expo-device-hub/assets/device-models/README.md`.
+`packages/@expo/hub-client/models/README.md`.
 
 - **Description.** A model description names the GLB nodes that show each
   display, each display's framebuffer size and mount on its glass, the texture
@@ -679,9 +682,11 @@ files, their source commit, and their sizes are in
   choice [observed: `appleDevice3DModel` and `androidDevice3DModel` in
   `packages/expo-device-hub/src/server/device-support.ts`, `modelAvailable` in
   `Dashboard.tsx`]. The consumer passes each model's URL as `deviceModelAssets`;
-  the Hub imports the GLBs as Metro assets, so `expo export` copies them into
-  `dist/client`, and the standalone CLI serves them from there [observed:
-  `DEVICE_MODEL_ASSETS` in `Dashboard.tsx`, `metro.config.js`].
+  the Hub imports the GLBs from `@expo/hub-client/models` as Metro assets, so
+  `expo export` copies them into `dist/client`, and the standalone CLI serves
+  them from there [observed: `DEVICE_MODEL_ASSETS` in `Dashboard.tsx`,
+  `metro.config.js`]. Another consumer looks the model up by the device's
+  hardware name (LLP 0019 [Model names](0019-hub-client-device-models.spec.md#model-names)).
 - **Hinge.** The GLBs are in meters, and the scene scales them to the
   centimeters of Xcode's model, which its camera and framing assume. A
   foldable's left leaf, which holds the cover, turns with the scene's left fold;

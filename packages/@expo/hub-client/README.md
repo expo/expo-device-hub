@@ -202,6 +202,81 @@ The clip keeps the corners right for the shape's own proportions, so give the bo
 proportions, or pass the box's `aspectRatio` to `DeviceShape`.
 `screenShapeClipPath` returns the CSS `clip-path` for an element that you cannot wrap.
 
+### Show the device as a 3D model
+
+Import `DeviceModelScreen` from `@expo/hub-client/models` to show the device as its 3D
+model, with the live screen on its display. It takes the place of `DeviceScreen`: touch,
+scroll, and keyboard input work on the model, and a foldable folds with the device and
+has handles on its edges that move the hinge. The iPhone Duo, the iPhone 18 Pro, the
+Pixel 9 Pro, and the Pixel 9 Pro Fold have a model.
+
+The entry needs three.js. Install the two optional peer dependencies:
+
+```sh
+npm install three three-mesh-bvh
+```
+
+Apps that do not import `@expo/hub-client/models` do not bundle three.js or the models.
+`@expo/hub-client/models/catalog` has the parts that do not need three.js, so an app can
+check for a model first and load the 3D screen only when it shows one:
+
+```tsx
+import { DeviceScreen, useDeviceClient } from "@expo/hub-client";
+import {
+  type DeviceModelAssets,
+  deviceModelStreamable,
+  modelStageMaxSide,
+  resolveDeviceModel,
+} from "@expo/hub-client/models/catalog";
+import iphoneDuoModel from "@expo/hub-client/models/iphone-duo.glb";
+import pixel9ProFoldModel from "@expo/hub-client/models/pixel-9-pro-fold.glb";
+import { lazy, Suspense, useState } from "react";
+
+const DeviceModelScreen = lazy(() =>
+  import("@expo/hub-client/models").then((entry) => ({ default: entry.DeviceModelScreen })),
+);
+
+// The models this app shows. Another model keeps the flat screen.
+const MODEL_URLS: DeviceModelAssets = {
+  "ios:iphone-duo": iphoneDuoModel,
+  "android:pixel-9-pro-fold": pixel9ProFoldModel,
+};
+
+function ModelScreen({ model: modelName }: { model: string }) {
+  const client = useDeviceClient();
+  const [unavailable, setUnavailable] = useState(false);
+  // The same names as for `DeviceShape`: "iPhone Duo", "pixel_9_pro_fold", …
+  const model = resolveDeviceModel({ platform: client.platform, model: modelName });
+  const modelUrl = model ? MODEL_URLS[model.id] : undefined;
+  if (!model || !modelUrl || unavailable || !deviceModelStreamable(model, client)) {
+    return <DeviceScreen client={client} />;
+  }
+  const side = modelStageMaxSide(model, 360);
+  return (
+    <div style={{ position: "relative", width: side, height: side }}>
+      <Suspense fallback={null}>
+        <DeviceModelScreen
+          client={client}
+          model={model}
+          modelUrl={modelUrl}
+          onUnavailable={() => setUnavailable(true)}
+        />
+      </Suspense>
+    </div>
+  );
+}
+```
+
+The package has one GLB file per model: `@expo/hub-client/models/iphone-duo.glb`,
+`iphone-18-pro.glb`, `pixel-9-pro.glb`, and `pixel-9-pro-fold.glb`, 2 to 6 MB each.
+Import the files of the models you show, so that your bundler emits them and gives you
+their URLs, and pass the URL as `modelUrl`. Your bundler must treat `.glb` as an asset.
+The model loads only when `DeviceModelScreen` mounts. When the model or WebGL is not
+available, `onUnavailable` runs: show the flat `DeviceScreen` then.
+
+The iPhone Duo's model needs `client.fold` and `client.displays`, which
+`deviceModelStreamable` checks. The other models show the flat stream on their display.
+
 ### Fold a foldable device
 
 `client.fold` has the fold state of a foldable device, such as the iPhone Duo, and is

@@ -11,8 +11,11 @@ import { DeviceTitle } from "../dashboard/DeviceTitle";
 import { type Device } from "../dashboard/data";
 import { PhoneFrame } from "../dashboard/PhoneFrame";
 import { StreamPanel } from "../dashboard/StreamPanel";
-import { DEVICE_MODELS } from "../foldable/device-models";
-import { DeviceModelScreen, type DeviceModelScreenProps } from "../foldable/DeviceModelScreen";
+import {
+  DEVICE_MODELS,
+  DeviceModelScreen,
+  type DeviceModelScreenProps,
+} from "@expo/hub-client/models";
 import { useLingering } from "../dashboard/useLingering";
 import { screenOff } from "../theme/tokens";
 import { createGlobalStubs } from "./test-globals";

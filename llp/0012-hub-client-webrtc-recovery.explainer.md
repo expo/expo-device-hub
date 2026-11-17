@@ -92,7 +92,7 @@ serve-sim's client pauses diagnosis, keeps a used grace, and checks the sender i
 
 ## Inactive Duo panels
 
-While a consumer attaches an element to each of an iPhone Duo's `displays`, as the 3D preview in `@expo/hub-components/foldable` does, the client keeps a WebRTC peer open for both physical panels. iOS keeps the inactive panel silent until a fold hands off to it, so its silence is not a failure. Each panel passes `judgeStalls: true` only while it is the active display [observed: `duo/useDuoPanelStreams.ts`, `useWebRtcStream.ts`]:
+While a consumer attaches an element to each of an iPhone Duo's `displays`, as the 3D preview in `@expo/hub-client/models` does, the client keeps a WebRTC peer open for both physical panels. iOS keeps the inactive panel silent until a fold hands off to it, so its silence is not a failure. Each panel passes `judgeStalls: true` only while it is the active display [observed: `duo/useDuoPanelStreams.ts`, `useWebRtcStream.ts`]:
 
 - With `judgeStalls: false`, the first-frame timeout does not arm and the playback watchdog does not judge the peer. Turning it off clears a pending timeout and resets the stall samples.
 - A first-frame verdict whose reads finish after the panel turned inactive is dropped.
