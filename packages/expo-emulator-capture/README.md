@@ -76,22 +76,14 @@ versus gRPC + x264, not full Hub/WebRTC or CPU per frame. [Data and methods](htt
 
 ### Linux
 
-EAS Linux VM (Intel, 22 vCPUs, no GPU), Android Emulator 37.1.11, Pixel 6 profile
-(1080×2400) started by `eas/start_android_emulator` with the agent, `-gpu lavapipe`,
-2026-11-05 and 2026-11-06, with the earlier synchronous read inside the render post.
-These measurements predate the lag plus asynchronous worker and the tail scheduling fixes.
-The newer timing matrix is in [LLP 0021](../../llp/0021-emulator-capture-linux.explainer.md#frame-path).
-A web page painted each animation frame in the next of eight colors, and every
-decoded frame was checked:
+EAS Linux VM (22 vCPUs, no GPU), Pixel 6, Emulator 37.1.11, `-gpu lavapipe`,
+2026-11-05–06. Three runs per size, using the earlier synchronous read; these predate
+the capture-worker and tail fixes. [Newer timing matrix](../../llp/0021-emulator-capture-linux.explainer.md#frame-path).
 
-| Stream    | Stream FPS | Frames  | Torn | Skipped | Repeated |
-| --------- | ---------- | ------- | ---- | ------- | -------- |
-| 1080×2400 | 53.4–54.1  | 533–540 | 0    | 19–28   | 71–95    |
-| 576×1280  | 54.4–55.5  | 544–555 | 0    | 19–22   | 62–77    |
+![Linux frame rates range from 54.4–55.5 FPS at 576×1280 and 53.4–54.1 FPS at native size.](https://raw.githubusercontent.com/expo/expo-device-hub/71137b8c7bc424dd5b552c89dd28829119439cc7/packages/expo-emulator-capture/docs/linux-frame-rate.png)
 
-The ranges cover three runs. The readback took 5.9 to 6.9 ms per frame on the renderer's
-thread. Conversion and
-encoding took 9.5 to 9.8 ms per 576×1280 frame on the agent's encoder thread.
+Every decoded animation frame was checked; none was torn. Readback took 5.9–6.9 ms;
+conversion and encoding took 9.5–9.8 ms at 576×1280. [Data and methods](https://raw.githubusercontent.com/expo/expo-device-hub/71137b8c7bc424dd5b552c89dd28829119439cc7/packages/expo-emulator-capture/docs/linux-measurements.json).
 
 ## How it works
 
