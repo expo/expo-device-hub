@@ -90,8 +90,8 @@
       },
       "peerDependencies": {
         "react": ">=18.0.0",
-        "three": "^0.186.0",
-        "three-mesh-bvh": "^0.9.18",
+        "three": "*",
+        "three-mesh-bvh": "*",
       },
       "optionalPeers": [
         "three",

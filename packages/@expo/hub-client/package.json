@@ -56,9 +56,21 @@
       "import": "./dist/models/catalog.mjs",
       "default": "./dist/models/catalog.mjs"
     },
-    "./models/*.glb": {
+    "./models/iphone-18-pro.glb": {
       "types": "./models/glb.d.ts",
-      "default": "./models/*.glb"
+      "default": "./models/iphone-18-pro.glb"
+    },
+    "./models/iphone-duo.glb": {
+      "types": "./models/glb.d.ts",
+      "default": "./models/iphone-duo.glb"
+    },
+    "./models/pixel-9-pro.glb": {
+      "types": "./models/glb.d.ts",
+      "default": "./models/pixel-9-pro.glb"
+    },
+    "./models/pixel-9-pro-fold.glb": {
+      "types": "./models/glb.d.ts",
+      "default": "./models/pixel-9-pro-fold.glb"
     }
   },
   "publishConfig": {
@@ -97,8 +109,8 @@
   },
   "peerDependencies": {
     "react": ">=18.0.0",
-    "three": "^0.186.0",
-    "three-mesh-bvh": "^0.9.18"
+    "three": "*",
+    "three-mesh-bvh": "*"
   },
   "peerDependenciesMeta": {
     "three": {

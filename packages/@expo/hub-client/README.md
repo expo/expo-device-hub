@@ -216,6 +216,10 @@ The entry needs three.js. Install the two optional peer dependencies:
 npm install three three-mesh-bvh
 ```
 
+The scene is tested with `three` 0.186 and `three-mesh-bvh` 0.9.18. The peer ranges
+accept any version, so that an app with its own three.js can install hub-client without
+this entry.
+
 Apps that do not import `@expo/hub-client/models` do not bundle three.js or the models.
 `@expo/hub-client/models/catalog` has the parts that do not need three.js, so an app can
 check for a model first and load the 3D screen only when it shows one:
@@ -267,11 +271,21 @@ function ModelScreen({ model: modelName }: { model: string }) {
 }
 ```
 
+Show one `ModelScreen` per device, for example with the device ID as its key
+(`<ModelScreen key={device.id} model={device.model} />`): the scene loads its model once,
+and the key also clears the failure of the device before.
+
 The package has one GLB file per model: `@expo/hub-client/models/iphone-duo.glb`,
 `iphone-18-pro.glb`, `pixel-9-pro.glb`, and `pixel-9-pro-fold.glb`, 2 to 6 MB each.
 Import the files of the models you show, so that your bundler emits them and gives you
 their URLs, and pass the URL as `modelUrl`. Your bundler must treat `.glb` as an asset.
-The package types each import as that URL, a string.
+The package types each import as that URL, a string. With a bundler that has no rule for
+`.glb` files, such as Turbopack, take the URL without an import:
+
+```ts
+const iphoneDuoModel = new URL("@expo/hub-client/models/iphone-duo.glb", import.meta.url).href;
+```
+
 The model loads only when `DeviceModelScreen` mounts. When the model or WebGL is not
 available, `onUnavailable` runs: show the flat `DeviceScreen` then.
 

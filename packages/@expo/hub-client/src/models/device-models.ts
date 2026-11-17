@@ -190,7 +190,8 @@ export const DEVICE_MODELS: Readonly<Record<DeviceModelId, DeviceModelDescriptio
 export function deviceModelFor(
   id: DeviceModelId | null | undefined,
 ): DeviceModelDescription | null {
-  return id ? (DEVICE_MODELS[id] ?? null) : null;
+  // An id from outside the types, such as "constructor", is no model.
+  return id && Object.hasOwn(DEVICE_MODELS, id) ? DEVICE_MODELS[id] : null;
 }
 
 // The hardware model names of each 3D model, as `@expo/hub-client/shapes` takes
@@ -226,9 +227,9 @@ export function resolveDeviceModel({
   model,
 }: DeviceModelQuery): DeviceModelDescription | null {
   if (!model) return null;
-  const id =
-    platform === "ios" ? IOS_MODEL_IDS[model.trim().toLowerCase()] : ANDROID_MODEL_IDS[model];
-  return deviceModelFor(id);
+  const ids = platform === "ios" ? IOS_MODEL_IDS : ANDROID_MODEL_IDS;
+  const name = platform === "ios" ? model.trim().toLowerCase() : model;
+  return Object.hasOwn(ids, name) ? deviceModelFor(ids[name]) : null;
 }
 
 /** The model display that a panel names. */
@@ -246,14 +247,18 @@ export interface DeviceModelDevice {
 
 /**
  * Whether `client` streams what `model` needs. The iPhone Duo needs its fold
- * state and both displays; a model that shows the flat screen needs nothing more.
+ * state and both displays, the cover and the inner one; a model that shows the
+ * flat screen needs nothing more.
  */
 export function deviceModelStreamable(
   model: Pick<DeviceModelDescription, "streams">,
   client: Pick<DeviceClient, "fold" | "displays"> | null | undefined,
 ): boolean {
   if (!client) return false;
-  return model.streams !== "displays" || (!!client.fold && !!client.displays);
+  if (model.streams !== "displays") return true;
+  // A panel without its display would have no frame to show.
+  const displays = new Set(client.displays?.map((display) => display.id));
+  return !!client.fold && displays.has("cover") && displays.has("inner");
 }
 
 /**

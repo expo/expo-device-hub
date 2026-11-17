@@ -90,7 +90,10 @@ describe("which model display a stream shows", () => {
 describe("when a device gets the 3D preview", () => {
   const duoClient = {
     fold: { pending: false, error: null, setControl() {} },
-    displays: [],
+    displays: [
+      { id: "cover", active: true, attachVideo() {} },
+      { id: "inner", active: false, attachVideo() {} },
+    ],
   } as unknown as DeviceClient;
   const flatClient = { fold: null, displays: null } as unknown as DeviceClient;
 
