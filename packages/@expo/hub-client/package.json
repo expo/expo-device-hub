@@ -27,6 +27,7 @@
     "src",
     "!src/__tests__",
     "models/*.glb",
+    "models/glb.d.ts",
     "models/README.md"
   ],
   "type": "module",
@@ -55,7 +56,10 @@
       "import": "./dist/models/catalog.mjs",
       "default": "./dist/models/catalog.mjs"
     },
-    "./models/*.glb": "./models/*.glb"
+    "./models/*.glb": {
+      "types": "./models/glb.d.ts",
+      "default": "./models/*.glb"
+    }
   },
   "publishConfig": {
     "access": "public"

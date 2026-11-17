@@ -55,8 +55,13 @@ describe("the models entries stay out of an app that does not use them", () => {
     };
     expect(manifest.exports["./models"]).toBeDefined();
     expect(manifest.exports["./models/catalog"]).toBeDefined();
-    expect(manifest.exports["./models/*.glb"]).toBe("./models/*.glb");
+    // The files, and their type: the URL that the consumer's bundler gives.
+    expect(manifest.exports["./models/*.glb"]).toEqual({
+      types: "./models/glb.d.ts",
+      default: "./models/*.glb",
+    });
     expect(manifest.files).toContain("models/*.glb");
+    expect(manifest.files).toContain("models/glb.d.ts");
     // A consumer that does not show 3D models must not need three.js.
     for (const peer of ["three", "three-mesh-bvh"]) {
       expect(manifest.peerDependencies[peer]).toBeDefined();

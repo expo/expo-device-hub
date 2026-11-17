@@ -271,6 +271,7 @@ The package has one GLB file per model: `@expo/hub-client/models/iphone-duo.glb`
 `iphone-18-pro.glb`, `pixel-9-pro.glb`, and `pixel-9-pro-fold.glb`, 2 to 6 MB each.
 Import the files of the models you show, so that your bundler emits them and gives you
 their URLs, and pass the URL as `modelUrl`. Your bundler must treat `.glb` as an asset.
+The package types each import as that URL, a string.
 The model loads only when `DeviceModelScreen` mounts. When the model or WebGL is not
 available, `onUnavailable` runs: show the flat `DeviceScreen` then.
 

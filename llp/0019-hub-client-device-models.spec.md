@@ -44,7 +44,7 @@ Both are peers, because `three-mesh-bvh` declares `three` as its own peer [obser
 
 ## Model files
 
-- The four GLB files are in `models/` at the package root, and the `exports` pattern `./models/*.glb` serves them, so a file's import path and its path in the package are the same [observed: `package.json`]. `models/README.md` records their source commit, sizes, and hashes.
+- The four GLB files are in `models/` at the package root, and the `exports` pattern `./models/*.glb` serves them, so a file's import path and its path in the package are the same [observed: `package.json`]. The export's `types` condition types each import as the file's URL, a string, so a TypeScript consumer needs no `*.glb` module declaration of its own [observed: `models/glb.d.ts`]. `models/README.md` records their source commit, sizes, and hashes.
 - A consumer imports the files of the models it shows. Its bundler emits them and gives their URLs, which the consumer passes to `DeviceModelScreen`. A model loads only when the screen mounts.
 - The Hub imports them as Metro assets. `expo export` copies them to `dist/client/assets/_@expo/hub-client/models/`, and the standalone CLI serves them from there [observed: `expo export` output, `expo-device-hub/metro.config.js`]. For an asset outside the app's package, `expo export` writes the URL as `.//assets/…`; the dashboard removes the empty path segment [observed: `modelAssetUrl` in `expo-device-hub/src/Dashboard.tsx`].
 - The files add 14.8 MB to the package, and nothing to a bundle that does not import them.
