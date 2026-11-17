@@ -45,7 +45,7 @@ EXPO_DEVICE_HUB_EMULATOR_CAPTURE_LIBRARY="$PWD/dist/darwin-arm64/libexpo_emulato
 `/health` on the serve-emu routes reports `captureBackend: "expo-emulator-capture"` and
 the capture diagnostics (`framePath`, encoder, native and stream size, resizes, rotation).
 
-![Expo Device Hub with its sidebar and Stream options open, showing Emulator capture over WebRTC.](https://raw.githubusercontent.com/expo/expo-device-hub/d66897959c6d81d2d3042181d6d9885a6a97ae3d/packages/expo-emulator-capture/docs/device-hub-emulator-capture.png)
+![Expo Device Hub with its sidebar and Stream options open, showing Emulator capture over WebRTC.](https://raw.githubusercontent.com/expo/expo-device-hub/92849c5f2db45cf9d83c2abf5b358067fee0b32f/packages/expo-emulator-capture/docs/device-hub-emulator-capture.png)
 
 ## Measurements
 
