@@ -4,25 +4,7 @@ import { type DeviceLog } from "@expo/hub-client";
 import { text, textSize } from "../primitives";
 import { LogRow } from "./LogRow";
 
-// An always-visible, styled scrollbar. Styling `::-webkit-scrollbar` opts out of
-// the macOS overlay (auto-hiding) scrollbar in Chromium. We intentionally do NOT
-// set the standard `scrollbar-width` / `scrollbar-color` props: setting either
-// makes Chromium fall back to the standard auto-hiding overlay scrollbar.
-const SCROLLBAR_CSS = `
-.hub-log-scroll::-webkit-scrollbar { width: 12px; }
-.hub-log-scroll::-webkit-scrollbar-track { background: transparent; }
-.hub-log-scroll::-webkit-scrollbar-thumb {
-  background-color: var(--expo-theme-background-selected);
-  border-radius: 8px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-  min-height: 24px;
-}
-.hub-log-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: var(--expo-theme-border-default);
-}
-`;
-
+// The always-visible scrollbar of `.hub-log-scroll` is styled in `theme/theme.css`.
 const scrollStyle: CSSProperties = {
   height: 200,
   flexShrink: 0,
@@ -67,7 +49,6 @@ export function LogList({
 
   return (
     <div ref={scrollRef} className="hub-log-scroll" style={scrollStyle}>
-      <style>{SCROLLBAR_CSS}</style>
       {logs.length === 0 ? (
         <div
           style={{

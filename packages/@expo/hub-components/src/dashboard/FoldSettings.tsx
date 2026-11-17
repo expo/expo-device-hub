@@ -1,11 +1,22 @@
 import { useEffect, useId, useState } from "react";
 
 import { type DeviceFold, type DeviceFoldCapabilities } from "@expo/hub-client";
-import { Select, type SelectOption, bg, border, radius, text, textSize } from "../primitives";
-import { DisabledControlHint } from "../components/DisabledControlHint";
+import {
+  DisabledControlHint,
+  Select,
+  type SelectOption,
+  bg,
+  border,
+  radius,
+  text,
+  textSize,
+} from "../primitives";
 import { FOLD_POSE_OPTIONS, selectedFoldPose } from "./foldPoses";
 import { type FoldPreviewMode } from "./PhoneFrame";
-import { SidebarRow, SidebarSlider, SidebarSwitch } from "./SidebarRow";
+import { SectionNote } from "./SectionNote";
+import { SidebarRow } from "./SidebarRow";
+import { SidebarSlider } from "./SidebarSlider";
+import { SidebarSwitch } from "./SidebarSwitch";
 
 /**
  * Viewer-local choices for how the iPhone Duo is drawn; owned by the consumer.
@@ -238,11 +249,7 @@ export function FoldSettings({
           )}
         </>
       )}
-      {error && (
-        <div role="alert" style={{ ...textSize.xs, color: text.danger, padding: "0 0 12px" }}>
-          {error}
-        </div>
-      )}
+      {error && <SectionNote role="alert">{error}</SectionNote>}
     </div>
   );
 }

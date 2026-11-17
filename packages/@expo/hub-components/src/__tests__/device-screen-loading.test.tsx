@@ -71,6 +71,9 @@ function browserGlobals() {
     getComputedStyle: () => ({ direction: "ltr" }),
     addEventListener() {},
     removeEventListener() {},
+    // The toolbar's tooltips keep their open delay on window timers.
+    setTimeout,
+    clearTimeout,
   });
   stubGlobal("document", {
     hidden: false,

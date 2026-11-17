@@ -1,6 +1,7 @@
 import { type RefObject } from "react";
 
-import { icon, radius, text, textSize } from "../theme/tokens";
+import { textSize, tone } from "../theme/tokens";
+import { StatusDot } from "./StatusDot";
 
 /** Reserved device-row status that appears without shifting the device name. */
 export function AgentDeviceStatus({
@@ -22,20 +23,13 @@ export function AgentDeviceStatus({
         gap: compact ? 0 : 5,
         flexShrink: 0,
         visibility: active ? "visible" : "hidden",
-        color: text.info,
+        color: tone.info.text,
         ...textSize["2xs"],
       }}
     >
-      <span
-        data-agent-device-badge
-        style={{
-          width: 7,
-          height: 7,
-          flexShrink: 0,
-          borderRadius: radius.full,
-          backgroundColor: icon.info,
-        }}
-      />
+      <span data-agent-device-badge style={{ display: "flex", flexShrink: 0 }}>
+        <StatusDot tone="info" size={7} />
+      </span>
       <span
         ref={labelRef}
         data-agent-device-label

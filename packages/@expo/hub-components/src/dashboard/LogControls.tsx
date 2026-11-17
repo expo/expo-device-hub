@@ -1,4 +1,4 @@
-import { font, text, textSize } from "../primitives";
+import { font, text, textSize, truncate } from "../primitives";
 import { SidebarActionButton } from "./SidebarActionButton";
 
 /** Compact stream toolbar for pausing, resuming, and clearing device logs. */
@@ -36,9 +36,7 @@ export function LogControls({
           fontFamily: font.mono,
           fontWeight: 400,
           color: text.tertiary,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
+          ...truncate,
         }}
       >
         {count} {count === 1 ? unit : `${unit}s`}

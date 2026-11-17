@@ -1,10 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  LogSidebar,
-  MOBILE_CORNER_BUTTON_TOP,
-  MOBILE_SIDEBAR_TOP_INSET,
-  Sidebar,
-} from "@expo/hub-components";
+import { MOBILE_CORNER_BUTTON_TOP, MOBILE_SIDEBAR_TOP_INSET, Sidebar } from "@expo/hub-components";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
@@ -40,7 +35,6 @@ test("aligns a collapsed sidebar toggle with the open overlay toggle on mobile",
     <FloatingSidebarToggle side="left" inset={80} onClick={() => {}} />,
   );
   const openSidebarHtml = [
-    renderToStaticMarkup(<LogSidebar onToggle={() => {}} />),
     renderToStaticMarkup(
       <Sidebar
         simulators={[]}

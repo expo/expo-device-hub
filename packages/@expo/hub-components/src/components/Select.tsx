@@ -12,10 +12,21 @@ import {
 } from "@radix-ui/react-select";
 import { useEffect, useRef, useState } from "react";
 
-import { bg, border, icon, radius, shadow, text, textSize } from "../theme/tokens";
+import {
+  bg,
+  border,
+  icon,
+  layer,
+  motion,
+  opacity,
+  radius,
+  shadow,
+  text,
+  textSize,
+  truncate,
+} from "../theme/tokens";
 import { CheckIcon, ChevronDownIcon } from "./icons";
-import { isFocusVisible } from "./focusVisible";
-import { pillControlStyle } from "./pill";
+import { pillControlProps } from "./pill";
 import { DisabledControlHint } from "./DisabledControlHint";
 
 export type SelectOption<Value extends string = string> = {
@@ -83,10 +94,9 @@ export function Select<Value extends string>({
   onReselect,
 }: SelectProps<Value>) {
   const [open, setOpen] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const selectedLabel = options.find((option) => option.value === value)?.label ?? value;
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const pill = pillControlProps({ disabled, pressScale: 1 });
   const pointerType = useRef("touch");
   const reselect = (option: SelectOption<Value>) => {
     if (!disabled && !option.disabled && option.value === value) onReselect?.(option.value);
@@ -130,26 +140,16 @@ export function Select<Value extends string>({
           aria-label={ariaLabel}
           aria-describedby={ariaDescribedBy}
           data-test-options={options.map((option) => option.label).join("\n")}
-          onFocus={(event) => setFocused(isFocusVisible(event))}
-          onBlur={() => setFocused(false)}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
+          className={pill.className}
           style={{
-            ...pillControlStyle({ hovered, focused, disabled }),
+            ...pill.style,
             width: "max-content",
             maxWidth: "100%",
             justifyContent: "space-between",
             padding: "0 8px 0 10px",
           }}
         >
-          <span
-            style={{
-              minWidth: 0,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <span style={{ ...truncate, minWidth: 0 }}>
             <Value>{selectedLabel}</Value>
           </span>
           <SelectIcon
@@ -159,7 +159,7 @@ export function Select<Value extends string>({
               flexShrink: 0,
               color: icon.default,
               transform: open ? "rotate(180deg)" : undefined,
-              transition: "transform 120ms ease",
+              transition: `transform ${motion.fast} ${motion.ease}`,
             }}
           >
             <ChevronDownIcon size={16} strokeWidth={1.5} />
@@ -187,7 +187,7 @@ export function Select<Value extends string>({
           style={{
             ...textSize.sm,
             fontWeight: 500,
-            zIndex: 605,
+            zIndex: layer.popover,
             width: "max-content",
             minWidth: "var(--radix-select-trigger-width)",
             maxWidth: "var(--radix-select-content-available-width)",
@@ -246,7 +246,7 @@ export function Select<Value extends string>({
                   outline: "none",
                   color: text.default,
                   cursor: option.disabled ? "default" : "pointer",
-                  opacity: option.disabled ? 0.5 : 1,
+                  opacity: option.disabled ? opacity.disabled : 1,
                   userSelect: "none",
                   whiteSpace: "nowrap",
                 }}

@@ -1,4 +1,4 @@
-import { type ComponentType, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ComponentType, useEffect, useRef, useState } from "react";
 
 import {
   KeyboardCapture,
@@ -13,11 +13,12 @@ import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen
 import {
   bg,
   border,
-  FloatingIconButton,
-  FullScreenIcon,
   CloseIcon,
-  text,
+  FullScreenIcon,
+  IconButton,
+  layer,
   textSize,
+  tone,
 } from "../primitives";
 import { MOBILE_CORNER_BUTTON_TOP } from "./cornerButtons";
 import { type Device } from "./data";
@@ -27,6 +28,8 @@ import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./Cl
 import { PhoneFrame, type PhoneFrameFoldPreview } from "./PhoneFrame";
 import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
+import { useElementHeight } from "./useElementHeight";
+import { useInertSiblings } from "./useInertSiblings";
 
 /** Space between the title pill and the top of the device frame. */
 const TITLE_GAP = 32;
@@ -94,29 +97,8 @@ export function StreamPanel({
     }
     wasTyping.current = typing;
   }, [typing]);
-  useLayoutEffect(() => {
-    if (!presenting) return;
-    const panel = panelRef.current;
-    const parent = panel?.parentElement;
-    if (!parent) return;
-    const previous = new Map<HTMLElement, boolean>();
-    const protectSiblings = () => {
-      for (const node of parent.children) {
-        if (node === panel || !(node instanceof HTMLElement) || previous.has(node)) continue;
-        previous.set(node, node.inert);
-        node.inert = true;
-      }
-    };
-    protectSiblings();
-    const observer = new MutationObserver(protectSiblings);
-    observer.observe(parent, { childList: true });
-    return () => {
-      observer.disconnect();
-      previous.forEach((inert, node) => {
-        node.inert = inert;
-      });
-    };
-  }, [presenting]);
+  // A full-screen stream covers the sidebars, so they must not take focus or clicks.
+  useInertSiblings(panelRef, presenting);
   useEffect(() => {
     if (!viewport.mobile) {
       setPresentation(false);
@@ -150,17 +132,9 @@ export function StreamPanel({
       setKeyboardOpen(true);
     }
   };
+  // The desktop toolbar can wrap to more rows, and the frame keeps clear of its real height.
   const controlsRef = useRef<HTMLDivElement>(null);
-  const [controlsHeight, setControlsHeight] = useState(STREAM_CONTROLS_HEIGHT);
-  useLayoutEffect(() => {
-    const element = controlsRef.current;
-    if (viewport.mobile || !element || typeof ResizeObserver === "undefined") return;
-    const measure = () => setControlsHeight(element.getBoundingClientRect().height);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [viewport.mobile]);
+  const controlsHeight = useElementHeight(controlsRef, STREAM_CONTROLS_HEIGHT, !viewport.mobile);
   // PhoneFrame also knows whether the 3D model is loaded; until then the pill says Loading too.
   const [screenLoading, setScreenLoading] = useState(() => deviceScreenLoading(client));
   const captureScreenshot = useScreenshotToast(client, device.name);
@@ -202,7 +176,7 @@ export function StreamPanel({
       role="alert"
       style={{
         ...textSize.xs,
-        color: text.danger,
+        color: tone.danger.text,
         textAlign: "center",
         maxWidth: "min(280px, 100cqw)",
         margin: "8px auto 0",
@@ -236,7 +210,7 @@ export function StreamPanel({
               left: viewport.left,
               width: viewport.width,
               height: viewport.height,
-              zIndex: 20,
+              zIndex: layer.presentation,
             } as const)
           : {}),
         boxSizing: "border-box",
@@ -257,8 +231,8 @@ export function StreamPanel({
           )}
           {!typing && (
             <div
-              // Pinned to the top-right corner, opposite the sidebar toggle. Its z-index stays
-              // below the sidebar overlay (backdrop 12, panel 13), whose close button can share the corner.
+              // Pinned to the top-right corner, opposite the sidebar toggle. Its layer stays
+              // below the sidebar overlay, whose close button can share the corner.
               onMouseDownCapture={(event) => {
                 if (typing || keyboardOpen) event.preventDefault();
               }}
@@ -266,10 +240,10 @@ export function StreamPanel({
                 position: "absolute",
                 top: `calc(${MOBILE_CORNER_BUTTON_TOP}px + env(safe-area-inset-top, 0px))`,
                 right: 24,
-                zIndex: 3,
+                zIndex: layer.cornerButton,
               }}
             >
-              <FloatingIconButton
+              <IconButton
                 ref={fullScreenRef}
                 icon={presenting ? <CloseIcon size={20} /> : <FullScreenIcon />}
                 label={presenting ? "Exit full screen" : "Full screen"}

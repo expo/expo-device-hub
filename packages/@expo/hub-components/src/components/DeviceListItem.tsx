@@ -1,8 +1,9 @@
-import { type CSSProperties, useRef, useState } from "react";
+import { type CSSProperties, useRef } from "react";
 
 import { WarningIcon } from "./icons";
-import { bg, icon, radius, text, textSize } from "../theme/tokens";
+import { bg, radius, text, textSize, tone, truncate } from "../theme/tokens";
 import { AgentDeviceStatus } from "./AgentDeviceStatus";
+import { PRESSABLE_CLASS, pressableStyle } from "./pressable";
 import { useCompactAgentDeviceStatus } from "./useCompactAgentDeviceStatus";
 
 /**
@@ -27,8 +28,6 @@ export function DeviceListItem({
   selected = false,
   onClick,
 }: DeviceListItemProps) {
-  const [hovered, setHovered] = useState(false);
-  const [pressed, setPressed] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const nameRef = useRef<HTMLSpanElement>(null);
   const statusLabelRef = useRef<HTMLSpanElement>(null);
@@ -41,6 +40,11 @@ export function DeviceListItem({
   });
 
   const style: CSSProperties = {
+    // A selected row keeps its fill under the pointer.
+    ...pressableStyle({
+      background: selected ? bg.hover : undefined,
+      hoverBackground: selected ? bg.hover : bg.element,
+    }),
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
@@ -53,29 +57,20 @@ export function DeviceListItem({
     overflow: "hidden",
     border: "none",
     borderRadius: radius.xl,
-    backgroundColor: selected ? bg.hover : hovered ? bg.element : "transparent",
     cursor: "pointer",
     textAlign: "left",
     fontFamily: "inherit",
-    transition: "background-color 150ms ease, transform 100ms ease",
-    transform: pressed ? "scale(0.98)" : undefined,
   };
 
   return (
     <button
       ref={buttonRef}
       type="button"
+      className={PRESSABLE_CLASS}
       style={style}
       onClick={onClick}
       aria-pressed={selected}
       aria-label={`${name}, ${version}${usedByAgent ? ", used by agent" : ""}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => {
-        setHovered(false);
-        setPressed(false);
-      }}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
     >
       <span
         style={{
@@ -92,7 +87,7 @@ export function DeviceListItem({
             role="img"
             aria-label="Unsupported or untested device"
             title="This device type is unsupported or untested."
-            style={{ display: "flex", flex: "0 0 auto", color: icon.warning }}
+            style={{ display: "flex", flex: "0 0 auto", color: tone.warning.icon }}
           >
             <WarningIcon size={16} />
           </span>
@@ -102,13 +97,11 @@ export function DeviceListItem({
           title={name}
           style={{
             ...textSize.sm,
+            ...truncate,
             minWidth: 0,
             flex: "1 1 auto",
             fontWeight: 500,
             color: text.default,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
           }}
         >
           {name}

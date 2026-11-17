@@ -1,11 +1,9 @@
 import { type DeviceClient, type DeviceHttpCodec, type DeviceStreamMode } from "@expo/hub-client";
-import { SidebarToggle, bg } from "../primitives";
 import { AccessibilitySection } from "./AccessibilitySection";
 import { CameraSection } from "./CameraSection";
 import { ClipboardSection } from "./ClipboardSection";
 import { type ClipboardRequest } from "./ClipboardToast";
 import { PermissionsSection } from "./PermissionsSection";
-import { SIDEBAR_SECTION_INSET } from "./CollapsibleSection";
 import { CurrentAppSection } from "./CurrentAppSection";
 import { DeviceOptionsSection } from "./DeviceOptionsSection";
 import { type FoldPreviewOption } from "./FoldSettings";
@@ -13,12 +11,9 @@ import { EventsSection } from "./EventsSection";
 import { LocationSection } from "./LocationSection";
 import { LogsSection } from "./LogsSection";
 import { StreamOptionsSection } from "./StreamOptionsSection";
-import { type Device } from "./data";
-import { type StreamModeAvailability } from "./StreamSection";
+import { type Device, type StreamModeAvailability } from "./data";
 
-export type LogSidebarProps = {
-  /** When set, a sidebar toggle is shown to collapse this panel. */
-  onToggle?: () => void;
+export type InspectorSectionsProps = {
   /** Active device connection — feeds the inspector sections. */
   client?: DeviceClient;
   /** Selected device metadata used by viewer-local options. */
@@ -50,19 +45,14 @@ export type LogSidebarProps = {
   clipboardRequest?: ClipboardRequest | null;
   /** The Clipboard section took over `clipboardRequest`. */
   onClipboardRequestHandled?: () => void;
-  /** Column width in px, driven by the resize handle. Defaults to 400. */
-  width?: number;
   /** Viewer-local 2D/3D choices for an iPhone Duo. */
   foldPreview?: FoldPreviewOption;
 };
 
-/** Props that feed the inspector sections, without the column chrome. */
-export type InspectorSectionsProps = Omit<LogSidebarProps, "onToggle" | "width">;
-
 /**
  * The inspector for the selected device: current app, device and stream options,
- * and the other capability sections, ending with the logs. {@link LogSidebar}
- * wraps it in a column; the dashboard's left sidebar embeds it below the device lists.
+ * and the other capability sections, ending with the logs. The dashboard's left
+ * sidebar embeds it below the device lists.
  */
 export function InspectorSections({
   client,
@@ -133,52 +123,5 @@ export function InspectorSections({
       {client?.capabilities.events && <EventsSection client={client} />}
       <LogsSection client={client} />
     </>
-  );
-}
-
-/**
- * A column that holds the inspector on its own, rendered directly on the
- * dashboard canvas so it matches the existing sidebar treatment.
- */
-export function LogSidebar({ onToggle, width = 400, ...inspector }: LogSidebarProps) {
-  return (
-    <aside
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        width: `min(${width}px, 100vw)`,
-        flexShrink: 0,
-        height: "var(--hub-viewport-height, 100vh)",
-        boxSizing: "border-box",
-        padding: "32px 0 0",
-        backgroundColor: bg.default,
-        overflow: "hidden",
-      }}
-    >
-      {onToggle && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-start",
-            padding: `0 ${SIDEBAR_SECTION_INSET}px 12px`,
-          }}
-        >
-          <SidebarToggle side="right" onClick={onToggle} />
-        </div>
-      )}
-      <div
-        style={{
-          display: "flex",
-          flex: 1,
-          minHeight: 0,
-          flexDirection: "column",
-          overflowX: "hidden",
-          overflowY: "auto",
-        }}
-      >
-        <InspectorSections {...inspector} />
-      </div>
-    </aside>
   );
 }

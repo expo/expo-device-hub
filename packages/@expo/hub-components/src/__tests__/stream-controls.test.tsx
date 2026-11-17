@@ -114,25 +114,26 @@ describe("StreamControls", () => {
     },
   );
 
-  test("shows every label as a tooltip above its button and exposes Keyboard as a switch", () => {
+  test("names every button, keeps tooltips closed at rest, and exposes Keyboard as a switch", () => {
     const markup = renderToStaticMarkup(
       <StreamControls
         orientationUnavailable={null}
         keyboard={{ open: true, onToggle: () => {} }}
       />,
     );
-    const tooltips = [...markup.matchAll(/<span role="tooltip"[^>]*>([^<]+)<\/span>/g)];
 
-    expect(tooltips.map((match) => match[1])).toEqual([
+    // The label is the accessible name. The tooltip repeats it only while the
+    // pointer is over the button or it has keyboard focus, so no tooltip renders at rest.
+    expect(buttonTags(markup).map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1])).toEqual([
       "Save",
       "Home",
       "Reload",
       "Keyboard",
       "Rotate",
     ]);
-    for (const match of tooltips) {
-      expect(match[0]).toContain("bottom:calc(100% + 8px)");
-      expect(match[0]).toContain("opacity:0");
+    expect(markup).not.toContain('role="tooltip"');
+    for (const tag of buttonTags(markup)) {
+      expect(tag).toContain('class="hub-pressable"');
     }
     const keyboard = buttonTags(markup).find((tag) => tag.includes('aria-label="Keyboard"'));
     expect(keyboard).toContain('role="switch"');

@@ -1,128 +1,42 @@
-import { type ButtonHTMLAttributes, forwardRef, type ReactNode, useState } from "react";
+import { type ButtonHTMLAttributes, type ReactNode, type Ref } from "react";
 
-import { bg, border, icon as iconColor, radius, text, textSize } from "../theme/tokens";
-import { isFocusVisible } from "./focusVisible";
+import { bg, radius } from "../theme/tokens";
+import { IconButton } from "./IconButton";
+import { Tooltip } from "./Tooltip";
 
 export const CONTROL_BUTTON_SIZE = 44;
 
-/**
- * An icon button in the toolbar under the device stream. The label is the
- * button's accessible name and appears as a tooltip above the button while it
- * is hovered or keyboard-focused; a pointer click leaves no lingering state.
- *
- * Forwards its ref and spreads extra props onto the underlying `<button>`, so
- * it can also serve as a Radix `asChild` trigger.
- */
 export type ControlButtonProps = {
   icon: ReactNode;
+  /** The accessible name, and the tooltip unless `tooltip` replaces it. */
   label: string;
+  /** Replaces the label in the tooltip and describes the button, such as why it is locked. */
   tooltip?: string;
-  /** Touch-only controls already have accessible labels; avoid sticky emulated hover. */
-  hideTooltip?: boolean;
+  ref?: Ref<HTMLButtonElement>;
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
-export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
-  function ControlButton(
-    {
-      icon,
-      label,
-      tooltip,
-      hideTooltip = false,
-      style,
-      onMouseEnter,
-      onMouseLeave,
-      onMouseDown,
-      onMouseUp,
-      onFocus,
-      onBlur,
-      ...rest
-    },
-    ref,
-  ) {
-    const [hovered, setHovered] = useState(false);
-    const [pressed, setPressed] = useState(false);
-    const [focused, setFocused] = useState(false);
-    const tooltipVisible = !hideTooltip && (hovered || focused);
-
-    return (
-      <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
-        <button
-          ref={ref}
-          type="button"
-          aria-label={label}
-          aria-description={tooltip}
-          onMouseEnter={(event) => {
-            setHovered(true);
-            onMouseEnter?.(event);
-          }}
-          onMouseLeave={(event) => {
-            setHovered(false);
-            setPressed(false);
-            onMouseLeave?.(event);
-          }}
-          onMouseDown={(event) => {
-            setPressed(true);
-            onMouseDown?.(event);
-          }}
-          onMouseUp={(event) => {
-            setPressed(false);
-            onMouseUp?.(event);
-          }}
-          onFocus={(event) => {
-            setFocused(isFocusVisible(event));
-            onFocus?.(event);
-          }}
-          onBlur={(event) => {
-            setFocused(false);
-            onBlur?.(event);
-          }}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: CONTROL_BUTTON_SIZE,
-            height: CONTROL_BUTTON_SIZE,
-            padding: 0,
-            border: "none",
-            // Concentric with the surrounding group (radius.xl minus its padding).
-            borderRadius: `calc(${radius.xl} - 4px)`,
-            outline: "none",
-            backgroundColor: hovered ? bg.hover : "transparent",
-            boxShadow: focused ? `0 0 0 2px ${border.secondary}` : "none",
-            color: iconColor.default,
-            cursor: "pointer",
-            fontFamily: "inherit",
-            transition: "background-color 150ms ease, transform 100ms ease",
-            transform: pressed ? "scale(0.96)" : undefined,
-            ...style,
-          }}
-          {...rest}
-        >
-          {icon}
-        </button>
-        <span
-          role="tooltip"
-          aria-hidden="true"
-          style={{
-            ...textSize.xs,
-            position: "absolute",
-            bottom: "calc(100% + 8px)",
-            left: "50%",
-            zIndex: 1,
-            padding: "3px 8px",
-            borderRadius: radius.md,
-            backgroundColor: text.default,
-            color: bg.default,
-            whiteSpace: "nowrap",
-            pointerEvents: "none",
-            opacity: tooltipVisible ? 1 : 0,
-            transform: "translateX(-50%)",
-            transition: "opacity 120ms ease",
-          }}
-        >
-          {tooltip ?? label}
-        </span>
-      </span>
-    );
-  },
-);
+/**
+ * An icon button in the toolbar under the device stream. Its tooltip shows
+ * above the button while the pointer is over it or it has keyboard focus.
+ * Extra props go to the `<button>`, so it also works as a Radix `asChild`
+ * trigger.
+ */
+export function ControlButton({ icon, label, tooltip, style, ...rest }: ControlButtonProps) {
+  return (
+    <Tooltip content={tooltip ?? label}>
+      <IconButton
+        icon={icon}
+        label={label}
+        aria-description={tooltip}
+        size={CONTROL_BUTTON_SIZE}
+        hoverBackground={bg.hover}
+        style={{
+          // Concentric with the surrounding group (radius.xl minus its padding).
+          borderRadius: `calc(${radius.xl} - 4px)`,
+          ...style,
+        }}
+        {...rest}
+      />
+    </Tooltip>
+  );
+}

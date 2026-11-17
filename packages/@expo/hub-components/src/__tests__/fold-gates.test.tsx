@@ -4,7 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { DeviceOptionsSection } from "../dashboard/DeviceOptionsSection";
-import { LogSidebar } from "../dashboard/LogSidebar";
+import { InspectorSections } from "../dashboard/InspectorSections";
 import { DuoModelView } from "../foldable/DuoModelView";
 import { FoldableDeviceScreen } from "../foldable/FoldableDeviceScreen";
 import { DUO_FOLD_CONTROLS } from "./duo-fixtures";
@@ -157,10 +157,10 @@ describe("fold controls follow capabilities.fold, not the fold state alone", () 
 
   test("the inspector opens Device options for fold commands alone", () => {
     // No device settings, frame option, or device actions: only fold commands open the section.
-    expect(renderToStaticMarkup(<LogSidebar client={duo(false)} />)).not.toContain(
+    expect(renderToStaticMarkup(<InspectorSections client={duo(false)} />)).not.toContain(
       ">Device options<",
     );
-    const markup = renderToStaticMarkup(<LogSidebar client={duo(DUO_FOLD_CONTROLS)} />);
+    const markup = renderToStaticMarkup(<InspectorSections client={duo(DUO_FOLD_CONTROLS)} />);
     expect(markup).toContain(">Device options<");
     expect(markup).toContain('aria-label="Fold settings"');
   });

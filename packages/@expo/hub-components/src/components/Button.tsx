@@ -1,6 +1,8 @@
-import { type CSSProperties, type ReactNode, useState } from "react";
+import { type CSSProperties, type ReactNode } from "react";
 
 import { radius, textSize } from "../theme/tokens";
+import { cx } from "./cx";
+import { PRESSABLE_CLASS, pressableStyle } from "./pressable";
 
 /**
  * Button — ported from the universe website's `ui/components/Button`.
@@ -10,7 +12,8 @@ import { radius, textSize } from "../theme/tokens";
  * components with inline styles, so this is a self-contained port that drives
  * the same `--expo-theme-button-*` tokens (see `theme/theme.css`). It looks and
  * behaves like the website button (themes, sizes, hover/active/disabled) but has
- * no Tailwind or Next.js dependency.
+ * no Tailwind or Next.js dependency. The `.hub-pressable` rules give it the
+ * hover fill, the press scale and the keyboard focus ring.
  *
  * Keep the theme/size matrix in sync with the website if it changes upstream.
  */
@@ -131,12 +134,13 @@ export function Button({
   className,
   style,
 }: ButtonProps) {
-  const [hovered, setHovered] = useState(false);
-  const [pressed, setPressed] = useState(false);
-
   const t = THEME_TOKENS[theme];
 
   const baseStyle: CSSProperties = {
+    ...pressableStyle({
+      background: disabled ? t.disabledBackground : t.background,
+      hoverBackground: disabled ? t.disabledBackground : t.hover,
+    }),
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
@@ -146,17 +150,15 @@ export function Button({
     whiteSpace: "nowrap",
     cursor: disabled ? "default" : "pointer",
     textDecoration: "none",
-    transition: "background-color 150ms ease, transform 100ms ease, opacity 150ms ease",
     width: block ? "100%" : undefined,
-    transform: !disabled && pressed ? "scale(0.98)" : undefined,
     ...SIZE_STYLES[size],
-    backgroundColor: disabled ? t.disabledBackground : hovered ? t.hover : t.background,
     borderColor: disabled ? t.disabledBorder : t.border,
     color: disabled ? t.disabledText : t.text,
     opacity: disabled ? 0.8 : 1,
     pointerEvents: disabled ? "none" : undefined,
     ...style,
   };
+  const pressableClassName = cx(PRESSABLE_CLASS, className);
 
   const content = (
     <>
@@ -166,25 +168,15 @@ export function Button({
     </>
   );
 
-  const handlers = {
-    onMouseEnter: () => setHovered(true),
-    onMouseLeave: () => {
-      setHovered(false);
-      setPressed(false);
-    },
-    onMouseDown: () => setPressed(true),
-    onMouseUp: () => setPressed(false),
-  };
-
   if (href) {
     return (
       <a
         href={disabled ? undefined : href}
         target={target}
-        className={className}
+        aria-disabled={disabled || undefined}
+        className={pressableClassName}
         style={baseStyle}
         onClick={disabled ? undefined : onClick}
-        {...handlers}
       >
         {content}
       </a>
@@ -194,11 +186,10 @@ export function Button({
   return (
     <button
       type={type}
-      className={className}
+      className={pressableClassName}
       style={baseStyle}
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
-      {...handlers}
     >
       {content}
     </button>

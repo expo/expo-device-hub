@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { type AccessibilityNode, type DeviceClient } from "@expo/hub-client";
-import { bg, border, radius, text, textSize } from "../primitives";
+import { bg, border, opacity, radius, text, textSize, truncate } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { SectionNote } from "./SectionNote";
 import { SidebarActionButton } from "./SidebarActionButton";
@@ -97,16 +97,14 @@ export function AccessibilitySection({
                   fontFamily: "inherit",
                   textAlign: "left",
                   cursor: node.enabled ? "pointer" : "default",
-                  opacity: node.enabled ? 1 : 0.5,
+                  opacity: node.enabled ? 1 : opacity.disabled,
                 }}
               >
                 <span
                   style={{
                     ...textSize.sm,
+                    ...truncate,
                     maxWidth: "100%",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
                     color: text.default,
                   }}
                 >

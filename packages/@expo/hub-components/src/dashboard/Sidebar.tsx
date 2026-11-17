@@ -11,29 +11,7 @@ import {
   type Platform,
 } from "./data";
 
-/**
- * Left column: simulators + emulators lists, then `children` below them. The
- * dashboard passes the device inspector as `children`, so it scrolls with the lists.
- * The header, the lists and the inspector sections share {@link SIDEBAR_SECTION_INSET}.
- */
-export function Sidebar({
-  simulators,
-  emulators,
-  recentSimulators,
-  recentEmulators,
-  simulatorOptions,
-  emulatorOptions,
-  agentDeviceIds = [],
-  selectedId,
-  onSelect,
-  onAddDevice,
-  onToggle,
-  toggleIcon = "sidebar",
-  topInset = 32,
-  platform,
-  width = 320,
-  children,
-}: {
+export type SidebarProps = {
   /** Simulators to list — real iOS devices from the plugin server. */
   simulators: Device[];
   /** Emulators to list. */
@@ -64,7 +42,31 @@ export function Sidebar({
   width?: number;
   /** Rendered below the device lists, edge to edge, in the same scrolling area. */
   children?: ReactNode;
-}) {
+};
+
+/**
+ * Left column: simulators + emulators lists, then `children` below them. The
+ * dashboard passes the device inspector as `children`, so it scrolls with the lists.
+ * The header, the lists and the inspector sections share {@link SIDEBAR_SECTION_INSET}.
+ */
+export function Sidebar({
+  simulators,
+  emulators,
+  recentSimulators,
+  recentEmulators,
+  simulatorOptions,
+  emulatorOptions,
+  agentDeviceIds = [],
+  selectedId,
+  onSelect,
+  onAddDevice,
+  onToggle,
+  toggleIcon = "sidebar",
+  topInset = 32,
+  platform,
+  width = 320,
+  children,
+}: SidebarProps) {
   return (
     <aside
       style={{

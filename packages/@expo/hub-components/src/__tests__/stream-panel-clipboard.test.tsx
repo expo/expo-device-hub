@@ -44,6 +44,9 @@ for (const withFallback of [true, false]) {
       matchMedia: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
       addEventListener() {},
       removeEventListener() {},
+      // The toolbar's tooltips keep their open delay on window timers.
+      setTimeout,
+      clearTimeout,
     });
     stubGlobal("navigator", {
       clipboard: {

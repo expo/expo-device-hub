@@ -137,6 +137,99 @@ export const heading: Record<
   xs: { fontSize: 12, fontWeight: 600, lineHeight: 1.6, letterSpacing: "0" },
 };
 
+/**
+ * Status color sets. A status picks one tone, and every part of its UI (text,
+ * icon, border, surface) reads the color from that tone. Change a status color
+ * here, not in a component.
+ */
+export const tone = {
+  success: { text: text.success, icon: icon.success, border: border.success, bg: bg.success },
+  warning: { text: text.warning, icon: icon.warning, border: border.warning, bg: bg.warning },
+  danger: { text: text.danger, icon: icon.danger, border: border.danger, bg: bg.danger },
+  info: { text: text.info, icon: icon.info, border: border.info, bg: bg.info },
+} as const;
+
+export type Tone = keyof typeof tone;
+
+/**
+ * Durations and easings. The `.hub-pressable` rules in `theme.css` read `press`
+ * and `base` from the `--hub-motion-*` custom properties; keep both in step.
+ */
+export const motion = {
+  /** A press: the scale of a control under the pointer. */
+  press: "100ms",
+  /** A small state change: a tooltip, a chevron, a hover fill in a toast. */
+  fast: "120ms",
+  /** The default state change: hover fills and border colors. */
+  base: "150ms",
+  /** A panel that opens or closes: a sidebar section. */
+  panel: "200ms",
+  /** A device frame that changes its shape: a fold or a rotation. */
+  frame: "250ms",
+  ease: "ease",
+  /** Fast start, soft landing: content that enters or opens. */
+  easeOut: "cubic-bezier(0.16, 1, 0.3, 1)",
+  /** The standard curve for a value that moves between two states. */
+  easeInOut: "cubic-bezier(0.4, 0, 0.2, 1)",
+} as const;
+
+/** Opacity of a state, not of a color. */
+export const opacity = {
+  /** A control that cannot be used. */
+  disabled: 0.5,
+  /** A value that is out of date. */
+  stale: 0.55,
+} as const;
+
+/**
+ * Stacking order, lowest first. A layer inside the device frame or the stream
+ * panel stacks only against its siblings there; the page layers stack against
+ * each other.
+ */
+export const layer = {
+  /** Inside the device frame: the loading and error layer over the stream. */
+  screenStatus: 1,
+  /** Inside the device frame: the agent takeover prompt. */
+  screenOverlay: 2,
+  /** Inside the stream panel: the corner button of a phone layout. */
+  cornerButton: 3,
+  /** The sidebar resize handle. Above the stream, below the sidebar overlays. */
+  resizeHandle: 5,
+  /** The backdrop of a sidebar overlay. Its panel is one above. */
+  sidebarBackdrop: 10,
+  /** The backdrop of the topmost sidebar overlay. Its panel is one above. */
+  sidebarBackdropTopmost: 12,
+  /** The floating toggle of a closed sidebar. */
+  floatingToggle: 15,
+  /** The stream panel in a phone's full-screen presentation. */
+  presentation: 20,
+  /** Dialog backdrop. The same number as the `z-dialogOverlay-600` class. */
+  dialogOverlay: 600,
+  /** Dialog content. The same number as the `z-dialogContent-601` class. */
+  dialogContent: 601,
+  /** Menus and select lists, which can open from a dialog. */
+  popover: 605,
+  /** Tooltips and the server connection overlay, above every portal. */
+  top: 610,
+} as const;
+
+/** Colors of a dim layer over live device content. They do not follow the theme. */
+export const scrim = {
+  /** The dim layer itself. */
+  background: "rgba(0, 0, 0, 0.55)",
+  /** Secondary text on the dim layer. */
+  text: "rgba(255, 255, 255, 0.7)",
+  /** Agent-colored text on the dim layer. */
+  agentText: "rgba(218, 233, 255, 0.74)",
+} as const;
+
+/** One line of text that ends in an ellipsis. The element needs `minWidth: 0` in a flex row. */
+export const truncate = {
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+} as const;
+
 export const tokens = {
   bg,
   text,
@@ -147,4 +240,9 @@ export const tokens = {
   font,
   textSize,
   heading,
+  tone,
+  motion,
+  opacity,
+  layer,
+  scrim,
 } as const;

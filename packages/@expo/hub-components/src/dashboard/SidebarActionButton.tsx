@@ -1,7 +1,6 @@
 import { type ReactNode } from "react";
 
-import { PillButton } from "../primitives";
-import { DisabledControlHint } from "../components/DisabledControlHint";
+import { DisabledControlHint, PillButton } from "../primitives";
 
 /**
  * The action control on an inspector row (Toggle, Press, Shut down, Remove):
