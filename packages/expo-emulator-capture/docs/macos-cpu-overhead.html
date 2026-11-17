@@ -1,0 +1,39 @@
+<section id="macos-cpu-overhead-view" data-viz-composition>
+  <div data-viz-container></div>
+  <script type="application/json" data-viz-chart>
+    {
+      "id": "macos-cpu-overhead",
+      "title": "CPU above the no-stream baseline · M2",
+      "description": "Both use host GPU · mean of three rounds · November 5, 2026",
+      "height": 230,
+      "spec": {
+        "type": "horizontalBar",
+        "y": "Stream size",
+        "x": ["Capture + VideoToolbox", "gRPC + x264"],
+        "xLabel": "Additional busy CPU cores (baseline: 1.008 cores)",
+        "xDomain": [0, 1.45],
+        "showValues": true,
+        "showLegend": true,
+        "sortOrder": "original",
+        "valueFormat": {
+          "style": "decimal",
+          "minimumFractionDigits": 3,
+          "maximumFractionDigits": 3
+        }
+      },
+      "columns": ["Stream size", "Capture + VideoToolbox", "gRPC + x264"],
+      "rows": [
+        ["570 × 1280", 0.248, 0.5973333333333333],
+        ["1080 × 2424", 0.32000000000000006, 1.315]
+      ]
+    }
+  </script>
+</section>
+<script type="module">
+  import { mountChart } from "https://persistent.oaistatic.com/plugins/visualize/charts/1.2.3/element.js";
+  const root = document.getElementById("macos-cpu-overhead-view");
+  mountChart(
+    root.querySelector("[data-viz-container]"),
+    JSON.parse(root.querySelector("[data-viz-chart]").textContent),
+  );
+</script>
