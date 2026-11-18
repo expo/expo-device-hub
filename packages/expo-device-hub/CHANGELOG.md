@@ -1,5 +1,23 @@
 # expo-device-hub
 
+## 0.25.0
+
+### Minor Changes
+
+- bce1c89: Adding a device now has two steps. The + button of the simulator or emulator list opens a menu of the recent devices, each with its OS version; a click boots the device. The last row of the menu, "Create new simulator" or "Create new emulator", opens a new modal with the name, the OS version, and the model of the device. A boot that fails opens a dialog with the reason from the host.
+- e2b8525: The device screen loads like the screen on the Expo website. A selected device shows its shape at once, in its real proportions. Until the stream connects, the black screen shows a glow that moves around its edge, and the first frame fades in above it. A session that fails before its first frame says why on the screen. The dot of the status pill pulses while the status is Loading, Reconnecting, or Live.
+- ab70b74: The sidebar now has the look of the website's preview settings: sections with a hairline and a title row that takes a fill under the pointer, select boxes of one width, switches that turn blue when on, and pill buttons. The simulator and emulator lists show the platform's mark before each device name, the OS version at the right, and the selected device on a blue surface. The current app is in a card with its icon, name, and app ID.
+
+  The inspector no longer adds and removes sections and options while a device connects or reconnects. A selected device always has the sections and options of its platform. An option that cannot change now keeps its last value and is locked, and a tooltip gives the reason. An option whose value is not known shows a dash.
+
+- 2a32592: The toolbar under the device now has the look of the website's device controls: one rounded bar of round icon buttons, with a dark tooltip above each button that says what it does. An Android device also has Back, Recents, and Dismiss keyboard in the toolbar, next to Home. Take screenshot and the Clipboard menu show a spinner while their action runs. The buttons have new accessible names, such as "Go to home screen", "Take screenshot", "Reload app", and "Rotate device".
+
+### Patch Changes
+
+- 1cfe87e: Show the Android launcher icon of apps whose adaptive icon bitmaps carry an API level in their resource config, such as `xxxhdpi-v26`. This affects apps with a minSdk below 26, for example Expo Go, which showed the placeholder icon before.
+- c1c62d7: Dashboard controls now share one hover, press, and keyboard focus behavior. Buttons, selects, switches, text fields, and device rows show the same blue focus outline for keyboard focus. A hover fill no longer stays on a control after a touch, and a locked control no longer reacts to the pointer. The toolbar tooltips and the hints of disabled controls use the same tooltip.
+- c2eefa5: Make the sidebar's unsupported-device warning open explanatory details without selecting the device.
+
 ## 0.24.0
 
 ### Minor Changes

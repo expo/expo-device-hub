@@ -1,5 +1,12 @@
 # @expo/serve-sim
 
+## 0.14.4
+
+### Patch Changes
+
+- 8e6fc4e: Follow each exec-ws binary screenshot with a `{id, screenshotMetadata}` JSON frame, with the same metadata as the HTTP `X-Expo-Screenshot-Metadata` header for that request. `actions.describe` advertises it with `binaryMetadataFrame: true` on the `output` property.
+- 8ceda40: Show SpringBoard with its name, default icon, and app installation guidance. Replace raw app metadata errors with “Unable to read app details”.
+
 ## 0.14.3
 
 ### Patch Changes
