@@ -225,12 +225,13 @@ Apps that do not import `@expo/hub-client/models` do not bundle three.js or the 
 check for a model first and load the 3D screen only when it shows one:
 
 ```tsx
-import { DeviceScreen, useDeviceClient } from "@expo/hub-client";
+import { DeviceScreen, useDeviceClientSelector } from "@expo/hub-client";
 import {
   type DeviceModelAssets,
   deviceModelStreamable,
   modelStageMaxSide,
   resolveDeviceModel,
+  useDeviceModelScreenClient,
 } from "@expo/hub-client/models/catalog";
 import iphoneDuoModel from "@expo/hub-client/models/iphone-duo.glb";
 import pixel9ProFoldModel from "@expo/hub-client/models/pixel-9-pro-fold.glb";
@@ -247,10 +248,12 @@ const MODEL_URLS: DeviceModelAssets = {
 };
 
 function ModelScreen({ model: modelName }: { model: string }) {
-  const client = useDeviceClient();
+  // The part of the client that the 3D screen reads. It also fits `DeviceScreen`.
+  const client = useDeviceModelScreenClient();
+  const platform = useDeviceClientSelector((client) => client.platform);
   const [unavailable, setUnavailable] = useState(false);
   // The same names as for `DeviceShape`: "iPhone Duo", "pixel_9_pro_fold", …
-  const model = resolveDeviceModel({ platform: client.platform, model: modelName });
+  const model = resolveDeviceModel({ platform, model: modelName });
   const modelUrl = model ? MODEL_URLS[model.id] : undefined;
   if (!model || !modelUrl || unavailable || !deviceModelStreamable(model, client)) {
     return <DeviceScreen client={client} />;
@@ -291,6 +294,12 @@ available, `onUnavailable` runs: show the flat `DeviceScreen` then.
 
 The iPhone Duo's model needs `client.fold` and `client.displays`, which
 `deviceModelStreamable` checks. The other models show the flat stream on their display.
+
+`useDeviceModelScreenClient` is to `DeviceModelScreen` what `useDeviceScreenClient` is to
+`DeviceScreen`: it gives the screen inputs, the displays, and the orientation, and it does
+not update for metrics, FPS, or logs. `DeviceModelScreen` takes this type,
+`DeviceModelScreenClient`, so it cannot read another property of the client. A full
+`DeviceClient` also fits.
 
 Do not hide the element around `DeviceModelScreen` with `visibility: hidden`, for example
 while your own loading UI shows. The browser then presents no video frames, so the model

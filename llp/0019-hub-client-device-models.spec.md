@@ -5,6 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Fable 5.2), directed by Krystof Woldrich
 **Date:** 2026-11-17
+**Revised:** 2026-11-18 (the 3D screen takes a limited client; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0004, LLP 0016, LLP 0017
 
 ## Summary
@@ -21,13 +22,21 @@
 
 ## Public surface
 
-| Entry                                | Exports                                                                                                                                                                             | Loads three.js |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `@expo/hub-client/models`            | `DeviceModelScreen`, and everything in the catalog                                                                                                                                  | yes            |
-| `@expo/hub-client/models/catalog`    | `resolveDeviceModel`, `deviceModelFor`, `DEVICE_MODELS`, `DEVICE_MODEL_IDS`, `isDeviceModelId`, `deviceModelStreamable`, `deviceModelPreview`, `modelStageMaxSide`, and their types | no             |
-| `@expo/hub-client/models/<file>.glb` | One GLB file per model: `iphone-duo`, `iphone-18-pro`, `pixel-9-pro`, `pixel-9-pro-fold`, each typed as its URL                                                                     | no             |
+| Entry                                | Exports                                                                                                                                                                                                           | Loads three.js |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `@expo/hub-client/models`            | `DeviceModelScreen`, and everything in the catalog                                                                                                                                                                | yes            |
+| `@expo/hub-client/models/catalog`    | `resolveDeviceModel`, `deviceModelFor`, `DEVICE_MODELS`, `DEVICE_MODEL_IDS`, `isDeviceModelId`, `deviceModelStreamable`, `deviceModelPreview`, `modelStageMaxSide`, `useDeviceModelScreenClient`, and their types | no             |
+| `@expo/hub-client/models/<file>.glb` | One GLB file per model: `iphone-duo`, `iphone-18-pro`, `pixel-9-pro`, `pixel-9-pro-fold`, each typed as its URL                                                                                                   | no             |
 
 `DeviceModelScreen` takes the place of `DeviceScreen`. A consumer must not put it under `visibility: hidden`: the browser then presents no frames of the hidden stream elements, so `framePresented` stays false and the model never shows [observed: the expo.dev website, expo/universe#33612, which hides its stage with `opacity: 0` for that reason]. It takes the device client, a model description from the catalog, and the URL of the model's GLB file. It reports a model that cannot load with `onUnavailable`, and the consumer then shows the flat screen [observed: `src/models/DeviceModelScreen.tsx`].
+
+## Screen client
+
+`DeviceModelScreen` takes a `DeviceModelScreenClient`: the `DeviceScreenClient` of the flat `DeviceScreen`, plus `displays` and `orientation` [observed: `src/models/model-screen-client.ts`]. `useDeviceModelScreenClient()` selects that part from the provider's client and compares it property by property, so a component that uses it does not render again for metrics, FPS, or logs. It is in the catalog entry, because it does not need three.js and a consumer calls it before it loads the scene.
+
+- The type exists so that the 3D screen cannot read an unrelated property by accident, as the flat screen cannot [confirmed] (Krystof Woldrich, 2026-11-18). Before it, the screen took a full `DeviceClient`. With `useDeviceClient()` that still rendered only for the properties that were read, because that hook records the reads, but no type and no test kept the reads to that set [observed: `createTrackedClient` in `src/useDeviceClient.ts`].
+- A test renders the screen for a foldable and for a phone with a client that records its reads, and checks that every read is a property of the type [observed: `src/__tests__/device-model-screen-client.test.tsx`].
+- A full `DeviceClient` still fits, so the Hub dashboard passes its client as before [observed: `hub-components/src/dashboard/PhoneFrame.tsx`].
 
 ## Two entries
 

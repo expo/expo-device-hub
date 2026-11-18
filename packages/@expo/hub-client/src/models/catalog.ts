@@ -12,6 +12,8 @@
  * - {@link deviceModelStreamable} + {@link deviceModelPreview} — whether a
  *   client can feed a model.
  * - {@link modelStageMaxSide} — the size of a model's stage.
+ * - {@link useDeviceModelScreenClient} — the part of the client that the 3D
+ *   screen reads, for a component that follows only that part.
  */
 
 // @ref LLP 0019#two-entries — the catalog stays free of three.js, so a consumer can ask before it loads the scene
@@ -32,3 +34,4 @@ export {
   type DeviceModelQuery,
 } from "./device-models";
 export { modelStageMaxSide } from "./duo-stage";
+export { useDeviceModelScreenClient, type DeviceModelScreenClient } from "./model-screen-client";

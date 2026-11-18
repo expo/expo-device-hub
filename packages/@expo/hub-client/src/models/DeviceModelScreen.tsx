@@ -27,6 +27,7 @@ import { type DeviceModelDescription, modelDisplay } from "./device-models";
 import { DUO_PANEL_FOR_DISPLAY, duoStreamConfig } from "./duo-displays";
 import { modelFramingOrientation, modelRollOrientation } from "./duo-pose";
 import { DUO_PANEL_SIZE } from "./duo-stage";
+import { type DeviceModelScreenClient } from "./model-screen-client";
 import { deviceModelView } from "./duo-view";
 import { type DuoModelStatus, DuoModelView } from "./DuoModelView";
 import { useDuoFraming } from "./useDuoFraming";
@@ -34,10 +35,11 @@ import { useReleaseFocusWhenHidden } from "./useReleaseFocusWhenHidden";
 
 export interface DeviceModelScreenProps {
   /**
-   * The device's connection. Render one component per device, for example
-   * with the device ID as its `key`: the model's framing belongs to one device.
+   * The device's connection: the result of `useDeviceModelScreenClient`, or a
+   * full client. Render one component per device, for example with the device
+   * ID as its `key`: the model's framing belongs to one device.
    */
-  client: DeviceClient;
+  client: DeviceModelScreenClient;
   /** The device's model. Pick it from the device's identity, for example with `deviceModelFor`. */
   model: DeviceModelDescription;
   /** The model's GLB, which the consumer serves. */
@@ -117,7 +119,7 @@ function DuoPanelSource({
 }
 
 /** The flat stream's element, for a model whose client streams one screen. */
-function ScreenSource({ client }: { client: DeviceClient }) {
+function ScreenSource({ client }: { client: Pick<DeviceClient, "videoKind" | "attachVideo"> }) {
   const { videoKind, attachVideo } = client;
   return (
     <div style={{ position: "absolute", inset: 0 }}>
