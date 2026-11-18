@@ -1,9 +1,26 @@
 import { expect, test } from "bun:test";
 import type { NativeHingeState } from "../native";
+import { runChildSuite } from "./fixtures/run-child-suite";
+import { withRestoredDuoHinge } from "./duo-hinge-helpers";
 
-// Opt in with a booted iPhone Duo. This changes the device's physical pose and
-// restores the repository's standard Tent verification pose when it finishes.
+// Opt in with a booted iPhone Duo and its running helper in an explicitly set
+// private SERVE_SIM_STATE_DIR. The helper must know the original pose/state.
+// Both tests restore it in finally, including when the capture-first child fails.
 const device = process.env.SERVE_SIM_DUO_E2E_DEVICE;
+
+test.skipIf(!device)(
+  "Tent remains available when capture initializes before HID",
+  async () => {
+    await withRestoredDuoHinge(device!, async () => {
+      const { exitCode, output } = await runChildSuite("duo-capture-first.child.ts", {
+        timeoutMs: 20_000,
+      });
+      expect(output).toContain("1 pass");
+      expect(exitCode, output).toBe(0);
+    });
+  },
+  45_000,
+);
 
 test.skipIf(!device)(
   "physical orientation switches surfaces without moving the hinge",
@@ -27,34 +44,32 @@ test.skipIf(!device)(
       if (hingeAngle !== undefined)
         expect(Math.abs(observed.hingeAngle! - hingeAngle)).toBeLessThanOrEqual(1);
     };
-    try {
-      await capture.start();
-      unsubscribe = await capture.subscribeDeviceState(async (snapshot) => {
-        observed = snapshot.state;
-      });
-      expect(await hid.setHingePose("book")).toBe(true);
-      await waitForState({
-        hingeAngle: 90,
-        physicalOrientation: "portrait",
-        tableMode: false,
-      });
-
-      expect(await hid.setPhysicalOrientation("facedown")).toBe(true);
-      await waitForState({
-        hingeAngle: 90,
-        physicalOrientation: "facedown",
-        tableMode: true,
-      });
-
-      expect(await hid.setPhysicalOrientation("faceup")).toBe(true);
-      await waitForState({
-        hingeAngle: 90,
-        physicalOrientation: "faceup",
-        tableMode: false,
-      });
-    } finally {
+    await withRestoredDuoHinge(device!, async () => {
       try {
-        await hid.setHingePose("tent");
+        await capture.start();
+        unsubscribe = await capture.subscribeDeviceState(async (snapshot) => {
+          observed = snapshot.state;
+        });
+        expect(await hid.setHingePose("book")).toBe(true);
+        await waitForState({
+          hingeAngle: 90,
+          physicalOrientation: "portrait",
+          tableMode: false,
+        });
+
+        expect(await hid.setPhysicalOrientation("facedown")).toBe(true);
+        await waitForState({
+          hingeAngle: 90,
+          physicalOrientation: "facedown",
+          tableMode: true,
+        });
+
+        expect(await hid.setPhysicalOrientation("faceup")).toBe(true);
+        await waitForState({
+          hingeAngle: 90,
+          physicalOrientation: "faceup",
+          tableMode: false,
+        });
       } finally {
         try {
           await unsubscribe?.();
@@ -62,7 +77,7 @@ test.skipIf(!device)(
           await capture.stop();
         }
       }
-    }
+    });
   },
   20_000,
 );

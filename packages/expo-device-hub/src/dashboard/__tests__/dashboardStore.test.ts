@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { type Device } from "@expo/hub-components";
 
-import { createDashboardStore } from "../dashboardStore";
+import { createDashboardStore, DEFAULT_SIDEBAR_WIDTH } from "../dashboardStore";
 
 const iosDevice: Device = {
   id: "ios-new",
@@ -12,7 +12,6 @@ const iosDevice: Device = {
   booted: true,
   physical: false,
   supported: true,
-  deviceFrame: "ios:iphone-17-pro",
 };
 
 afterEach(() => {
@@ -77,12 +76,12 @@ describe("dashboard store", () => {
     expect(store.getState().streamMode).toBe("mjpeg");
   });
 
-  test("shows supported device frames by default and keeps the viewer toggle", () => {
+  test("shows the device screen shape by default and keeps the viewer toggle", () => {
     const store = createDashboardStore();
 
-    expect(store.getState().showDeviceFrame).toBe(true);
-    store.getState().setShowDeviceFrame(false);
-    expect(store.getState().showDeviceFrame).toBe(false);
+    expect(store.getState().showScreenShape).toBe(true);
+    store.getState().setShowScreenShape(false);
+    expect(store.getState().showScreenShape).toBe(false);
   });
 
   test("owns sidebar sizing and explicit open/close intent", () => {
@@ -91,7 +90,7 @@ describe("dashboard store", () => {
     store.getState().resizeSidebar("left", 480);
     store.getState().openSidebar("left", false);
     expect(store.getState()).toMatchObject({
-      sidebarWidths: { left: 480, right: 400 },
+      sidebarWidths: { left: 480, right: DEFAULT_SIDEBAR_WIDTH },
       sidebarPreferences: { left: "open", right: "auto" },
       lastOpenedSidebar: "left",
     });

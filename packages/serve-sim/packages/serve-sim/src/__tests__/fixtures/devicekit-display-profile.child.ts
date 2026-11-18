@@ -85,7 +85,7 @@ process.env.SERVE_SIM_PROFILE_ROOT = root;
 process.env.SERVE_SIM_PROFILE_LOG = log;
 const shims = installShims({
   xcrun:
-    '#!/bin/sh\nif [ "$1" = simctl ] && [ "$2" = list ]; then printf \'%s\' "$SERVE_SIM_PROFILE_SNAPSHOT"; elif [ "$2" = io ] && [ "$4" = enumerate ]; then printf \'%s\' "$SERVE_SIM_PROFILE_IO"; else exit 1; fi\n',
+    '#!/bin/sh\nif [ "$SERVE_SIM_PROFILE_SLOW_PROBE" = "$2" ]; then sleep 2.2; fi\nif [ "$1" = simctl ] && [ "$2" = list ]; then printf \'%s\' "$SERVE_SIM_PROFILE_SNAPSHOT"; elif [ "$2" = io ] && [ "$4" = enumerate ]; then printf \'%s\' "$SERVE_SIM_PROFILE_IO"; else exit 1; fi\n',
   // JSON fixture files stand in for plist conversion on every platform. The real
   // identifier lookup, asynchronous subprocess, path selection and parsing run.
   plutil:
@@ -133,6 +133,21 @@ test("real Xcode 26.6 legacy profile and IO identify the sole integrated screen 
   process.env.SERVE_SIM_PROFILE_IO = legacyIO;
   expect(await getScreenshotDisplayIdsAsync(legacyUDID)).toEqual([1]);
 });
+test.each(["list", "io"])(
+  "fallback keeps the default timeout for slow simctl %s",
+  async (probe) => {
+    process.env.SERVE_SIM_PROFILE_IO = legacyIO;
+    process.env.SERVE_SIM_PROFILE_SLOW_PROBE = probe;
+    try {
+      const started = performance.now();
+      expect(await getScreenshotDisplayIdsAsync(legacyUDID)).toEqual([1]);
+      expect(performance.now() - started).toBeGreaterThan(2_000);
+    } finally {
+      delete process.env.SERVE_SIM_PROFILE_SLOW_PROBE;
+    }
+  },
+  10_000,
+);
 for (const [name, io] of [
   ["two integrated ports", legacyIO.replace("Display class: 1", "Display class: 0")],
   ["missing display class", legacyIO.replace("Display class: 0", "Unknown class: 0")],

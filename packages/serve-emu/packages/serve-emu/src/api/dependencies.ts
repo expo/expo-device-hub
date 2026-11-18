@@ -7,7 +7,7 @@ import type {
   ApiRequest,
   AppActionResponse,
   AppPermissionsResponse,
-  AppIcon,
+  AppDetails,
   AppliedGeoFix,
   AvdStartResponse,
   AvdStopResponse,
@@ -19,6 +19,7 @@ import type {
   DeviceSelectionResponse,
   DisplayDensityStatus,
   FileImportResponse,
+  FoldRequest,
   FoldStatus,
   FontScaleStatus,
   ForegroundApp,
@@ -63,9 +64,13 @@ export type ApiDependencies = {
   stopAvd: (input: { serial?: string; avd?: string }) => Promise<AvdStopResponse>;
 
   getOrientation: () => Promise<OrientationStatus>;
+  /**
+   * Lock or free the rotation and record the lock, as `DeviceSessionState.setOrientation`
+   * does, so `/api` right after a lock reports the locked pose.
+   */
   setOrientation: (orientation: OrientationMode) => Promise<OrientationStatus>;
   getFold: () => Promise<FoldStatus>;
-  setFold: (posture: "closed" | "opened") => Promise<FoldStatus>;
+  setFold: (request: FoldRequest) => Promise<FoldStatus>;
   getNightMode: () => Promise<NightModeStatus>;
   setNightMode: (mode: NightMode) => Promise<NightModeStatus>;
   getFontScale: () => Promise<FontScaleStatus>;
@@ -109,7 +114,7 @@ export type ApiDependencies = {
   listPermissions: (packageName: string) => Promise<AppPermissionsResponse>;
   revokePermission: (packageName: string, permission: string) => Promise<AppActionResponse>;
   resetPermissions: (packageName: string) => Promise<AppActionResponse>;
-  readAppIcon: (packageName: string) => Promise<AppIcon | null>;
+  readAppDetails: (packageName: string) => Promise<AppDetails>;
 
   getLocation: () => LocationResponse;
   setLocation: (fix: GeoFix) => Promise<AppliedGeoFix>;

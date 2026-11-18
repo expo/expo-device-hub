@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { type DeviceClient, type DevicePlatform } from "@expo/hub-client";
 import {
   type Device,
-  NO_DEVICE_FRAME_DESCRIPTION,
+  NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
 } from "@expo/hub-components";
@@ -15,7 +15,6 @@ import { LogSidebar } from "../../../../@expo/hub-components/src/dashboard/LogSi
 import { PermissionsSection } from "../../../../@expo/hub-components/src/dashboard/PermissionsSection";
 import { StreamOptionsSection } from "../../../../@expo/hub-components/src/dashboard/StreamOptionsSection";
 import { StreamStatistics } from "../../../../@expo/hub-components/src/dashboard/StreamStatistics";
-import { StreamPanel } from "../../../../@expo/hub-components/src/dashboard/StreamPanel";
 
 function inspectorClient(platform: DevicePlatform): DeviceClient {
   const ios = platform === "ios";
@@ -23,9 +22,16 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     platform,
     status: "streaming",
     error: null,
+    framePresented: true,
     inputError: null,
     screenRecording: null,
+    recordingLock: null,
+    recordingControlsLocked: false,
     screen: { width: 390, height: 844 },
+    fold: null,
+    displays: null,
+    deviceModelUrl: null,
+    displayCorners: null,
     fps: 60,
     devices: [],
     logs: [],
@@ -135,6 +141,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       accessibility: true,
       permissions: false,
       clipboard: false,
+      orientation: false,
       streamSettings: ios
         ? {
             mjpegFps: true,
@@ -145,6 +152,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
           }
         : { maxDimension: true, h264Fps: true, h264Bitrate: true },
       location: false,
+      fold: false,
     },
     foregroundApp: null,
     videoKind: "img",
@@ -154,6 +162,11 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     pressButton: () => {},
     reload: () => {},
     rotate: () => {},
+    orientation: null,
+    orientationPending: false,
+    orientationError: null,
+    orientationUnavailable: null,
+    setOrientation: () => {},
     screenshot: async () => null,
     appearance: "light",
     setAppearance: () => {},
@@ -193,23 +206,15 @@ test.each([
   },
 );
 
-function device(platform: DevicePlatform, deviceFrame: Device["deviceFrame"]): Device {
+function device(platform: DevicePlatform, supported = true): Device {
   return {
     id: `${platform}-device`,
-    name:
-      deviceFrame === "ios:iphone-17-pro"
-        ? "iPhone 17 Pro"
-        : deviceFrame === "android:pixel-9"
-          ? "Pixel 9"
-          : deviceFrame === "android:pixel-10-pro"
-            ? "Pixel 10 Pro"
-            : "Other",
+    name: !supported ? "Other" : platform === "ios" ? "iPhone 17 Pro" : "Pixel 10 Pro",
     version: platform === "ios" ? "iOS 27.0" : "Android 17.0",
     platform,
     booted: true,
     physical: false,
-    supported: deviceFrame !== null,
-    deviceFrame,
+    supported,
   };
 }
 
@@ -1170,6 +1175,116 @@ test("maps Android device options onto Network and S–XL selects", () => {
   expect(selectValue(html, "Text size")).toBe("M");
 });
 
+test("offers the client's orientations and shows the client's pose", () => {
+  const all = {
+    orientations: ["portrait", "landscape_left", "portrait_upside_down", "landscape_right"],
+  } as const;
+  const ios = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("ios"),
+        capabilities: { ...inspectorClient("ios").capabilities, orientation: all },
+        screen: { width: 844, height: 390, orientation: "landscape_right" },
+        orientation: "landscape_right",
+      }}
+    />,
+  );
+  expect(selectOptionLabels(ios, "Orientation")).toEqual([
+    "Portrait",
+    "Landscape left",
+    "Landscape right",
+    "Upside down",
+  ]);
+  expect(selectValue(ios, "Orientation")).toBe("Landscape right");
+
+  // A pick shows at once, before the frame turns.
+  const picked = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        capabilities: { ...inspectorClient("android").capabilities, orientation: all },
+        screen: { width: 390, height: 844, orientation: "portrait", framesUpright: true },
+        orientation: "portrait_upside_down",
+        orientationPending: true,
+      }}
+    />,
+  );
+  expect(selectValue(picked, "Orientation")).toBe("Upside down");
+
+  // The client offers poses before it knows the shown one, so the select waits instead of guessing.
+  const unknownPose = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        capabilities: { ...inspectorClient("android").capabilities, orientation: all },
+        screen: { width: 844, height: 390 },
+      }}
+    />,
+  );
+  expect(unknownPose).not.toContain('aria-label="Orientation"');
+
+  // An older serve-emu reports no pose, so the client offers no poses, also after a Rotate.
+  const olderServer = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        screen: { width: 390, height: 844 },
+        orientation: "landscape_right",
+        orientationPending: true,
+      }}
+    />,
+  );
+  expect(olderServer).not.toContain('aria-label="Orientation"');
+
+  const unsupported = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  expect(unsupported).not.toContain('aria-label="Orientation"');
+});
+
+test("disables the orientation select with the client's reason, as Rotate does", () => {
+  const ios = inspectorClient("ios");
+  const client = {
+    ...ios,
+    capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+    screen: { width: 390, height: 844, orientation: "portrait" },
+    orientation: "portrait",
+  } as const;
+  for (const [overrides, reason] of [
+    [{}, null],
+    [{ orientationUnavailable: "recording" }, "Rotation is unavailable while recording."],
+    [
+      { orientationUnavailable: "recording-status-unknown" },
+      "Rotation is unavailable until recording status is known.",
+    ],
+    [
+      { orientationUnavailable: "input-unavailable" },
+      "Rotation is unavailable until the simulator accepts input.",
+    ],
+    // The dashboard follows the client's reason, not the status or recording it sees.
+    [{ status: "reconnecting", recordingControlsLocked: true, screenRecording: "recording" }, null],
+  ] as const) {
+    const html = renderToStaticMarkup(<LogSidebar client={{ ...client, ...overrides }} />);
+    const select = selectMarkup(html, "Orientation");
+    expect(select.includes('disabled=""')).toBe(reason !== null);
+    if (reason) expect(html).toContain(`aria-description="${reason}"`);
+  }
+});
+
+test("shows why an orientation change failed", () => {
+  const ios = inspectorClient("ios");
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...ios,
+        capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+        screen: { width: 390, height: 844, orientation: "portrait" },
+        orientation: "portrait",
+        orientationError: "The orientation was not sent.",
+      }}
+    />,
+  );
+  expect(html).toContain("The orientation was not sent.");
+});
+
 test("renders the Android display-size control the backend reports", () => {
   const client = {
     ...inspectorClient("android"),
@@ -1308,7 +1423,7 @@ test("moves device actions into Device options and hides Remove for physical dev
   const android = renderToStaticMarkup(
     <LogSidebar
       client={inspectorClient("android")}
-      device={device("android", "android:pixel-10-pro")}
+      device={device("android")}
       onShutdown={() => {}}
       onRemove={() => {}}
     />,
@@ -1334,7 +1449,7 @@ test("moves device actions into Device options and hides Remove for physical dev
   const physical = renderToStaticMarkup(
     <LogSidebar
       client={inspectorClient("android")}
-      device={{ ...device("android", "android:pixel-10-pro"), physical: true }}
+      device={{ ...device("android"), physical: true }}
       onShutdown={() => {}}
       onRemove={() => {}}
     />,
@@ -1371,19 +1486,7 @@ test("styles sidebar action buttons like the select pills", () => {
   }
 });
 
-function themeButtonMarkup(client: DeviceClient) {
-  const html = renderToStaticMarkup(
-    <StreamPanel
-      device={device(client.platform, null)}
-      client={client}
-      DeviceScreen={() => null}
-      displayScreen={(screen) => screen ?? null}
-    />,
-  );
-  return html.match(/<button[^>]*aria-label="Theme"[^>]*>/)?.[0];
-}
-
-test("keeps toolbar and sidebar appearance availability aligned without locking the viewer-local frame control", () => {
+test("keeps sidebar appearance availability aligned without locking the viewer-local shape control", () => {
   for (const platform of ["ios", "android"] as const) {
     for (const status of ["idle", "loading", "error", "ready"] as const) {
       const base = inspectorClient(platform);
@@ -1395,24 +1498,19 @@ test("keeps toolbar and sidebar appearance availability aligned without locking 
       const html = renderToStaticMarkup(
         <LogSidebar
           client={client}
-          device={device(
-            platform,
-            platform === "ios" ? "ios:iphone-17-pro" : "android:pixel-10-pro",
-          )}
-          showDeviceFrame
-          onShowDeviceFrameChange={() => {}}
+          device={device(platform)}
+          showScreenShape
+          screenShapeAvailable
+          onShowScreenShapeChange={() => {}}
         />,
       );
       const appearance = selectMarkup(html, "Appearance");
       expect(appearance).toContain("Dark");
       expect(appearance.includes('disabled=""')).toBe(status !== "ready");
-      const theme = themeButtonMarkup(client);
-      expect(theme).toContain('aria-checked="true"');
-      expect(theme?.includes('disabled=""')).toBe(status !== "ready");
       const otherControl =
         platform === "ios" ? switchMarkup(html, "Reduce motion") : selectMarkup(html, "Network");
       expect(otherControl.includes('disabled=""')).toBe(status !== "ready");
-      expect(switchMarkup(html, "Show device frame")).not.toContain('disabled=""');
+      expect(switchMarkup(html, "Show device shape")).not.toContain('disabled=""');
     }
   }
 });
@@ -1427,7 +1525,6 @@ test("disables only the pending Android device setting", () => {
   expect(selectMarkup(html, "Network")).toContain('disabled=""');
   expect(selectMarkup(html, "Appearance")).not.toContain('disabled=""');
   expect(selectMarkup(html, "Text size")).not.toContain('disabled=""');
-  expect(themeButtonMarkup(client)).not.toContain('disabled=""');
 });
 
 test("disables only the device setting with an in-flight update", () => {
@@ -1439,67 +1536,56 @@ test("disables only the device setting with an in-flight update", () => {
     const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
     expect(selectMarkup(html, "Appearance")).toContain('disabled=""');
-    expect(themeButtonMarkup(client)).toContain('disabled=""');
     expect(selectMarkup(html, platform === "ios" ? "Liquid glass" : "Network")).not.toContain(
       'disabled=""',
     );
   }
 });
 
-test("disables the toolbar Theme button for missing or unsupported settings", () => {
+test("shows an enabled viewer-local shape switch, on and off", () => {
   for (const platform of ["ios", "android"] as const) {
-    for (const deviceSettings of [null, {}, { appearance: "unsupported" }]) {
-      expect(themeButtonMarkup({ ...inspectorClient(platform), deviceSettings })).toContain(
-        'disabled=""',
-      );
-    }
-  }
-});
-
-test("shows an enabled viewer-local frame switch for exact device profiles", () => {
-  for (const [platform, frame] of [
-    ["ios", "ios:iphone-17-pro"],
-    ["android", "android:pixel-10-pro"],
-  ] as const) {
     const onMarkup = renderToStaticMarkup(
       <LogSidebar
         client={inspectorClient(platform)}
-        device={device(platform, frame)}
-        showDeviceFrame
-        onShowDeviceFrameChange={() => {}}
+        device={device(platform)}
+        showScreenShape
+        screenShapeAvailable
+        onShowScreenShapeChange={() => {}}
       />,
     );
     const offMarkup = renderToStaticMarkup(
       <LogSidebar
         client={inspectorClient(platform)}
-        device={device(platform, frame)}
-        showDeviceFrame={false}
-        onShowDeviceFrameChange={() => {}}
+        device={device(platform)}
+        showScreenShape={false}
+        screenShapeAvailable
+        onShowScreenShapeChange={() => {}}
       />,
     );
 
-    expect(switchMarkup(onMarkup, "Show device frame")).toContain('aria-checked="true"');
-    expect(switchMarkup(onMarkup, "Show device frame")).not.toContain('disabled=""');
-    expect(switchMarkup(offMarkup, "Show device frame")).toContain('aria-checked="false"');
-    expect(switchMarkup(offMarkup, "Show device frame")).not.toContain('disabled=""');
+    expect(switchMarkup(onMarkup, "Show device shape")).toContain('aria-checked="true"');
+    expect(switchMarkup(onMarkup, "Show device shape")).not.toContain('disabled=""');
+    expect(switchMarkup(offMarkup, "Show device shape")).toContain('aria-checked="false"');
+    expect(switchMarkup(offMarkup, "Show device shape")).not.toContain('disabled=""');
   }
 });
 
-test("places the device frame option immediately above the hardware keyboard", () => {
+test("places the device shape option immediately above the hardware keyboard", () => {
   const html = renderToStaticMarkup(
     <LogSidebar
       client={inspectorClient("ios")}
-      device={device("ios", "ios:iphone-17-pro")}
-      showDeviceFrame
-      onShowDeviceFrameChange={() => {}}
+      device={device("ios")}
+      showScreenShape
+      screenShapeAvailable
+      onShowScreenShapeChange={() => {}}
     />,
   );
 
-  const frameIndex = html.indexOf(">Show device frame</span>");
+  const shapeIndex = html.indexOf(">Show device shape</span>");
   const hardwareKeyboardIndex = html.indexOf(">Hardware keyboard</span>");
 
-  expect(frameIndex).toBeGreaterThan(html.indexOf(">VoiceOver</span>"));
-  expect(frameIndex).toBeLessThan(hardwareKeyboardIndex);
+  expect(shapeIndex).toBeGreaterThan(html.indexOf(">VoiceOver</span>"));
+  expect(shapeIndex).toBeLessThan(hardwareKeyboardIndex);
 });
 
 test("shows the Permissions section only when the client can change permissions", () => {
@@ -1573,7 +1659,7 @@ test("shows the Clipboard section only when the client can paste or copy", () =>
   // Sibling sections keyed by the device need distinct keys, or React repeats them on update.
   const tree = LogSidebar({
     client: { ...client, capabilities: { ...client.capabilities, location: {} } },
-    device: device("ios", "ios:iphone-17-pro"),
+    device: device("ios"),
   });
   const duplicateKeys: string[] = [];
   const visit = (node: unknown) => {
@@ -1603,7 +1689,7 @@ test("shows the Clipboard section only when the client can paste or copy", () =>
   expect(copyOnly).not.toContain(">Send</span>");
 });
 
-test("keeps the frame option disabled with an explanation for unsupported devices", () => {
+test("keeps the shape option off and disabled, with an explanation, for a device without a known shape", () => {
   for (const platform of ["ios", "android"] as const) {
     const client = {
       ...inspectorClient(platform),
@@ -1617,26 +1703,27 @@ test("keeps the frame option disabled with an explanation for unsupported device
         clipboard: false,
         streamSettings: false,
         location: false,
+        fold: false,
       },
     } satisfies DeviceClient;
     const html = renderToStaticMarkup(
       <LogSidebar
         client={client}
-        device={device(platform, null)}
-        showDeviceFrame
-        onShowDeviceFrameChange={() => {}}
+        device={device(platform, false)}
+        showScreenShape
+        onShowScreenShapeChange={() => {}}
       />,
     );
 
     expect(html).toContain('aria-label="Device options"');
-    expect(switchMarkup(html, "Show device frame")).toContain('aria-checked="false"');
-    expect(switchMarkup(html, "Show device frame")).toContain('disabled=""');
-    expect(html).toContain(NO_DEVICE_FRAME_DESCRIPTION);
+    expect(switchMarkup(html, "Show device shape")).toContain('aria-checked="false"');
+    expect(switchMarkup(html, "Show device shape")).toContain('disabled=""');
+    expect(html).toContain(NO_DEVICE_SHAPE_DESCRIPTION);
     expect(html).not.toContain(">Appearance</span>");
   }
 });
 
-test("shows only the viewer-local frame option while iOS device settings are unavailable", () => {
+test("shows only the viewer-local shape option while iOS device settings are unavailable", () => {
   const client = {
     ...inspectorClient("ios"),
     capabilities: {
@@ -1649,19 +1736,21 @@ test("shows only the viewer-local frame option while iOS device settings are una
       permissions: false,
       clipboard: false,
       streamSettings: false,
+      fold: false,
     },
     deviceSettings: null,
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <LogSidebar
       client={client}
-      device={device("ios", "ios:iphone-17-pro")}
-      showDeviceFrame
-      onShowDeviceFrameChange={() => {}}
+      device={device("ios")}
+      showScreenShape
+      screenShapeAvailable
+      onShowScreenShapeChange={() => {}}
     />,
   );
 
-  expect(switchMarkup(html, "Show device frame")).not.toContain('disabled=""');
+  expect(switchMarkup(html, "Show device shape")).not.toContain('disabled=""');
   expect(html).not.toContain(">Appearance</span>");
   expect(html).not.toContain(">Liquid glass</span>");
   expect(html).not.toContain(">Keyboard</span>");
@@ -1710,15 +1799,16 @@ test("keeps the Android on-screen keyboard row off iOS while device settings loa
       permissions: false,
       clipboard: false,
       streamSettings: false,
+      fold: false,
     },
     deviceSettings: null,
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <LogSidebar
       client={client}
-      device={device("ios", "ios:iphone-17-pro")}
-      showDeviceFrame
-      onShowDeviceFrameChange={() => {}}
+      device={device("ios")}
+      showScreenShape
+      onShowScreenShapeChange={() => {}}
     />,
   );
 
@@ -1841,13 +1931,29 @@ test("shows the active hardware encoder and hides unresolved encoder names", () 
   ).not.toContain("Active encoder:");
 });
 
-test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed", null] as const)(
-  "recording state %s locks only capture and destructive device controls",
-  (screenRecording) => {
+test.each([
+  ["unknown", "status-unknown"],
+  ["waiting", "recording"],
+  ["recording", "recording"],
+  ["finalizing", "recording"],
+  ["complete", null],
+  ["failed", null],
+  [null, null],
+  // The dashboard follows the client's lock, not its own reading of the status.
+  ["recording", null],
+  ["unknown", null],
+  ["complete", "recording"],
+  ["recording", "status-unknown"],
+] as const)(
+  "with recording %s and recordingLock %s, the lock disables only capture and destructive device controls",
+  (screenRecording, recordingLock) => {
+    const locked = recordingLock !== null;
     const base = inspectorClient("android");
     const client: DeviceClient = {
       ...base,
       screenRecording,
+      recordingLock,
+      recordingControlsLocked: locked,
       deviceSettings: { ...base.deviceSettings, "display-size": "medium" },
       streamSource: {
         mode: "grpc-screenshot",
@@ -1861,11 +1967,7 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
         sessionGeneration: 0,
       },
     };
-    const locked =
-      screenRecording === "unknown" ||
-      screenRecording === "waiting" ||
-      screenRecording === "recording" ||
-      screenRecording === "finalizing";
+    const unknownReason = recordingLock === "status-unknown";
     const stream = renderToStaticMarkup(
       <StreamOptionsSection
         client={client}
@@ -1888,7 +1990,7 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
     }
     expect(selectMarkup(stream, "Stream transport")).not.toContain('disabled=""');
     expect(stream).not.toContain("Capture settings are locked");
-    expect(stream.includes("until recording status is known")).toBe(screenRecording === "unknown");
+    expect(stream.includes("until recording status is known")).toBe(unknownReason);
     expect((stream.match(/role="group"/g) ?? []).length).toBe(locked ? 7 : 0);
     if (locked) expect(stream).toContain('aria-description="Unavailable until recording');
 
@@ -1900,9 +2002,7 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
       const button = deviceOptions.slice(deviceOptions.lastIndexOf("<button", end), end);
       expect(button.includes('disabled=""')).toBe(locked);
     }
-    expect(deviceOptions.includes("until recording status is known")).toBe(
-      screenRecording === "unknown",
-    );
+    expect(deviceOptions.includes("until recording status is known")).toBe(unknownReason);
     expect((deviceOptions.match(/aria-description="Unavailable/g) ?? []).length).toBe(
       locked ? 2 : 0,
     );
@@ -1911,3 +2011,46 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
     }
   },
 );
+
+test("Android fold capabilities show the shared pose controls without Duo-only controls", () => {
+  const base = inspectorClient("android");
+  const client = {
+    ...base,
+    fold: { angle: 0, pose: "closed", pending: false, error: null, setControl: () => {} },
+    capabilities: {
+      ...base.capabilities,
+      fold: {
+        angle: { min: 0, max: 180 },
+        poses: { closed: { angle: 0 }, book: { angle: 90 }, open: { angle: 180 } },
+        tableMode: false,
+      },
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  expect(html).toContain('aria-label="Fold pose"');
+  expect(html).toContain("Fully folded");
+  expect(html).toContain('aria-label="Hinge angle"');
+  expect(html).not.toContain(">Table Mode<");
+  expect(html).not.toContain(">Preview mode<");
+  expect(html).not.toContain(">Folded<");
+  const locked = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...client,
+        recordingLock: "recording",
+        fold: { ...client.fold, unavailable: "recording" },
+      }}
+    />,
+  );
+  expect(locked.match(/<button[^>]*aria-label="Fold pose"[^>]*>/)?.[0]).toContain("disabled");
+  expect(locked).toContain("interrupt the recording");
+  // A recording that follows folds locks rotation but leaves the fold controls on.
+  const following = renderToStaticMarkup(
+    <LogSidebar client={{ ...client, recordingLock: "recording" }} />,
+  );
+  expect(following.match(/<button[^>]*aria-label="Fold pose"[^>]*>/)?.[0]).not.toContain(
+    "disabled",
+  );
+  const unsupported = renderToStaticMarkup(<LogSidebar client={base} />);
+  expect(unsupported).not.toContain('aria-label="Fold pose"');
+});

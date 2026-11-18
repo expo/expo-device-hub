@@ -37,6 +37,10 @@ const iceServers = z
 // Only the local job owner configures a prepared process, before opening its tunnel.
 export const sessionConfigurationSchema = z
   .object({
+    device: z
+      .string()
+      .regex(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i)
+      .optional(),
     singleDevice: z.string().length(36).optional(),
     stream: z
       .object({

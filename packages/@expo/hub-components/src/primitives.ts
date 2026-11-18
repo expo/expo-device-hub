@@ -7,12 +7,14 @@
  * would be circular (the root barrel re-exports the composites) and unresolvable
  * during the package's own build.
  */
+export * from "./components/ActivityIndicator";
 export * from "./components/Button";
 export * from "./components/ControlButton";
 export * from "./components/DeviceListItem";
 export * from "./components/Dialog";
 export * from "./components/Dropdown";
 export * from "./components/DropdownItem";
+export * from "./components/FloatingIconButton";
 export * from "./components/Logo";
 export * from "./components/PillButton";
 export * from "./components/ResizeHandle";

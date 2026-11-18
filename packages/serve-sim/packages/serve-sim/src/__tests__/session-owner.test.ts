@@ -50,7 +50,8 @@ async function fixture(
     directory: string;
     socket: string;
     secret: string;
-    adopt(): Promise<unknown>;
+    adopt(device?: string): Promise<unknown>;
+    claims(): number;
   }) => Promise<void>,
 ) {
   const state = useTempStateDir();
@@ -67,19 +68,28 @@ async function fixture(
     temporaryDirectory: resolve(tmpdir()),
     environment: sessionEnvironment(),
   };
-  const owner = await startSessionOwner(UDID, () => identity, configure);
+  let claims = 0;
+  const owner = await startSessionOwner(
+    UDID,
+    () => identity,
+    configure,
+    () => {
+      claims++;
+    },
+  );
   writeServeSimState({ ...inProcessServeSimState(UDID, 3200), token: "preview-token" });
-  const { directory } = JSON.parse(readFileSync(sessionOwnerFile(UDID), "utf8"));
+  const { directory } = JSON.parse(readFileSync(sessionOwnerFile(3200), "utf8"));
   try {
     await run({
       identity,
+      claims: () => claims,
       directory,
       socket: join(directory, "control.sock"),
       secret: readFileSync(join(directory, "authority"), "utf8"),
-      adopt: () => adoptSession(UDID, "fixture", "127.0.0.1", 3200, configuration),
+      adopt: (device = UDID) => adoptSession(device, "fixture", "127.0.0.1", 3200, configuration),
     });
   } finally {
-    owner.close();
+    await owner.close();
     rmSync(discoveryDirectory, { recursive: true, force: true });
     state.restore();
   }
@@ -89,9 +99,9 @@ test("local authority stays outside HTTP file roots and public device state", as
   await fixture(
     async () => {},
     async ({ directory }) => {
-      expect(ConfinedPath.safeParse(sessionOwnerFile(UDID)).success).toBe(true);
+      expect(ConfinedPath.safeParse(sessionOwnerFile(3200)).success).toBe(true);
       expect(ConfinedPath.safeParse(join(directory, "authority")).success).toBe(false);
-      expect(readFileSync(sessionOwnerFile(UDID), "utf8")).not.toContain("secret");
+      expect(readFileSync(sessionOwnerFile(3200), "utf8")).not.toContain("secret");
       expect(listStateFiles()).toHaveLength(1);
       const state = JSON.parse(readFileSync(listStateFiles()[0]!, "utf8"));
       expect(JSON.stringify(state)).not.toContain(directory);
@@ -200,7 +210,7 @@ test("rejects permissive and symlinked authority files before connecting", async
       chmodSync(authority, 0o644);
       await expect(adopt()).rejects.toThrow("owner file");
       unlinkSync(authority);
-      symlinkSync(sessionOwnerFile(UDID), authority);
+      symlinkSync(sessionOwnerFile(3200), authority);
       await expect(adopt()).rejects.toThrow();
     },
   );
@@ -212,7 +222,7 @@ test("invalid configuration consumes an authenticated claim without applying it"
     async () => {
       calls++;
     },
-    async ({ socket, secret, identity, adopt }) => {
+    async ({ socket, secret, identity, adopt, claims }) => {
       expect(
         await request(socket, {
           secret,
@@ -222,6 +232,7 @@ test("invalid configuration consumes an authenticated claim without applying it"
         }),
       ).toEqual({ ok: false, error: "session_configuration_failed" });
       expect(calls).toBe(0);
+      expect(claims()).toBe(1);
       await expect(adopt()).rejects.toThrow();
     },
   );
@@ -231,4 +242,74 @@ test("HTTP file paths deny authority even when a staging root resolves to /tmp",
   const { runChildSuite } = await import("./fixtures/run-child-suite");
   const { exitCode, output } = await runChildSuite("session-owner-paths.child.ts");
   expect(exitCode, output).toBe(0);
+});
+
+const SELECTED_DEVICE = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB";
+test("an explicit server port discovers the owner before selecting an unserved device", async () => {
+  await fixture(
+    async (value) => {
+      expect(value.device).toBe(SELECTED_DEVICE);
+      writeServeSimState({
+        ...inProcessServeSimState(SELECTED_DEVICE, 3200),
+        token: "preview-token",
+      });
+    },
+    async ({ adopt }) => {
+      expect(await adopt(SELECTED_DEVICE)).toMatchObject({ device: SELECTED_DEVICE, port: 3200 });
+      await expect(adopt()).rejects.toThrow();
+    },
+  );
+});
+
+test("owner shutdown cancels and drains in-flight configuration before returning", async () => {
+  const state = useTempStateDir();
+  let entered!: () => void, finish!: () => void;
+  const running = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let signal: AbortSignal | undefined;
+  const identity: SessionIdentity = {
+    version: "fixture",
+    pid: process.pid,
+    device: UDID,
+    bootSession: bootSession(),
+    host: "127.0.0.1",
+    port: 3200,
+    stateDirectory: resolve(stateDir()),
+    temporaryDirectory: resolve(tmpdir()),
+    environment: sessionEnvironment(),
+  };
+  const owner = await startSessionOwner(
+    UDID,
+    () => identity,
+    async (_value, cancellation) => {
+      signal = cancellation;
+      entered();
+      await pending;
+    },
+  );
+  writeServeSimState({ ...inProcessServeSimState(UDID, 3200), token: "preview-token" });
+  const adoption = adoptSession(UDID, "fixture", "127.0.0.1", 3200, configuration);
+  const refused = adoption.catch((error: unknown) => error);
+  try {
+    await running;
+    let stopped = false;
+    const stopping = owner.close().then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(signal?.aborted).toBe(true);
+    expect(stopped).toBe(false);
+    finish();
+    await stopping;
+    expect(await refused).toBeInstanceOf(Error);
+    expect(stopped).toBe(true);
+  } finally {
+    finish();
+    await owner.close();
+    state.restore();
+  }
 });

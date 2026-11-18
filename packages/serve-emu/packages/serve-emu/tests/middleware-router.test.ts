@@ -17,6 +17,7 @@ import type { RunningAvd } from "../src/emulator.ts";
 import type { ScrcpySession } from "../src/scrcpy.ts";
 import type { InputSource, StreamMode } from "../src/shared/api-contracts.ts";
 import type { EmuSession } from "../src/stream-session.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -741,7 +742,10 @@ describe("createApp session compatibility and cancellation", () => {
       },
     } as unknown as EmuSession;
 
-    const app = await createApp({ serial: "emulator-5554" }, { startSession: async () => stream });
+    const app = await createApp(
+      { serial: "emulator-5554" },
+      { readOrientation: readNoOrientation, startSession: async () => stream },
+    );
 
     expect(app.session).toBe(raw);
     // This intentionally compiles through the default-scrcpy overload.
@@ -757,6 +761,7 @@ describe("createApp session compatibility and cancellation", () => {
     const starting = createApp(
       { serial: "emulator-5554", signal: controller.signal },
       {
+        readOrientation: readNoOrientation,
         startSession: async (options) => {
           startupSignal = options.signal;
           return new Promise<EmuSession>((_resolve, reject) => {
@@ -780,6 +785,7 @@ describe("createApp session compatibility and cancellation", () => {
     const app = await createApp(
       { serial: "emulator-5554" },
       {
+        readOrientation: readNoOrientation,
         startSession: async () =>
           liveStreamSession("scrcpy", (listener) => {
             fatalListeners.push(listener);
@@ -1065,6 +1071,7 @@ describe("createRouter stream mode", () => {
         listDevices: async () => [{ serial: "emulator-5554", state: "device" }],
         createApp: (options) =>
           createApp(options, {
+            readOrientation: readNoOrientation,
             startSession: async ({ mode, grpcImageMode }) => {
               if (failRgb888 && grpcImageMode === "rgb888")
                 throw new Error("RGB888 startup failed");
@@ -1187,6 +1194,7 @@ describe("createRouter stream mode", () => {
         listDevices: async () => [{ serial: "emulator-5554", state: "device" }],
         createApp: (options) =>
           createApp(options, {
+            readOrientation: readNoOrientation,
             startSession: async (sessionOptions) => {
               opened.push({
                 mode: sessionOptions.mode,
@@ -1242,6 +1250,7 @@ describe("createRouter stream mode", () => {
         listDevices: async () => [{ serial: "emulator-5554", state: "device" }],
         createApp: (options) =>
           createApp(options, {
+            readOrientation: readNoOrientation,
             startSession: async (sessionOptions) => {
               opened.push({
                 mode: sessionOptions.mode,
@@ -1301,6 +1310,7 @@ describe("createRouter stream mode", () => {
         listAllDevices: async () => [{ serial: "emulator-5554", state: "device" }],
         createApp: (options) =>
           createApp(options, {
+            readOrientation: readNoOrientation,
             startSession: async ({ mode }) => liveStreamSession(mode),
             setLocation: async () => {},
           }),
@@ -1358,6 +1368,7 @@ describe("createRouter stream mode", () => {
         listAllDevices: async () => [{ serial: "emulator-5554", state: "device" }],
         createApp: (options) =>
           createApp(options, {
+            readOrientation: readNoOrientation,
             startSession: async ({ mode }) =>
               liveStreamSession(mode, (listener) => {
                 fatalListeners.set(mode, listener);
@@ -1397,6 +1408,7 @@ describe("createRouter stream mode", () => {
         listAllDevices: async () => [{ serial: "emulator-5554", state: "device" }],
         createApp: (options) =>
           createApp(options, {
+            readOrientation: readNoOrientation,
             startSession: async ({ mode }) => {
               if (mode === "grpc-screenshot") {
                 replacementRequested.resolve(undefined);
@@ -1734,6 +1746,7 @@ test("router preserves a working encoder on failed switches and retains per-devi
       getHardwareEncoderError: () => hardwareError,
       createApp: (opts) =>
         createApp(opts, {
+          readOrientation: readNoOrientation,
           startSession: async (options) => {
             if (options.encoder === "hardware" && failHardware) {
               hardwareError = "No hardware H.264 encoder: unavailable driver";

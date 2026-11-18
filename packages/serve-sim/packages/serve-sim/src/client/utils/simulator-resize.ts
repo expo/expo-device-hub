@@ -26,8 +26,8 @@ export const SIMULATOR_RESIZE_DRAG_TRANSITION = "width 70ms linear";
 // A mode change, not a drag release: the resize curve is 96% done at the
 // halfway point, which reads as a jump rather than growth.
 export const SIMULATOR_RESIZE_PRESENTATION_TRANSITION_MS = 280;
-export const SIMULATOR_RESIZE_PRESENTATION_TRANSITION =
-  "transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)";
+export const SIMULATOR_RESIZE_PRESENTATION_EASING = "cubic-bezier(0.4, 0, 0.2, 1)";
+export const SIMULATOR_RESIZE_PRESENTATION_TRANSITION = `transform 0.28s ${SIMULATOR_RESIZE_PRESENTATION_EASING}`;
 // All sides: presentation drops every gutter at once.
 export const SIMULATOR_RESIZE_PAGE_TRANSITION = "padding 0.24s cubic-bezier(0.22, 1, 0.36, 1)";
 

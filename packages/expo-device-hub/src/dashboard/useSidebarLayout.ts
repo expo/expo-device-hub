@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-import { dashboardSingleDevice } from "../single-device";
 import { type SidebarPreference, useDashboardStore } from "./dashboardStore";
 
 type SidebarLayoutOptions = {
@@ -76,7 +75,7 @@ export function useSidebarLayout({
   }, []);
 
   const layout = resolveSidebarLayout({
-    leftPreference: dashboardSingleDevice() ? "hidden" : leftPreference,
+    leftPreference,
     rightPreference,
     containerWidth,
     leftWidth,
@@ -85,7 +84,6 @@ export function useSidebarLayout({
   });
 
   const openLeft = () => {
-    if (dashboardSingleDevice()) return;
     const leftFits =
       containerWidth >= leftWidth + minStreamWidth + (layout.rightDocked ? rightWidth : 0);
     openSidebar("left", leftFits);

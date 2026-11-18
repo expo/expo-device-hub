@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
 import {
-  areRecordingControlsLocked,
   resolveDeviceStreamMode,
   type DeviceClient,
   type DeviceGrpcImageMode,
@@ -136,12 +135,13 @@ export function StreamOptionsSection({
   onHttpCodecChange,
 }: StreamOptionsSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
-  const recordingControlsLocked = areRecordingControlsLocked(client.screenRecording);
-  const recordingDisabledReason = !recordingControlsLocked
-    ? undefined
-    : client.screenRecording === "unknown"
-      ? "Unavailable until recording status is known."
-      : "Unavailable until recording finishes.";
+  const recordingControlsLocked = client.recordingLock !== null;
+  const recordingDisabledReason =
+    client.recordingLock === null
+      ? undefined
+      : client.recordingLock === "status-unknown"
+        ? "Unavailable until recording status is known."
+        : "Unavailable until recording finishes.";
   const backend: DeviceStreamCapabilities =
     client.streamCapabilities ?? DEFAULT_STREAM_CAPABILITIES;
   const availability: StreamModeAvailability = {

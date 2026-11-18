@@ -102,6 +102,69 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         return (capture, log)
     }
 
+    func testLegacySingleScreenUsesProfileGeometryWithoutCoreDevice() async throws {
+        let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
+        let capture = FrameCapture(readDisplayInfo: { _ in
+            XCTFail("A proven legacy single screen must not query CoreDevice")
+            return nil
+        })
+        await capture.installDescriptorsForTesting([
+            (descriptor, SimDisplayMetadata(screenID: 7, orientation: nil, chromeIdentifier: nil, screenType: 0)),
+        ], deviceUDID: "legacy-phone", legacyScreenSize: Dimensions(width: 128, height: 64)) { _, _, _ in }
+        await capture.captureFrameForTesting(force: true)
+        let id = try await capture.activeScreenID()
+        XCTAssertEqual(id, 7)
+        await capture.stop()
+    }
+
+    func testLegacyGeometryCannotHideMissingMetadataOrAnotherPanel() async throws {
+        for metadata in [nil,
+            SimDisplayMetadata(screenID: 3, orientation: nil, chromeIdentifier: nil, screenType: 0),
+            SimDisplayMetadata(screenID: 2, orientation: nil, chromeIdentifier: nil, screenType: nil)] {
+            let capture = FrameCapture(readDisplayInfo: { _ in nil })
+            let first = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
+            let other = FakeFramebufferDescriptor(nil)
+            await capture.installDescriptorsForTesting([(first, panel), (other, metadata)],
+                deviceUDID: "incomplete", legacyScreenSize: Dimensions(width: 64, height: 128)) { _, _, _ in }
+            await capture.captureFrameForTesting(force: true)
+            do {
+                _ = try await capture.activeScreenID()
+                XCTFail("Legacy geometry identified an ambiguous framebuffer")
+            } catch { XCTAssertEqual((error as NSError).domain, "FrameCapture") }
+            await capture.stop()
+        }
+    }
+
+    func testLegacyScreenDimensionsRequireAnUnambiguousLegacyProfile() {
+        let dimensions: [String: Any] = ["main-screen-width": 64, "main-screen-height": 128]
+        let profile: [String: Any] = ["idiom": "phone", "ScreenDimensionsCapability": dimensions]
+        XCTAssertEqual(SimDisplayMetadata.legacyScreenSize(capabilities: profile), Dimensions(width: 64, height: 128))
+        XCTAssertEqual(SimDisplayMetadata.legacyScreenSize(capabilities: ["capabilities": profile]), Dimensions(width: 64, height: 128))
+        for extra: [String: Any] in [["displays": []], ["displays": "invalid"], ["idiom": "unknown"],
+            ["capabilities": NSNull()],
+            ["ScreenDimensionsCapability": ["main-screen-width": NSNumber(value: true), "main-screen-height": 128]],
+            ["ScreenDimensionsCapability": ["main-screen-width": 64.5, "main-screen-height": 128]],
+            ["ScreenDimensionsCapability": ["main-screen-width": 0, "main-screen-height": 128]]] {
+            XCTAssertNil(SimDisplayMetadata.legacyScreenSize(capabilities: profile.merging(extra) { _, value in value }))
+        }
+    }
+
+    func testUnknownProfileDoesNotGuessFromOneCachedDescriptor() async throws {
+        let observations: [[CoreDeviceDisplayState]?] = [nil, [],
+            [CoreDeviceDisplayState(screenID: 3, isActive: true, orientation: nil)],
+            [CoreDeviceDisplayState(screenID: 1, isActive: false, orientation: nil)]]
+        for observation in observations {
+            let capture = FrameCapture(readDisplayInfo: { _ in observation })
+            let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
+            await capture.installDescriptorsForTesting([(descriptor, panel)], deviceUDID: "unknown-profile") { _, _, _ in }
+            do {
+                _ = try await capture.activeScreenID()
+                XCTFail("An unknown profile guessed its active display")
+            } catch { XCTAssertEqual((error as NSError).domain, "FrameCapture") }
+            await capture.stop()
+        }
+    }
+
     func testActiveReadCannotOutliveCaptureGeneration() async throws {
         let gate = DisplayReadGate()
         let capture = FrameCapture(readDisplayInfo: { _ in await gate.read() })
@@ -121,6 +184,22 @@ final class FrameCaptureSurfaceTests: XCTestCase {
             _ = try await read.value
             XCTFail("A stopped capture returned a stale active display")
         } catch { XCTAssertTrue(error is CancellationError) }
+    }
+
+    func testScreenshotHandsOffRetainedSurfaceWithoutReadingPixelsOnCaptureActor() async throws {
+        var original: IOSurface? = surface(width: 17, height: 31, gray: 50)
+        let descriptor = FakeFramebufferDescriptor(original)
+        let (capture, _) = await capture(with: descriptor)
+        await capture.captureFrameForTesting(force: true)
+        let frame = try await capture.screenshotPixels(screenID: 1)
+        XCTAssertNotNil(CVPixelBufferGetIOSurface(frame.pixels), "Capture must hand off the shared surface; CPU readback belongs on the screenshot queue")
+        XCTAssertTrue(CVPixelBufferGetIOSurface(frame.pixels)?.takeUnretainedValue() === original)
+        descriptor.surface = nil
+        original = nil
+        await capture.stop()
+        XCTAssertNotNil(CVPixelBufferGetIOSurface(frame.pixels), "The handed-off buffer must retain the retired surface")
+        let png = try await ScreenshotEncoder().encode(frame.pixels)
+        XCTAssertFalse(png.isEmpty)
     }
 
     func testFoldableProfileCannotFallBackToOneCachedDescriptor() async throws {

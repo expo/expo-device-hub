@@ -8,11 +8,12 @@ import { PermissionsSection } from "./PermissionsSection";
 import { SIDEBAR_SECTION_INSET } from "./CollapsibleSection";
 import { CurrentAppSection } from "./CurrentAppSection";
 import { DeviceOptionsSection } from "./DeviceOptionsSection";
+import { type FoldPreviewOption } from "./FoldSettings";
 import { EventsSection } from "./EventsSection";
 import { LocationSection } from "./LocationSection";
 import { LogsSection } from "./LogsSection";
 import { StreamOptionsSection } from "./StreamOptionsSection";
-import { type Device, isDeviceFrameProfileId } from "./data";
+import { type Device } from "./data";
 import { type StreamModeAvailability } from "./StreamSection";
 
 export type LogSidebarProps = {
@@ -22,10 +23,15 @@ export type LogSidebarProps = {
   client?: DeviceClient;
   /** Selected device metadata used by viewer-local options. */
   device?: Device;
-  /** Viewer-local preference for supported device-frame artwork. */
-  showDeviceFrame?: boolean;
-  /** Change the viewer-local device-frame preference. */
-  onShowDeviceFrameChange?: (show: boolean) => void;
+  /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
+  showScreenShape?: boolean;
+  /** Change the viewer-local screen shape preference. */
+  onShowScreenShapeChange?: (show: boolean) => void;
+  /**
+   * Whether the selected device has a known screen shape, which the consumer
+   * looks up in `@expo/hub-client/shapes`. Without one, the option is disabled.
+   */
+  screenShapeAvailable?: boolean;
   /** Viewer-selected simulator stream mode. */
   streamMode?: DeviceStreamMode;
   /** Viewer-selected HTTP codec. */
@@ -46,18 +52,24 @@ export type LogSidebarProps = {
   onClipboardRequestHandled?: () => void;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
+  /** Viewer-local 2D/3D choices for an iPhone Duo. */
+  foldPreview?: FoldPreviewOption;
 };
 
+/** Props that feed the inspector sections, without the column chrome. */
+export type InspectorSectionsProps = Omit<LogSidebarProps, "onToggle" | "width">;
+
 /**
- * Right column: a compact inspector for the selected device, rendered directly
- * on the dashboard canvas so it matches the existing sidebar treatment.
+ * The inspector for the selected device: current app, device and stream options,
+ * and the other capability sections, ending with the logs. {@link LogSidebar}
+ * wraps it in a column; the dashboard's left sidebar embeds it below the device lists.
  */
-export function LogSidebar({
-  onToggle,
+export function InspectorSections({
   client,
   device,
-  showDeviceFrame = true,
-  onShowDeviceFrameChange,
+  showScreenShape = true,
+  onShowScreenShapeChange,
+  screenShapeAvailable = false,
   streamMode,
   httpCodec,
   streamModeAvailability,
@@ -67,18 +79,68 @@ export function LogSidebar({
   onRemove,
   clipboardRequest,
   onClipboardRequestHandled,
-  width = 400,
-}: LogSidebarProps) {
-  const deviceFrame = device
+  foldPreview,
+}: InspectorSectionsProps) {
+  const screenShape = device
     ? {
-        available: isDeviceFrameProfileId(device.deviceFrame),
-        visible: showDeviceFrame,
-        onVisibleChange: onShowDeviceFrameChange ?? (() => {}),
+        available: screenShapeAvailable,
+        visible: showScreenShape,
+        onVisibleChange: onShowScreenShapeChange ?? (() => {}),
       }
     : undefined;
   // Physical devices cannot be deleted from the host.
   const onRemoveDevice = device?.physical ? undefined : onRemove;
 
+  return (
+    <>
+      <CurrentAppSection client={client} />
+      {(client?.capabilities.deviceSettings ||
+        client?.capabilities.fold ||
+        client?.platform === "android" ||
+        screenShape ||
+        (client && (onShutdown || onRemoveDevice))) && (
+        <DeviceOptionsSection
+          client={client}
+          screenShape={screenShape}
+          foldPreview={foldPreview}
+          showDeviceSettings={client?.capabilities.deviceSettings ?? false}
+          onShutdown={onShutdown}
+          onRemove={onRemoveDevice}
+        />
+      )}
+      {client?.streamCapabilities && (
+        <StreamOptionsSection
+          client={client}
+          streamMode={streamMode}
+          httpCodec={httpCodec}
+          streamModeAvailability={streamModeAvailability}
+          onStreamModeChange={onStreamModeChange}
+          onHttpCodecChange={onHttpCodecChange}
+        />
+      )}
+      {client?.capabilities.camera && <CameraSection client={client} />}
+      {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
+      {client?.capabilities.location && <LocationSection key={device?.id} client={client} />}
+      {client?.capabilities.permissions && <PermissionsSection client={client} />}
+      {client?.capabilities.clipboard && (
+        <ClipboardSection
+          key={`clipboard:${device?.id}`}
+          client={client}
+          request={clipboardRequest}
+          onRequestHandled={onClipboardRequestHandled}
+        />
+      )}
+      {client?.capabilities.events && <EventsSection client={client} />}
+      <LogsSection client={client} />
+    </>
+  );
+}
+
+/**
+ * A column that holds the inspector on its own, rendered directly on the
+ * dashboard canvas so it matches the existing sidebar treatment.
+ */
+export function LogSidebar({ onToggle, width = 400, ...inspector }: LogSidebarProps) {
   return (
     <aside
       style={{
@@ -86,7 +148,7 @@ export function LogSidebar({
         flexDirection: "column",
         width: `min(${width}px, 100vw)`,
         flexShrink: 0,
-        height: "100vh",
+        height: "var(--hub-viewport-height, 100vh)",
         boxSizing: "border-box",
         padding: "32px 0 0",
         backgroundColor: bg.default,
@@ -115,43 +177,7 @@ export function LogSidebar({
           overflowY: "auto",
         }}
       >
-        <CurrentAppSection client={client} />
-        {(client?.capabilities.deviceSettings ||
-          client?.platform === "android" ||
-          deviceFrame ||
-          (client && (onShutdown || onRemoveDevice))) && (
-          <DeviceOptionsSection
-            client={client}
-            deviceFrame={deviceFrame}
-            showDeviceSettings={client?.capabilities.deviceSettings ?? false}
-            onShutdown={onShutdown}
-            onRemove={onRemoveDevice}
-          />
-        )}
-        {client?.streamCapabilities && (
-          <StreamOptionsSection
-            client={client}
-            streamMode={streamMode}
-            httpCodec={httpCodec}
-            streamModeAvailability={streamModeAvailability}
-            onStreamModeChange={onStreamModeChange}
-            onHttpCodecChange={onHttpCodecChange}
-          />
-        )}
-        {client?.capabilities.camera && <CameraSection client={client} />}
-        {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
-        {client?.capabilities.location && <LocationSection key={device?.id} client={client} />}
-        {client?.capabilities.permissions && <PermissionsSection client={client} />}
-        {client?.capabilities.clipboard && (
-          <ClipboardSection
-            key={`clipboard:${device?.id}`}
-            client={client}
-            request={clipboardRequest}
-            onRequestHandled={onClipboardRequestHandled}
-          />
-        )}
-        {client?.capabilities.events && <EventsSection client={client} />}
-        <LogsSection client={client} />
+        <InspectorSections {...inspector} />
       </div>
     </aside>
   );

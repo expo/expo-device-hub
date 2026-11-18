@@ -54,6 +54,19 @@ export type HingePhysicalOrientation =
   | "faceup"
   | "facedown";
 
+export type CardinalPhysicalOrientation = Exclude<HingePhysicalOrientation, "faceup" | "facedown">;
+
+export function isCardinalPhysicalOrientation(
+  value: unknown,
+): value is CardinalPhysicalOrientation {
+  return (
+    value === "portrait" ||
+    value === "pud" ||
+    value === "landscape-left" ||
+    value === "landscape-right"
+  );
+}
+
 export function hingePoseOrientation(pose: HingePose): HingePhysicalOrientation {
   return pose === "laptop" ? "landscape-left" : pose === "tent" ? "facedown" : "portrait";
 }

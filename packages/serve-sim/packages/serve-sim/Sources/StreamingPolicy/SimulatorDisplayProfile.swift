@@ -9,6 +9,12 @@ public struct SimulatorDisplayProfile: Sendable {
 
     public var isFoldable: Bool { integratedDisplayCount == 2 }
 
+    /// Match the existing CoreDevice HID scope before starting pose observation.
+    public func supportsDevicePose(runtimeIdentifier: String) -> Bool {
+        isFoldable || (integratedDisplayCount == 1 &&
+            runtimeIdentifier.hasPrefix("com.apple.CoreSimulator.SimRuntime.iOS-"))
+    }
+
     public func recordingScreen(screenID: UInt32, chromeIdentifier: String?) -> RecordingScreen? {
         guard let screen = recordingScreens[screenID] else { return nil }
         if let chromeIdentifier, Self.screen(chromeIdentifier: chromeIdentifier) != screen { return nil }

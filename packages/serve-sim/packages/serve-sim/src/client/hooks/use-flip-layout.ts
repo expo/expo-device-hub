@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
+import { animateLayoutTransition, type LayoutTransitionState } from "../utils/layout-transition";
 import { SIMULATOR_RESIZE_PRESENTATION_TRANSITION } from "../utils/simulator-resize";
 
 export function useFlipLayout(
@@ -9,12 +10,53 @@ export function useFlipLayout(
   viewportHeight: number,
   phoneKeyboardRaised: boolean,
   scaling: boolean,
+  continuous = false,
+  viewportWidth = 0,
 ) {
   const prevRef = useRef<DOMRectReadOnly | null>(null);
+  const mobileRef = useRef<LayoutTransitionState>({ bounds: null, active: null });
+  const readyRef = useRef(false);
+  const previousModeRef = useRef(scaling);
+  const firstFrameRef = useRef<number | null>(null);
+  useLayoutEffect(
+    () => () => {
+      mobileRef.current.active?.animation.cancel();
+      if (firstFrameRef.current !== null) cancelAnimationFrame(firstFrameRef.current);
+    },
+    [],
+  );
 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    if (continuous) {
+      const changingMode = previousModeRef.current !== scaling;
+      previousModeRef.current = scaling;
+      animateLayoutTransition(
+        el,
+        mobileRef.current,
+        !enabled ||
+          !readyRef.current ||
+          (!changingMode && !mobileRef.current.active) ||
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      );
+      // The initial measured fit may commit twice before paint. Fit it directly;
+      // only presentation changes and their interruptions should animate.
+      if (!readyRef.current && firstFrameRef.current === null) {
+        firstFrameRef.current = requestAnimationFrame(() => {
+          readyRef.current = true;
+          firstFrameRef.current = null;
+        });
+      }
+      prevRef.current = null;
+      return;
+    }
+    previousModeRef.current = scaling;
+    mobileRef.current.active?.animation.cancel();
+    mobileRef.current.active = null;
+    readyRef.current = false;
+    if (firstFrameRef.current !== null) cancelAnimationFrame(firstFrameRef.current);
+    firstFrameRef.current = null;
     const next = el.getBoundingClientRect();
     const prev = prevRef.current;
     prevRef.current = next;
@@ -61,5 +103,15 @@ export function useFlipLayout(
       el.removeEventListener("transitionend", onEnd);
       clear();
     };
-  }, [enabled, layoutHeight, layoutWidth, phoneKeyboardRaised, ref, scaling, viewportHeight]);
+  }, [
+    continuous,
+    enabled,
+    layoutHeight,
+    layoutWidth,
+    phoneKeyboardRaised,
+    ref,
+    scaling,
+    viewportHeight,
+    viewportWidth,
+  ]);
 }

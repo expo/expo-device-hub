@@ -3,6 +3,7 @@ import { isWebOrigin, originMatches } from "../middleware-utils";
 import type { UpgradeHandlerWebSocket } from "./types";
 import type { StreamSettings } from "../stream-settings";
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
+import { screenshotMetadataFromHeaders } from "../screenshot-metadata";
 import {
   TOKEN_SUBPROTOCOL_PREFIX,
   acceptedTokenSubprotocol,
@@ -24,11 +25,15 @@ import {
 // runtime does that with `ws`, while other web runtimes can provide their own
 // socket object with the same small shape.
 //
-// Wire protocol (all JSON text frames):
+// Wire protocol (JSON text frames, except opt-in binary results):
 //   client → {token}                  first frame, when no token subprotocol was offered
 //   server → {ready:true}             auth accepted
 //   client → {id, action, params}      run one typed simulator action
 //   server → {id, stdout, stderr, exitCode}
+//   client → {id, action:"screenshot.capture",
+//             params:{udid?,display?,maxWidth?,format?,quality?,automation?,output:"binary"}}
+//   server → binary: uint32 BE id, then PNG or JPEG bytes; errors use {id, error}
+//   server → {id, screenshotMetadata}  directly after each binary frame
 //   client → {id, ui:{…}}             simulator-settings request (in-process,
 //   server → {id, …} | {id, error}     no shell round-trip)
 //   client → {sub, path}              subscribe to a same-origin SSE route
@@ -70,11 +75,15 @@ interface ExecChannelOptions {
   ssePrefixes?: string[];
   /** In-process handler for `{id, ui}` simulator-settings requests. */
   onUiRequest?: UiRequestHandler;
+  /** Reuses the authenticated HTTP screenshot route and its device policy. */
+  onScreenshotRequest?: (payload: unknown, request: Request) => Promise<Response>;
   onActionResult?: ActionResultHandler;
   /** Routes an authenticated subscription back through the owning middleware. */
   onSseRequest?: SseRequestHandler;
   serveSimBinPath?: string;
   singleDevicePolicy?: import("../single-device").SingleDevicePolicy;
+  unavailable?: boolean;
+  pendingActions?: Set<Promise<unknown>>;
   deviceName?: (udid: string) => string | undefined;
   /** Trusted initial settings from the owning middleware, never from action parameters. */
   streamSettings?: StreamSettings;
@@ -232,8 +241,56 @@ function wireExecSocket(
       subscriptions.delete(msg.unsub);
       return;
     }
+    if (opts.unavailable) {
+      send({
+        ...(typeof msg.id === "number" ? { id: msg.id } : { sub: msg.sub, end: true }),
+        error: "The Simulator session is being configured",
+      });
+      return;
+    }
     if (typeof msg.sub === "number" && typeof msg.path === "string") {
       subscribe(msg.sub, msg.path);
+      return;
+    }
+    if (
+      msg.action === "screenshot.capture" &&
+      msg.params !== null &&
+      typeof msg.params === "object" &&
+      (msg.params as { output?: unknown }).output === "binary"
+    ) {
+      const { id } = msg;
+      if (typeof id !== "number" || !Number.isInteger(id) || id < 0 || id > 0xffff_ffff) {
+        send({ id, error: "Screenshot id must be an unsigned 32-bit integer" });
+        return;
+      }
+      if (!opts.onScreenshotRequest) {
+        send({ id, error: "screenshot requests not supported" });
+        return;
+      }
+      if (!reserveAction(id)) return;
+      const task = opts
+        .onScreenshotRequest(msg.params ?? {}, request)
+        .then(async (response) => {
+          if (!response.ok) {
+            const body = (await response.json()) as { error?: string };
+            send({ id, error: body.error ?? "Screenshot failed" });
+            return;
+          }
+          const image = Buffer.from(await response.arrayBuffer());
+          if (ws.readyState !== ws.OPEN) return;
+          const frame = Buffer.allocUnsafe(4 + image.length);
+          frame.writeUInt32BE(id);
+          image.copy(frame, 4);
+          ws.send(frame);
+          // A binary frame has no room for metadata. Send it next, before any other reply for this id.
+          send({ id, screenshotMetadata: screenshotMetadataFromHeaders(response.headers) });
+        })
+        .catch(() => send({ id, error: "Screenshot failed" }))
+        .finally(() => {
+          actionsInFlight -= 1;
+          opts.pendingActions?.delete(task);
+        });
+      opts.pendingActions?.add(task);
       return;
     }
     if (typeof msg.id === "number" && msg.ui !== undefined) {
@@ -243,13 +300,15 @@ function wireExecSocket(
         return;
       }
       if (!reserveAction(id)) return;
-      opts
+      const task = opts
         .onUiRequest(msg.ui)
         .then((reply) => send({ id, ...reply }))
         .catch((e: unknown) => send({ id, error: e instanceof Error ? e.message : String(e) }))
         .finally(() => {
           actionsInFlight -= 1;
+          opts.pendingActions?.delete(task);
         });
+      opts.pendingActions?.add(task);
       return;
     }
     if (typeof msg.id !== "number") {
@@ -274,7 +333,7 @@ function wireExecSocket(
       send({ id, error: error instanceof Error ? error.message : "Invalid device" });
       return;
     }
-    runHostActionAsync(
+    const task = runHostActionAsync(
       { ...msg, params },
       opts.serveSimBinPath ?? "serve-sim",
       opts.streamSettings,
@@ -296,7 +355,9 @@ function wireExecSocket(
       })
       .finally(() => {
         actionsInFlight -= 1;
+        opts.pendingActions?.delete(task);
       });
+    opts.pendingActions?.add(task);
   });
 
   ws.on("error", () => ws.close());

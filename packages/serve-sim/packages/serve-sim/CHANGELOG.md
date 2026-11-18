@@ -1,5 +1,80 @@
 # @expo/serve-sim
 
+## 0.14.3
+
+### Patch Changes
+
+- e169141: Show the name of the foreground iOS app on hosts where the simulator runtime is mounted outside serve-sim's allowed paths, for example Safari and Settings in an EAS simulator session. serve-sim now sends `label` with each `/appstate` event. It reads the name from the bundle path that simctl reports, so the client no longer needs `app.infoPlist` for the name. hub-client uses that label, and a bundle read that finds no name no longer clears it.
+- 913e47c: Report physical device pose separately from app orientation so clients can follow external turns on supported iOS runtimes. Support physical rotations on iPhone Duo independently of the active panel; temporary screenshot captures do not start pose observation.
+
+## 0.14.2
+
+### Patch Changes
+
+- 0c9742e: Populate screenshot dimensions, screen rotation, and display identity from native capture state. Older native helpers and the simctl fallback keep unknown metadata values.
+- 5ece7f9: Add a screenshot metadata response contract with zero/null defaults for unknown values. Existing paths and PNG output remain unchanged.
+
+## 0.14.1
+
+### Patch Changes
+
+- d033e46: Avoid Darwin filesystem metadata lookups when discovering TCP listeners, so unrelated mounts do not delay port reclamation when starting a server.
+- 154e80a: Capture default Simulator screenshots, including resized and JPEG requests, without starting video when the device profile and runtime enumeration verify one usable display. Keep native display selection when the evidence is missing, ambiguous, or conflicting. Reuse native capture for existing sessions, including sessions created during display verification.
+
+## 0.14.0
+
+### Minor Changes
+
+- d0f7c95: Add optional screenshot resizing and JPEG output to the HTTP and binary WebSocket APIs. Full-resolution PNG remains the default.
+
+### Patch Changes
+
+- b66e959: Add an `automation` flag to screenshot captures so background session thumbnails do not count as user activity. Automated captures skip Desktop copies, and binary captures do not create manual screenshot artifacts.
+
+  The POST screenshot endpoint also accepts `automation: true` in its JSON body with the existing bearer token.
+
+## 0.13.3
+
+### Patch Changes
+
+- de14fb6: Show the whole iPhone Duo cover screen in the 2D WebRTC stream. The picture was stretched and its right edge was cut, which showed as a dark stripe. serve-sim now draws it from the top-left corner of the shared canvas, with black bars right after the picture, and the screen views pin the frame to the top-left.
+- 05edb0b: Add iPhone Duo support to the Hub: fold controls in the inspector, Option+Shift+1–5 pose shortcuts, and a live 3D model of the device that folds with the hinge, or its active display flat in 2D.
+- c3f073c: Fix Simulator app installation from uploads and preview drops.
+
+## 0.13.2
+
+### Patch Changes
+
+- 6f21cf8: Capture active-display screenshots from native Simulator pixels to reduce latency while keeping full resolution and orientation.
+- 6dd111c: Return native HTTP screenshots from memory with an explicit response length. Add an opt-in binary response mode for `screenshot.capture` over exec-ws to download a PNG in one request without staging or Desktop copies.
+
+## 0.13.1
+
+### Patch Changes
+
+- 5f000be: Fix the device jumping and scaling back when entering or leaving full screen on mobile. Keep transitions continuous when reversing direction before the animation finishes.
+
+  Keep the device in place, with its frame and screen aligned, while the phone keyboard changes the mobile preview size. Keep the phone keyboard open when leaving full screen.
+
+- a702c83: Fix the Home-button artwork appearing at the left edge of older iPhone and iPad device frames.
+- 1ce9814: Fit the mobile preview to the available screen space while keeping the existing floating controls. Hide the device name, live badge, and accessibility overlay button on small screens.
+
+  Hide the bottom action toolbar while the phone keyboard is open so the preview has more room.
+
+  Stack mobile preview controls in one vertical toolbar, including the keyboard toggle.
+
+  Keep the full device visible in presentation mode when the phone keyboard opens.
+
+## 0.13.0
+
+### Minor Changes
+
+- 413a053: Adopt a running serve-sim with a different Simulator while keeping the server and respecting `--single-device`. Adoption reuses the UI device lifecycle and waits for unused devices to shut down and the selected device to become ready.
+
+### Patch Changes
+
+- 0665a67: Fix about three seconds of lag in the HTTP simulator preview on Chromium. When the encoder falls back to default rate control, the stream now declares that frames are never reordered.
+
 ## 0.12.0
 
 ### Minor Changes

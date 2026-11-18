@@ -66,3 +66,43 @@ describe("screenshot capture", () => {
     ).toBeNull();
   });
 });
+
+test.each([
+  { width: 0, height: 0, displayRotation: null },
+  { width: 2622, height: 1206, displayRotation: "landscape-left", screen: "inner" },
+  { width: 1206, height: 2622, displayRotation: "portrait", screen: "outer" },
+])("keeps recognized screenshot metadata beside the original PNG", async (metadata) => {
+  const shot = await fetchScreenshot(
+    "",
+    null,
+    pngResponse({
+      "X-Expo-Screenshot-Metadata": JSON.stringify({ ...metadata, ignored: "extra" }),
+    }),
+  );
+  expect(shot?.metadata).toEqual(metadata);
+  expect(new Uint8Array(await shot!.blob.arrayBuffer())).toEqual(PNG);
+});
+
+test.each([
+  "{",
+  "null",
+  "[]",
+  JSON.stringify({ width: -1, height: 0, displayRotation: null }),
+  JSON.stringify({
+    width: 0,
+    height: 0,
+    displayRotation: "unknown",
+  }),
+  ...[0, null, true, "external"].map((screen) =>
+    JSON.stringify({ width: 0, height: 0, displayRotation: null, screen }),
+  ),
+  "x".repeat(1025),
+])("ignores invalid optional metadata without losing the PNG (%s)", async (header) => {
+  const shot = await fetchScreenshot(
+    "",
+    null,
+    pngResponse({ "X-Expo-Screenshot-Metadata": header }),
+  );
+  expect(shot?.metadata).toBeUndefined();
+  expect(new Uint8Array(await shot!.blob.arrayBuffer())).toEqual(PNG);
+});

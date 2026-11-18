@@ -1,10 +1,9 @@
 import { type ReactNode } from "react";
 
 import {
-  areRecordingControlsLocked,
   type DeviceClipboardAction,
   type DeviceClipboardCapabilities,
-  type DeviceScreenRecordingStatus,
+  type DeviceOrientationUnavailableReason,
 } from "@expo/hub-client";
 import {
   CONTROL_BUTTON_SIZE,
@@ -15,18 +14,18 @@ import {
   Dropdown,
   DropdownItem,
   HomeIcon,
+  KeyboardIcon,
   RefreshIcon,
   RotateIcon,
-  ThemeIcon,
   bg,
   border,
   radius,
   text,
 } from "../primitives";
-import { type ColorScheme } from "./data";
+import { rotationUnavailableText } from "./rotation-availability";
 
 const GROUP_PADDING = 4;
-const GROUP_GAP = 24;
+const GROUP_GAP = 16;
 const ICON_SIZE = 20;
 const ICON_STROKE = 1.67;
 
@@ -55,37 +54,28 @@ function ControlGroup({ children }: { children: ReactNode }) {
 
 /**
  * Controls under the device stream. Both platforms share one toolbar: a pill
- * with Save · Theme · Home · Reload, a Clipboard menu for a device with
- * clipboard support (Copy then Paste, as in serve-sim), plus a
- * separate Rotate button. Each button
- * shows its label as a tooltip on hover. Device-level actions (Android Back and
- * Recents keys, shutting down or removing the device) live in the inspector's
- * Device options section.
+ * with Save · Home · Reload, a pill with the Clipboard menu for a device with
+ * clipboard support (Copy then Paste, as in serve-sim) and, on a phone, the
+ * Keyboard toggle, plus a separate Rotate button. Each button shows its label
+ * as a tooltip on hover. Device-level actions (Android Back and Recents keys,
+ * shutting down or removing the device) and the device's appearance live in the
+ * inspector's Device options section.
  *
  * "Reload" reloads the running React Native/Expo bundle via the active device
- * client. "Theme" toggles the **device's** system dark/light appearance (not
- * Hub's own theme).
+ * client.
  */
 export function StreamControls({
-  appearance,
-  appearanceDisabled = false,
-  onToggleAppearance,
   onHome,
   onReload,
   onRotate,
   onSave,
-  recording = null,
+  orientationUnavailable,
   clipboard = false,
   clipboardPending = null,
   onPaste,
   onCopy,
+  keyboard,
 }: {
-  /** The device's current dark/light appearance; null while unknown. */
-  appearance: ColorScheme | null;
-  /** Whether appearance settings are unavailable or a change is pending. */
-  appearanceDisabled?: boolean;
-  /** Flip the device's system appearance (dark ↔ light). */
-  onToggleAppearance: () => void;
   /** Press the device Home button. */
   onHome?: () => void;
   /** Reload the running React Native/Expo bundle. */
@@ -94,7 +84,8 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
-  recording?: DeviceScreenRecordingStatus | null;
+  /** The client's `orientationUnavailable`. Locks Rotate and picks the explanation while set. */
+  orientationUnavailable: DeviceOrientationUnavailableReason | null;
   /** The clipboard actions the device offers. Each one shows only when the device has it. */
   clipboard?: DeviceClipboardCapabilities;
   /** Disable both clipboard actions while either is in flight. */
@@ -103,10 +94,12 @@ export function StreamControls({
   onPaste?: () => void;
   /** Copy the text selected in the device app to the browser clipboard. */
   onCopy?: () => void;
+  /** Type with this device's own keyboard. Joins the Clipboard pill when given. */
+  keyboard?: { open: boolean; onToggle: () => void };
 }) {
-  const recordingControlsLocked = areRecordingControlsLocked(recording);
-  const themeDisabled = appearanceDisabled || appearance === null;
+  const rotateUnavailable = rotationUnavailableText(orientationUnavailable);
   const clipboardDisabled = clipboardPending !== null;
+  const showClipboard = !!clipboard && (clipboard.paste || clipboard.copy);
   return (
     <div
       role="toolbar"
@@ -117,7 +110,7 @@ export function StreamControls({
         justifyContent: "center",
         alignItems: "center",
         columnGap: GROUP_GAP,
-        rowGap: 8,
+        rowGap: GROUP_GAP,
       }}
     >
       <ControlGroup>
@@ -125,15 +118,6 @@ export function StreamControls({
           icon={<CameraIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Save"
           onClick={onSave}
-        />
-        <ControlButton
-          icon={<ThemeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-          label="Theme"
-          role="switch"
-          aria-checked={appearance === "dark"}
-          disabled={themeDisabled}
-          onClick={themeDisabled ? undefined : onToggleAppearance}
-          style={themeDisabled ? { color: text.tertiary, cursor: "not-allowed" } : undefined}
         />
         <ControlButton
           icon={<HomeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
@@ -146,57 +130,64 @@ export function StreamControls({
           onClick={onReload}
         />
       </ControlGroup>
-      {clipboard && (clipboard.paste || clipboard.copy) && (
+      {(showClipboard || keyboard) && (
         <ControlGroup>
-          <Dropdown
-            side="top"
-            align="center"
-            disabled={clipboardDisabled}
-            trigger={
-              <ControlButton
-                icon={<ClipboardPasteIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-                label="Clipboard"
-                disabled={clipboardDisabled}
-                style={
-                  clipboardDisabled ? { color: text.tertiary, cursor: "not-allowed" } : undefined
-                }
-              />
-            }
-          >
-            {clipboard.copy && (
-              <DropdownItem
-                label="Copy from Simulator"
-                Icon={CopyIcon}
-                disabled={clipboardDisabled}
-                onSelect={onCopy}
-              />
-            )}
-            {clipboard.paste && (
-              <DropdownItem
-                label="Paste from Device"
-                Icon={ClipboardPasteIcon}
-                disabled={clipboardDisabled}
-                onSelect={onPaste}
-              />
-            )}
-          </Dropdown>
+          {showClipboard && (
+            <Dropdown
+              side="top"
+              align="center"
+              disabled={clipboardDisabled}
+              trigger={
+                <ControlButton
+                  icon={<ClipboardPasteIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+                  label="Clipboard"
+                  disabled={clipboardDisabled}
+                  style={
+                    clipboardDisabled ? { color: text.tertiary, cursor: "not-allowed" } : undefined
+                  }
+                />
+              }
+            >
+              {clipboard.copy && (
+                <DropdownItem
+                  label="Copy from Simulator"
+                  Icon={CopyIcon}
+                  disabled={clipboardDisabled}
+                  onSelect={onCopy}
+                />
+              )}
+              {clipboard.paste && (
+                <DropdownItem
+                  label="Paste from Device"
+                  Icon={ClipboardPasteIcon}
+                  disabled={clipboardDisabled}
+                  onSelect={onPaste}
+                />
+              )}
+            </Dropdown>
+          )}
+          {keyboard && (
+            <ControlButton
+              icon={<KeyboardIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+              label="Keyboard"
+              role="switch"
+              aria-checked={keyboard.open}
+              onClick={keyboard.onToggle}
+            />
+          )}
         </ControlGroup>
       )}
       <ControlGroup>
         <ControlButton
           icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Rotate"
-          tooltip={
-            recording === "unknown"
-              ? "Rotation is unavailable until recording status is known."
-              : recordingControlsLocked
-                ? "Rotation is unavailable while recording."
-                : undefined
-          }
-          aria-disabled={recordingControlsLocked || undefined}
-          onClick={recordingControlsLocked ? undefined : onRotate}
+          tooltip={rotateUnavailable}
+          aria-disabled={rotateUnavailable !== undefined || undefined}
+          onClick={rotateUnavailable === undefined ? onRotate : undefined}
           style={
-            recordingControlsLocked ? { color: text.tertiary, cursor: "not-allowed" } : undefined
+            rotateUnavailable === undefined
+              ? undefined
+              : { color: text.tertiary, cursor: "not-allowed" }
           }
         />
       </ControlGroup>

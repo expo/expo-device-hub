@@ -3,7 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { createApp, type AppClock } from "../src/middleware.ts";
+import { DeviceSessionState } from "../src/device-session-state.ts";
+import { createApp, type AppClock, type CreateAppDependencies } from "../src/middleware.ts";
 import { ScreenRecording } from "../src/screen-recording.ts";
 import { type ScrcpySession, type VideoFrame, type VideoPacket } from "../src/scrcpy.ts";
 import {
@@ -12,6 +13,7 @@ import {
   type GrpcCaptureDiagnostics,
 } from "../src/stream-session.ts";
 import type { WebRtcPublisher, WebRtcPublisherSessionStats } from "../src/webrtc-publisher.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 const SESSION_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -236,6 +238,7 @@ test("advertises viewer transports and lazily creates WebRTC for a websocket def
   const app = await createApp(
     { serial: session.serial },
     {
+      readOrientation: readNoOrientation,
       startSession: async () => adaptScrcpySession(session),
       createWebRtcPublisher: async (options) => {
         createCalls++;
@@ -297,6 +300,7 @@ test("a close racing lazy middleware publisher startup cancels the pending viewe
   const app = await createApp(
     { serial: session.serial },
     {
+      readOrientation: readNoOrientation,
       startSession: async () => adaptScrcpySession(session),
       createWebRtcPublisher: async () => {
         notifyFactoryStarted();
@@ -351,6 +355,7 @@ test("normalizes middleware source FPS by the actual elapsed time", async () => 
       },
     },
     {
+      readOrientation: readNoOrientation,
       startSession: async () => adaptScrcpySession(session),
       createWebRtcPublisher: async () => fakeWebRtcPublisher(),
       clock,
@@ -393,6 +398,7 @@ test("serves viewer-scoped WebRTC statistics from createApp.handleRequest", asyn
       },
     },
     {
+      readOrientation: readNoOrientation,
       startSession: async () => adaptScrcpySession(session),
       createWebRtcPublisher: async () => fakeWebRtcPublisher(),
       clock,
@@ -415,12 +421,61 @@ test("serves viewer-scoped WebRTC statistics from createApp.handleRequest", asyn
   }
 });
 
+// As serve-sim's `--transport webrtc` refuses its HTTP streams.
+test("with a WebRTC transport, refuses WebSocket video and keeps WebSocket input", async () => {
+  const clock = new ManualAppClock();
+  const { session } = fakeScrcpySession(1);
+  const app = await createApp(
+    {
+      serial: session.serial,
+      streamSettings: {
+        transport: "webrtc",
+        codec: "h264",
+        iceServers: [],
+        iceTransportPolicy: "all",
+      },
+    },
+    {
+      readOrientation: readNoOrientation,
+      startSession: async () => adaptScrcpySession(session),
+      createWebRtcPublisher: async () => fakeWebRtcPublisher(),
+      clock,
+    },
+  );
+  const attach = (video: boolean) => {
+    const closed: Array<[number | undefined, string | undefined]> = [];
+    app.attachWebSocket(
+      {
+        bufferedAmount: 0,
+        send: () => {},
+        close: (code, reason) => void closed.push([code, reason]),
+        onMessage: () => {},
+        onClose: () => {},
+      },
+      { frameMeta: false, video },
+    );
+    return closed;
+  };
+
+  try {
+    expect(attach(true)).toEqual([[1008, "stream_transport_locked"]]);
+    expect(attach(false)).toEqual([]);
+    const api = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await api.json()).toMatchObject({
+      viewerTransports: { default: "webrtc", available: ["webrtc"] },
+    });
+  } finally {
+    await app.stop();
+  }
+});
+
 test("uses the 30 FPS middleware default when maxFps is omitted", async () => {
   const { session } = fakeScrcpySession(0);
   let openedMaxFps: number | undefined;
   const app = await createApp(
     { serial: session.serial },
     {
+      readOrientation: readNoOrientation,
       startSession: async (options) => {
         openedMaxFps = options.maxFps;
         return adaptScrcpySession(session);
@@ -449,6 +504,7 @@ test("reports configured source settings and rolling encoded-frame timing", asyn
       },
     },
     {
+      readOrientation: readNoOrientation,
       startSession: async () => adaptScrcpySession(session),
       createWebRtcPublisher: async () => fakeWebRtcPublisher(),
       clock,
@@ -502,6 +558,7 @@ test.each(["mmap", "rgb888"] as const)(
         },
       },
       {
+        readOrientation: readNoOrientation,
         startSession: async () => grpcSession,
         createWebRtcPublisher: async () => fakeWebRtcPublisher(),
       },
@@ -581,7 +638,7 @@ test("keeps the screen recording active when the capture ends and the app stops"
   } as unknown as ScrcpySession;
   const app = await createApp(
     { serial: session.serial, screenRecording: recorder },
-    { startSession: async () => adaptScrcpySession(session) },
+    { readOrientation: readNoOrientation, startSession: async () => adaptScrcpySession(session) },
   );
   try {
     await recorder.ready;
@@ -658,7 +715,10 @@ function pushableScrcpySession(): {
 
 test("only announces video-session when the scrcpy session size changes", async () => {
   const { session, push } = pushableScrcpySession();
-  const app = await createApp({ serial: session.serial }, { startScrcpy: async () => session });
+  const app = await createApp(
+    { serial: session.serial },
+    { readOrientation: readNoOrientation, startScrcpy: async () => session },
+  );
   const sent: (string | Uint8Array)[] = [];
   app.attachWebSocket(
     {
@@ -691,5 +751,223 @@ test("only announces video-session when the scrcpy session size changes", async 
   } finally {
     push(null);
     await app.stop();
+  }
+});
+
+test("reports the display orientation in /api and /health and records the locked pose", async () => {
+  const { session } = fakeScrcpySession(0);
+  const calls: string[] = [];
+  const deviceState = new DeviceSessionState({
+    serial: session.serial,
+    applyLocation: async () => {},
+    readOrientation: async (serial) => (calls.push(`read ${serial}`), "portrait"),
+    applyRotation: async (serial, orientation) => {
+      calls.push(`lock ${serial} ${orientation}`);
+      return {
+        mode: "lock",
+        rotation: 3,
+        orientation: "landscape",
+        pose: "landscape_left",
+        raw: "lock 3",
+      };
+    },
+  });
+  const app = await createApp(
+    { serial: session.serial, deviceState },
+    { startSession: async () => adaptScrcpySession(session) },
+  );
+
+  try {
+    const info = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await info.json()).toMatchObject({ pose: "portrait" });
+    const health = await app.handleRequest(new Request("http://middleware.test/health"));
+    expect(await health.json()).toMatchObject({ pose: "portrait" });
+
+    const locked = await app.handleRequest(
+      new Request("http://middleware.test/api/orientation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orientation: "landscape_left" }),
+      }),
+    );
+    expect(await locked.json()).toMatchObject({
+      ok: true,
+      orientation: { pose: "landscape_left" },
+    });
+    // `/api` right after the lock reports the locked pose without another read.
+    const after = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await after.json()).toMatchObject({ pose: "landscape_left" });
+    expect(calls).toEqual([`read ${session.serial}`, `lock ${session.serial} landscape_left`]);
+  } finally {
+    app.stop();
+  }
+});
+
+const FOLD_DISPLAYS = {
+  inner: { width: 2076, height: 2152 },
+  outer: { width: 1080, height: 2424 },
+};
+const FOLD_KEYFRAME = Buffer.from(
+  "000000016742c01fd9005005bb0110000003001000000303c0f18324800000000168cb83cb200000000165888421",
+  "hex",
+);
+
+async function foldRecorder(root: string) {
+  return ScreenRecording.create({
+    directory: join(root, "session"),
+    udid: "device-test",
+    deviceName: "Pixel_9_Pro_Fold",
+    runtimeDisplayName: "Android 16",
+    createWriter: async ({ path }) => {
+      await writeFile(path, "test-writer");
+      return { add: async () => {}, finish: async () => {}, cancel: async () => {} };
+    },
+  });
+}
+
+test("a foldable's gRPC capture records on the fold canvas and reports that it follows folds", async () => {
+  const root = await mkdtemp(join(tmpdir(), "create-app-fold-recording-"));
+  const recorder = await foldRecorder(root);
+  const { session } = fakeScrcpySession(1);
+  let recording: Parameters<NonNullable<CreateAppDependencies["startSession"]>>[0]["recording"];
+  let sensorOpened = false;
+  let sensorClosed = false;
+  const app = await createApp(
+    {
+      serial: session.serial,
+      streamMode: "grpc-screenshot",
+      maxSize: 960,
+      screenRecording: recorder,
+    },
+    {
+      readOrientation: async () => "landscape_left",
+      readFoldableDisplays: async () => FOLD_DISPLAYS,
+      readFoldState: async () => ({ supported: true, posture: "opened", hingeAngle: 180 }),
+      openHingeSensor: async () => {
+        sensorOpened = true;
+        return {
+          readAngle: async () => 180,
+          watchPostures: (_onChange, signal) =>
+            new Promise((resolve) => signal.addEventListener("abort", () => resolve())),
+          close: () => {
+            sensorClosed = true;
+          },
+        };
+      },
+      startSession: async (options) => {
+        recording = options.recording;
+        return { ...adaptScrcpySession(session), mode: "grpc-screenshot", feedsRecording: true };
+      },
+    },
+  );
+  try {
+    expect(recording?.canvas).toEqual({ width: 926, height: 960 });
+    expect(recorder.followsFold).toBe(true);
+    // The recording reads the hinge over gRPC while it follows folds.
+    expect(sensorOpened).toBe(true);
+    // A fold canvas frame's PTS is the host monotonic time of its capture.
+    const pts = BigInt(Math.round(performance.now() * 1000));
+    recording!.accept(
+      { type: "frame", data: FOLD_KEYFRAME, pts, isConfig: false, isKey: true },
+      {
+        width: 2076,
+        height: 2152,
+        screen: "inner",
+        contentRect: { x: 0, y: 0, width: 926, height: 960 },
+      },
+    );
+    await recorder.ready;
+    const info = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await info.json()).toMatchObject({
+      screenRecording: { status: "recording", followsFold: true },
+    });
+    await recorder.finish();
+    const manifest = JSON.parse(await readFile(join(root, "session", "session.json"), "utf8"));
+    expect(manifest).toMatchObject({ width: 926, height: 960 });
+    expect(manifest.deviceStates).toEqual([
+      {
+        timeMs: 0,
+        state: {
+          width: 2076,
+          height: 2152,
+          screen: "inner",
+          contentRect: { x: 0, y: 0, width: 926, height: 960 },
+          hingeAngle: 180,
+          orientation: "landscape_left",
+        },
+      },
+    ]);
+  } finally {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+  expect(sensorClosed).toBe(true);
+});
+
+test("refuses a fold while the recording takes the viewers' packets", async () => {
+  const root = await mkdtemp(join(tmpdir(), "create-app-fold-locked-"));
+  const recorder = await foldRecorder(root);
+  const { session } = fakeScrcpySession(1);
+  let requestedRecording = false;
+  const app = await createApp(
+    { serial: session.serial, screenRecording: recorder },
+    {
+      readOrientation: readNoOrientation,
+      readFoldableDisplays: async () => FOLD_DISPLAYS,
+      startSession: async (options) => {
+        requestedRecording = options.recording !== undefined;
+        return adaptScrcpySession(session);
+      },
+    },
+  );
+  try {
+    // scrcpy capture never encodes the fold canvas.
+    expect(requestedRecording).toBe(false);
+    expect(recorder.followsFold).toBe(false);
+    const response = await app.handleRequest(
+      new Request("http://middleware.test/api/fold", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ posture: "closed" }),
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ ok: false });
+  } finally {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a native-size MMAP fold recording sizes its canvas from the shown display", async () => {
+  const root = await mkdtemp(join(tmpdir(), "create-app-fold-mmap-"));
+  const recorder = await foldRecorder(root);
+  const { session } = fakeScrcpySession(1);
+  let canvas: { width: number; height: number } | undefined;
+  // Rear display mode: the hinge says open, but the outer display is shown.
+  const app = await createApp(
+    {
+      serial: session.serial,
+      streamMode: "grpc-screenshot",
+      grpcImageMode: "mmap",
+      maxSize: 0,
+      screenRecording: recorder,
+    },
+    {
+      readOrientation: readNoOrientation,
+      readFoldableDisplays: async () => FOLD_DISPLAYS,
+      readFoldState: async () => ({ supported: true, posture: "opened", hingeAngle: 180 }),
+      readDisplaySize: async () => ({ width: 1080, height: 2424 }),
+      startSession: async (options) => {
+        canvas = options.recording?.canvas;
+        return { ...adaptScrcpySession(session), mode: "grpc-screenshot", feedsRecording: true };
+      },
+    },
+  );
+  try {
+    expect(canvas).toEqual({ width: 2076, height: 2424 });
+  } finally {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
   }
 });

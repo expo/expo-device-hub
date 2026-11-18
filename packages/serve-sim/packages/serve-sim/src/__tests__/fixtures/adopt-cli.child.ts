@@ -27,6 +27,7 @@ async function fixture(
     cli(
       args?: string[],
       env?: Record<string, string | undefined>,
+      selectedDevice?: string,
     ): Promise<{ exitCode: number; stdout: string; stderr: string }>;
     bodies: unknown[];
     identity: Record<string, unknown>;
@@ -62,6 +63,10 @@ async function fixture(
     () => identity as unknown as SessionIdentity,
     async (configuration) => {
       bodies.push(configuration);
+      writeServeSimState({
+        ...inProcessServeSimState(configuration.device ?? UDID, server.port!),
+        token: "owner-token",
+      });
     },
   );
   const calls = join(state.dir, "native-calls");
@@ -73,12 +78,12 @@ async function fixture(
           bodies,
           identity,
           port: server.port!,
-          async cli(args = [], env = {}) {
+          async cli(args = [], env = {}, selectedDevice = UDID) {
             const child = Bun.spawn(
               [
                 "node",
                 entrypoint,
-                UDID,
+                selectedDevice,
                 "--adopt",
                 "--quiet",
                 "--require-token",
@@ -111,7 +116,7 @@ async function fixture(
       },
     );
   } finally {
-    owner.close();
+    await owner.close();
     server.stop(true);
     state.restore();
   }
@@ -344,4 +349,47 @@ test.each([
     expect((await cli([flag, value])).exitCode).toBe(1);
     expect(bodies).toHaveLength(0);
   });
+});
+
+test("real CLI selects an unserved device through the existing server port", async () => {
+  const selected = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+  await fixture(async ({ cli, bodies, port }) => {
+    const result = await cli(["--port", String(port), "--single-device", selected], {}, selected);
+    expect(result.exitCode, result.stdout + result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      device: selected,
+      port,
+      token: "owner-token",
+    });
+    expect(bodies[0]).toMatchObject({ device: selected, singleDevice: selected });
+  });
+});
+
+test("multiple orphan devices reject app startup flags before native startup", async () => {
+  const child = Bun.spawn(
+    [
+      "node",
+      entrypoint,
+      UDID,
+      "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+      "--orphan",
+      "--require-token",
+      "--transport",
+      "webrtc",
+      "--launch-app-identifier",
+      "com.example.test",
+      "--quiet",
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const [stdout, stderr, exit] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  expect(exit).toBe(1);
+  expect(JSON.parse(stdout).error).toContain(
+    "Multiple orphan devices cannot be combined with app startup flags",
+  );
+  expect(stderr).not.toContain('"phase":"simulator-boot"');
 });

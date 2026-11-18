@@ -10,6 +10,7 @@ import {
   type ServerOpts,
   type StartedServer,
 } from "../src/server.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -112,6 +113,7 @@ async function createHarness(
       ...opts,
     },
     {
+      readOrientation: readNoOrientation,
       startScrcpy: async () => initial.session,
       listAllDevices: async () => [
         { serial: "device-old", state: "device" },
@@ -684,19 +686,25 @@ describe("server request and upload limits", () => {
     const unsafeUploadLimit = Number.MAX_SAFE_INTEGER - 2 * 1024 * 1024 + 1;
 
     await expect(
-      startServer({
-        serial: "device-old",
-        maxMediaUploadBytes: unsafeUploadLimit,
-      }),
+      startServer(
+        {
+          serial: "device-old",
+          maxMediaUploadBytes: unsafeUploadLimit,
+        },
+        { readOrientation: readNoOrientation },
+      ),
     ).rejects.toThrow("upload byte limit is too large");
   });
 
   test("rejects queue timeouts above the platform timer range", async () => {
     await expect(
-      startServer({
-        serial: "device-old",
-        uploadQueueTimeoutMs: 2_147_483_648,
-      }),
+      startServer(
+        {
+          serial: "device-old",
+          uploadQueueTimeoutMs: 2_147_483_648,
+        },
+        { readOrientation: readNoOrientation },
+      ),
     ).rejects.toThrow("uploadQueueTimeoutMs must be at most 2147483647");
   });
 });

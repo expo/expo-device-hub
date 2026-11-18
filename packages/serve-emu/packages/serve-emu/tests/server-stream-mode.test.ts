@@ -5,6 +5,7 @@ import { GrpcCaptureDiagnosticsTracker } from "../src/grpc-session.ts";
 import { startServer } from "../src/server.ts";
 import type { GrpcImageMode, InputSource, StreamMode } from "../src/shared/api-contracts.ts";
 import type { EmuSession, StartEmuSessionOptions } from "../src/stream-session.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -132,6 +133,7 @@ describe("standalone server stream settings", () => {
     const started = await startServer(
       { serial: "emulator-5554", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openSession: async (options) => {
           opens.push(options);
           return fakeSession(options.serial, options.mode).session;
@@ -185,6 +187,7 @@ describe("standalone server stream settings", () => {
     const started = await startServer(
       { serial: "emulator-5554", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openSession: async (options) => {
           if (options.maxSize === 720) {
             throw new Error("encoder rejected requested size");
@@ -251,6 +254,7 @@ describe("standalone server stream settings", () => {
     const started = await startServer(
       { serial: "emulator-5554", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openSession: async (options) => {
           opens += 1;
           if (opens === 1) {
@@ -285,6 +289,7 @@ describe("server stream source switching", () => {
     const started = await startServer(
       { serial: "emulator-5554", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openSession: async () => initial.session,
         serve: capturingServe(captured),
       },
@@ -317,6 +322,7 @@ describe("server stream source switching", () => {
           streamMode: "grpc-screenshot",
         },
         {
+          readOrientation: readNoOrientation,
           openSession: async () => {
             openCalls += 1;
             return fakeSession("usb-device", "scrcpy").session;
@@ -345,6 +351,7 @@ describe("server stream source switching", () => {
           grpcImageMode: imageMode,
         },
         {
+          readOrientation: readNoOrientation,
           openSession: async ({ mode, grpcImageMode }) => {
             opened.push({ mode, grpcImageMode });
             return capture.session;
@@ -381,6 +388,7 @@ describe("server stream source switching", () => {
         streamMode: "grpc-screenshot",
       },
       {
+        readOrientation: readNoOrientation,
         openSession: async (options) => {
           opened.push({
             mode: options.mode,
@@ -457,6 +465,7 @@ describe("server stream source switching", () => {
       const started = await startServer(
         { serial: "emulator-5554", port: 3300, repeatFrameMs },
         {
+          readOrientation: readNoOrientation,
           openSession: async ({ mode }) => {
             modes.push(mode);
             if (modes.length === 1) return initial.session;
@@ -555,6 +564,7 @@ describe("server stream source switching", () => {
     const started = await startServer(
       { serial: "emulator-5554", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openSession: async ({ mode, grpcImageMode }) => {
           if (failRgb888 && grpcImageMode === "rgb888") throw new Error("RGB888 startup failed");
           opened.push({ mode, grpcImageMode });
@@ -664,6 +674,7 @@ describe("server stream source switching", () => {
         grpcImageMode: "png",
       },
       {
+        readOrientation: readNoOrientation,
         openSession: async () => {
           openCount += 1;
           return openCount === 1 ? initial.session : replacement.session;
@@ -699,6 +710,7 @@ describe("server stream source switching", () => {
     const started = await startServer(
       { serial: "emulator-5554", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openSession: async () => {
           openCount += 1;
           return openCount === 1 ? initial.session : grpc.session;
@@ -764,6 +776,7 @@ describe("server stream source switching", () => {
     const started = await startServer(
       { serial: "emulator-5554", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openSession: async () => (openCount++ === 0 ? failed.session : replacement.session),
         serve: capturingServe(captured),
       },
@@ -793,6 +806,7 @@ describe("server stream source switching", () => {
     const started = await startServer(
       { serial: "emulator-5554", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openSession: async () => {
           openCount += 1;
           if (openCount === 1) return initial.session;
@@ -825,6 +839,7 @@ describe("server stream source switching", () => {
     const started = await startServer(
       { serial: "usb-device", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openSession: async () => physical.session,
         serve: capturingServe(captured),
       },
@@ -856,6 +871,7 @@ test("standalone encoder switches preserve selection and current capture after f
   const started = await startServer(
     { port: 3300, serial: "emulator-5554", streamMode: "grpc-screenshot", encoder: "hardware" },
     {
+      readOrientation: readNoOrientation,
       serve: capturingServe(captured),
       getHardwareEncoderError: () => hardwareError,
       openSession: async (options) => {

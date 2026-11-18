@@ -1,7 +1,7 @@
 import { type CSSProperties, useState } from "react";
 
-import { bg, icon, radius } from "../theme/tokens";
-import { SidebarIcon } from "./icons";
+import { bg, icon as iconColor, radius } from "../theme/tokens";
+import { CloseIcon, SidebarIcon } from "./icons";
 
 /**
  * Toggle for showing/hiding a sidebar. `floating` is the larger standalone button
@@ -13,11 +13,17 @@ export function SidebarToggle({
   onClick,
   floating = false,
   side = "left",
+  icon = "sidebar",
 }: {
   onClick: () => void;
   floating?: boolean;
   /** Which sidebar it controls — mirrors the glyph to point that way. */
   side?: "left" | "right";
+  /**
+   * `"close"` swaps the sidebar glyph for an X, for a sidebar that covers the screen
+   * and is dismissed rather than collapsed.
+   */
+  icon?: "sidebar" | "close";
 }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -41,7 +47,7 @@ export function SidebarToggle({
   return (
     <button
       type="button"
-      aria-label="Toggle sidebar"
+      aria-label={icon === "close" ? "Close sidebar" : "Toggle sidebar"}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
@@ -62,11 +68,15 @@ export function SidebarToggle({
         ...style,
       }}
     >
-      <SidebarIcon
-        size={20}
-        color={icon.default}
-        style={side === "right" ? { transform: "scaleX(-1)" } : undefined}
-      />
+      {icon === "close" ? (
+        <CloseIcon size={20} color={iconColor.default} />
+      ) : (
+        <SidebarIcon
+          size={20}
+          color={iconColor.default}
+          style={side === "right" ? { transform: "scaleX(-1)" } : undefined}
+        />
+      )}
     </button>
   );
 }

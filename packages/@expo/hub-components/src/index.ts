@@ -17,6 +17,11 @@
  */
 
 // ── Components ──
+export {
+  ActivityIndicator,
+  LOADING_LABEL,
+  type ActivityIndicatorProps,
+} from "./components/ActivityIndicator";
 export { Button, type ButtonProps, type ButtonTheme, type ButtonSize } from "./components/Button";
 export { ControlButton, type ControlButtonProps } from "./components/ControlButton";
 export { DeviceListItem, type DeviceListItemProps } from "./components/DeviceListItem";
@@ -49,12 +54,22 @@ export * from "./components/icons";
 export * from "./theme/tokens";
 
 // ── Dashboard composites ──
-// These compose the primitives above into the Expo Hub dashboard layout. The
-// device stream is injected: `StreamPanel` / `PhoneFrame` take the `DeviceScreen`
-// component + `displayScreen` helper as props (typed from `@expo/hub-client`, a
-// types-only devDependency) so this library never imports the client at runtime.
+// These compose the primitives above into the Expo Hub dashboard layout. They
+// read a `DeviceClient` from props and take small helpers from `@expo/hub-client`,
+// a peer dependency, so the host's own copy serves both. The device stream is
+// injected: `StreamPanel` / `PhoneFrame` take the `DeviceScreen` component +
+// `displayScreen` helper as props. The iPhone Duo's 3D preview is the
+// `@expo/hub-components/foldable` entry, injected the same way, so only a
+// consumer that renders it loads three.js. Screen shapes are `DeviceShape`
+// from `@expo/hub-client/shapes`, also injected, so only a consumer that
+// passes it bundles the shape table.
 export { Sidebar } from "./dashboard/Sidebar";
-export { LogSidebar, type LogSidebarProps } from "./dashboard/LogSidebar";
+export {
+  InspectorSections,
+  LogSidebar,
+  type InspectorSectionsProps,
+  type LogSidebarProps,
+} from "./dashboard/LogSidebar";
 export { StreamPanel } from "./dashboard/StreamPanel";
 export {
   ScreenshotToast,
@@ -68,11 +83,12 @@ export { DeviceSection, type DeviceSectionProps } from "./dashboard/DeviceSectio
 export { OutputSection } from "./dashboard/OutputSection";
 export { CurrentAppSection } from "./dashboard/CurrentAppSection";
 export {
+  DEVICE_SHAPE_2D_ONLY_DESCRIPTION,
   DeviceOptionsSection,
-  NO_DEVICE_FRAME_DESCRIPTION,
+  NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
-  type DeviceFrameOption,
+  type ScreenShapeOption,
 } from "./dashboard/DeviceOptionsSection";
 export { ActivityCharts, ActivitySection } from "./dashboard/ActivitySection";
 export { AccessibilitySection } from "./dashboard/AccessibilitySection";
@@ -90,20 +106,28 @@ export { EventsSection } from "./dashboard/EventsSection";
 export { LogsSection } from "./dashboard/LogsSection";
 export { CollapsibleSection } from "./dashboard/CollapsibleSection";
 export { KeyboardSection } from "./dashboard/KeyboardSection";
-export { PhoneFrame } from "./dashboard/PhoneFrame";
 export {
-  deviceFrameLayout,
-  deviceFrameRotation,
-  type DeviceFrameAsset,
-  type DeviceFrameAssets,
-  type DeviceFrameLayout,
-  type DeviceFrameRect,
-  type DeviceFrameRotation,
-} from "./dashboard/deviceFrame";
+  PhoneFrame,
+  type FoldPreviewMode,
+  type PhoneFrameFoldPreview,
+} from "./dashboard/PhoneFrame";
+export { MOBILE_CORNER_BUTTON_TOP, MOBILE_SIDEBAR_TOP_INSET } from "./dashboard/cornerButtons";
+export { DeviceScreenStatus, deviceScreenLoading } from "./dashboard/DeviceScreenStatus";
+export {
+  deviceScreenClipPath,
+  deviceScreenCornersClipPath,
+  type ScreenCornerRadiiCqw,
+} from "./dashboard/deviceScreenClipPath";
 export { LogControls } from "./dashboard/LogControls";
 export { LogList } from "./dashboard/LogList";
 export { LogRow } from "./dashboard/LogRow";
 export { StreamControls } from "./dashboard/StreamControls";
+export {
+  FoldSettings,
+  MODEL_UNAVAILABLE_DESCRIPTION,
+  type FoldPreviewOption,
+} from "./dashboard/FoldSettings";
+export { FOLD_POSE_OPTIONS, selectedFoldPose } from "./dashboard/foldPoses";
 export { StreamSection, type StreamModeAvailability } from "./dashboard/StreamSection";
 export {
   StreamOptionsSection,

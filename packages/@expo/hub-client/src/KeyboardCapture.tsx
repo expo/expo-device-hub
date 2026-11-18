@@ -26,6 +26,7 @@ const HIDDEN_INPUT_STYLE: CSSProperties = {
   left: 0,
   width: 1,
   height: 1,
+  fontSize: 16,
   opacity: 0,
   border: "none",
   padding: 0,

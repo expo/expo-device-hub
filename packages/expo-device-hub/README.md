@@ -104,10 +104,12 @@ npx expo-device-hub --platform android --single-device <adb-serial>
 ```
 
 Start the device before opening the Hub. The session stays bound to that ID,
-including after a disconnect. The left sidebar and its toggle are removed;
-HTTP and control sockets reject other devices, device creation, and device
-deletion. An iOS session can boot its original simulator again. Android AVD
-launch actions are disabled because an AVD name does not pin an adb serial.
+including after a disconnect. The left sidebar stays: it lists only that device,
+above its inspector. The dashboard shows no device lifecycle controls: no boot,
+create, Shut down, Start or Remove. HTTP and control sockets reject other devices,
+device creation, and device deletion. The HTTP API still accepts shutdown of that
+device, and boot of the original iOS simulator. Android AVD launch actions are
+disabled because an AVD name does not pin an adb serial.
 WebKit DevTools is unavailable in this mode because its bridge cannot reliably
 associate targets with a simulator UDID.
 
@@ -140,6 +142,16 @@ for every request when the variable is unset. Three variables override the limit
 value stops the Hub at startup with the variable name in the error.
 On success, `recordings.json` in the output directory lists a subdirectory containing
 `recording.mp4` and `session.json`. Failed recordings leave the manifest empty.
+
+A foldable emulator, such as the Pixel 9 Pro Fold, can fold and unfold while it records with
+the default gRPC capture. The Hub records it on one fixed canvas that fits both displays and
+centers the shown display on it. `session.json` then has a `deviceStates` timeline with the
+display (`inner` or `outer`), its place on the canvas, the hinge angle, and the UI orientation at
+each change, and the video has a keyframe at least once a second. The Hub reads the hinge over the
+emulator's gRPC controller every 100 ms. The recording status that `/api` reports has
+`followsFold: true`. With scrcpy capture,
+a fold still ends the recording, and the Hub refuses fold commands while it records. LLP 0018
+in the repository's `llp/` folder describes the canvas and the timeline.
 
 Keep the emulator's orientation and capture settings unchanged during recording.
 Rotation invalidates the recording. A capture failure does not: the Hub restarts the

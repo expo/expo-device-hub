@@ -1,6 +1,8 @@
 import { Button, textSize } from "../primitives";
 
-// Match the flat connection-state surface in @expo/hub-client/DeviceScreen.
+// A dim layer over the live device screen. These are the values of the
+// connection overlay that hub-client's DeviceScreen drew before LLP 0015; the
+// loading and error states now come from `DeviceScreenStatus`.
 const DEVICE_STATUS_OVERLAY_BACKGROUND = "rgba(0, 0, 0, 0.55)";
 const DEVICE_STATUS_OVERLAY_TEXT = "rgba(255, 255, 255, 0.7)";
 const DEVICE_STATUS_OVERLAY_AGENT_TEXT = "rgba(218, 233, 255, 0.74)";

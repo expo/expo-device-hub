@@ -6,6 +6,7 @@ import type { RecoveryWatchdogClock } from "../src/session-recovery-watchdog.ts"
 import { parseFramePacket } from "../src/shared/frame-meta.ts";
 import { ScrcpyStreamError, type ScrcpySession, type VideoPacket } from "../src/scrcpy.ts";
 import { startServer, type ServerDependencies, type ServerOpts } from "../src/server.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -248,8 +249,10 @@ async function createHarness(
       port: options.port ?? server.port,
       host: options.host,
       token: options.token,
+      streamSettings: options.streamSettings,
     },
     {
+      readOrientation: readNoOrientation,
       openScrcpy: async () => session,
       recoveryClock: INERT_RECOVERY_CLOCK,
       serve,
@@ -756,6 +759,25 @@ describe("server HTTP and WebSocket boundaries", () => {
     });
   });
 
+  // As serve-sim's `--transport webrtc` refuses its HTTP streams.
+  test("with a WebRTC transport, refuses a video socket and upgrades an input socket", async () => {
+    const harness = await createHarness({
+      streamSettings: {
+        transport: "webrtc",
+        codec: "h264",
+        iceServers: [],
+        iceTransportPolicy: "all",
+      },
+    });
+    const headers = { origin: "http://127.0.0.1:33040" };
+
+    const refused = await response(harness.request("/ws", { headers }));
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ error: "stream_transport_locked", transport: "webrtc" });
+    expect(await harness.request("/ws?video=0", { headers })).toBeUndefined();
+    expect(harness.server.upgrades).toEqual([expect.objectContaining({ video: false })]);
+  });
+
   test("broadcasts session changes, cached config, and framed keyframes", async () => {
     const harness = await createHarness();
     await harness.request("/ws");
@@ -901,6 +923,7 @@ describe("server shutdown and errors", () => {
       startServer(
         { serial: session.serial, port: 33_041 },
         {
+          readOrientation: readNoOrientation,
           openScrcpy: async () => session,
           createInputQueue: () => {
             throw new Error("input queue construction failed");

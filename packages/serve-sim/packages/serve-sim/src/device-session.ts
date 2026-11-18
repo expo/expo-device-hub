@@ -1,4 +1,4 @@
-import { withHostActionDeadline } from "./host-actions-utils";
+import { createSerialQueue, withHostActionDeadline } from "./host-actions-utils";
 import { timeStartup } from "./startup-timing";
 import { RECORDING_LEASE_MS } from "./recording-timeouts";
 import { US_KEYBOARD_MAP } from "./text-to-keys";
@@ -32,6 +32,7 @@ import {
   type NativeHingeState,
   type NativeDeviceStateSnapshot,
   type NativeScreenInfo,
+  type NativeScreenshot,
   type NativeUnsubscribe,
 } from "./native";
 import { isSoftwareKeyboardVisible } from "./ax";
@@ -56,6 +57,7 @@ import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
 import { readSavedHingeState, writeSavedHingeState } from "./hinge-saved-state";
 import { validatePanelRoute } from "./panel-route";
 import {
+  isCardinalPhysicalOrientation,
   isHingeControlCommand,
   observedHingeState,
   hingeControlState,
@@ -308,6 +310,7 @@ export class DeviceSession {
   private captureStart?: Promise<void>;
   private captureReady = false;
   private phase: "unstarted" | "running" | "stopped" = "unstarted";
+  private closing?: Promise<void>;
 
   private width = 0;
   private height = 0;
@@ -320,6 +323,7 @@ export class DeviceSession {
   private tableMode?: boolean;
   private hingePhysicalOrientation?: HingePhysicalOrientation;
   private hingeControlUpdate: Promise<void> = Promise.resolve();
+  private hingeScreenTransition?: { screenId: 1 | 3; expiresAt: number };
   private hingeControlled = false;
   private hingeRotated = false;
   private nativeScreen?: NativeScreenInfo;
@@ -327,7 +331,12 @@ export class DeviceSession {
   private screenRefreshRequested = false;
   private unsubscribeScreenChanges?: NativeUnsubscribe;
   private unsubscribeDeviceState?: NativeUnsubscribe;
-  private deviceStateVersion?: { generation: number; revision: number };
+  private deviceStateObservationStarted = false;
+  private deviceStateVersion?: {
+    generation: number;
+    revision: number;
+    orientationObserved?: boolean;
+  };
   private observedDeviceState?: NativeHingeState;
   private screenRefreshTimer?: ReturnType<typeof setTimeout>;
 
@@ -398,10 +407,43 @@ export class DeviceSession {
     this.activeHidKeyUsages.set(this.serverInput, new Set());
   }
 
-  /** Use the same native panel election as the live stream, including external folds. */
   async activeScreenId(): Promise<number> {
     await withHostActionDeadline(this.start(), "Screenshot capture startup");
-    return await withHostActionDeadline(this.capture.activeScreenId(), "Active display read");
+    if (this.rebootSuspended) throw new Error("Screenshot capture is rebooting");
+    const id = await withHostActionDeadline(this.capture.activeScreenId(), "Active display read");
+    await this.waitForCapture();
+    if (this.rebootSuspended) throw new Error("Screenshot capture is rebooting");
+    return id;
+  }
+
+  private readonly queueScreenshot = createSerialQueue();
+
+  async screenshot(screenID: number, timeoutMs?: number, maxWidth = 0): Promise<Uint8Array> {
+    return (await this.screenshotWithMetadata(screenID, timeoutMs, maxWidth)).data;
+  }
+
+  screenshotWithMetadata(
+    screenID: number,
+    timeoutMs?: number,
+    maxWidth = 0,
+  ): Promise<NativeScreenshot> {
+    let expired = false;
+    const work = withDeviceSessionTask(this, () =>
+      this.queueScreenshot(async () => {
+        if (expired) throw new Error("Screenshot request expired before capture started");
+        await this.start();
+        await this.waitForCapture();
+        if (expired) throw new Error("Screenshot request expired before capture started");
+        const result = await this.capture.screenshotWithMetadata(screenID, maxWidth);
+        await this.waitForCapture();
+        return result;
+      }),
+    );
+    // Only the caller times out. Retain the capture lease and serial queue until native work
+    // settles, so cleanup cannot race it and a retry cannot allocate another native buffer.
+    return withHostActionDeadline(work, "Screenshot capture", timeoutMs).finally(() => {
+      expired = true;
+    });
   }
 
   /** Begin capture. Throws if the device isn't booted. Idempotent. */
@@ -434,20 +476,7 @@ export class DeviceSession {
           return;
         }
         this.unsubscribeScreenChanges = unsubscribe;
-        void this.capture
-          .subscribeDeviceState(async (snapshot) => {
-            this.applyDeviceState(snapshot);
-          })
-          .then(async (unsubscribeDeviceState) => {
-            if (this.phase !== "running") {
-              await unsubscribeDeviceState();
-              return;
-            }
-            this.unsubscribeDeviceState = unsubscribeDeviceState;
-          })
-          .catch((error) => {
-            console.error(`[capture] Device state observation unavailable: ${error}`);
-          });
+        this.observeDeviceState();
         if (
           await timeStartup(
             "screen-configuration",
@@ -466,6 +495,32 @@ export class DeviceSession {
     return this.captureStart;
   }
 
+  /** Capture must be started; temporary screenshots do not need a device-pose observer. */
+  observeDeviceState(): void {
+    const owner = screenshotOwners.get(this);
+    if (
+      this.phase !== "running" ||
+      this.deviceStateObservationStarted ||
+      (owner && !owner.retained)
+    )
+      return;
+    this.deviceStateObservationStarted = true;
+    void this.capture
+      .subscribeDeviceState(async (snapshot) => {
+        this.applyDeviceState(snapshot);
+      })
+      .then(async (unsubscribeDeviceState) => {
+        if (this.phase !== "running") {
+          await unsubscribeDeviceState();
+          return;
+        }
+        this.unsubscribeDeviceState = unsubscribeDeviceState;
+      })
+      .catch((error) => {
+        console.error(`[capture] Device state observation unavailable: ${error}`);
+      });
+  }
+
   async suspendForReboot(): Promise<void> {
     this.rebootSuspended = true;
     this.inputGeneration++;
@@ -474,6 +529,16 @@ export class DeviceSession {
     // A failed recording POST reports its own error and owns no lease to preserve.
     // It must settle before suspend, but its failure must not strand reboot input.
     await this.recordingStart?.catch(() => {});
+    await this.retireInputConsumers();
+    for (const panel of this.panels.values()) this.stopPanel(panel);
+    this.latestJpegBuffer = null;
+    this.latestJpegLength = 0;
+    await this.capture.suspendForReboot();
+  }
+
+  /** Disconnect every prior owner and join native input before handing this capture to a job. */
+  async retireInputConsumers(): Promise<void> {
+    this.clearSoftwareKeyboardRequests();
     // Disconnect input before replacing HID, including clients that are awaiting admission.
     this.discardQueuedInput(this.serverInput);
     this.queueInputCleanup(this.serverInput, true);
@@ -489,10 +554,6 @@ export class DeviceSession {
     }
     await this.hingeControlUpdate;
     await this.softwareKeyboardSync;
-    for (const panel of this.panels.values()) this.stopPanel(panel);
-    this.latestJpegBuffer = null;
-    this.latestJpegLength = 0;
-    await this.capture.suspendForReboot();
   }
 
   async resumeAfterReboot(): Promise<void> {
@@ -511,8 +572,8 @@ export class DeviceSession {
     this.broadcastConfig();
   }
 
-  close(): void {
-    if (this.phase !== "running") return;
+  close(): Promise<void> {
+    if (this.phase !== "running") return this.closing ?? Promise.resolve();
     this.phase = "stopped";
     // Keep the promises even if their completion clears the mutable fields
     // while observer teardown is pending; finalization failures still belong to this close.
@@ -546,29 +607,30 @@ export class DeviceSession {
     // Observe a stop failure immediately while observer cleanup is still pending;
     // the tracked finalization below reports it after that cleanup.
     void stoppingStartup?.catch(() => {});
-    trackClosedSessionStop(
-      (async () => {
-        if (!stoppingStartup) await this.captureStart?.catch(() => {});
-        await Promise.all([screenChangesDetached, deviceStateDetached]);
-        let recordingError: unknown = this.recordingFailure;
-        try {
-          await recordingStart;
-        } catch (error) {
-          if (!(error instanceof RecordingStartCancelled)) recordingError ??= error;
-        }
-        try {
-          await recordingFinishing;
-        } catch (error) {
-          recordingError ??= error;
-        }
-        try {
-          await (stoppingStartup ?? this.capture.stop());
-        } catch (error) {
-          recordingError ??= error;
-        }
-        if (recordingError) throw recordingError;
-      })(),
-    );
+    this.closing = (async () => {
+      await this.retireInputConsumers();
+      if (!stoppingStartup) await this.captureStart?.catch(() => {});
+      await Promise.all([screenChangesDetached, deviceStateDetached]);
+      let recordingError: unknown = this.recordingFailure;
+      try {
+        await recordingStart;
+      } catch (error) {
+        if (!(error instanceof RecordingStartCancelled)) recordingError ??= error;
+      }
+      try {
+        await recordingFinishing;
+      } catch (error) {
+        recordingError ??= error;
+      }
+      try {
+        await (stoppingStartup ?? this.capture.stop());
+      } catch (error) {
+        recordingError ??= error;
+      }
+      if (recordingError) throw recordingError;
+    })();
+    trackClosedSessionStop(this.closing);
+    return this.closing;
   }
 
   async finishRecordingForShutdown(): Promise<void> {
@@ -1679,18 +1741,27 @@ export class DeviceSession {
         break;
       }
       case 0x07: {
-        const m = json<{ orientation: string }>();
+        const m = json<{ orientation: string; deviceOrientation?: unknown }>();
         if (!m) break;
         const generation = this.inputGeneration;
         const operation = this.hingeControlUpdate.then(async () => {
           const value = ORIENTATION_BY_NAME[m.orientation];
+          const physical = m.deviceOrientation;
+          if (
+            physical !== undefined &&
+            (!isCardinalPhysicalOrientation(physical) || this.supportsPhysicalOrientation !== true)
+          )
+            return;
           if (
             !this.canRunInputControl(generation) ||
             value == null ||
-            !(await this.hid.orientation(value))
+            !(await (physical === undefined
+              ? this.hid.orientation(value)
+              : this.hid.setPhysicalOrientation(physical)))
           )
             return;
           if (!this.canRunInputControl(generation)) return;
+          this.hingeScreenTransition = undefined;
           this.hingeRotated = true;
           // Only startup hydration advertises hinge support, after it reads the angle.
           const supportsHingeAngle =
@@ -1698,10 +1769,10 @@ export class DeviceSession {
           if (!this.canRunInputControl(generation)) return;
           this.recordHidEvent(tag, m);
           if (supportsHingeAngle) {
-            // Rotation is panel-relative; only a named pose establishes the
-            // physical orientation needed to determine Table Mode eligibility.
+            // A legacy rotation is panel-relative and leaves the physical orientation
+            // unknown. A physical rotation sets it, which Table Mode eligibility needs.
             this.hingePose = null;
-            this.hingePhysicalOrientation = undefined;
+            this.hingePhysicalOrientation = physical;
             this.tableMode = false;
             this.saveHingeState();
             // Apps may lock their interface. Keep native readback authoritative.
@@ -2066,8 +2137,9 @@ export class DeviceSession {
     const saved = this.hingeRotated ? null : readSavedHingeState(this.udid, state.hingeAngle);
     this.hingeAngle = state.hingeAngle;
     this.tableMode = this.hingeRotated ? false : (state.tableMode ?? saved?.tableMode);
+    // A rotation already set the physical orientation: a physical one to its pose, a legacy one to unknown.
     this.hingePhysicalOrientation = this.hingeRotated
-      ? undefined
+      ? this.hingePhysicalOrientation
       : (state.physicalOrientation ?? saved?.physicalOrientation);
     this.hingePose = this.hingeRotated ? null : (saved?.hingePose ?? null);
     if (this.hingeRotated) this.saveHingeState();
@@ -2135,6 +2207,24 @@ export class DeviceSession {
       )
         return false;
       this.hingeControlled = true;
+      const targetScreen =
+        command.control === "pose"
+          ? command.value === "closed" || command.value === "tent"
+            ? 1
+            : 3
+          : command.control === "angle"
+            ? command.value <= 54
+              ? 1
+              : command.value >= 55
+                ? 3
+                : undefined
+            : undefined;
+      this.hingeScreenTransition =
+        this.supportsHingeAngle === true &&
+        targetScreen !== undefined &&
+        this.nativeScreen?.screenId !== targetScreen
+          ? { screenId: targetScreen, expiresAt: Date.now() + 2000 }
+          : undefined;
       const ok =
         command.control === "pose"
           ? await this.hid.setHingePose(command.value)
@@ -2156,6 +2246,7 @@ export class DeviceSession {
         this.saveHingeState();
         this.broadcastConfig();
       } else {
+        this.hingeScreenTransition = undefined;
         // A failed sequence can still move the hinge or change the active
         // panel. Recover actual state before the failure ack permits a retry.
         this.hingePose = null;
@@ -2848,12 +2939,19 @@ export class DeviceSession {
         (snapshot.generation === previous.generation && snapshot.revision <= previous.revision))
     )
       return;
-    this.deviceStateVersion = { generation: snapshot.generation, revision: snapshot.revision };
+    this.deviceStateVersion = {
+      generation: snapshot.generation,
+      revision: snapshot.revision,
+      ...(typeof snapshot.orientationObserved === "boolean"
+        ? { orientationObserved: snapshot.orientationObserved }
+        : {}),
+    };
     const previousState = this.observedDeviceState;
     const { hingeAngle, physicalOrientation, tableMode } = snapshot.state;
     this.observedDeviceState = { hingeAngle, physicalOrientation, tableMode };
     if (
       !previousState ||
+      previous?.orientationObserved !== this.deviceStateVersion.orientationObserved ||
       previousState.hingeAngle !== hingeAngle ||
       previousState.physicalOrientation !== physicalOrientation ||
       previousState.tableMode !== tableMode
@@ -2866,6 +2964,8 @@ export class DeviceSession {
     width: number;
     height: number;
     orientation: string;
+    screenOrientation?: NativeScreenInfo["orientation"] | null;
+    deviceOrientation?: HingePhysicalOrientation | null;
     inputUnavailable: boolean;
     keyboardUnavailable: boolean;
     screenId?: number;
@@ -2883,6 +2983,12 @@ export class DeviceSession {
       width: this.width,
       height: this.height,
       orientation: this.orientation,
+      ...(this.deviceStateVersion?.orientationObserved !== undefined
+        ? {
+            screenOrientation: this.nativeScreen?.orientation ?? null,
+            deviceOrientation: this.observedDeviceState?.physicalOrientation ?? null,
+          }
+        : {}),
       inputUnavailable: this.hid.inputUnavailable,
       keyboardUnavailable: this.hid.keyboardUnavailable,
       ...(this.nativeScreen?.screenId !== undefined
@@ -2945,8 +3051,18 @@ export class DeviceSession {
     const hid = this.hid;
     const screen = await this.capture.screenSize();
     if (this.phase !== "running" || hid !== this.hid) return false;
+    // CoreDevice can report the destination orientation on the departing panel
+    // before display election completes. Publish its geometry only with its ID,
+    // so the flat view changes rotation and glass corners in the same config.
+    if (this.waitingForHingeScreen()) {
+      if (screen.screenId === this.hingeScreenTransition?.screenId)
+        this.hingeScreenTransition = undefined;
+      else if (screen.screenId === this.nativeScreen?.screenId) return false;
+      else this.hingeScreenTransition = undefined;
+    }
     const previous = this.nativeScreen;
-    let changed = false;
+    // Native interface orientation can change while legacy requested framing stays fixed.
+    let changed = screen.orientation !== previous?.orientation;
     if (this.routedHid !== hid || !previous || screen.screenId !== previous.screenId) {
       await hid.setScreen(screen.screenId ?? 0);
       if (this.phase !== "running" || hid !== this.hid) return false;
@@ -2992,10 +3108,18 @@ export class DeviceSession {
   }
 
   private updateScreenSize(width: number, height: number): void {
+    if (this.waitingForHingeScreen()) return;
     if (!width || !height || (width === this.width && height === this.height)) return;
     this.width = width;
     this.height = height;
     this.broadcastConfig();
+  }
+
+  private waitingForHingeScreen(): boolean {
+    if (this.hingeScreenTransition && Date.now() >= this.hingeScreenTransition.expiresAt) {
+      this.hingeScreenTransition = undefined;
+    }
+    return this.hingeScreenTransition !== undefined;
   }
 
   private broadcastConfig(): void {
@@ -3093,10 +3217,53 @@ export function getDeviceSession(
   return session;
 }
 
+/** Own startup cancellation: native stop, including its input drain, must finish before rejection. */
+export async function startDeviceSession(
+  udid: string,
+  settings: StreamSettings | undefined,
+  signal?: AbortSignal,
+): Promise<DeviceSession> {
+  signal?.throwIfAborted();
+  const session = getDeviceSession(udid, settings);
+  if (!signal) {
+    await session.start();
+    return session;
+  }
+  let cancel!: () => void;
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    cancel = () => {
+      closeDeviceSession(udid);
+      reject(signal.reason);
+    };
+  });
+  signal.addEventListener("abort", cancel, { once: true });
+  if (signal.aborted) cancel();
+  try {
+    await Promise.race([session.start(), cancelled]);
+    signal.throwIfAborted();
+    return session;
+  } catch (error) {
+    try {
+      await session.close();
+    } catch (cleanup) {
+      throw new AggregateError([error, cleanup], "Simulator capture startup and cleanup failed");
+    }
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
 /** Claim session state for a persistent consumer, such as an accepted settings update. */
 export function retainDeviceSession(session: DeviceSession): void {
   const owner = screenshotOwners.get(session);
-  if (owner) owner.retained = true;
+  if (owner) {
+    owner.retained = true;
+    void session
+      .start()
+      .then(() => session.observeDeviceState())
+      .catch(() => {});
+  }
 }
 
 /** Prevent screenshot cleanup from closing a session while a finite helper task uses it. */
@@ -3147,6 +3314,18 @@ export function closeDeviceSession(udid: string): void {
     session.close();
     sessions.delete(udid);
   }
+}
+
+/** Retire warm consumers before the private owner changes the selected device. */
+export async function retireDeviceSession(udid: string): Promise<void> {
+  const session = peekDeviceSession(udid);
+  closeDeviceSession(udid);
+  await session?.close();
+  if (closedSessionStopErrors.length > 0)
+    throw new AggregateError(
+      [...closedSessionStopErrors],
+      "Could not retire the warm device session",
+    );
 }
 
 export async function finishDeviceRecordingsForShutdown(

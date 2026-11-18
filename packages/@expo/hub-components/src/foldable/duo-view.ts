@@ -1,0 +1,91 @@
+/**
+ * Saved 3D view orientation for the iPhone Duo model, ported from serve-sim's
+ * `src/client/simulator/duo-view.ts` (serve-sim at 3dc61286e, #383).
+ */
+
+import { type FoldPose } from "@expo/hub-client";
+import { Euler, Quaternion, Vector3 } from "three";
+
+import { type DuoStreamConfig } from "./duo-displays";
+import { duoFacingYaw, duoPose } from "./duo-pose";
+
+/** Saved orientation controls; ordinary folding adds a hinge-dependent facing turn. */
+export type DuoView = {
+  rotation: [number, number, number, number];
+  /** Reference facing turn, absent for Laptop and Tent. */
+  facingYaw?: number;
+  /** Laptop articulates around its stationary left/base panel. */
+  fixedLeftFold?: number;
+};
+
+function captureView(physical: ReturnType<typeof duoPose>, pose?: FoldPose | null): DuoView {
+  return {
+    rotation: new Quaternion().setFromEuler(new Euler(...physical.rotation, "YXZ")).toArray(),
+    facingYaw: pose === "laptop" || pose === "tent" ? undefined : duoFacingYaw(physical.fold),
+    fixedLeftFold: pose === "laptop" ? physical.fold : undefined,
+  };
+}
+
+export function duoInitialView(
+  angle: number | undefined,
+  pose: FoldPose | null | undefined,
+  config?: DuoStreamConfig | null,
+): DuoView {
+  return captureView(duoPose(angle, pose, config?.screenId, config), pose);
+}
+
+/**
+ * Presets use their physical orientation, independent of delayed app/display
+ * metadata. `angle` is the pose's hinge angle, from `capabilities.fold.poses`.
+ */
+export function duoPresetView(pose: FoldPose, angle: number): DuoView {
+  return captureView(duoPose(angle, pose, undefined, undefined, 0), pose);
+}
+
+/** The view saved before another client turned the device face down. */
+export type DuoFaceDownFraming = { saved: DuoView | null; held: boolean };
+
+/** A local hinge or rotate control keeps its view until the device leaves face down. */
+export const DUO_FACE_DOWN_HELD: DuoFaceDownFraming = { saved: null, held: true };
+
+/**
+ * Frame the cover of a device turned face down elsewhere, as Tent does, then
+ * restore the view. `tent` is the Tent preset's view.
+ */
+export function duoFaceDownFraming(
+  state: DuoFaceDownFraming,
+  faceDown: boolean,
+  current: DuoView,
+  tent: DuoView,
+): { state: DuoFaceDownFraming; view?: DuoView } {
+  if (!faceDown) {
+    const released = { saved: null, held: false };
+    return state.saved ? { state: released, view: state.saved } : { state: released };
+  }
+  if (state.held || state.saved) return { state };
+  return { state: { saved: current, held: false }, view: tent };
+}
+
+export function duoRotateView(view: DuoView, quarterTurns: number): DuoView {
+  const turn = new Quaternion().setFromAxisAngle(
+    new Vector3(0, 0, 1),
+    (quarterTurns * Math.PI) / 2,
+  );
+  return { ...view, rotation: turn.multiply(new Quaternion(...view.rotation)).toArray() };
+}
+
+/** Reveal the inside while opening without changing the user's portrait/landscape rotation. */
+export function duoViewRotation(fold: number, view: DuoView): Quaternion {
+  const rotation = new Quaternion(...view.rotation);
+  if (view.facingYaw !== undefined) {
+    rotation.multiply(
+      new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), duoFacingYaw(fold) - view.facingYaw),
+    );
+  }
+  return rotation;
+}
+
+export function duoViewFolds(fold: number, view: DuoView, anchorWeight = 1) {
+  const offset = view.fixedLeftFold === undefined ? 0 : (view.fixedLeftFold - fold) * anchorWeight;
+  return { left: fold + offset, right: -fold + offset };
+}

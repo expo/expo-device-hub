@@ -117,9 +117,10 @@ monotonic capture timestamp.
 
 `CaptureEngine` fans owned frames out to bounded consumers. Recording keeps
 one native-size snapshot in a latest-frame mailbox; viewers receive a separate
-scaled or letterboxed buffer. A slow encoder cannot build an unbounded capture
-backlog. `ViewerFrameResizer` scales or letterboxes accepted frames to the
-shared canvas on its own queue. `WebRTCPublisher` retains the newest resized
+scaled buffer. A slow encoder cannot build an unbounded capture
+backlog. `ViewerFrameResizer` scales accepted frames to the shared canvas on its
+own queue, with the picture at the top-left corner (LLP 0001, Viewer frame
+placement). `WebRTCPublisher` retains the newest resized
 frame and uses one pump as the only configured FPS controller. A fresh frame goes out when it
 arrives while the pump's token bucket, refilled at 1.5 times the configured rate, has a token.
 Without a fresh frame, the pump resubmits the retained buffer with fresh presentation

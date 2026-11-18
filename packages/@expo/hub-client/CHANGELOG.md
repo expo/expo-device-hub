@@ -1,5 +1,82 @@
 # @expo/hub-client
 
+## 1.13.0
+
+### Minor Changes
+
+- 3df743a: Android screen recordings of a foldable emulator now survive folding and unfolding. With gRPC capture, the Hub records a foldable on one fixed canvas that fits both displays and centers the shown display on it. `session.json` then has a `deviceStates` timeline, in the format of serve-sim's iPhone Duo recordings: at each change, the display (`inner` or `outer`), its native size, its place on the canvas (`contentRect`), the hinge angle, and the UI `orientation`. The hinge is read over the emulator's gRPC controller every 100 ms and at once when the emulator reports a posture change, and the recording has a keyframe at least once a second, as serve-sim's recordings. The recording status from `/api` has `followsFold: true` for such a recording, and `POST /api/fold` answers 409 while a recording that cannot follow a fold runs. In hub-client, `DeviceFold` has an optional `unavailable` reason. On Android, it is the recording lock only while the recording does not follow folds, so fold commands and the Hub's Fold settings stay available during a recording that does. Rotation and stream changes stay locked while a recording runs.
+
+## 1.12.2
+
+### Patch Changes
+
+- 1e5f890: Show the foreground app's name on Android. serve-emu now reads the label with
+  `aapt2 dump badging` from the APK it already pulls for the icon, and returns it as
+  `label` from `GET /api/apps/icon`. Before, it searched `dumpsys package` output,
+  which has no label, so the name was always missing. The Android client keeps the
+  label and the icon across foreground polls of the same build, reads them again
+  after a reinstall with a new version or build, and retries a failed read.
+- 8c9c786: Use observed device pose separately from app orientation on ordinary iOS Simulators. Keep video, touch mapping, and home gestures aligned when an app stays portrait on a landscape device.
+
+  Fix repeated rotations on iPhone Duo when the foreground app stays portrait.
+  Keep the Duo model aligned with rotations made by other controllers.
+
+- e169141: Show the name of the foreground iOS app on hosts where the simulator runtime is mounted outside serve-sim's allowed paths, for example Safari and Settings in an EAS simulator session. serve-sim now sends `label` with each `/appstate` event. It reads the name from the bundle path that simctl reports, so the client no longer needs `app.infoPlist` for the name. hub-client uses that label, and a bundle read that finds no name no longer clears it.
+
+## 1.12.1
+
+### Patch Changes
+
+- 0b81172: Expose capture-source metadata alongside screenshot PNGs when the server provides it. Older servers and unrecognized optional metadata keep the existing screenshot behavior.
+
+## 1.12.0
+
+### Minor Changes
+
+- 26f2adb: Add `@expo/hub-client/shapes`, a separate entry point that shows a device screen in the shape of its device. `DeviceShape` clips its children to the screen shape of the client's device and follows its display and orientation. `useScreenShape`, `resolveScreenShape`, and `SCREEN_SHAPES` look the shapes up, and `screenShapeClipPath` and the geometry helpers give the CSS for other elements. The table has iPhones from the iPhone X, iPads with rounded corners, the iPhone Duo's cover and inner display, the Pixel 9 and Pixel 10 families, and both displays of the Pixel 9 Pro Fold and the Pixel 10 Pro Fold. Apps that do not import the entry do not bundle it.
+
+### Patch Changes
+
+- 26f2adb: The iOS device client marks only the streamed simulator as `current` in `devices`. It marked every simulator with a running helper, so a consumer that names the current device could take another simulator's name.
+
+## 1.11.0
+
+### Minor Changes
+
+- fced3d6: Expose Android emulator folding through `client.fold` and `capabilities.fold`, with angle controls and closed, book, and open presets in the existing dashboard. Controls honor recording locks and remain hidden unless the emulator reports a supported 0 to 180 degree hinge range.
+
+## 1.10.0
+
+### Minor Changes
+
+- c27ada7: Report the same device-screen loading states on iOS and Android. `status` is `'connecting'` only until the current screen session shows its first frame, and it becomes `'error'` after 30 seconds without a frame while the client keeps retrying. After the first frame, a lost stream is `'reconnecting'` on both platforms, and the last frame stays on screen: iOS WebRTC keeps it as a poster, as Android does, and an iOS MJPEG retry loads off screen before it replaces the frame. A helper restart for the same iOS device keeps the stream mode, the screen's shape, the touch mapping, the iPhone Duo's 3D model, and, while the helper keeps its URL, the H.264 fallback. On iOS, a reconnect that lasts 30 seconds becomes `'error'` ("Disconnected — retrying…") over the last frame while the client keeps retrying. A WebRTC transport retry, an iOS MJPEG retry, and an iOS H.264 re-read are no longer reported as errors. The new `framePresented` field on `DeviceClient` and `DeviceScreenClient` tells whether the session has shown a frame. A new device, server, token, transport, or display surface starts a new session. `useVisibleTimeout` runs a callback after a wait that counts only while the tab is visible, for your own loading UI.
+
+  Two kinds of consumers must change code:
+
+  - `DeviceScreen` now renders only the media and the input surface. It no longer draws a black background, "Connecting…", "Not connected", or the error text, and its `<img>` has an empty `alt`. If you relied on that overlay, draw your own connecting, reconnecting, and error states from `status`, `error`, and `framePresented`.
+  - Custom `DeviceClient` and `DeviceScreenClient` implementations and mocks must add the new required `framePresented` field: `true` once the current screen session has presented a frame, also while it reconnects; `false` before that.
+
+- 10815bf: Add foldable device support, starting with the iPhone Duo. `DeviceClient.fold` reports the fold state (hinge angle, named pose, Table Mode, and how the device is held) and takes fold commands. `capabilities.fold` lists the commands that a device accepts, and `FOLD_POSES` names the poses that all foldables share. `fold.observe` reports the steps of each command, from its request to its outcome; a queued command that a newer one replaces gets only its request. `DeviceClient.displays` streams each display (`cover`, `inner`) into an element that you attach, with the transport, codec fallback, and session token of the flat stream. Touch, multi-touch, and scroll samples can address one display, and `screen.display` names the display that the screen describes. `DeviceClient.deviceModelUrl` points to a 3D model of the device, Xcode's for the iPhone Duo. `useDeviceKeyboard` and `listenForInputCancellation` give your own device surface the keyboard and input-release handling of `DeviceScreen`.
+
+  hub-client is alpha, so a minor release like this one can need code changes. Custom `DeviceClient` implementations and mocks must add the required members `fold`, `displays`, `deviceModelUrl`, `displayCorners`, and `capabilities.fold`. A client for a device that does not fold and has one stream uses `fold: null`, `displays: null`, `deviceModelUrl: null`, `displayCorners: null`, and `capabilities.fold: false`. Custom `DeviceScreenClient` values passed to `DeviceScreen` must also add `fold` and `capabilities.fold`, with the same values for a device that does not fold.
+
+### Patch Changes
+
+- de14fb6: Show the whole iPhone Duo cover screen in the 2D WebRTC stream. The picture was stretched and its right edge was cut, which showed as a dark stripe. serve-sim now draws it from the top-left corner of the shared canvas, with black bars right after the picture, and the screen views pin the frame to the top-left.
+- 79221df: On the iPhone Duo, a fold change that you request now holds in `client.fold` until the simulator reports it, or for at most 500 ms after the command's config, so the fold does not jump back while the simulator catches up. The `confirmed` fold event has `observed: false` when that limit ran out first. An observed angle within 1° of a preset now names that preset.
+
+## 1.9.0
+
+### Minor Changes
+
+- a6b40fa: Add `recordingLock`, the reason a running Android recording locks rotation and stream changes, and `recordingControlsLocked`; calls to the locked controls are silently ignored meanwhile. `areRecordingControlsLocked` is deprecated in favor of `recordingLock`. Custom `DeviceClient` implementations and mocks must add these required members.
+- 0c8f2a8: Add `setOrientation` and `capabilities.orientation` to turn a device to one pose, with `orientation`, `orientationPending` and `orientationError` showing the pick and then the backend's answer, `orientationUnavailable` giving the reason a change cannot go out now, and Android Rotate now steps through the same four poses as iOS. Custom `DeviceClient` implementations and mocks must add these required members.
+
+### Patch Changes
+
+- 8589ebf: Offer only the Android stream modes that serve-emu lists in `/api` `viewerTransports.available`. On a `--transport webrtc` host, H.264 is not offered and an H.264 choice falls back to WebRTC. Older serve-emu versions without the list keep the WebSocket video.
+- 20cc264: Fit the Hub viewer above the phone keyboard, add mobile keyboard and full-screen controls, group the inspector toggle with those controls, and give the device more room on small screens.
+
 ## 1.8.1
 
 ### Patch Changes

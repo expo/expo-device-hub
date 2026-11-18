@@ -34,12 +34,12 @@ describe("UploadToastContent", () => {
     );
     const ipa = renderToStaticMarkup(
       <UploadToastContent
-        toast={{ id: "2", name: "App.ipa", kind: "ipa", status: "success", progress: null }}
+        toast={{ id: "2", name: "App.tgz", kind: "app", status: "success", progress: null }}
       />,
     );
 
     expect(media).toContain("Added photo.png to Photos");
-    expect(ipa).toContain("Installed App.ipa");
+    expect(ipa).toContain("Installed App.tgz");
   });
 });
 

@@ -9,6 +9,7 @@ import {
   type ButtonSize,
   font,
   icon,
+  LOADING_LABEL,
   radius,
   text,
   textSize,
@@ -40,8 +41,9 @@ const STATUS_APPEARANCE: Record<
     ringColor: border.danger,
     labelColor: text.secondary,
   },
+  // The screen's first load, the same label as its spinner.
   connecting: {
-    label: "Starting",
+    label: LOADING_LABEL,
     dotColor: icon.warning,
     ringColor: border.warning,
     labelColor: text.secondary,

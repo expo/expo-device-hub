@@ -95,6 +95,17 @@ final class ObservedDeviceStateTests: XCTestCase {
         XCTAssertNil(controls.state(observed: observed).tableMode)
     }
 
+    func testFirstUnknownPoseObservationAdvancesTheSnapshotRevision() {
+        var observed = ObservedDeviceState(generation: 1)
+        XCTAssertFalse(observed.snapshot.orientationObserved)
+        XCTAssertTrue(observed.apply(.orientation(.init(orientation: nil, timestamp: 101)), since: 100))
+        XCTAssertTrue(observed.snapshot.orientationObserved)
+        XCTAssertEqual(observed.snapshot.revision, 1)
+        XCTAssertNil(observed.snapshot.state.orientation)
+        XCTAssertFalse(observed.apply(.orientation(.init(orientation: "portrait", timestamp: 99)), since: 100))
+        XCTAssertEqual(observed.snapshot.revision, 1)
+    }
+
     private func motion(_ timestamp: Double, orientation: Int, tabletop: Int) throws -> DeviceMotionSample {
         let json = "{\"timestamp\":\(timestamp),\"properties\":{\"propertyA\":{\"int\":\(orientation)},\"propertyC\":{\"int\":\(tabletop)}}}"
         return try JSONDecoder().decode(DeviceMotionSample.self, from: Data(json.utf8))

@@ -6,12 +6,16 @@ import {
   DeviceScreen,
   displayScreen,
   useActiveDeviceClient,
+  useMobileViewport,
   type DeviceHttpCodec,
   type DeviceStreamMode,
 } from "@expo/hub-client";
+import { DeviceShape } from "@expo/hub-client/shapes";
 import {
   EmptyState,
-  LogSidebar,
+  InspectorSections,
+  MOBILE_CORNER_BUTTON_TOP,
+  MOBILE_SIDEBAR_TOP_INSET,
   ResizeHandle,
   ServerConnectionOverlay,
   Sidebar,
@@ -23,20 +27,19 @@ import {
   type AddDeviceTarget,
   type ClipboardRequest,
   type Device,
-  type DeviceFrameAssets,
+  type FoldPreviewOption,
 } from "@expo/hub-components";
+import { FoldableDeviceScreen } from "@expo/hub-components/foldable";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import pixelDeviceFrame from "../assets/device-frames/google-pixel-10-pro.png";
-import pixel9DeviceFrame from "../assets/device-frames/pixel_9_obsidian.png";
-import iphoneDeviceFrame from "../assets/device-frames/iphone-17-pro-silver.png";
 import { dashboardSingleDevice } from "./single-device";
 import { AnimatedDockedSidebar } from "./dashboard/AnimatedDockedSidebar";
 import { dashboardHideBootDevice } from "./boot-device";
 import { basePath } from "./dashboard/basePath";
 import { bootDevice, createDevice, removeDevice, shutdownDevice } from "./dashboard/deviceActions";
 import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from "./dashboard/dashboardStore";
+import { useScreenShapeAvailable } from "./dashboard/useScreenShapeAvailable";
 import {
   useHideUnsupportedDevices,
   visibleDevices,
@@ -46,8 +49,10 @@ import { useColorScheme } from "./dashboard/useColorScheme";
 import { useDeviceLists } from "./dashboard/useDevices";
 import {
   FloatingSidebarToggle,
-  floatingSidebarToggleInset,
+  floatingSidebarToggleVisible,
 } from "./dashboard/FloatingSidebarToggle";
+import { pageBackground } from "./dashboard/pageBackground";
+import { sidebarOverlayWidth } from "./dashboard/sidebarOverlayWidth";
 import { useArgentInteractions } from "./dashboard/useArgentInteraction";
 import { useNewDeviceOptions } from "./dashboard/useNewDeviceOptions";
 import { SidebarOverlay } from "./dashboard/SidebarOverlay";
@@ -70,30 +75,6 @@ function mergeById(base: Device[], extra: Device[]): Device[] {
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
-
-const DEVICE_FRAME_ASSETS: DeviceFrameAssets = {
-  "android:pixel-9": {
-    src: String(pixel9DeviceFrame),
-    width: 1935,
-    height: 4096,
-    screen: { x: 95, y: 94, width: 1737, height: 3907 },
-    screenRadius: 236,
-  },
-  "android:pixel-10-pro": {
-    src: String(pixelDeviceFrame),
-    width: 1250,
-    height: 2631,
-    screen: { x: 50, y: 48, width: 1138, height: 2532 },
-    screenRadius: 150,
-  },
-  "ios:iphone-17-pro": {
-    src: String(iphoneDeviceFrame),
-    width: 2620,
-    height: 5420,
-    screen: { x: 104, y: 88, width: 2412, height: 5244 },
-    screenRadius: 340,
-  },
-};
 
 /**
  * Clamp a dragged sidebar width to `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`, and
@@ -119,6 +100,8 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
  */
 export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps }) {
   const scheme = useColorScheme();
+  const viewport = useMobileViewport();
+  // @ref LLP 0013#single-device-sessions — a locked session keeps the sidebar but shows no device lifecycle controls.
   const singleDevice = dashboardSingleDevice();
   const hideBootDevice = !!singleDevice || dashboardHideBootDevice();
   const platform = dashboardPlatformFilter();
@@ -136,8 +119,13 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   const streamModeAvailability = useMemo<StreamModeAvailability>(browserStreamModeAvailability, []);
   const streamMode = useDashboardStore((state) => state.streamMode);
   const chooseStreamMode = useDashboardStore((state) => state.chooseStreamMode);
-  const showDeviceFrame = useDashboardStore((state) => state.showDeviceFrame);
-  const setShowDeviceFrame = useDashboardStore((state) => state.setShowDeviceFrame);
+  const showScreenShape = useDashboardStore((state) => state.showScreenShape);
+  const setShowScreenShape = useDashboardStore((state) => state.setShowScreenShape);
+  const duoPreview = useDashboardStore((state) => state.duoPreview);
+  const setDuoPreview = useDashboardStore((state) => state.setDuoPreview);
+  // Xcode's model failed to load (or WebGL did) for this device; show the flat
+  // screen until the viewer picks 3D again, as serve-sim does.
+  const [duoModelUnavailableFor, setDuoModelUnavailableFor] = useState<string | null>(null);
   const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
     streamMode === "mjpeg" ? "mjpeg" : streamMode === "h264" ? "h264" : "auto",
   );
@@ -145,16 +133,15 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   // width when a drag begins so each move re-derives width from the start point
   // (delta-from-start), which clamps cleanly without drifting.
   const sidebarWidth = useDashboardStore((state) => state.sidebarWidths.left);
-  const logsWidth = useDashboardStore((state) => state.sidebarWidths.right);
   const resizeSidebar = useDashboardStore((state) => state.resizeSidebar);
   const sidebarWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
-  const logsWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
   // While a resize handle is dragged the docked sidebars must not ease toward
   // each new width, or they wobble behind the pointer.
   const [resizing, setResizing] = useState(false);
   const sidebars = useSidebarLayout({
     leftWidth: sidebarWidth,
-    rightWidth: logsWidth,
+    // The inspector lives in the left sidebar now, so no column is reserved on the right.
+    rightWidth: 0,
     minStreamWidth: MIN_STREAM_WIDTH,
   });
   // A toolbar Paste or Copy that the browser clipboard stopped, until the inspector takes it over.
@@ -170,7 +157,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   const handleClipboardFallback = (request: ClipboardRequest) => {
     if (selectedId !== useDashboardStore.getState().selectedDeviceId) return;
     setClipboardFallback({ deviceId: selectedId, request });
-    sidebars.openRight();
+    sidebars.openLeft();
   };
 
   // Merge booted devices (from the server) with any the user added, deduped by
@@ -238,7 +225,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
             physical: false,
             booted: true,
             supported: target.device.supported,
-            deviceFrame: target.device.deviceFrame,
+            model: target.device.model ?? null,
             lastUsedAt: Date.now(),
           }
         : { ...target.device, id: result.id, booted: true, lastUsedAt: Date.now() };
@@ -247,9 +234,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       target.kind === "new"
         ? [target.device.name, result.id]
         : [target.device.name, target.device.id, result.id];
-    // Pinned sessions follow discovery, including shutdowns outside this UI.
-    // An optimistic entry would otherwise keep the stopped device selected.
-    if (!singleDevice) trackAddedDevice(device, replacedIds);
+    trackAddedDevice(device, replacedIds);
     return { ok: true };
   }
 
@@ -275,6 +260,24 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     return () => root.classList.remove("dark-theme");
   }, [scheme]);
 
+  // On a phone the dashboard fits the visible viewport, so the page behind it shows under
+  // the browser's translucent bottom bars. Paint it the color of the surface above.
+  const background = pageBackground({
+    mobile: viewport.mobile,
+    sidebarOverlay: sidebars.leftOverlay,
+  });
+  useEffect(() => {
+    if (!background) return;
+    const targets = [document.documentElement, document.body];
+    const previous = targets.map((element) => element.style.backgroundColor);
+    for (const element of targets) element.style.backgroundColor = background;
+    return () => {
+      targets.forEach((element, index) => {
+        element.style.backgroundColor = previous[index] ?? "";
+      });
+    };
+  }, [background]);
+
   // Keep a valid selection — default to the first device once the list loads.
   // Selecting a device streams it (its helper is attached on demand); the
   // sidebar lists only booted devices, so the default selection streams an
@@ -298,20 +301,62 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     chooseStreamMode(mode, selectedStreamModeAvailability);
   };
 
+  const duoModelUnavailable = !!selected && duoModelUnavailableFor === selected.id;
+  // Like serve-sim, switching devices retries the model.
+  const selectedDeviceId = selected?.id ?? null;
+  useEffect(() => setDuoModelUnavailableFor(null), [selectedDeviceId]);
   // One shared connection to the serve-sim/serve-emu server, wired to the
   // selected device. Null until the user picks one, so nothing connects (or
-  // boots) on load.
+  // boots) on load. An iPhone Duo streams both displays only while its 3D
+  // model is shown and attaches them; the flat screen streams otherwise.
   const client = useActiveDeviceClient(
     connectionStatus === "connected" && selected
       ? { platform: selected.platform, device: selected.id, streamMode }
       : null,
     basePath(),
   );
+  const screenShapeAvailable = useScreenShapeAvailable(client, selected);
+  // The 3D choices apply only to a device that can feed the model.
+  const modelAvailable = !!client.fold && !!client.displays && !!client.deviceModelUrl;
+  const foldPreview: FoldPreviewOption = {
+    mode: duoPreview.mode,
+    onModeChange: (mode) => {
+      setDuoPreview({ mode });
+      // Selecting 3D retries loading the model.
+      setDuoModelUnavailableFor(null);
+    },
+    unavailable: duoModelUnavailable,
+    cacheScreenOnFold: duoPreview.cacheScreenOnFold,
+    onCacheScreenOnFoldChange: (cacheScreenOnFold) => setDuoPreview({ cacheScreenOnFold }),
+    sizeMode: duoPreview.sizeMode,
+    onSizeModeChange: (sizeMode) => setDuoPreview({ sizeMode }),
+  };
   const agentInteractions = useArgentInteractions();
   const agentInteraction = selected ? (agentInteractions[selected.id] ?? null) : null;
   const agentDeviceIds = Object.keys(agentInteractions);
 
   const connectionBlocked = connectionStatus !== "connected";
+
+  // The device inspector sits in the left sidebar, below the device lists.
+  const inspector = (
+    <InspectorSections
+      device={selected}
+      client={client}
+      showScreenShape={showScreenShape}
+      onShowScreenShapeChange={setShowScreenShape}
+      screenShapeAvailable={screenShapeAvailable}
+      foldPreview={modelAvailable ? foldPreview : undefined}
+      streamMode={streamMode}
+      httpCodec={httpCodec}
+      streamModeAvailability={selectedStreamModeAvailability}
+      onStreamModeChange={handleStreamModeChange}
+      onHttpCodecChange={setHttpCodec}
+      onShutdown={!singleDevice && selected ? () => handleShutdown(selected) : undefined}
+      onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
+      clipboardRequest={clipboardRequest}
+      onClipboardRequestHandled={() => setClipboardFallback(null)}
+    />
+  );
 
   return (
     <div
@@ -325,7 +370,16 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         flex: 1,
         width: "100%",
         minWidth: 0,
-        height: "100vh",
+        height: viewport.mobile ? viewport.height : "100vh",
+        ...(viewport.mobile
+          ? ({
+              position: "fixed",
+              top: viewport.top,
+              left: viewport.left,
+              width: viewport.width,
+              "--hub-viewport-height": `${viewport.height}px`,
+            } as const)
+          : {}),
         boxSizing: "border-box",
         backgroundColor: bg.default,
         color: text.default,
@@ -333,31 +387,31 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         overflow: "hidden",
       }}
     >
-      {!singleDevice && (
-        <AnimatedDockedSidebar
-          side="left"
+      <AnimatedDockedSidebar
+        side="left"
+        width={sidebarWidth}
+        open={sidebars.leftDocked}
+        sidebarOpen={sidebars.leftOpen}
+        resizing={resizing}
+      >
+        <Sidebar
+          simulators={simulators}
+          emulators={emulators}
+          recentSimulators={recentSimulators}
+          recentEmulators={recentEmulators}
+          simulatorOptions={simulatorOptions}
+          emulatorOptions={emulatorOptions}
+          agentDeviceIds={agentDeviceIds}
+          selectedId={selectedId}
+          onSelect={selectDevice}
+          onAddDevice={hideBootDevice ? undefined : handleAddDevice}
+          onToggle={sidebars.closeLeft}
+          platform={platform}
           width={sidebarWidth}
-          open={sidebars.leftDocked}
-          sidebarOpen={sidebars.leftOpen}
-          resizing={resizing}
         >
-          <Sidebar
-            simulators={simulators}
-            emulators={emulators}
-            recentSimulators={recentSimulators}
-            recentEmulators={recentEmulators}
-            simulatorOptions={simulatorOptions}
-            emulatorOptions={emulatorOptions}
-            agentDeviceIds={agentDeviceIds}
-            selectedId={selectedId}
-            onSelect={selectDevice}
-            onAddDevice={hideBootDevice ? undefined : handleAddDevice}
-            onToggle={sidebars.closeLeft}
-            platform={platform}
-            width={sidebarWidth}
-          />
-        </AnimatedDockedSidebar>
-      )}
+          {inspector}
+        </Sidebar>
+      </AnimatedDockedSidebar>
       {sidebars.leftDocked && (
         <ResizeHandle
           side="left"
@@ -368,13 +422,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           }}
           onResizeEnd={() => setResizing(false)}
           onResize={(delta) =>
-            resizeSidebar(
-              "left",
-              clampSidebarWidth(
-                sidebarWidthStart.current + delta,
-                sidebars.rightDocked ? logsWidth : 0,
-              ),
-            )
+            resizeSidebar("left", clampSidebarWidth(sidebarWidthStart.current + delta, 0))
           }
         />
       )}
@@ -385,10 +433,17 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           client={client}
           agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
+          FoldableDeviceScreen={FoldableDeviceScreen}
+          DeviceShape={DeviceShape}
+          foldPreview={{
+            mode: duoPreview.mode === "3d" && !duoModelUnavailable ? "3d" : "2d",
+            cacheScreenOnFold: duoPreview.cacheScreenOnFold,
+            sizeMode: duoPreview.sizeMode,
+            onUnavailable: () => setDuoModelUnavailableFor(selected.id),
+          }}
           displayScreen={displayScreen}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
-          showDeviceFrame={showDeviceFrame}
-          deviceFrameAssets={DEVICE_FRAME_ASSETS}
+          showScreenShape={showScreenShape}
           onClipboardFallback={handleClipboardFallback}
         />
       ) : singleDevice ? (
@@ -396,24 +451,6 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           platform={platform}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
           singleDevice
-          onStart={
-            platform === "ios"
-              ? () =>
-                  handleAddDevice({
-                    kind: "recent",
-                    device: recent.simulators.find((device) => device.id === singleDevice) ?? {
-                      id: singleDevice,
-                      platform: "ios",
-                      name: "Session Simulator",
-                      version: "iOS",
-                      booted: false,
-                      physical: false,
-                      supported: true,
-                      deviceFrame: null,
-                    },
-                  })
-              : undefined
-          }
         />
       ) : (
         <EmptyState
@@ -422,125 +459,48 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         />
       )}
 
-      {sidebars.rightDocked && (
-        <ResizeHandle
-          side="right"
-          offset={logsWidth}
-          onResizeStart={() => {
-            logsWidthStart.current = logsWidth;
-            setResizing(true);
-          }}
-          onResizeEnd={() => setResizing(false)}
-          onResize={(delta) =>
-            resizeSidebar(
-              "right",
-              clampSidebarWidth(
-                logsWidthStart.current + delta,
-                sidebars.leftDocked ? sidebarWidth : 0,
-              ),
-            )
-          }
-        />
-      )}
-      <AnimatedDockedSidebar
-        side="right"
-        width={logsWidth}
-        open={sidebars.rightDocked}
-        sidebarOpen={sidebars.rightOpen}
-        resizing={resizing}
-      >
-        <LogSidebar
-          device={selected}
-          client={client}
-          showDeviceFrame={showDeviceFrame}
-          onShowDeviceFrameChange={setShowDeviceFrame}
-          streamMode={streamMode}
-          httpCodec={httpCodec}
-          streamModeAvailability={selectedStreamModeAvailability}
-          onStreamModeChange={handleStreamModeChange}
-          onHttpCodecChange={setHttpCodec}
-          onShutdown={selected ? () => handleShutdown(selected) : undefined}
-          onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
-          clipboardRequest={clipboardRequest}
-          onClipboardRequestHandled={() => setClipboardFallback(null)}
-          onToggle={sidebars.closeRight}
-          width={logsWidth}
-        />
-      </AnimatedDockedSidebar>
-
-      {!singleDevice && (
-        <SidebarOverlay
-          side="left"
-          open={sidebars.leftOverlay}
-          sidebarOpen={sidebars.leftOpen}
-          topmost={sidebars.lastOpened === "left" || !sidebars.rightOverlay}
-          onDismiss={sidebars.closeLeft}
-        >
-          <Sidebar
-            simulators={simulators}
-            emulators={emulators}
-            recentSimulators={recentSimulators}
-            recentEmulators={recentEmulators}
-            simulatorOptions={simulatorOptions}
-            emulatorOptions={emulatorOptions}
-            agentDeviceIds={agentDeviceIds}
-            selectedId={selectedId}
-            onSelect={selectDevice}
-            onAddDevice={hideBootDevice ? undefined : handleAddDevice}
-            onToggle={sidebars.closeLeft}
-            platform={platform}
-            width={sidebarWidth}
-          />
-        </SidebarOverlay>
-      )}
-
       <SidebarOverlay
-        side="right"
-        open={sidebars.rightOverlay}
-        sidebarOpen={sidebars.rightOpen}
-        topmost={sidebars.lastOpened === "right" || !sidebars.leftOverlay}
-        onDismiss={sidebars.closeRight}
+        side="left"
+        open={sidebars.leftOverlay}
+        sidebarOpen={sidebars.leftOpen}
+        topmost
+        onDismiss={sidebars.closeLeft}
       >
-        <LogSidebar
-          device={selected}
-          client={client}
-          showDeviceFrame={showDeviceFrame}
-          onShowDeviceFrameChange={setShowDeviceFrame}
-          streamMode={streamMode}
-          httpCodec={httpCodec}
-          streamModeAvailability={selectedStreamModeAvailability}
-          onStreamModeChange={handleStreamModeChange}
-          onHttpCodecChange={setHttpCodec}
-          onShutdown={selected ? () => handleShutdown(selected) : undefined}
-          onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
-          clipboardRequest={clipboardRequest}
-          onClipboardRequestHandled={() => setClipboardFallback(null)}
-          onToggle={sidebars.closeRight}
-          width={logsWidth}
-        />
+        <Sidebar
+          simulators={simulators}
+          emulators={emulators}
+          recentSimulators={recentSimulators}
+          recentEmulators={recentEmulators}
+          simulatorOptions={simulatorOptions}
+          emulatorOptions={emulatorOptions}
+          agentDeviceIds={agentDeviceIds}
+          selectedId={selectedId}
+          onSelect={selectDevice}
+          onAddDevice={hideBootDevice ? undefined : handleAddDevice}
+          onToggle={sidebars.closeLeft}
+          // A phone's overlay is dismissed, so it shows an X. Desktop keeps the sidebar glyph.
+          toggleIcon={viewport.mobile ? "close" : "sidebar"}
+          topInset={viewport.mobile ? MOBILE_SIDEBAR_TOP_INSET : undefined}
+          platform={platform}
+          width={sidebarOverlayWidth({
+            mobile: viewport.mobile,
+            sidebarWidth,
+            viewportWidth: viewport.width,
+          })}
+        >
+          {inspector}
+        </Sidebar>
       </SidebarOverlay>
 
-      {!singleDevice && !sidebars.leftOpen && (
+      {floatingSidebarToggleVisible({
+        sidebarOpen: sidebars.leftOpen,
+        mobile: viewport.mobile,
+        keyboardRaised: viewport.keyboardRaised,
+      }) && (
         <FloatingSidebarToggle
           side="left"
-          inset={floatingSidebarToggleInset(
-            sidebars.rightOverlay,
-            sidebars.containerWidth,
-            logsWidth,
-          )}
+          top={viewport.mobile ? MOBILE_CORNER_BUTTON_TOP : undefined}
           onClick={sidebars.openLeft}
-        />
-      )}
-
-      {!sidebars.rightOpen && (
-        <FloatingSidebarToggle
-          side="right"
-          inset={floatingSidebarToggleInset(
-            sidebars.leftOverlay,
-            sidebars.containerWidth,
-            sidebarWidth,
-          )}
-          onClick={sidebars.openRight}
         />
       )}
       {connectionBlocked &&
