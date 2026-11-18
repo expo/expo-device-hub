@@ -34,14 +34,16 @@ type ThemeTokens = {
   background: string;
   hover: string;
   text: string;
+  /** Color of an icon in the button. The styleguide defines it for its own themes. */
+  icon: string;
   border: string;
   disabledBackground: string;
   disabledBorder: string;
   disabledText: string;
 };
 
-// Maps each theme to the matching `--expo-theme-button-*` CSS variables.
-const THEME_TOKENS: Record<ButtonTheme, ThemeTokens> = {
+/** Maps each theme to the matching `--expo-theme-button-*` CSS variables. */
+export const BUTTON_THEME_TOKENS: Record<ButtonTheme, ThemeTokens> = {
   primary: cssTheme("primary"),
   secondary: cssTheme("secondary"),
   tertiary: cssTheme("tertiary"),
@@ -58,6 +60,7 @@ function cssTheme(name: string): ThemeTokens {
     background: v("background"),
     hover: v("hover"),
     text: v("text"),
+    icon: v("icon"),
     border: v("border"),
     disabledBackground: v("disabled-background"),
     disabledBorder: v("disabled-border"),
@@ -134,7 +137,7 @@ export function Button({
   className,
   style,
 }: ButtonProps) {
-  const t = THEME_TOKENS[theme];
+  const t = BUTTON_THEME_TOKENS[theme];
 
   const baseStyle: CSSProperties = {
     ...pressableStyle({

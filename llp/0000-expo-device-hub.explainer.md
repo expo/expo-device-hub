@@ -104,7 +104,7 @@ the visual height by its zoom scale so pinch zoom alone does not hide controls. 
 keeps the sidebar reachable, and fits the device above a normal-flow action bar.
 Mobile fitting does not wait for an observer to measure that bar.
 The mobile viewer provides a keyboard toggle when the client supports HID text
-events. It sits in the action bar's Clipboard pill. The action bar is hidden while the
+events. It sits in the action bar directly after the Clipboard menu. The action bar is hidden while the
 keyboard is up and in full screen. With the keyboard up, the sidebar toggle and the
 full-screen button hide too, and the device takes that room; the phone's own keyboard
 controls dismiss the keyboard. An in-page full-screen toggle is pinned to the top-right
@@ -120,7 +120,8 @@ padding. The shared toolbar and sidebar changes are described below. [observed: 
 `StreamPanel.tsx` and `StreamControls.tsx`, HubClient `useMobileViewport.ts`]
 [confirmed: Gabe Debes, 2026-10-26, requested equivalent mobile behavior in Hub]
 [confirmed: Billy Roh, 2026-10-29, requested the Keyboard toggle in the Clipboard pill and
-the top-right Full screen button]
+the top-right Full screen button; since the toolbar became one bar
+([Hub toolbar](#hub-toolbar)), the toggle keeps its place next to the Clipboard menu]
 
 ### Hub sidebar
 
@@ -131,6 +132,37 @@ the device's appearance is the inspector's Appearance setting. [observed: Hub
 `Dashboard.tsx`; HubComponents `Sidebar.tsx`, `InspectorSections.tsx`,
 `StreamControls.tsx`] [confirmed: Billy Roh, 2026-10-29, requested moving the right pane
 into the left pane and removing the Theme button]
+
+### Hub toolbar
+
+The toolbar under the device has the look of the website's device controls: one rounded bar
+on the element surface that holds round 36px icon buttons with 20px icons, and a dark tooltip
+that slides in above a button and says what the button does. The glyphs of Back, Home,
+Recents, Dismiss keyboard, Screenshot and Reload are the website's.
+[observed: HubComponents `StreamControls.tsx`, `ControlButton.tsx`, `Tooltip.tsx`, the
+`.hub-tooltip` rules in `theme/theme.css`; universe `SimulatorPreviewControls.tsx` and
+`ui/components/Tooltip` at `d24ccaa940`]
+[confirmed: Krystof Woldrich, 2026-11-17, requested that the controls under the screen look
+and behave like the website's]
+
+The order follows the website: an Android device leads with Back, Home, Recents and Dismiss
+keyboard, in the order of its navigation bar; Screenshot and Reload follow on both
+platforms. The controls that only the Hub has come last: the Clipboard menu, the Keyboard
+toggle of a phone layout, and Rotate. The inspector keeps its rows for the Android buttons.
+[observed: `StreamControls.tsx`, `StreamPanel.tsx`, `DeviceOptionsSection.tsx`]
+
+Three things differ from the website on purpose:
+
+- The Hub's controls do not lock while the stream is not live. The website disables every
+  control until the status is `streaming`. In the Hub, input can work while video fails
+  ([LLP 0013](0013-hub-client-input-and-control.explainer.md#orientation)), so only Rotate
+  locks, from `orientationUnavailable`, and its tooltip gives the reason.
+- A button under the pointer takes the hover surface. The website's quaternary hover color
+  is the color of the bar itself, so its hover does not show.
+  [observed: `--expo-theme-button-quaternary-hover` and `--expo-theme-background-element`
+  are both `slate-3` in `@expo/styleguide` 14.2.0 `expo-theme.css`]
+- Screenshot and the Clipboard menu show a spinner in place of their icon while their action
+  runs. The website does this for Screenshot only; it has no Clipboard menu.
 
 ### DeviceKit hardware artwork
 
