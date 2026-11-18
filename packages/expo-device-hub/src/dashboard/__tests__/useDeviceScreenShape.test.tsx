@@ -3,7 +3,7 @@ import { type DeviceClient } from "@expo/hub-client";
 import { type Device } from "@expo/hub-components";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { useScreenShapeAvailable } from "../useScreenShapeAvailable";
+import { useDeviceScreenShape } from "../useDeviceScreenShape";
 
 function client(overrides: Partial<DeviceClient> = {}): DeviceClient {
   return {
@@ -21,7 +21,7 @@ function available(
   overrides?: Partial<DeviceClient>,
 ) {
   function Probe() {
-    return <>{String(useScreenShapeAvailable(client(overrides), device))}</>;
+    return <>{String(useDeviceScreenShape(client(overrides), device).available)}</>;
   }
   return renderToStaticMarkup(<Probe />) === "true";
 }
@@ -55,4 +55,17 @@ test("is false when the server names no model, even if the device's name matches
       devices,
     } as unknown as Partial<DeviceClient>),
   ).toBe(false);
+});
+
+test("gives the shape before the stream reports a screen, for the frame's proportions", () => {
+  let shape: ReturnType<typeof useDeviceScreenShape>["shape"] = null;
+  function Probe() {
+    shape = useDeviceScreenShape(client({ platform: "ios", status: "connecting" }), {
+      platform: "ios",
+      model: "iPad Pro 13-inch (M4)",
+    }).shape;
+    return null;
+  }
+  renderToStaticMarkup(<Probe />);
+  expect(shape).toMatchObject({ width: 1032, height: 1376 });
 });

@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { ActivityIndicator, LOADING_LABEL } from "../components/ActivityIndicator";
+import { deviceScreenStage, screenShapeBorderRadius } from "../dashboard/DeviceScreenStage";
 import { deviceScreenLoading } from "../dashboard/DeviceScreenStatus";
 import { DeviceTitle } from "../dashboard/DeviceTitle";
 import { type Device } from "../dashboard/data";
@@ -14,7 +15,8 @@ import {
   FoldableDeviceScreen,
   type FoldableDeviceScreenProps,
 } from "../foldable/FoldableDeviceScreen";
-import { bg } from "../theme/tokens";
+import { useLingering } from "../dashboard/useLingering";
+import { screenOff } from "../theme/tokens";
 import { createGlobalStubs } from "./test-globals";
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
@@ -120,6 +122,58 @@ describe("deviceScreenLoading", () => {
   });
 });
 
+describe("deviceScreenStage", () => {
+  test("follows the session's first frame", () => {
+    expect(deviceScreenStage(null)).toBe("off");
+    expect(deviceScreenStage({ status: "idle", framePresented: false })).toBe("off");
+    expect(deviceScreenStage({ status: "connecting", framePresented: false })).toBe("connecting");
+    expect(deviceScreenStage({ status: "streaming", framePresented: true })).toBe("live");
+    // A loaded screen never returns to the glow: its last frame stays.
+    expect(deviceScreenStage({ status: "reconnecting", framePresented: true })).toBe("live");
+    expect(deviceScreenStage({ status: "error", framePresented: true })).toBe("live");
+    expect(deviceScreenStage({ status: "error", framePresented: false })).toBe("unavailable");
+  });
+
+  test("gives the glow the corners of the screen shape", () => {
+    const corner = { n: 2, size: 40 };
+    const circle = {
+      width: 400,
+      height: 800,
+      topLeft: corner,
+      topRight: corner,
+      bottomRight: corner,
+      bottomLeft: corner,
+    };
+    // A superellipse with exponent 2 is a circle: its radius is its size.
+    expect(screenShapeBorderRadius(circle)).toBe("10.000cqw 10.000cqw 10.000cqw 10.000cqw");
+    // A higher exponent is closer to a square corner, so its nearest circle is smaller.
+    const squircle = { ...circle, topLeft: { n: 2.59, size: 77.43 } };
+    expect(screenShapeBorderRadius(squircle).split(" ")[0]).toBe("15.518cqw");
+  });
+});
+
+describe("useLingering", () => {
+  test("stays on for the linger time after it ends, and comes back at once", async () => {
+    stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const seen: boolean[] = [];
+    function Probe({ active }: { active: boolean }) {
+      seen.push(useLingering(active, 20));
+      return null;
+    }
+    await act(async () => {
+      renderer = create(<Probe active />);
+    });
+    await act(async () => renderer!.update(<Probe active={false} />));
+    expect(seen.at(-1)).toBe(true);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    });
+    expect(seen.at(-1)).toBe(false);
+    await act(async () => renderer!.update(<Probe active />));
+    expect(seen.at(-1)).toBe(true);
+  });
+});
+
 describe("PhoneFrame first load", () => {
   async function frame(initial: DeviceClient, id = "iphone") {
     browserGlobals();
@@ -143,22 +197,61 @@ describe("PhoneFrame first load", () => {
     return { render, reported };
   }
 
-  test("shows one spinner on the device surface, never black, until the first frame", async () => {
+  test("glows on the black screen until the first frame, and the picture fades in above the glow", async () => {
     const { render, reported } = await frame(client("connecting", false));
-    expect(testIds(renderer!)).toContain("device-screen-loading");
+    const glow = renderer!.root.findByProps({ "data-testid": "device-screen-loading" });
+    expect(glow.props.className).toBe("hub-screen-stage hub-screen-glow");
+    // A status region announces its text: the one loading label, hidden inside it.
+    expect(glow.props.role).toBe("status");
+    expect(glow.findByType("span").children).toEqual([LOADING_LABEL]);
     const clip = renderer!.root.findByProps({ "data-testid": "device-screen-clip" });
-    // The surface is its own layer, not a background under the stream.
+    // The glow is its own layer, not a background under the stream.
     expect(clip.props.style.backgroundColor).toBeUndefined();
-    const surface = renderer!.root.findByProps({ "data-testid": "device-screen-surface" });
-    expect(surface.props.style.backgroundColor).toBe(bg.element);
+    const stream = () => renderer!.root.findByProps({ "data-testid": "device-screen-stream" });
+    expect(stream().props["data-presented"]).toBeUndefined();
     expect(renderer!.root.findAllByProps({ role: "alert" })).toHaveLength(0);
     expect(reported.at(-1)).toBe(true);
 
     await render(client("streaming", true));
     expect(testIds(renderer!)).not.toContain("device-screen-loading");
-    // A solid layer under a presented stream would show along the clipped edge.
-    expect(testIds(renderer!)).not.toContain("device-screen-surface");
     expect(reported.at(-1)).toBe(false);
+    expect(stream().props.className).toBe("hub-screen-stream");
+    expect(stream().props["data-presented"]).toBe("true");
+    // The glow stays under the picture while that fades in. It announces nothing then.
+    const leaving = renderer!.root.findByProps({ "data-testid": "device-screen-stage-leaving" });
+    expect(leaving.props.className).toBe("hub-screen-stage hub-screen-glow");
+    expect(leaving.props["data-leaving"]).toBe("true");
+    expect(leaving.props.role).toBeUndefined();
+    expect(leaving.props["aria-hidden"]).toBe(true);
+  });
+
+  test("a session that recovers keeps its notice under the picture while that fades in", async () => {
+    const { render } = await frame(client("error", false));
+    expect(testIds(renderer!)).toContain("device-screen-unavailable");
+
+    // A retry presents the first frame. Without a layer under it, the page would show through the fade.
+    await render(client("streaming", true));
+    expect(testIds(renderer!)).not.toContain("device-screen-unavailable");
+    const leaving = renderer!.root.findByProps({ "data-testid": "device-screen-stage-leaving" });
+    expect(leaving.props["data-leaving"]).toBe("true");
+    // The notice still shows its text, and it is not an alert any more.
+    expect(leaving.findAllByType("p")[1]!.children).toEqual(["WebRTC offer failed: HTTP 403."]);
+    expect(renderer!.root.findAllByProps({ role: "alert" })).toHaveLength(0);
+  });
+
+  test("an input error shows over the glow, because input can work before the video", async () => {
+    await frame(client("connecting", false, { inputError: "Input is not connected." }));
+    expect(testIds(renderer!)).toContain("device-screen-loading");
+    const notice = renderer!.root.findByProps({ "aria-live": "polite" });
+    expect(notice.children).toEqual(["Input is not connected."]);
+  });
+
+  test("an idle device shows a black screen, with no glow and no stream", async () => {
+    await frame(client("idle", false));
+    const surface = renderer!.root.findByProps({ "data-testid": "device-screen-surface" });
+    expect(surface.props.style.backgroundColor).toBe(screenOff);
+    expect(testIds(renderer!)).not.toContain("device-screen-loading");
+    expect(testIds(renderer!)).not.toContain("live-screen");
   });
 
   test("a drop after the first frame shows neither a spinner nor a notice", async () => {
@@ -176,15 +269,23 @@ describe("PhoneFrame first load", () => {
     expect(testIds(renderer!)).toContain("device-screen-loading");
   });
 
-  test("an error replaces the spinner, before and after the first frame", async () => {
+  test("an error replaces the glow: the screen says why before the first frame, and a notice covers the picture after it", async () => {
     const { render } = await frame(client("connecting", false));
     await render(client("error", false));
     expect(testIds(renderer!)).not.toContain("device-screen-loading");
+    const unavailable = renderer!.root.findByProps({ "data-testid": "device-screen-unavailable" });
+    const alert = unavailable.findByProps({ role: "alert" });
+    expect(alert.findAllByType("p").map((line) => line.children.join(""))).toEqual([
+      "Device screen unavailable",
+      "WebRTC offer failed: HTTP 403.",
+    ]);
+    expect(renderer!.root.findAllByProps({ role: "alert" })).toHaveLength(1);
+
+    await render(client("error", true));
+    expect(testIds(renderer!)).not.toContain("device-screen-unavailable");
     expect(renderer!.root.findByProps({ role: "alert" }).children).toEqual([
       "WebRTC offer failed: HTTP 403.",
     ]);
-    await render(client("error", true));
-    expect(renderer!.root.findByProps({ role: "alert" })).toBeDefined();
     expect(testIds(renderer!)).toContain("live-screen");
   });
 });
@@ -226,10 +327,12 @@ describe("the iPhone Duo 3D preview", () => {
       });
     };
     await render(initial);
+    // The label is inside the live region, in the element that animates when the status changes.
     const pill = () =>
       renderer!.root
         .findAll((node) => node.props["aria-live"] === "polite")
-        .map((node) => node.children.join(""));
+        .map((node) => node.findAllByProps({ className: "hub-status-label" }))
+        .map(([label]) => label?.children.join("") ?? "");
     return { render, pill };
   }
 
@@ -323,7 +426,7 @@ test("a flat fallback stays hidden and inert until the session's first frame, th
   expect(host()["aria-hidden"]).toBeUndefined();
 });
 
-test("the status pill names the first load with the spinner's label", () => {
+test("the status pill names the first load with the loading label", () => {
   const markup = renderToStaticMarkup(
     <DeviceTitle device={{ id: "a", name: "iPhone" }} status="connecting" />,
   );

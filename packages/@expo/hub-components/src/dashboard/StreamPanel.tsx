@@ -8,7 +8,7 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
-import type { DeviceShapeProps } from "@expo/hub-client/shapes";
+import type { DeviceShapeProps, ScreenShape } from "@expo/hub-client/shapes";
 import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
 import {
   bg,
@@ -57,6 +57,7 @@ export function StreamPanel({
   displayScreen,
   framed = true,
   showScreenShape = true,
+  screenShape,
   onClipboardFallback,
 }: {
   device: Device;
@@ -78,6 +79,8 @@ export function StreamPanel({
   framed?: boolean;
   /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
   showScreenShape?: boolean;
+  /** The device's screen shape from `useScreenShape`: the frame's proportions before the stream connects. */
+  screenShape?: ScreenShape | null;
   /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
   onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
@@ -313,6 +316,7 @@ export function StreamPanel({
             foldPreview={foldPreview}
             displayScreen={displayScreen}
             showScreenShape={showScreenShape}
+            screenShape={screenShape}
             onLoadingChange={setScreenLoading}
           />
           {!viewport.mobile && (

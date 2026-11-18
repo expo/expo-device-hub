@@ -35,17 +35,21 @@ const RECORDING_LABELS: Record<DeviceScreenRecordingStatus, string> = {
 };
 
 // Only the live state colors its label; the other labels stay secondary beside a colored dot.
+// The dot of a status that is in progress pulses, as on the website; a status that ended is still.
 const STATUS_APPEARANCE: Record<
   ConnectionStatus,
-  { label: string; tone: Tone; labelColor: string }
+  { label: string; tone: Tone; labelColor: string; pulse: boolean }
 > = {
-  idle: { label: "Offline", tone: "danger", labelColor: text.secondary },
-  // The screen's first load, the same label as its spinner.
-  connecting: { label: LOADING_LABEL, tone: "warning", labelColor: text.secondary },
-  reconnecting: { label: "Reconnecting", tone: "warning", labelColor: text.secondary },
-  streaming: { label: "Live", tone: "success", labelColor: tone.success.text },
-  error: { label: "Error", tone: "danger", labelColor: text.secondary },
+  idle: { label: "Offline", tone: "danger", labelColor: text.secondary, pulse: false },
+  // The screen's first load, the same label as its loading stage.
+  connecting: { label: LOADING_LABEL, tone: "warning", labelColor: text.secondary, pulse: true },
+  reconnecting: { label: "Reconnecting", tone: "warning", labelColor: text.secondary, pulse: true },
+  streaming: { label: "Live", tone: "success", labelColor: tone.success.text, pulse: true },
+  error: { label: "Error", tone: "danger", labelColor: text.secondary, pulse: false },
 };
+
+/** Diameter of the status dot without its ring: the website's `LiveIndicator` is 8px with it. */
+const STATUS_DOT_SIZE = 4;
 
 const DEVICE_TITLE_SIZE: ButtonSize = "xs";
 /** Rendered height of the title pill, for layouts that reserve room above the frame. */
@@ -79,9 +83,12 @@ export function DeviceTitle({ device, status, recording = null }: DeviceTitlePro
       }
       rightSlot={
         <>
-          <StatusDot tone={appearance.tone} ring />
+          <StatusDot tone={appearance.tone} size={STATUS_DOT_SIZE} ring pulse={appearance.pulse} />
           <span aria-live="polite" style={{ flexShrink: 0, color: appearance.labelColor }}>
-            {appearance.label}
+            {/* The key makes a new label enter with the status animation. The live region stays. */}
+            <span key={status} className="hub-status-label" style={{ display: "inline-block" }}>
+              {appearance.label}
+            </span>
           </span>
           {recording && (
             <span
