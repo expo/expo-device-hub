@@ -134,7 +134,8 @@ function render(overrides: Partial<DeviceClient>) {
 }
 
 function refreshTag(html: string) {
-  const index = html.indexOf(">Refresh</button>");
+  // The action is a `Button`, which wraps its label in a span.
+  const index = html.indexOf(">Refresh</span></button>");
   expect(index).toBeGreaterThanOrEqual(0);
 
   return html.slice(html.lastIndexOf("<button", index), index + 1);

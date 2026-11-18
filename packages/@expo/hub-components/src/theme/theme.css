@@ -39,6 +39,9 @@
    */
   --hub-focus-outline: 2px solid var(--expo-theme-icon-info);
 
+  /* Knob of a switch that is off: white, and gray in the dark theme, as the website's Switch. */
+  --hub-switch-knob-off: var(--expo-color-white);
+
   /* Agent takeover prompt — stays bright against the dark status overlay. */
   --expo-theme-button-agent-overlay-background: var(--expo-color-white);
   --expo-theme-button-agent-overlay-border: transparent;
@@ -50,6 +53,7 @@
 }
 
 .dark-theme {
+  --hub-switch-knob-off: var(--slate-11);
   --expo-theme-button-agent-overlay-background: var(--slate-3);
   --expo-theme-button-agent-overlay-border: transparent;
   --expo-theme-button-agent-overlay-hover: var(--slate-5);
@@ -180,4 +184,85 @@
   .hub-tooltip {
     animation: none;
   }
+}
+
+/*
+ * Range input of a sidebar row, in the look of the website's sliders: a 4px
+ * track on the selected surface, filled up to the value, and a blue thumb
+ * with a white ring. The element sets `--hub-slider-fill` to the value's
+ * share of the range.
+ */
+.hub-slider {
+  height: 20px;
+  margin: 0;
+  flex-shrink: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  border-radius: var(--expo-radius-full);
+  background: transparent;
+}
+.hub-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--expo-radius-full);
+  background: linear-gradient(
+    to right,
+    var(--expo-theme-button-primary-disabled-background) var(--hub-slider-fill, 0%),
+    var(--expo-theme-background-selected) var(--hub-slider-fill, 0%)
+  );
+}
+.hub-slider::-moz-range-track {
+  height: 4px;
+  border-radius: var(--expo-radius-full);
+  background: linear-gradient(
+    to right,
+    var(--expo-theme-button-primary-disabled-background) var(--hub-slider-fill, 0%),
+    var(--expo-theme-background-selected) var(--hub-slider-fill, 0%)
+  );
+}
+.hub-slider::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 2px solid var(--expo-color-white);
+  border-radius: var(--expo-radius-full);
+  background: var(--blue-9);
+  box-shadow: var(--expo-theme-shadows-sm);
+}
+.hub-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid var(--expo-color-white);
+  border-radius: var(--expo-radius-full);
+  background: var(--blue-9);
+  box-shadow: var(--expo-theme-shadows-sm);
+}
+.hub-slider:focus-visible {
+  outline: var(--hub-focus-outline);
+  outline-offset: 2px;
+}
+
+/*
+ * A sidebar section that opens or closes, with the timing of the website's
+ * `collapsibleOpen` and `collapsibleClosed` animations.
+ */
+.hub-section-trigger {
+  outline: none;
+  background-color: transparent;
+  transition: background-color var(--hub-motion-base) ease;
+}
+@media (hover: hover) {
+  .hub-section-trigger:hover {
+    background-color: var(--expo-theme-background-subtle);
+  }
+}
+/* The row spans the sidebar, so its focus outline is inside it, as the website's inset ring. */
+.hub-section-trigger:focus-visible {
+  outline: var(--hub-focus-outline);
+  outline-offset: -2px;
+  background-color: var(--expo-theme-background-subtle);
 }

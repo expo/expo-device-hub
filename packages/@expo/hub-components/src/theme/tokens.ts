@@ -173,6 +173,27 @@ export const motion = {
   easeInOut: "cubic-bezier(0.4, 0, 0.2, 1)",
 } as const;
 
+/** The selected item of a list: the info surface with its border, as in the dashboard design. */
+export const selection = {
+  bg: bg.info,
+  border: border.info,
+} as const;
+
+/**
+ * Colors of a control that is on. The semantic layer has no name for them; the
+ * website's `Switch` and slider use these palette steps.
+ */
+export const accent = {
+  /** The track of a switch that is on: `palette-blue10`. */
+  default: "var(--blue-10)",
+  /** The thumb of a slider: `palette-blue9`. */
+  thumb: "var(--blue-9)",
+  /** The knob of a switch that is on, and the ring of a slider thumb: `palette-white`. */
+  knob: "var(--expo-color-white)",
+  /** The knob of a switch that is off: white, and `palette-gray11` in the dark theme. */
+  knobOff: "var(--hub-switch-knob-off)",
+} as const;
+
 /** Opacity of a state, not of a color. */
 export const opacity = {
   /** A control that cannot be used. */
@@ -241,6 +262,8 @@ export const tokens = {
   textSize,
   heading,
   tone,
+  selection,
+  accent,
   motion,
   opacity,
   layer,

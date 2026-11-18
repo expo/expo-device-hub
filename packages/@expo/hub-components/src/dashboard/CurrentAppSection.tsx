@@ -1,12 +1,26 @@
 import { useState } from "react";
 
 import { type DeviceClient } from "@expo/hub-client";
-import { bg, border, font, heading, icon, radius, text, textSize, truncate } from "../primitives";
+import {
+  bg,
+  font,
+  heading,
+  icon,
+  radius,
+  text,
+  textSize,
+  tone,
+  type Tone,
+  truncate,
+} from "../primitives";
 import { ActivityCharts } from "./ActivityCharts";
 import { CollapsibleSection } from "./CollapsibleSection";
 
-const APP_ICON_SIZE = 40;
+/** Width and height of the app icon: the website's `size-15`. */
+const APP_ICON_SIZE = 60;
 const UNKNOWN_VALUE = "unknown";
+/** What the card says while no app is in the foreground, as on the website. */
+export const NO_APP_TEXT = "Open an app to view its details.";
 
 type AppDetail = {
   label: string;
@@ -20,11 +34,14 @@ type AppDetail = {
  * shows until the backend reports an app, and the detail fields fill in as
  * the client resolves them (iOS fetches them over the exec channel after the
  * id arrives).
+ *
+ * The app is in a card in the look of the website's current app
+ * (`SimulatorPreviewApp`): the icon, then the name over the app ID.
  */
 export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   const [open, setOpen] = useState(true);
   const app = client?.foregroundApp ?? null;
-  const name = app ? (app.label ?? app.id) : UNKNOWN_VALUE;
+  const name = app ? (app.label ?? app.id) : null;
 
   const details: AppDetail[] = [
     { label: "App ID", value: app?.id ?? UNKNOWN_VALUE },
@@ -33,35 +50,45 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   ];
 
   return (
-    <CollapsibleSection title="Current app" open={open} onOpenChange={setOpen} divider={false}>
+    <CollapsibleSection title="Current app" open={open} onOpenChange={setOpen}>
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
           gap: 16,
-          padding: "4px 0 12px",
+          margin: "8px 0",
+          padding: "8px 16px 8px 8px",
+          borderRadius: radius["2xl"],
+          backgroundColor: bg.subtle,
         }}
       >
-        <div style={{ display: "flex", minWidth: 0, flexDirection: "column", gap: 4 }}>
+        <AppIcon iconDataUrl={app?.iconDataUrl} />
+        <div style={{ display: "flex", minWidth: 0, flex: 1, flexDirection: "column", gap: 2 }}>
           <span
-            title={name}
-            style={{
-              ...heading.base,
-              ...truncate,
-              color: app ? text.default : text.tertiary,
-            }}
+            title={name ?? undefined}
+            style={
+              name
+                ? { ...heading.sm, ...truncate, color: text.default }
+                : { ...textSize.xs, fontWeight: 500, color: text.default }
+            }
           >
-            {name}
+            {name ?? NO_APP_TEXT}
           </span>
+          {app && app.label && (
+            <span
+              title={app.id}
+              style={{ ...textSize.xs, ...truncate, lineHeight: 1.375, color: text.secondary }}
+            >
+              {app.id}
+            </span>
+          )}
           {(app?.isReactNative || app?.debuggable) && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {app?.isReactNative && <Badge color="info">React Native</Badge>}
-              {app?.debuggable && <Badge color="warning">debuggable</Badge>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 2 }}>
+              {app?.isReactNative && <Badge tone="info">React Native</Badge>}
+              {app?.debuggable && <Badge tone="warning">debuggable</Badge>}
             </div>
           )}
         </div>
-        <AppIcon iconDataUrl={app?.iconDataUrl} />
       </div>
       <dl style={{ margin: 0 }}>
         {details.map((detail) => (
@@ -86,8 +113,7 @@ function AppIcon({ iconDataUrl }: { iconDataUrl?: string }) {
         flexShrink: 0,
         boxSizing: "border-box",
         overflow: "hidden",
-        border: iconDataUrl ? undefined : `1px solid ${border.default}`,
-        borderRadius: radius.lg,
+        borderRadius: radius.xl,
         backgroundColor: bg.element,
       }}
     >
@@ -100,9 +126,9 @@ function AppIcon({ iconDataUrl }: { iconDataUrl?: string }) {
           style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }}
         />
       ) : (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <rect x="2" y="4" width="20" height="16" rx="2" stroke={icon.quaternary} />
-          <path d="M10 4v4h12" stroke={icon.quaternary} />
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="2" y="4" width="20" height="16" rx="2" stroke={icon.secondary} strokeWidth={2} />
+          <path d="M10 4v4h12" stroke={icon.secondary} strokeWidth={2} />
         </svg>
       )}
     </span>
@@ -145,13 +171,13 @@ function AppDetailRow({ detail }: { detail: AppDetail }) {
   );
 }
 
-function Badge({ color, children }: { color: "info" | "warning"; children: string }) {
+function Badge({ tone: badgeTone, children }: { tone: Tone; children: string }) {
   return (
     <span
       style={{
         ...textSize.xs,
-        color: text[color],
-        background: bg[color],
+        color: tone[badgeTone].text,
+        background: tone[badgeTone].bg,
         borderRadius: radius.full,
         padding: "0 8px",
         fontWeight: 500,

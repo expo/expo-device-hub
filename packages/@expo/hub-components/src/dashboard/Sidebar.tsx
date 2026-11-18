@@ -87,7 +87,7 @@ export function Sidebar({
           alignItems: "center",
           justifyContent: "space-between",
           gap: 8,
-          padding: `0 ${SIDEBAR_SECTION_INSET}px 32px`,
+          padding: `0 ${SIDEBAR_SECTION_INSET}px 24px`,
         }}
       >
         <Logo />
@@ -103,14 +103,7 @@ export function Sidebar({
           overflowY: "auto",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 32,
-            padding: `0 ${SIDEBAR_SECTION_INSET}px ${SIDEBAR_SECTION_INSET}px`,
-          }}
-        >
+        <div style={{ display: "flex", flexDirection: "column" }}>
           {platform !== "android" && (
             <DeviceSection
               title="Simulators"

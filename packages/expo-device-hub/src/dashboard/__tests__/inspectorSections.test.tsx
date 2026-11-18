@@ -403,8 +403,8 @@ test("renders every supported iOS inspector section and option", () => {
   expect(html).not.toContain(">Network<");
   expect(sectionExpanded(html, "Current app")).toBe(true);
   expect(sectionExpanded(html, "Device options")).toBe(true);
-  // The first section has no separator above it; every following section does.
-  expect(openingTag(html, '<section aria-label="Current app"')).not.toContain("border-top:");
+  // Every section has a separator above it: the device lists above the first one end without one.
+  expect(openingTag(html, '<section aria-label="Current app"')).toContain("border-top:");
   expect(openingTag(html, '<section aria-label="Device options"')).toContain("border-top:");
   const currentApp = sectionMarkup(html, "Current app");
   for (const label of ["App ID", "Version", "Build number"]) {
@@ -413,22 +413,22 @@ test("renders every supported iOS inspector section and option", () => {
   for (const label of ["Minimum iOS", "Minimum SDK", "PID"]) {
     expect(currentApp).not.toContain(`>${label}<`);
   }
-  expect(currentApp).toContain("width:40px");
+  // The app icon of the website's current app card.
+  expect(currentApp).toContain("width:60px");
   expect(currentApp).toContain('data-testid="activity-charts"');
   expect(currentApp).toContain("Waiting for activity data…");
   for (const label of ["Stream options", "Events", "Logs"]) {
     expect(sectionExpanded(html, label)).toBe(false);
     expect(openingTag(html, `<section aria-label="${label}"`)).toContain("border-top:");
-    expect(openingTag(html, `<section aria-label="${label}"`)).toContain("padding:0 16px;");
+    // The title row spans the sidebar and keeps the shared inset inside.
+    expect(sectionMarkup(html, label)).toContain("padding:0 16px;");
     expect(sectionMarkup(html, label)).toContain("grid-template-rows:0fr");
   }
-  expect(openingTag(html, '<section aria-label="Device options"')).toContain("padding:0 16px;");
+  expect(sectionMarkup(html, "Device options")).toContain("padding:0 16px;");
   expect(sectionMarkup(html, "Device options")).toContain("grid-template-rows:1fr");
-  expect(sectionMarkup(html, "Device options")).toContain("padding-bottom:12px");
-  // The title sits centered in its row, so collapsed sections line up evenly.
-  expect(openingTag(html, '<button type="button" aria-expanded="true"')).toContain(
-    "padding:18px 0",
-  );
+  expect(sectionMarkup(html, "Device options")).toContain("padding:0 16px 8px");
+  // The title row has one height, so collapsed sections line up evenly.
+  expect(openingTag(html, '<button type="button" aria-expanded="true"')).toContain("height:52px");
 });
 
 test("renders Android stream options while omitting unsupported and iOS-only sections", () => {
@@ -453,7 +453,7 @@ test("renders Android stream options while omitting unsupported and iOS-only sec
   const currentApp = sectionMarkup(html, "Current app");
   expect(currentApp).toContain('data-testid="activity-charts"');
   expect(currentApp).toContain("Waiting for activity data…");
-  expect(currentApp).toContain("width:40px");
+  expect(currentApp).toContain("width:60px");
   for (const label of ["App ID", "Version", "Build number"]) {
     expect(currentApp).toContain(`>${label}<`);
   }
@@ -656,7 +656,7 @@ test("shows an Android capture source failure below the switch", () => {
   expect(html).toContain("Unable to change stream source: Emulator gRPC endpoint is unavailable");
 });
 
-test("hides the Android capture source row when gRPC is unavailable", () => {
+test("locks the Android capture source row when gRPC is unavailable", () => {
   const client = {
     ...inspectorClient("android"),
     streamSource: {
@@ -673,7 +673,9 @@ test("hides the Android capture source row when gRPC is unavailable", () => {
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
-  expect(html).not.toContain('aria-label="Stream source"');
+  // The row stays, so the section has the same rows for every Android device.
+  expect(selectValue(html, "Stream source")).toBe("scrcpy");
+  expect(selectMarkup(html, "Stream source")).toContain('disabled=""');
 });
 
 test("disables Android encoder controls while a stream restart is pending", () => {
@@ -1147,7 +1149,7 @@ test("explains when the Android host was not launched with WebRTC", () => {
   expect(html).toContain("Start the standalone server with --transport webrtc");
 });
 
-test("renders every iOS device option as a select pill sized by its options", () => {
+test("renders every iOS device option as a select of the shared width", () => {
   const html = renderToStaticMarkup(<InspectorSections client={inspectorClient("ios")} />);
 
   for (const [label, options, selected] of [
@@ -1156,11 +1158,13 @@ test("renders every iOS device option as a select pill sized by its options", ()
     ["Color filter", ["None", "Grayscale", "Red-green", "Green-red", "Blue-yellow"], "None"],
     ["Text size", ["XS", "S", "M", "L", "XL", "2XL", "3XL"], "L"],
   ] as const) {
-    expect(rowOpeningTag(html, label)).toContain("padding:12px 0");
+    expect(rowOpeningTag(html, label)).toContain("padding:10px 0");
     expect(rowOpeningTag(html, label)).not.toContain("border-bottom:");
     // Row labels sit between body text (400) and section titles (600).
     expect(html).toMatch(new RegExp(`<span style="[^"]*font-weight:500[^"]*">${label}</span>`));
-    expect(selectMarkup(html, label)).toContain("height:28px");
+    // The website's select box: 36px high and 128px wide, so the selects form one column.
+    expect(selectMarkup(html, label)).toContain("height:36px");
+    expect(selectMarkup(html, label)).toContain("width:128px");
     expect(selectValue(html, label)).toBe(selected);
     expect(selectOptionLabels(html, label)).toEqual([...options]);
   }
@@ -1221,9 +1225,11 @@ test("offers the client's orientations and shows the client's pose", () => {
       }}
     />,
   );
-  expect(unknownPose).not.toContain('aria-label="Orientation"');
+  expect(selectValue(unknownPose, "Orientation")).toBe("—");
+  expect(selectMarkup(unknownPose, "Orientation")).toContain('disabled=""');
 
   // An older serve-emu reports no pose, so the client offers no poses, also after a Rotate.
+  // The row stays, so the section keeps its rows, and the select is locked.
   const olderServer = renderToStaticMarkup(
     <InspectorSections
       client={{
@@ -1234,10 +1240,12 @@ test("offers the client's orientations and shows the client's pose", () => {
       }}
     />,
   );
-  expect(olderServer).not.toContain('aria-label="Orientation"');
+  expect(selectMarkup(olderServer, "Orientation")).toContain('disabled=""');
+  expect(selectOptionLabels(olderServer, "Orientation")).toEqual([""]);
 
   const unsupported = renderToStaticMarkup(<InspectorSections client={inspectorClient("ios")} />);
-  expect(unsupported).not.toContain('aria-label="Orientation"');
+  expect(selectValue(unsupported, "Orientation")).toBe("—");
+  expect(selectMarkup(unsupported, "Orientation")).toContain('disabled=""');
 });
 
 test("disables the orientation select with the client's reason, as Rotate does", () => {
@@ -1336,10 +1344,12 @@ test("omits the dp width when the Android device has not reported one", () => {
   expect(selectMarkup(html, "Display size")).not.toContain("aria-describedby");
 });
 
-test("omits the Android display-size control the backend does not report", () => {
+test("locks the Android display-size control that the backend does not report", () => {
   const html = renderToStaticMarkup(<InspectorSections client={inspectorClient("android")} />);
 
-  expect(html).not.toContain(">Display size<");
+  // The row stays, so the rows of a device do not change with what it reports.
+  expect(selectValue(html, "Display size")).toBe("—");
+  expect(selectMarkup(html, "Display size")).toContain('disabled=""');
 });
 
 test("never renders the Android-only display-size control on iOS", () => {
@@ -1371,7 +1381,7 @@ test("renders the Android accessibility switches the backend reports", () => {
   expect(switchMarkup(html, "Increase contrast")).toContain('aria-checked="false"');
 });
 
-test("omits the Android accessibility switches the backend does not report", () => {
+test("locks the Android accessibility switches that the backend does not report", () => {
   const html = renderToStaticMarkup(<InspectorSections client={inspectorClient("android")} />);
 
   for (const label of [
@@ -1380,6 +1390,11 @@ test("omits the Android accessibility switches the backend does not report", () 
     "Increase contrast",
     "Force on-screen keyboard",
   ]) {
+    expect(switchMarkup(html, label)).toContain('aria-checked="false"');
+    expect(switchMarkup(html, label)).toContain('disabled=""');
+  }
+  // The switches of iOS only have no row on Android.
+  for (const label of ["Show borders", "Reduce transparency", "VoiceOver"]) {
     expect(html).not.toContain(`>${label}<`);
   }
 });
@@ -1404,7 +1419,7 @@ test("stacks device option rows without dividers", () => {
 
     expect(openingTag(section, "<section")).toContain("border-top:");
     expect(section).not.toContain("border-bottom:");
-    expect(section.match(/padding:12px 0"/g)?.length).toBeGreaterThan(0);
+    expect(section.match(/padding:10px 0"/g)?.length).toBeGreaterThan(0);
   }
 });
 
@@ -1463,7 +1478,7 @@ test("moves device actions into Device options and hides Remove for physical dev
   }
 });
 
-test("styles sidebar action buttons like the select pills", () => {
+test("styles sidebar action buttons as the website's secondary buttons, beside its select boxes", () => {
   const html = renderToStaticMarkup(
     <InspectorSections client={inspectorClient("ios")} onShutdown={() => {}} />,
   );
@@ -1473,17 +1488,28 @@ test("styles sidebar action buttons like the select pills", () => {
   );
   const select = selectMarkup(html, "Appearance");
 
+  // The action is a small secondary button: a pill, like every website button.
   for (const style of [
-    "height:28px",
-    "border:1px solid var(--expo-theme-border-default)",
-    "border-radius:var(--expo-radius-lg)",
+    "height:32px",
+    "border-radius:var(--expo-radius-full)",
     // The pressable rules read the fill and its hover from these properties.
-    "--hub-pressable-bg:var(--expo-theme-background-element)",
-    "--hub-pressable-bg-hover:var(--expo-theme-background-hover)",
-    "font-size:14px",
+    "--hub-pressable-bg:var(--expo-theme-button-secondary-background)",
+    "--hub-pressable-bg-hover:var(--expo-theme-button-secondary-hover)",
+    "font-size:12px",
     "font-weight:500",
   ]) {
     expect(toggle).toContain(style);
+  }
+  // The select is the website's option box.
+  for (const style of [
+    "height:36px",
+    "width:128px",
+    "border:1px solid var(--expo-theme-border-default)",
+    "border-radius:var(--expo-radius-lg)",
+    "--hub-pressable-bg:var(--expo-theme-background-default)",
+    "--hub-pressable-bg-hover:var(--expo-theme-background-element)",
+    "font-size:14px",
+  ]) {
     expect(select).toContain(style);
   }
   expect(toggle).toContain('class="hub-pressable"');
@@ -1660,25 +1686,8 @@ test("shows the Clipboard section only when the client can paste or copy", () =>
     );
   }
 
-  // Sibling sections keyed by the device need distinct keys, or React repeats them on update.
-  const tree = InspectorSections({
-    client: { ...client, capabilities: { ...client.capabilities, location: {} } },
-    device: device("ios"),
-  });
-  const duplicateKeys: string[] = [];
-  const visit = (node: unknown) => {
-    if (Array.isArray(node)) {
-      const keys = node.flatMap((child) =>
-        isValidElement(child) && child.key !== null ? [child.key] : [],
-      );
-      duplicateKeys.push(...keys.filter((key, index) => keys.indexOf(key) !== index));
-      node.forEach(visit);
-    } else if (isValidElement<{ children?: unknown }>(node)) {
-      visit(node.props.children);
-    }
-  };
-  visit(tree);
-  expect(duplicateKeys).toEqual([]);
+  // `steady-inspector.test.tsx` in hub-components checks that the sibling sections keyed by the
+  // device have distinct keys.
 
   const copyOnly = renderToStaticMarkup(
     <ClipboardSection
@@ -1723,11 +1732,12 @@ test("keeps the shape option off and disabled, with an explanation, for a device
     expect(switchMarkup(html, "Show device shape")).toContain('aria-checked="false"');
     expect(switchMarkup(html, "Show device shape")).toContain('disabled=""');
     expect(html).toContain(NO_DEVICE_SHAPE_DESCRIPTION);
-    expect(html).not.toContain(">Appearance</span>");
+    // The device's settings keep their rows, locked, while the device does not offer them.
+    expect(selectMarkup(html, "Appearance")).toContain('disabled=""');
   }
 });
 
-test("shows only the viewer-local shape option while iOS device settings are unavailable", () => {
+test("keeps the viewer-local shape option free while iOS device settings are unavailable", () => {
   const client = {
     ...inspectorClient("ios"),
     capabilities: {
@@ -1755,8 +1765,11 @@ test("shows only the viewer-local shape option while iOS device settings are una
   );
 
   expect(switchMarkup(html, "Show device shape")).not.toContain('disabled=""');
-  expect(html).not.toContain(">Appearance</span>");
-  expect(html).not.toContain(">Liquid glass</span>");
+  // The device's own settings stay in place, locked, with no value.
+  for (const label of ["Appearance", "Liquid glass"]) {
+    expect(selectValue(html, label)).toBe("—");
+    expect(selectMarkup(html, label)).toContain('disabled=""');
+  }
   expect(html).not.toContain(">Keyboard</span>");
 });
 

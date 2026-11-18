@@ -3,8 +3,9 @@ import { type ReactNode } from "react";
 import { text, textSize } from "../primitives";
 
 /**
- * A label on the left and its control on the right. Rows stack without
- * dividers — their vertical padding alone spaces them out.
+ * A label on the left and its control on the right, like an option of the
+ * website's preview settings. Rows stack without dividers: their vertical
+ * padding gives the website's 20px between two rows.
  */
 export function SidebarRow({
   label,
@@ -26,9 +27,8 @@ export function SidebarRow({
         alignItems: "center",
         justifyContent: "space-between",
         gap: 16,
-        minHeight: 28,
         boxSizing: "border-box",
-        padding: "12px 0",
+        padding: "10px 0",
       }}
     >
       <span style={{ display: "flex", flex: 1, minWidth: 0, flexDirection: "column", gap: 2 }}>

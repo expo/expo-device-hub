@@ -163,9 +163,21 @@ info icon color (the website's `outline-icon-info`), 2px from the control. `disa
 `aria-disabled="true"` turn hover and press off. Pass `pressScale: 1` for a control that must
 not move, such as a text field.
 
-`Button`, `IconButton`, `ControlButton`, `PillButton`, `Select`, `DeviceListItem` and the
-sidebar inputs already work this way. Use `pillControlProps()` for a new control on a sidebar
-row.
+`Button`, `IconButton`, `ControlButton`, `Select`, `DeviceListItem` and the sidebar inputs
+already work this way. Use `fieldControlProps()` for a new form control on a sidebar row: it
+gives the control the website's option box (36px high, 128px wide, 8px corners).
+
+## Sidebar sections and rows
+
+The sidebar follows the website's preview settings. Build a section with `CollapsibleSection`
+and an option with `SidebarRow` (a label and one control: `Select`, `SidebarSwitch`,
+`SidebarSlider`, `SidebarTextInput`, or `SidebarActionButton`).
+
+**A row must not come or go with the connection.** Give each platform a fixed list of rows.
+When a control cannot be used now, keep its row and pass `disabled` with a `disabledReason`;
+when its value is not known, pass an empty value so that the select shows its placeholder.
+`InspectorSections` reads the client through `useSteadyClient`, which keeps the last reported
+values over a reconnect and tells a section which of them are `stale`.
 
 ## Motion and stacking order
 
@@ -195,7 +207,8 @@ import { radius, shadow } from "@expo/hub-components";
 ```
 
 - `radius`: `xs` 2 · `sm` 4 · `md` 6 · `lg` 8 · `xl` 16 · `2xl` 20 · `3xl` 24 · `full`.
-  Buttons use `lg`; cards/panels typically `xl`.
+  Buttons are pills (`full`), as on the website; form controls on a sidebar row use `lg`;
+  cards/panels typically `xl`.
 - `shadow`: `none`, `xs`, `sm`, `md`, `lg`, `xl` (theme-aware — heavier in dark mode).
 
 ## Buttons
