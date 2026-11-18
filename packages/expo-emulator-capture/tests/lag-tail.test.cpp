@@ -12,7 +12,7 @@ int main() {
   assert(tail.pending() && tail.dueUs() == 50'010);
   assert(!tail.takeIfDue(50'009));
   auto first = tail.takeIfDue(50'010);
-  assert(first && first->handle == 7);
+  assert(first && first->handle == 7 && first->postUs == 10);
   assert(!tail.takeIfDue(100'000));
   // Posting during a read starts an independent deadline. Completing the old read
   // must not erase that post, and retrying a failed old read must not replace it.

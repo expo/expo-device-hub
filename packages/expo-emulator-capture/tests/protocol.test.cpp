@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
+#include <string>
 
 using namespace expo_capture;
 
@@ -107,11 +108,75 @@ static void rotation() {
   assert(streamSize(w, h, 1280) == std::make_pair(1280, 570));
 }
 
+static void roles() {
+  assert(kProtocolVersion == 3);
+  uint8_t command[kRoleCommandBytes] = {'U'};
+  int parsed = -1;
+  writeU32(command + 1, 0);
+  assert(parseRole(command, parsed) && parsed == kRoleStream);
+  writeU32(command + 1, 1);
+  assert(parseRole(command, parsed) && parsed == kRoleRecording);
+  writeU32(command + 1, 2);
+  assert(!parseRole(command, parsed));
+  command[0] = 'R';
+  writeU32(command + 1, 1);
+  assert(!parseRole(command, parsed));
+  assert(std::string(roleName(kRoleStream)) == "stream");
+  assert(std::string(roleName(kRoleRecording)) == "recording");
+}
+
+static void canvas() {
+  uint8_t command[kCanvasCommandBytes] = {'C'};
+  int width = 0, height = 0;
+  writeU32(command + 1, 2076);
+  writeU32(command + 5, 2424);
+  assert(parseCanvas(command, width, height) && width == 2076 && height == 2424);
+  // Odd, too small or too large edges are outside the protocol.
+  for (auto [w, h] : {std::make_pair(1079u, 2424u), std::make_pair(1080u, 0u),
+                      std::make_pair(4098u, 2424u), std::make_pair(1080u, 2425u)}) {
+    writeU32(command + 1, w);
+    writeU32(command + 5, h);
+    assert(!parseCanvas(command, width, height));
+  }
+  command[0] = 'S';
+  writeU32(command + 1, 1080);
+  writeU32(command + 5, 2424);
+  assert(!parseCanvas(command, width, height));
+}
+
+static void placement() {
+  // A frame of the canvas's size fills it.
+  assert((placeOnCanvas(1080, 2424, 1080, 2424) == Rect{0, 0, 1080, 2424}));
+  // Pixel 9 Pro Fold at native size: the canvas is the bounding box of both displays, and each
+  // display keeps its size, centered, as serve-emu's placeOnCanvas places it.
+  assert((placeOnCanvas(2076, 2152, 2076, 2424) == Rect{0, 136, 2076, 2152}));
+  assert((placeOnCanvas(1080, 2424, 2076, 2424) == Rect{498, 0, 1080, 2424}));
+  // A larger frame is scaled down to fit; every value stays even.
+  assert((placeOnCanvas(1080, 2424, 570, 1280) == Rect{0, 0, 570, 1278}));
+  assert((placeOnCanvas(2076, 2152, 1234, 1280) == Rect{0, 0, 1234, 1278}));
+  // A turned frame on a portrait canvas.
+  Rect turned = placeOnCanvas(2424, 1080, 1080, 2424);
+  assert(turned.width == 1080 && turned.height == 480 && turned.x == 0 && turned.y == 972);
+  // Odd sizes are cropped to even before the placement.
+  assert((placeOnCanvas(1081, 2425, 1080, 2424) == Rect{0, 0, 1080, 2424}));
+  bool rejected = false;
+  try {
+    placeOnCanvas(1, 2424, 1080, 2424);
+  } catch (...) {
+    rejected = true;
+  }
+  assert(rejected);
+}
+
 int main() {
   streamSizes();
   pacing();
   header();
   settings();
   rotation();
-  std::cout << "native protocol, stream size, rotation, and pacing checks passed\n";
+  roles();
+  canvas();
+  placement();
+  std::cout << "native protocol, stream size, rotation, roles, canvas, placement, and pacing checks "
+               "passed\n";
 }

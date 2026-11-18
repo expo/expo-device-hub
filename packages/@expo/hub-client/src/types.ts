@@ -912,13 +912,15 @@ export interface DeviceClient {
    * lock started is dropped the same way: it is cleared from `orientation`, without an
    * `orientationError`. Only Android reports recordings today.
    *
-   * Temporary: Android's recording restarts with the encoder. Once recordings survive rotation
-   * and stream changes, it is always null.
+   * A recording whose status reports `independent: true` has its own encode, apart from the live
+   * stream, so nothing can break it, and the lock stays null. Only an Android recording that
+   * takes the stream's packets sets it: one without the emulator capture agent, or from an older
+   * server.
    */
   recordingLock: DeviceRecordingLockReason | null;
   /**
-   * True while {@link recordingLock} is set. Once recordings survive rotation and stream
-   * changes, it is always false and then deprecated.
+   * True while {@link recordingLock} is set. Once every recording is independent, it is always
+   * false and then deprecated.
    */
   recordingControlsLocked: boolean;
   /** Screen size once known; null while connecting. */

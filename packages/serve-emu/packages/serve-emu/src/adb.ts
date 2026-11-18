@@ -216,17 +216,22 @@ export async function getDisplayRotation(
   if (execFailed(r)) {
     throw new Error(`dumpsys window displays failed: ${execFailure(r)}`);
   }
+  return parseDisplayRotation(r.stdout);
+}
 
-  const defaultDisplayMarker = r.stdout.match(/(?:^|\n)[ \t]*Display:\s+mDisplayId=0\b/);
-  let displayState = r.stdout;
-  if (defaultDisplayMarker?.index !== undefined) {
-    const start = defaultDisplayMarker.index + defaultDisplayMarker[0].length;
-    const remainder = r.stdout.slice(start);
-    const nextDisplay = remainder.search(/\n[ \t]*Display:\s+mDisplayId=/);
-    displayState = nextDisplay === -1 ? remainder : remainder.slice(0, nextDisplay);
-  }
+/** The default display's part of `dumpsys window displays`. */
+function defaultDisplayState(dump: string): string {
+  const defaultDisplayMarker = dump.match(/(?:^|\n)[ \t]*Display:\s+mDisplayId=0\b/);
+  if (defaultDisplayMarker?.index === undefined) return dump;
+  const start = defaultDisplayMarker.index + defaultDisplayMarker[0].length;
+  const remainder = dump.slice(start);
+  const nextDisplay = remainder.search(/\n[ \t]*Display:\s+mDisplayId=/);
+  return nextDisplay === -1 ? remainder : remainder.slice(0, nextDisplay);
+}
 
-  const match = displayState.match(
+/** The default display's rotation in `dumpsys window displays`. */
+export function parseDisplayRotation(dump: string): DisplayRotation {
+  const match = defaultDisplayState(dump).match(
     /\bm(?:Current|Display)?Rotation=(?:ROTATION_)?(0|1|2|3|90|180|270)\b/,
   );
   if (!match) {
@@ -234,6 +239,40 @@ export async function getDisplayRotation(
   }
   const value = Number(match[1]);
   return (value > 3 ? value / 90 : value) as DisplayRotation;
+}
+
+/**
+ * The activity that the default display shows turned before the display turns, by the hash in
+ * its `ActivityRecord{…}`, or null. Android lays out an app that opens in another orientation,
+ * or the launcher on the way home, in the new rotation, and turns the display only when the
+ * transition ends.
+ */
+export function parseFixedRotationApp(dump: string): string | null {
+  return (
+    /\bmFixedRotationLaunchingApp=ActivityRecord\{([0-9a-f]+) /.exec(
+      defaultDisplayState(dump),
+    )?.[1] ?? null
+  );
+}
+
+/**
+ * The rotation of one activity's configuration in `dumpsys activity activities`, from the
+ * `CurrentConfiguration` of its record, or null when the dump has no such record.
+ */
+export function parseActivityRotation(dump: string, record: string): DisplayRotation | null {
+  const lines = dump.split("\n");
+  const header = lines.findIndex(
+    (line) => /^\s*\*/.test(line) && line.includes(`ActivityRecord{${record} `),
+  );
+  if (header === -1) return null;
+  for (const line of lines.slice(header + 1)) {
+    // The next record starts.
+    if (/^\s*\*/.test(line)) return null;
+    if (!line.includes("CurrentConfiguration=")) continue;
+    const match = /\bmRotation=ROTATION_(0|90|180|270)\b/.exec(line);
+    return match ? ((Number(match[1]) / 90) as DisplayRotation) : null;
+  }
+  return null;
 }
 
 type NaturalSize = { width: number; height: number };
@@ -357,6 +396,52 @@ export async function setUserRotation(
   return orientationStatus(await readUserRotation(serial, runExec), natural);
 }
 
+/** The pose that the screen shows, for a recording's timeline. */
+export type ShownOrientation = {
+  orientation: ScreenOrientation;
+  /** True while Android shows an activity turned before the display turns. */
+  settling: boolean;
+};
+
+// @ref LLP 0018#orientation-readings — an app turned before the display names the pose first
+/**
+ * The pose that the screen shows now: the display's, or while Android turns an activity before
+ * the display, as for an app that opens in another orientation, that activity's. All reads use
+ * the background lane, because a recording polls them.
+ */
+export async function getShownOrientation(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<ShownOrientation> {
+  const [natural, displays] = await Promise.all([
+    readNaturalSize(serial, runExec, { lane: "background" }),
+    runExec("adb", ["-s", serial, "shell", "dumpsys", "window", "displays"], {
+      timeout: ADB_QUERY_TIMEOUT_MS,
+      lane: "background",
+    }),
+  ]);
+  if (execFailed(displays)) {
+    throw new Error(`dumpsys window displays failed: ${execFailure(displays)}`);
+  }
+  let rotation = parseDisplayRotation(displays.stdout);
+  const turned = parseFixedRotationApp(displays.stdout);
+  if (turned !== null) {
+    const activities = await runExec(
+      "adb",
+      ["-s", serial, "shell", "dumpsys", "activity", "activities"],
+      { timeout: ADB_QUERY_TIMEOUT_MS, lane: "background" },
+    );
+    // Without the activity's rotation, the display's stands.
+    if (!execFailed(activities)) {
+      rotation = parseActivityRotation(activities.stdout, turned) ?? rotation;
+    }
+  }
+  return {
+    orientation: screenOrientationForRotation(rotation, natural),
+    settling: turned !== null,
+  };
+}
+
 /**
  * The pose the display shows now, from its rotation and effective size. Both reads use the
  * background lane, because the reader polls them while the stream runs.
@@ -370,6 +455,79 @@ export async function getDisplayOrientation(
     getDisplayRotation(serial, runExec, { lane: "background" }),
   ]);
   return screenOrientationForRotation(rotation, natural);
+}
+
+const MAX_EVENT_LINE_BYTES = 4096;
+
+/**
+ * The events-log tags after which the shown pose can change: a configuration change, which
+ * every display rotation is, also a half turn; and the activity and task changes with which an
+ * app opens or closes, which can turn the app before the display.
+ */
+export const ORIENTATION_EVENT_TAGS = [
+  "configuration_changed",
+  "wm_task_to_front",
+  "wm_task_moved",
+  "wm_task_removed",
+  "wm_create_activity",
+  "wm_restart_activity",
+  "wm_set_resumed_activity",
+  "wm_finish_activity",
+] as const;
+
+// @ref LLP 0018#orientation-readings — device events trigger a read of the shown pose
+/**
+ * Calls `onEvent` for each event after which the shown pose can change, until `signal` aborts,
+ * from the events that ActivityTaskManager writes to the events log
+ * ({@link ORIENTATION_EVENT_TAGS}). The events carry no rotation, so the caller reads it.
+ * Settles when logcat exits.
+ */
+export function watchOrientationEvents(
+  serial: string,
+  onEvent: () => void,
+  signal: AbortSignal,
+  runSpawn: typeof spawn = spawn,
+): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    // `-T 1` starts at the live edge, as the logcat hub does.
+    const child = runSpawn(
+      "adb",
+      [
+        "-s",
+        serial,
+        "logcat",
+        "-b",
+        "events",
+        "-v",
+        "brief",
+        "-T",
+        "1",
+        ...ORIENTATION_EVENT_TAGS.map((tag) => `${tag}:I`),
+        "*:S",
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
+    let pending = "";
+    const onAbort = () => child.kill("SIGTERM");
+    signal.addEventListener("abort", onAbort, { once: true });
+    const settle = () => signal.removeEventListener("abort", onAbort);
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      const lines = (pending + chunk).split("\n");
+      pending = lines.pop() ?? "";
+      if (pending.length > MAX_EVENT_LINE_BYTES) pending = "";
+      if (lines.some((line) => ORIENTATION_EVENT_TAGS.some((tag) => line.includes(tag)))) onEvent();
+    });
+    child.once("error", (error) => {
+      settle();
+      reject(error);
+    });
+    child.once("close", () => {
+      settle();
+      resolve();
+    });
+  });
 }
 
 export async function getFontScale(

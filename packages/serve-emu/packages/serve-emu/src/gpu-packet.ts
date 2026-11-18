@@ -161,3 +161,31 @@ export function gpuRotationCommand(rotation: number): Buffer {
   command.writeUInt32BE(rotation, 1);
   return command;
 }
+
+/** The first hello `protocol` value whose agent serves a stream and a recording consumer. */
+export const GPU_ROLE_PROTOCOL = 3;
+
+/** Agent consumer roles; the agent keeps one consumer of each. */
+export const GPU_ROLE = { stream: 0, recording: 1 } as const;
+
+// @ref LLP 0023#agent-protocol-3 — a role before the first `S`; no role means the stream
+/** The `U` command: the consumer's role, sent before its first `S`. */
+export function gpuRoleCommand(role: keyof typeof GPU_ROLE): Buffer {
+  const command = Buffer.alloc(5);
+  command[0] = 85; // U
+  command.writeUInt32BE(GPU_ROLE[role], 1);
+  return command;
+}
+
+/** The `C` command: the recording's fixed canvas, even edges from 2 to 4096. */
+export function gpuCanvasCommand(width: number, height: number): Buffer {
+  for (const edge of [width, height]) {
+    if (!Number.isInteger(edge) || edge < 2 || edge > 4096 || edge % 2 !== 0)
+      throw new Error("Invalid recording canvas");
+  }
+  const command = Buffer.alloc(9);
+  command[0] = 67; // C
+  command.writeUInt32BE(width, 1);
+  command.writeUInt32BE(height, 5);
+  return command;
+}

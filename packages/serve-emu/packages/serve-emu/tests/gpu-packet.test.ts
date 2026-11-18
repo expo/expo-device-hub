@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   GPU_RECORD,
+  GPU_ROLE_PROTOCOL,
   GpuPacketReader,
+  gpuCanvasCommand,
+  gpuRoleCommand,
   gpuSettingsCommand,
   MAX_GPU_PACKET_BYTES,
   parseGpuDetails,
@@ -128,5 +131,20 @@ describe("GPU capture settings command", () => {
       expect(gpuSettingsCommand(maxSize, 30, 12_000_000).readUInt32BE(1)).toBe(16);
     expect(gpuSettingsCommand(0, 30, 12_000_000).readUInt32BE(1)).toBe(0);
     expect(gpuSettingsCommand(16, 30, 12_000_000).readUInt32BE(1)).toBe(16);
+  });
+});
+
+describe("GPU capture recording commands", () => {
+  test("U names the consumer's role and C the recording's canvas", () => {
+    expect(GPU_ROLE_PROTOCOL).toBe(3);
+    expect([...gpuRoleCommand("stream")]).toEqual([0x55, 0, 0, 0, 0]);
+    expect([...gpuRoleCommand("recording")]).toEqual([0x55, 0, 0, 0, 1]);
+    expect([...gpuCanvasCommand(1080, 2424)]).toEqual([0x43, 0, 0, 0x04, 0x38, 0, 0, 0x09, 0x78]);
+  });
+
+  test("the canvas has even edges from 2 to 4096", () => {
+    expect(() => gpuCanvasCommand(1079, 2424)).toThrow("Invalid recording canvas");
+    expect(() => gpuCanvasCommand(0, 2424)).toThrow("Invalid recording canvas");
+    expect(() => gpuCanvasCommand(1080, 4098)).toThrow("Invalid recording canvas");
   });
 });
