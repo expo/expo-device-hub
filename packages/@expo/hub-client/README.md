@@ -216,9 +216,10 @@ The entry needs three.js. Install the two optional peer dependencies:
 npm install three three-mesh-bvh
 ```
 
-The scene is tested with `three` 0.186 and `three-mesh-bvh` 0.9.18. The peer ranges
-accept any version, so that an app with its own three.js can install hub-client without
-this entry.
+The scene is tested with `three` 0.186 and `three-mesh-bvh` 0.9.18. three.js changes
+its API between minor versions, so the peer range of `three` is `>=0.186.0`. npm stops
+the install of hub-client (`ERESOLVE`) in an app that has an older `three`, also when
+the app does not import this entry.
 
 Apps that do not import `@expo/hub-client/models` do not bundle three.js or the models.
 `@expo/hub-client/models/catalog` has the parts that do not need three.js, so an app can

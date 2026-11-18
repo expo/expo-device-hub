@@ -110,7 +110,7 @@
   },
   "peerDependencies": {
     "react": ">=18.0.0",
-    "three": "*",
+    "three": ">=0.186.0",
     "three-mesh-bvh": "*"
   },
   "peerDependenciesMeta": {

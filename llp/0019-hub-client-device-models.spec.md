@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Fable 5.2), directed by Krystof Woldrich
 **Date:** 2026-11-17
-**Revised:** 2026-11-18 (the 3D screen takes a limited client; a check of the packed files; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-11-18 (the 3D screen takes a limited client; a check of the packed files; the peer range of three; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0004, LLP 0016, LLP 0017
 
 ## Summary
@@ -51,8 +51,11 @@
 `three` and `three-mesh-bvh` are optional peer dependencies of hub-client [observed: `package.json`]. A consumer of the models entry installs them. A consumer of the other entries does not.
 
 - Both are peers, because `three-mesh-bvh` declares `three` as its own peer [observed: `three-mesh-bvh@0.9.18`'s `package.json`]. As a plain dependency it would ask every consumer of hub-client for `three`.
-- Both ranges are `*`. An optional peer still limits the version of a package that is installed: with the range `^0.186.0`, npm refused hub-client in an app that has `three@0.185.0` for its own use and does not import the models entry [observed: `npm install --dry-run` in a Codex review of this change, `ERESOLVE` on `peerOptional three@"^0.186.0"`]. That would break an install in a minor release. A range with only a lower limit does the same for an older version: with `>=0.186.0`, npm 11.13.0 refused the package in an app that has `three@0.160.0` [observed: `npm install --dry-run` with a probe package, 2026-11-18].
-- The scene is tested with the versions in `devDependencies`, `three` 0.186 and `three-mesh-bvh` 0.9.18, and the README names them.
+- The range of `three` is `>=0.186.0`, the version that the scene is tested with [confirmed] (Krystof Woldrich, 2026-11-18). three.js changes its API between minor versions. With the range `*`, an app with an older `three` installs with no signal, and its developer finds the problem only at run time [observed: a review of this change by hirbod, expo/expo-device-hub#638].
+- The cost of that range is known. An optional peer still limits the version of a package that is installed: npm refuses hub-client in an app that has an older `three` for its own use, also when the app does not import the models entry [observed: `npm install --dry-run` with npm 11.13.0 and a probe package, 2026-11-18, `ERESOLVE` on `peerOptional three@">=0.186.0"` with `three@0.160.0`; and in a Codex review of this change, `ERESOLVE` on `peerOptional three@"^0.186.0"` with `three@0.185.0`]. pnpm, Yarn, and Bun were not tested.
+- The range has no upper limit, so a newer `three` installs. The first range, `^0.186.0`, accepts only 0.186.
+- The range of `three-mesh-bvh` is `*`. That package declares `three >= 0.159.0` as its own peer [observed: `three-mesh-bvh@0.9.18`'s `package.json`].
+- The scene is tested with the versions in `devDependencies`, `three` 0.186 and `three-mesh-bvh` 0.9.18, and the README names them. A test checks that the version in `devDependencies` is in the peer range [observed: `src/__tests__/device-model-entries.test.ts`].
 
 ## Model files
 
@@ -76,7 +79,8 @@ The Hub does not use the names yet. Its server sends `Device.deviceModel`, a mod
 - **`canvasFrameNumber` and `markCanvasFrame` are internal.** #559 exported them from the main entry for the 3D scene in hub-components. The scene is in hub-client now, and no release had them. Claude Code's choice; human review pending.
 - **The files keep their names.** The move does not rename the `duo-*` modules, so the diff shows only the import changes. Claude Code's choice; human review pending.
 - **The "3D preview unavailable" notice reads the Expo theme variables** with the browser's system colors as fallbacks, as `TouchIndicator` reads `--expo-theme-border-info` [observed: `src/TouchIndicator.tsx`, `src/models/DuoModelView.tsx`]. hub-client has no design tokens of its own. Claude Code's choice; human review pending.
-- **The peer ranges are `*`** (see [Dependencies](#dependencies)). The first version had `^0.186.0`, one minor version, because three.js changes its API between minor versions; a review showed that it breaks installs. Claude Code's choice; human review pending.
+- **The peer range of `three` is `>=0.186.0`** (see [Dependencies](#dependencies)). The first version had `^0.186.0`, one minor version. A Codex review showed that it breaks installs, and the range became `*`. hirbod's review showed that `*` gives no signal for an old three.js, and Krystof Woldrich chose `>=0.186.0` with the known cost, on 2026-11-18.
+- **The peer range of `three-mesh-bvh` is `*`.** The reviews did not ask for a limit. Claude Code's choice; human review pending.
 - **`deviceModelStreamable` asks for the iPhone Duo's two displays by id.** #559 checked only that the client has a display list. hub-client's iOS adapter always lists both, and a custom client can now be the caller. Claude Code's choice; human review pending.
 
 ## Open questions

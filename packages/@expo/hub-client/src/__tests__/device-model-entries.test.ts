@@ -104,6 +104,7 @@ describe("the models entries stay out of an app that does not use them", () => {
     ) as {
       exports: Record<string, unknown>;
       files: string[];
+      devDependencies: Record<string, string>;
       peerDependencies: Record<string, string>;
       peerDependenciesMeta: Record<string, { optional?: boolean }>;
     };
@@ -111,12 +112,18 @@ describe("the models entries stay out of an app that does not use them", () => {
     expect(manifest.exports["./models/catalog"]).toBeDefined();
     expect(manifest.files).toContain("models/*.glb");
     expect(manifest.files).toContain("models/glb.d.ts");
-    // An app that does not show 3D models needs no three.js, and one that has
-    // three.js for its own use installs with any version of it.
+    // An app that does not show 3D models needs no three.js.
     for (const peer of ["three", "three-mesh-bvh"]) {
-      expect(manifest.peerDependencies[peer]).toBe("*");
       expect(manifest.peerDependenciesMeta[peer]?.optional).toBe(true);
     }
+    // @ref LLP 0019#dependencies — the range of three starts at a version that the scene is tested with
+    expect(manifest.peerDependencies.three).toBe(">=0.186.0");
+    expect(manifest.peerDependencies["three-mesh-bvh"]).toBe("*");
+    // The tests run with the version in devDependencies, which is in that range.
+    const lowestMinor = Number(/^>=0\.(\d+)\.0$/.exec(manifest.peerDependencies.three ?? "")?.[1]);
+    const testedMinor = Number(/^\^0\.(\d+)\./.exec(manifest.devDependencies.three ?? "")?.[1]);
+    expect(lowestMinor).toBe(186);
+    expect(testedMinor).toBeGreaterThanOrEqual(lowestMinor);
     // One file per model id, each with its own export, so that a misspelled
     // import fails in TypeScript and in the bundler. Each is typed as its URL.
     expect(Object.keys(FILES).sort()).toEqual([...DEVICE_MODEL_IDS].sort());
