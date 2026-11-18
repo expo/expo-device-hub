@@ -1,0 +1,38 @@
+<section id="linux-frame-rate-view" data-viz-composition>
+  <div data-viz-container></div>
+  <script type="application/json" data-viz-chart>
+    {
+      "id": "linux-frame-rate",
+      "title": "Linux stream frame rate · EAS",
+      "height": 230,
+      "spec": {
+        "type": "horizontalBar",
+        "y": "Stream size",
+        "x": ["Lowest run", "Highest run"],
+        "xLabel": "Encoded frames per second · three runs per size",
+        "xDomain": [0, 60],
+        "showValues": true,
+        "showLegend": true,
+        "sortOrder": "original",
+        "valueFormat": {
+          "style": "decimal",
+          "minimumFractionDigits": 1,
+          "maximumFractionDigits": 1
+        }
+      },
+      "columns": ["Stream size", "Lowest run", "Highest run"],
+      "rows": [
+        ["576 × 1280", 54.4, 55.5],
+        ["1080 × 2400", 53.4, 54.1]
+      ]
+    }
+  </script>
+</section>
+<script type="module">
+  import { mountChart } from "https://persistent.oaistatic.com/plugins/visualize/charts/1.2.3/element.js";
+  const root = document.getElementById("linux-frame-rate-view");
+  mountChart(
+    root.querySelector("[data-viz-container]"),
+    JSON.parse(root.querySelector("[data-viz-chart]").textContent),
+  );
+</script>

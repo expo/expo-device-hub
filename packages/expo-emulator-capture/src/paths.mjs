@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const AGENT_LIBRARIES = {
   darwin: "darwin-arm64/libexpo_emulator_capture.dylib",
+  linux: "linux-x64/libexpo_emulator_capture.so",
 };
 
 /** The agent library that `launch` preloads into the emulator on this platform. */
