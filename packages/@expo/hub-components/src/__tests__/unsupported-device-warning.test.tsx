@@ -27,6 +27,9 @@ beforeEach(async () => {
     "MutationObserver",
     "CustomEvent",
     "ResizeObserver",
+    "Element",
+    "SVGElement",
+    "HTMLButtonElement",
   ] as const)
     stubGlobal(key, browser[key]);
   stubGlobal("getComputedStyle", browser.getComputedStyle.bind(browser));
@@ -35,6 +38,12 @@ beforeEach(async () => {
   root = createRoot(container);
   selections = 0;
   user = userEvent.setup({ document });
+  // Happy DOM has no layout. Supply a visible viewport/anchor for Popper's
+  // detach check; browser validation covers actual clipping and collisions.
+  Object.defineProperties(document.documentElement, {
+    clientWidth: { value: 1024, configurable: true },
+    clientHeight: { value: 768, configurable: true },
+  });
   await act(async () =>
     root.render(
       <DeviceListItem
@@ -46,6 +55,10 @@ beforeEach(async () => {
       />,
     ),
   );
+  const anchor = trigger();
+  const rect = new browser.DOMRect(45, 164, 28, 28);
+  anchor.getBoundingClientRect = () => rect;
+  Object.defineProperty(anchor, "getClientRects", { value: () => [rect] });
 });
 
 afterEach(async () => {
@@ -63,7 +76,7 @@ function row() {
   return container.querySelector<HTMLButtonElement>("button[aria-pressed]")!;
 }
 function dialog() {
-  return container.querySelector<HTMLElement>('[role="dialog"]');
+  return document.querySelector<HTMLElement>('[role="dialog"]');
 }
 
 test("uses separate buttons, preserving ordinary selection and a named warning trigger", async () => {
@@ -91,6 +104,14 @@ for (const key of ["{Enter}", " "]) {
     expect(trigger().getAttribute("aria-expanded")).toBe("true");
     expect(trigger().getAttribute("aria-controls")).toBe(details.id);
     expect(details.querySelector("h2")?.textContent).toBe("Unsupported or untested device");
+    // The popup must escape the sidebar's clipping container and keep its accessible labels.
+    expect(container.contains(details)).toBe(false);
+    expect(document.getElementById(details.getAttribute("aria-labelledby")!)?.textContent).toBe(
+      "Unsupported or untested device",
+    );
+    expect(
+      document.getElementById(details.getAttribute("aria-describedby")!)?.textContent,
+    ).toContain("screen streaming and device controls may not work as expected");
     expect(details.textContent).toContain(
       "screen streaming and device controls may not work as expected",
     );

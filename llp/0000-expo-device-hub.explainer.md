@@ -226,7 +226,10 @@ selection button. Keyboard and touch activation use the same trigger; Escape
 returns focus and outside interaction dismisses the details. The explanation is
 about device-type support and testing: streaming and controls may not work as
 expected, but the device can still be tried. It does not describe rendering or
-GPU performance. [observed: HubComponents `DeviceListItem.tsx` and
+GPU performance. The details anchor to the warning trigger and render in a portal
+outside the sidebar's scroll container. Viewport collision handling can flip them
+above the trigger; long content scrolls within the available height. They hide when
+the trigger scrolls out of view. [observed: HubComponents `DeviceListItem.tsx` and
 `UnsupportedDeviceWarning.tsx`]
 
 ### Hub toolbar
