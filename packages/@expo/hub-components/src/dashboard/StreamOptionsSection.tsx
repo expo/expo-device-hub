@@ -15,9 +15,10 @@ import {
 } from "@expo/hub-client";
 import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { RECORDING_FINISH_REASON, recordingLockText } from "./recording-lock";
 import { SectionNote } from "./SectionNote";
 import { SidebarRow } from "./SidebarRow";
-import { type StreamModeAvailability } from "./StreamSection";
+import { type StreamModeAvailability } from "./data";
 import { StreamStatistics } from "./StreamStatistics";
 
 type StreamTransport = "http" | "websocket" | "webrtc";
@@ -113,6 +114,55 @@ const BITRATE_OPTIONS: SelectOption[] = [
   { value: "16000000", label: "16 Mbps" },
 ];
 
+/**
+ * The runtime encoder settings, in the order of their rows. `activeFor` names
+ * the codec that reads the setting: the row is disabled while the stream uses
+ * another one. A setting without it applies to every stream.
+ */
+const ENCODER_SETTINGS: ReadonlyArray<{
+  key: keyof DeviceStreamEncoderSettings;
+  label: string;
+  options: SelectOption[];
+  /** The label of a current value that is not one of `options`. */
+  format: (value: number) => string;
+  activeFor?: "mjpeg" | "h264";
+}> = [
+  {
+    key: "maxDimension",
+    label: "Max size",
+    options: MAX_DIMENSION_OPTIONS,
+    format: (value) => (value === 0 ? "Full" : `${value} px`),
+  },
+  {
+    key: "mjpegFps",
+    label: "MJPEG FPS",
+    options: FPS_OPTIONS,
+    format: (value) => `${value} FPS`,
+    activeFor: "mjpeg",
+  },
+  {
+    key: "mjpegQuality",
+    label: "MJPEG quality",
+    options: QUALITY_OPTIONS,
+    format: (value) => `${Math.round(value * 100)}%`,
+    activeFor: "mjpeg",
+  },
+  {
+    key: "h264Fps",
+    label: "Video FPS",
+    options: FPS_OPTIONS,
+    format: (value) => `${value} FPS`,
+    activeFor: "h264",
+  },
+  {
+    key: "h264Bitrate",
+    label: "Video bitrate",
+    options: BITRATE_OPTIONS,
+    format: (value) => `${value / 1_000_000} Mbps`,
+    activeFor: "h264",
+  },
+];
+
 function withCurrentValue(
   value: number,
   options: SelectOption[],
@@ -135,13 +185,8 @@ export function StreamOptionsSection({
   onHttpCodecChange,
 }: StreamOptionsSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
-  const recordingControlsLocked = client.recordingLock !== null;
-  const recordingDisabledReason =
-    client.recordingLock === null
-      ? undefined
-      : client.recordingLock === "status-unknown"
-        ? "Unavailable until recording status is known."
-        : "Unavailable until recording finishes.";
+  const recordingDisabledReason = recordingLockText(client.recordingLock, RECORDING_FINISH_REASON);
+  const recordingControlsLocked = recordingDisabledReason !== undefined;
   const backend: DeviceStreamCapabilities =
     client.streamCapabilities ?? DEFAULT_STREAM_CAPABILITIES;
   const availability: StreamModeAvailability = {
@@ -243,18 +288,16 @@ export function StreamOptionsSection({
   return (
     <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
       {streamSource && sourceOptions.length > 1 && (
-        <>
-          <SidebarRow label="Source">
-            <Select
-              ariaLabel="Stream source"
-              options={sourceOptions}
-              value={streamSource.mode}
-              disabled={recordingControlsLocked || client.streamSourcePending}
-              disabledReason={recordingDisabledReason}
-              onChange={client.setStreamSource}
-            />
-          </SidebarRow>
-        </>
+        <SidebarRow label="Source">
+          <Select
+            ariaLabel="Stream source"
+            options={sourceOptions}
+            value={streamSource.mode}
+            disabled={recordingControlsLocked || client.streamSourcePending}
+            disabledReason={recordingDisabledReason}
+            onChange={client.setStreamSource}
+          />
+        </SidebarRow>
       )}
       {streamSource?.mode === "grpc-screenshot" && (
         <>
@@ -347,84 +390,25 @@ export function StreamOptionsSection({
           Start the standalone server with --transport webrtc to enable WebRTC.
         </SectionNote>
       )}
-      {settingsCapabilities && (
-        <>
-          {settingsCapabilities.maxDimension && (
-            <SidebarRow label="Max size">
+      {settingsCapabilities &&
+        ENCODER_SETTINGS.map(({ key, label, options, format, activeFor }) =>
+          settingsCapabilities[key] ? (
+            <SidebarRow key={key} label={label}>
               <Select
-                ariaLabel="Max size"
-                value={String(settings.maxDimension)}
-                options={withCurrentValue(settings.maxDimension, MAX_DIMENSION_OPTIONS, (value) =>
-                  value === 0 ? "Full" : `${value} px`,
-                )}
-                disabled={settingsDisabled}
+                ariaLabel={label}
+                value={String(settings[key])}
+                options={withCurrentValue(settings[key], options, format)}
+                disabled={
+                  settingsDisabled ||
+                  (activeFor === "mjpeg" && transport !== "http") ||
+                  (activeFor === "h264" && !h264Active)
+                }
                 disabledReason={recordingDisabledReason}
-                onChange={(value) => patchSetting("maxDimension", Number(value))}
+                onChange={(value) => patchSetting(key, Number(value))}
               />
             </SidebarRow>
-          )}
-          {settingsCapabilities.mjpegFps && (
-            <SidebarRow label="MJPEG FPS">
-              <Select
-                ariaLabel="MJPEG FPS"
-                value={String(settings.mjpegFps)}
-                options={withCurrentValue(
-                  settings.mjpegFps,
-                  FPS_OPTIONS,
-                  (value) => `${value} FPS`,
-                )}
-                disabled={settingsDisabled || transport !== "http"}
-                disabledReason={recordingDisabledReason}
-                onChange={(value) => patchSetting("mjpegFps", Number(value))}
-              />
-            </SidebarRow>
-          )}
-          {settingsCapabilities.mjpegQuality && (
-            <SidebarRow label="MJPEG quality">
-              <Select
-                ariaLabel="MJPEG quality"
-                value={String(settings.mjpegQuality)}
-                options={withCurrentValue(
-                  settings.mjpegQuality,
-                  QUALITY_OPTIONS,
-                  (value) => `${Math.round(value * 100)}%`,
-                )}
-                disabled={settingsDisabled || transport !== "http"}
-                disabledReason={recordingDisabledReason}
-                onChange={(value) => patchSetting("mjpegQuality", Number(value))}
-              />
-            </SidebarRow>
-          )}
-          {settingsCapabilities.h264Fps && (
-            <SidebarRow label="Video FPS">
-              <Select
-                ariaLabel="Video FPS"
-                value={String(settings.h264Fps)}
-                options={withCurrentValue(settings.h264Fps, FPS_OPTIONS, (value) => `${value} FPS`)}
-                disabled={settingsDisabled || !h264Active}
-                disabledReason={recordingDisabledReason}
-                onChange={(value) => patchSetting("h264Fps", Number(value))}
-              />
-            </SidebarRow>
-          )}
-          {settingsCapabilities.h264Bitrate && (
-            <SidebarRow label="Video bitrate">
-              <Select
-                ariaLabel="Video bitrate"
-                value={String(settings.h264Bitrate)}
-                options={withCurrentValue(
-                  settings.h264Bitrate,
-                  BITRATE_OPTIONS,
-                  (value) => `${value / 1_000_000} Mbps`,
-                )}
-                disabled={settingsDisabled || !h264Active}
-                disabledReason={recordingDisabledReason}
-                onChange={(value) => patchSetting("h264Bitrate", Number(value))}
-              />
-            </SidebarRow>
-          )}
-        </>
-      )}
+          ) : null,
+        )}
       {transport === "webrtc" && (
         <StreamStatistics stats={client.streamStats} platform={client.platform} />
       )}

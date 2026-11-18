@@ -1,8 +1,9 @@
-import { usePrefersReducedMotion } from "@expo/hub-components";
+import { motion, usePrefersReducedMotion } from "@expo/hub-components";
 import { useEffect, useRef, useState } from "react";
 
-export const SIDEBAR_TRANSITION_MS = 200;
-export const SIDEBAR_TRANSITION_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
+/** A sidebar opens and closes like a sidebar section: `motion.panel`, as a number for the unmount timer. */
+export const SIDEBAR_TRANSITION_MS = Number.parseInt(motion.panel, 10);
+export const SIDEBAR_TRANSITION_EASING = motion.easeOut;
 
 /** Keep a closing sidebar mounted long enough for its CSS transition to finish. */
 export function useSidebarPresence(open: boolean, animateExit: boolean) {

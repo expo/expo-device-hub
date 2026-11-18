@@ -1,6 +1,16 @@
 import { useState } from "react";
 
-import { DeviceListItem, PlusIcon, bg, border, icon, radius, text, textSize } from "../primitives";
+import {
+  DeviceListItem,
+  IconButton,
+  PlusIcon,
+  bg,
+  border,
+  icon,
+  radius,
+  text,
+  textSize,
+} from "../primitives";
 import { RecentDevicesModal } from "./RecentDevicesModal";
 import {
   type AddDeviceOutcome,
@@ -48,8 +58,6 @@ export function DeviceSection({
   onSelect,
   onAdd,
 }: DeviceSectionProps) {
-  const [addHovered, setAddHovered] = useState(false);
-  const [addPressed, setAddPressed] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
   // Don't offer devices that are already in this section's list.
@@ -61,34 +69,13 @@ export function DeviceSection({
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>{title}</span>
         {!!onAdd && (
-          <button
-            type="button"
-            aria-label={addLabel}
+          <IconButton
+            variant="outline"
+            size={26}
+            label={addLabel}
+            icon={<PlusIcon size={18} color={icon.secondary} />}
             onClick={() => setModalOpen(true)}
-            onMouseEnter={() => setAddHovered(true)}
-            onMouseLeave={() => {
-              setAddHovered(false);
-              setAddPressed(false);
-            }}
-            onMouseDown={() => setAddPressed(true)}
-            onMouseUp={() => setAddPressed(false)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 26,
-              height: 26,
-              padding: 0,
-              borderRadius: radius.full,
-              border: `1px solid ${border.default}`,
-              backgroundColor: addHovered ? bg.hover : bg.default,
-              cursor: "pointer",
-              transition: "background-color 150ms ease, transform 100ms ease",
-              transform: addPressed ? "scale(0.98)" : undefined,
-            }}
-          >
-            <PlusIcon size={18} color={icon.secondary} />
-          </button>
+          />
         )}
       </div>
 

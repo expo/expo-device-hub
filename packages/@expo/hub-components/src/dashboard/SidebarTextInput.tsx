@@ -1,6 +1,4 @@
-import { useState } from "react";
-
-import { border, font, isFocusVisible, pillControlStyle, text } from "../primitives";
+import { bg, border, font, pillControlProps, pressableStyle, text } from "../primitives";
 
 const INPUT_WIDTH = 128;
 
@@ -32,7 +30,8 @@ export function SidebarTextInput({
   /** Offered the pasted text; return true to consume it instead of inserting it. */
   onPasteText?: (text: string) => boolean;
 }) {
-  const [focused, setFocused] = useState(false);
+  // A text field shows the focus ring for every focus and does not scale while pressed.
+  const pill = pillControlProps({ disabled, pressScale: 1 });
 
   return (
     <input
@@ -49,13 +48,14 @@ export function SidebarTextInput({
       onPaste={(event) => {
         if (onPasteText?.(event.clipboardData.getData("text"))) event.preventDefault();
       }}
-      onFocus={(event) => setFocused(isFocusVisible(event))}
-      onBlur={() => setFocused(false)}
       onKeyDown={(event) => {
         if (event.key === "Enter") onSubmit();
       }}
+      className={pill.className}
       style={{
-        ...pillControlStyle({ focused, disabled }),
+        ...pill.style,
+        // The field keeps one fill; only buttons and selects react to the pointer.
+        ...pressableStyle({ background: bg.element, pressScale: 1 }),
         display: "inline-block",
         width: INPUT_WIDTH,
         border: `1px solid ${invalid ? border.danger : border.default}`,

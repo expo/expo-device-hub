@@ -4,10 +4,11 @@ UI in `expo-device-hub` must look like the **Expo dashboard website** (`universe
 Both share one design system: **`@expo/styleguide`**. This file is the contract for
 producing matching UI here.
 
-> **Where the UI kit lives.** The ported components and design tokens are no longer in
-> this package — they were extracted to **[`@expo/hub-components`](../@expo/hub-components)**
-> (and the device-client hooks/types to **[`@expo/hub-client`](../@expo/hub-client)**) so the
-> website can consume the same code. Import everything UI-related from `@expo/hub-components`.
+> **Where the UI kit lives.** The components and design tokens are in
+> **[`@expo/hub-components`](../@expo/hub-components)**, and the device-client hooks/types in
+> **[`@expo/hub-client`](../@expo/hub-client)**. The website imports `@expo/hub-client` only;
+> `@expo/hub-components` is private to this repo. Import everything UI-related from
+> `@expo/hub-components`.
 > The Tailwind utility layer (`bg-default`, `animate-fadeIn`, …) those Radix components rely
 > on still comes from the consumer — here that is [`global.css`](./global.css), which also
 > `@source`s `@expo/hub-components/src` so Tailwind generates the utility classes those
@@ -18,8 +19,13 @@ producing matching UI here.
 
 - **Never hard-code colors, font sizes, radii, or shadows.** Use the tokens from
   [`@expo/hub-components`](../@expo/hub-components/src/theme/tokens.ts).
-- Use the [`Button`](../@expo/hub-components/src/components/Button.tsx) primitive instead of
+- Use the [`Button`](../@expo/hub-components/src/components/Button.tsx) and
+  [`IconButton`](../@expo/hub-components/src/components/IconButton.tsx) primitives instead of
   styling `<button>` by hand.
+- **Never keep hover, press, or focus in React state.** Give the control the `hub-pressable`
+  class (see [Interaction states](#interaction-states)).
+- **A status color comes from a `tone`** (`success`, `warning`, `danger`, `info`), not from a
+  color picked in the component (see [Status colors](#status-colors--one-tone-per-status)).
 - Import [`@expo/hub-components/theme.css`](../@expo/hub-components/src/theme/theme.css) once at
   the top of a DOM component so the CSS variables exist (already done in
   [`src/Dashboard.tsx`](./src/Dashboard.tsx)).
@@ -27,17 +33,29 @@ producing matching UI here.
 
 ## Source of truth & how Hub differs
 
-|               | Website (`universe/server/website`)                                                      | Expo Hub (this package)                                                                                     |
-| ------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Design system | `@expo/styleguide`                                                                       | Same tokens, ported into `@expo/hub-components`                                                             |
-| Styling       | Tailwind classes (`bg-default`, `heading-2xl`, …) via `@expo/styleguide/tailwind` preset | Inline styles via `@expo/hub-components` tokens                                                             |
-| Components    | `ui/components/*` (e.g. `ui/components/Button`)                                          | Ported, dependency-free copies in `@expo/hub-components`                                                    |
-| Tokens CSS    | `@expo/styleguide/dist/expo-theme.css` + `@radix-ui/colors`                              | **Imported from `@expo/styleguide`** by `@expo/hub-components/theme.css` (only fonts/radii/reset are local) |
+|               | Website (`universe/server/website`)                                                      | Expo Hub (this package)                                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Design system | `@expo/styleguide`                                                                       | Same tokens, ported into `@expo/hub-components`                                                                            |
+| Styling       | Tailwind classes (`bg-default`, `heading-2xl`, …) via `@expo/styleguide/tailwind` preset | Inline styles via `@expo/hub-components` tokens                                                                            |
+| Components    | `ui/components/*` (e.g. `ui/components/Button`)                                          | Ported, dependency-free copies in `@expo/hub-components`                                                                   |
+| Tokens CSS    | `@expo/styleguide/dist/expo-theme.css` + `@radix-ui/colors`                              | **Imported from `@expo/styleguide`** by `@expo/hub-components/theme.css` (only fonts, radii and component rules are local) |
 
 Hub renders its UI as **Expo DOM components** (`'use dom'`) with **inline styles**, not
 Tailwind. So we can't use the website's Tailwind classes directly — instead every Tailwind
 token has a typed equivalent exported by `@expo/hub-components`. The token doc-comments list the
 Tailwind class each one maps to, so you can read website code and translate 1:1.
+
+### Which styling mechanism to use
+
+| What you style                                                    | Mechanism                                                                                        |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Layout, color, type, radius, shadow                               | Inline `style` with tokens                                                                       |
+| Hover, press, keyboard focus                                      | The `hub-pressable` class + `pressableStyle()`                                                   |
+| Anything else that inline styles cannot say (keyframes, `::part`) | A rule in `@expo/hub-components/src/theme/theme.css`, with a `hub-` class name                   |
+| A component ported 1:1 from the website (Dialog, Dropdown)        | The website's Tailwind classes, generated by [`global.css`](./global.css). Do not add new cases. |
+
+Do not put component CSS in `global.css`, and do not inject a `<style>` element from a
+component: a component must look right with only `theme.css` and the Tailwind utilities.
 
 > When you port a component from the website, replace its Tailwind classes with the
 > matching token values rather than inventing new colors/sizes.
@@ -49,10 +67,13 @@ Both live in the [`@expo/hub-components`](../@expo/hub-components/src/theme) pac
 - **`theme/theme.css`** — `@import`s `@expo/styleguide/dist/expo-theme.css` (the
   [Radix Colors](https://www.radix-ui.com/colors) scales + the semantic `--expo-theme-*` layer
   come straight from the styleguide, no longer inlined), then adds the few bits the styleguide's
-  CSS lacks: the `--expo-font-*` families, the `--expo-radius-*` scale, and the base body/surface
-  reset. Import it once per DOM component subtree via `import '@expo/hub-components/theme.css'`.
+  CSS lacks: the `--expo-font-*` families, the `--expo-radius-*` scale, and the component rules
+  that inline styles cannot express (the `hub-pressable` interaction states). The base
+  body/surface reset is in [`global.css`](./global.css). Import it once per DOM component subtree
+  via `import '@expo/hub-components/theme.css'`.
 - **`theme/tokens.ts`** — typed JS bindings to those variables (`bg`, `text`, `icon`,
-  `border`, `radius`, `shadow`, `font`, `textSize`, `heading`), re-exported from the package
+  `border`, `radius`, `shadow`, `font`, `textSize`, `heading`) and the Hub's own scales
+  (`tone`, `motion`, `opacity`, `layer`, `scrim`, `truncate`), re-exported from the package
   root. Use these in inline styles.
 
 ## Colors — always semantic
@@ -102,6 +123,70 @@ import { heading, textSize, text } from '@expo/hub-components';
 Each entry carries `fontSize`, `fontWeight`, `lineHeight`, `letterSpacing` — spread the whole
 object so the type stays on the design grid.
 
+## Status colors — one tone per status
+
+A status (an error, a warning, a success, a piece of information) picks one `tone`. Every part
+of its UI reads its color from that tone, so the same status has the same color everywhere and
+changes in one place.
+
+```tsx
+import { tone, StatusDot } from "@expo/hub-components";
+
+<span style={{ color: tone.danger.text }}>Could not boot the device.</span>
+<div style={{ backgroundColor: tone.warning.bg, border: `1px solid ${tone.warning.border}` }} />
+<StatusDot tone="success" ring />
+```
+
+- `tone.success | warning | danger | info`, each with `text`, `icon`, `border`, `bg`.
+- `StatusDot` is the dot beside a status label. `SectionNote` is the small line of text in a
+  sidebar section; `role="alert"` gives it the danger tone, and `tone` picks another.
+- The chart series colors (`icon.success`, `icon.info`, `icon.preview`) are not statuses.
+
+## Interaction states
+
+Hover, press and keyboard focus are CSS, not React state. A control takes the `hub-pressable`
+class and passes its colors with `pressableStyle()`:
+
+```tsx
+import { PRESSABLE_CLASS, pressableStyle, bg } from "@expo/hub-components";
+
+<button
+  className={PRESSABLE_CLASS}
+  style={{ ...pressableStyle({ hoverBackground: bg.element }), padding: 8, border: "none" }}
+/>;
+```
+
+The rules in `theme.css` then own `background-color`, `box-shadow`, `transform`, `transition`
+and `outline` of that element, so its inline style must not set them. Every pressable gets the
+same press scale (0.98), the same durations, and the same focus ring: a 2px outline in the
+info icon color (the website's `outline-icon-info`), 2px from the control. `disabled` and
+`aria-disabled="true"` turn hover and press off. Pass `pressScale: 1` for a control that must
+not move, such as a text field.
+
+`Button`, `IconButton`, `ControlButton`, `PillButton`, `Select`, `DeviceListItem` and the
+sidebar inputs already work this way. Use `pillControlProps()` for a new control on a sidebar
+row.
+
+## Motion and stacking order
+
+```tsx
+import { motion, layer, opacity } from "@expo/hub-components";
+
+<div style={{ transition: `opacity ${motion.fast} ${motion.ease}`, zIndex: layer.popover }} />;
+```
+
+- `motion`: `press` 100ms · `fast` 120ms · `base` 150ms · `panel` 200ms · `frame` 250ms, and the
+  easings `ease`, `easeOut`, `easeInOut`. Do not write a duration by hand.
+- `layer`: every `zIndex` in the dashboard, lowest first. Add a new layer there, with a comment
+  that says what it must be above and below.
+- `opacity.disabled` (0.5) for a control that cannot be used.
+
+## Tooltips
+
+Use [`Tooltip`](../@expo/hub-components/src/components/Tooltip.tsx) for every tooltip, so they
+share one look. It shows on hover and on keyboard focus. It is not an accessible name: the child
+needs its own `aria-label`.
+
 ## Radii & shadows
 
 ```tsx
@@ -134,6 +219,14 @@ import { Button } from '@expo/hub-components';
 - **sizes**: `2xs`, `xs`, `sm` (default), `md`, `lg`, `xl`, `2xl`.
 - `block` stretches to full width; `leftSlot`/`rightSlot` for icons; `href` renders an `<a>`.
 
+For a button that shows only an icon, use
+[`IconButton`](../@expo/hub-components/src/components/IconButton.tsx): `label` is its
+accessible name, `size` its width and height, and `variant="outline"` the round bordered form.
+
+```tsx
+<IconButton label="Close" size={30} icon={<CloseIcon size={20} />} onClick={onClose} />
+```
+
 ## Dark mode
 
 Tokens are theme-aware. To render a subtree in dark mode, add `dark-theme` to a wrapper:
@@ -148,8 +241,10 @@ Tokens are theme-aware. To render a subtree in dark mode, add `dark-theme` to a 
 
 - ✅ `color: text.secondary` — ❌ `color: '#60646c'`
 - ✅ `...heading['2xl']` — ❌ `fontSize: 24, fontWeight: 600`
-- ✅ `<Button theme="primary">` — ❌ a hand-styled `<button>`
-- ✅ `backgroundColor: bg.success` for status surfaces — ❌ `'green'`
+- ✅ `<Button theme="primary">` / `<IconButton>` — ❌ a hand-styled `<button>`
+- ✅ `backgroundColor: tone.success.bg` for status surfaces — ❌ `'green'`
+- ✅ `className={PRESSABLE_CLASS}` — ❌ `useState` + `onMouseEnter` for a hover fill
+- ✅ `zIndex: layer.popover`, `motion.base` — ❌ `zIndex: 605`, `"150ms"`
 - ✅ add a new semantic need to `@expo/hub-components` (mirroring the website) — ❌ scatter literals
 
 ## Updating the tokens CSS
@@ -158,8 +253,8 @@ Tokens are theme-aware. To render a subtree in dark mode, add `dark-theme` to a 
 **`@import`s `@expo/styleguide/dist/expo-theme.css` directly** — the Radix scales + the
 `--expo-theme-*` layer track the published styleguide automatically, so bump `@expo/styleguide`
 to update them (no hand-regeneration). Only the local base block (`--expo-font-*`,
-`--expo-radius-*`, the body/code reset) is hand-maintained here, since the styleguide's CSS
-doesn't define those.
+`--expo-radius-*`, `--hub-*`, the component rules) is hand-maintained here, since the
+styleguide's CSS doesn't define those.
 
 > The styleguide's **React components** (`Button`, `Link`, …) and its JS token objects are _not_
 > importable in Hub: the package's component index pulls in `next/link` (`LinkBase`), which

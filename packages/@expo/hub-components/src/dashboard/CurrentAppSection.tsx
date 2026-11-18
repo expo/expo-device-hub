@@ -1,8 +1,8 @@
 import { useState } from "react";
 
 import { type DeviceClient } from "@expo/hub-client";
-import { bg, border, font, heading, icon, radius, text, textSize } from "../primitives";
-import { ActivityCharts } from "./ActivitySection";
+import { bg, border, font, heading, icon, radius, text, textSize, truncate } from "../primitives";
+import { ActivityCharts } from "./ActivityCharts";
 import { CollapsibleSection } from "./CollapsibleSection";
 
 const APP_ICON_SIZE = 40;
@@ -48,10 +48,8 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
             title={name}
             style={{
               ...heading.base,
+              ...truncate,
               color: app ? text.default : text.tertiary,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
             }}
           >
             {name}
@@ -137,9 +135,7 @@ function AppDetailRow({ detail }: { detail: AppDetail }) {
           color: text.default,
           fontFamily: font.mono,
           textAlign: "right",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
+          ...truncate,
           fontVariantNumeric: "tabular-nums",
         }}
       >

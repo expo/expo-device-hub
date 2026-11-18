@@ -1,4 +1,4 @@
-import { bg, border } from "@expo/hub-components";
+import { bg, border, layer } from "@expo/hub-components";
 import { type ReactNode } from "react";
 
 import {
@@ -26,7 +26,7 @@ export function SidebarOverlay({
   const { present, reducedMotion, visible } = useSidebarPresence(open, !sidebarOpen);
   if (!present) return null;
 
-  const backdropZIndex = topmost ? 12 : 10;
+  const backdropZIndex = topmost ? layer.sidebarBackdropTopmost : layer.sidebarBackdrop;
   const backdropTransition = reducedMotion ? undefined : `opacity ${SIDEBAR_TRANSITION_MS}ms ease`;
   const panelTransition = reducedMotion
     ? undefined

@@ -3,11 +3,13 @@ import { useEffect, useId, useState } from "react";
 import { type DeviceClient, type DeviceOrientation, type DeviceSettingKey } from "@expo/hub-client";
 import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { recordingLockText } from "./recording-lock";
 import { rotationUnavailableText } from "./rotation-availability";
 import { FoldSettings, type FoldPreviewOption } from "./FoldSettings";
 import { KeyboardSection } from "./KeyboardSection";
 import { SidebarActionButton } from "./SidebarActionButton";
-import { SidebarRow, SidebarSwitch } from "./SidebarRow";
+import { SidebarRow } from "./SidebarRow";
+import { SidebarSwitch } from "./SidebarSwitch";
 
 const DEFAULT_VALUES: Record<DeviceSettingKey, string> = {
   appearance: "light",
@@ -70,6 +72,30 @@ const ANDROID_DISPLAY_SIZE_OPTIONS: SelectOption[] = [
   { value: "medium", label: "M" },
   { value: "large", label: "L" },
   { value: "extra-large", label: "XL" },
+];
+
+/**
+ * The settings with a select and no description, in the order of their rows.
+ * A setting without a `platform` exists on both; `androidOptions` replaces the
+ * options on Android.
+ */
+const SELECT_SETTINGS: ReadonlyArray<{
+  key: DeviceSettingKey;
+  label: string;
+  platform?: DeviceClient["platform"];
+  options: SelectOption[];
+  androidOptions?: SelectOption[];
+}> = [
+  { key: "appearance", label: "Appearance", options: APPEARANCE_OPTIONS },
+  { key: "liquid-glass", label: "Liquid glass", platform: "ios", options: LIQUID_GLASS_OPTIONS },
+  { key: "color-filter", label: "Color filter", platform: "ios", options: COLOR_FILTER_OPTIONS },
+  { key: "network", label: "Network", platform: "android", options: NETWORK_OPTIONS },
+  {
+    key: "text-size",
+    label: "Text size",
+    options: TEXT_SIZE_OPTIONS,
+    androidOptions: ANDROID_TEXT_SIZE_OPTIONS,
+  },
 ];
 
 const ORIENTATION_OPTIONS: ReadonlyArray<SelectOption<DeviceOrientation>> = [
@@ -139,22 +165,10 @@ export function DeviceOptionsSection({
   useEffect(() => {
     if (foldError) setOpen(true);
   }, [foldError]);
-  const recordingLock = client?.recordingLock ?? null;
-  const recordingControlsLocked = recordingLock !== null;
-  const recordingDisabledReason =
-    recordingLock === null
-      ? undefined
-      : recordingLock === "status-unknown"
-        ? "Unavailable until recording status is known."
-        : "Unavailable because this would interrupt the recording.";
+  const recordingDisabledReason = recordingLockText(client?.recordingLock);
+  const recordingControlsLocked = recordingDisabledReason !== undefined;
   // A recording that follows folds leaves the fold controls on; see `DeviceFold.unavailable`.
-  const foldUnavailable = client?.fold?.unavailable;
-  const foldDisabledReason =
-    foldUnavailable === undefined
-      ? undefined
-      : foldUnavailable === "status-unknown"
-        ? "Unavailable until recording status is known."
-        : "Unavailable because this would interrupt the recording.";
+  const foldDisabledReason = recordingLockText(client?.fold?.unavailable);
   const shapeDescriptionId = useId();
   // The 3D model draws its own device, so the screen shape applies to the 2D
   // view only. The 3D view shows while 3D is chosen and its model loads.
@@ -192,20 +206,6 @@ export function DeviceOptionsSection({
     if (!disabled(key)) client?.setDeviceSetting(key, nextValue);
   }
 
-  function settingSelect(key: DeviceSettingKey, label: string, options: SelectOption[]) {
-    return (
-      <SidebarRow label={label}>
-        <Select
-          ariaLabel={label}
-          options={options}
-          value={value(key)}
-          disabled={disabled(key)}
-          onChange={(nextValue) => setValue(key, nextValue)}
-        />
-      </SidebarRow>
-    );
-  }
-
   const keyboardVisible = showDeviceSettings && client?.platform === "ios";
   const orientationCapabilities = client?.capabilities.orientation;
   const orientationOptions = orientationCapabilities
@@ -230,31 +230,23 @@ export function DeviceOptionsSection({
       )}
 
       {showDeviceSettings &&
-        visible("appearance") &&
-        settingSelect("appearance", "Appearance", APPEARANCE_OPTIONS)}
-
-      {showDeviceSettings &&
-        platform === "ios" &&
-        visible("liquid-glass") &&
-        settingSelect("liquid-glass", "Liquid glass", LIQUID_GLASS_OPTIONS)}
-
-      {showDeviceSettings &&
-        platform === "ios" &&
-        visible("color-filter") &&
-        settingSelect("color-filter", "Color filter", COLOR_FILTER_OPTIONS)}
-
-      {showDeviceSettings &&
-        platform === "android" &&
-        visible("network") &&
-        settingSelect("network", "Network", NETWORK_OPTIONS)}
-
-      {showDeviceSettings &&
-        (platform === "ios" || platform === "android") &&
-        visible("text-size") &&
-        settingSelect(
-          "text-size",
-          "Text size",
-          platform === "android" ? ANDROID_TEXT_SIZE_OPTIONS : TEXT_SIZE_OPTIONS,
+        SELECT_SETTINGS.map((setting) =>
+          (setting.platform === undefined || setting.platform === platform) &&
+          visible(setting.key) ? (
+            <SidebarRow key={setting.key} label={setting.label}>
+              <Select
+                ariaLabel={setting.label}
+                options={
+                  platform === "android" && setting.androidOptions
+                    ? setting.androidOptions
+                    : setting.options
+                }
+                value={value(setting.key)}
+                disabled={disabled(setting.key)}
+                onChange={(nextValue) => setValue(setting.key, nextValue)}
+              />
+            </SidebarRow>
+          ) : null,
         )}
 
       {showDeviceSettings && platform === "android" && visible("display-size") && (

@@ -1,6 +1,6 @@
 import { type PointerEvent as ReactPointerEvent, useRef, useState } from "react";
 
-import { icon } from "../theme/tokens";
+import { icon, layer, motion, radius } from "../theme/tokens";
 
 /**
  * A thin, full-height divider that resizes an adjacent sidebar by dragging.
@@ -94,8 +94,8 @@ export function ResizeHandle({
         cursor: "col-resize",
         // Keep the drag reliable on trackpads/touch by suppressing scroll gestures.
         touchAction: "none",
-        // Above the stream card, below the collapsed-sidebar overlays (z-index 10+).
-        zIndex: 5,
+        // Above the stream card, below the collapsed-sidebar overlays.
+        zIndex: layer.resizeHandle,
       }}
     >
       {/* The small grey grip — the affordance shown on the seam. */}
@@ -103,10 +103,10 @@ export function ResizeHandle({
         style={{
           width: 4,
           height: 40,
-          borderRadius: 999,
+          borderRadius: radius.full,
           backgroundColor: dragging ? icon.secondary : icon.tertiary,
           opacity: visible ? 1 : 0,
-          transition: "opacity 120ms ease, background-color 120ms ease",
+          transition: `opacity ${motion.fast} ${motion.ease}, background-color ${motion.fast} ${motion.ease}`,
         }}
       />
     </div>

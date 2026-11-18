@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Toaster, toast as sonnerToast } from "sonner";
 
 import { type DeviceClient, type ScreenshotArtifact } from "@expo/hub-client";
@@ -6,11 +6,13 @@ import {
   bg,
   border,
   ChevronRightIcon,
-  isFocusVisible,
+  PRESSABLE_CLASS,
+  pressableStyle,
   radius,
   shadow,
   text,
   textSize,
+  tone,
 } from "../primitives";
 
 export type ScreenshotToastState =
@@ -148,7 +150,8 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
   }, [client, deviceName]);
 }
 
-export const TOAST_PILL_STYLE = {
+/** The box of a toast pill, without its surface: a pressable pill takes the surface from its class. */
+const TOAST_PILL_BOX = {
   display: "flex",
   alignItems: "center",
   gap: 12,
@@ -156,13 +159,17 @@ export const TOAST_PILL_STYLE = {
   maxWidth: "100%",
   boxSizing: "border-box",
   padding: "8px 14px 8px 8px",
-  backgroundColor: bg.default,
   border: `1px solid ${border.default}`,
   borderRadius: radius.lg,
-  boxShadow: shadow.lg,
   color: text.default,
   fontFamily: "inherit",
   textAlign: "left",
+} as const;
+
+export const TOAST_PILL_STYLE = {
+  ...TOAST_PILL_BOX,
+  backgroundColor: bg.default,
+  boxShadow: shadow.lg,
 } as const;
 
 /**
@@ -178,9 +185,6 @@ export function ScreenshotToast({
   onDownloadAgain?: () => void;
   onFocusChange?: (focused: boolean) => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
-
   const title =
     toast.phase === "capturing"
       ? "Capturing screenshot…"
@@ -229,23 +233,18 @@ export function ScreenshotToast({
       data-testid="screenshot-toast"
       aria-label="Download screenshot again"
       onClick={onDownloadAgain}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocus={(event) => {
-        setFocused(isFocusVisible(event));
-        onFocusChange?.(true);
-      }}
-      onBlur={() => {
-        setFocused(false);
-        onFocusChange?.(false);
-      }}
+      onFocus={() => onFocusChange?.(true)}
+      onBlur={() => onFocusChange?.(false)}
+      className={PRESSABLE_CLASS}
       style={{
-        ...TOAST_PILL_STYLE,
-        backgroundColor: hovered ? bg.hover : bg.default,
-        boxShadow: focused ? `0 0 0 2px ${border.secondary}, ${shadow.lg}` : shadow.lg,
-        outline: "none",
+        ...TOAST_PILL_BOX,
+        ...pressableStyle({
+          background: bg.default,
+          hoverBackground: bg.hover,
+          shadow: shadow.lg,
+          pressScale: 1,
+        }),
         cursor: "pointer",
-        transition: "background-color 120ms ease",
       }}
     >
       {body}
@@ -266,7 +265,7 @@ function SavedLines({ artifact }: { artifact: ScreenshotArtifact | null }) {
             lineHeight: 1.3,
             marginTop: 4,
             overflowWrap: "anywhere",
-            color: artifact?.status === "failed" ? text.warning : text.tertiary,
+            color: artifact?.status === "failed" ? tone.warning.text : text.tertiary,
           }}
         >
           {message}

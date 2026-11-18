@@ -103,7 +103,13 @@ describe("agent device status", () => {
     expect(visible).toContain("color:rgba(255, 255, 255, 0.7)");
     expect(visible).toContain("Taking over might collide with what the agent is doing.");
     expect(visible).toContain("Take over anyway");
-    expect(visible).toContain("background-color:var(--expo-theme-button-agent-overlay-background)");
+    // The button takes its fill from the pressable rules, which read these properties.
+    expect(visible).toContain(
+      "--hub-pressable-bg:var(--expo-theme-button-agent-overlay-background)",
+    );
+    expect(visible).toContain(
+      "--hub-pressable-bg-hover:var(--expo-theme-button-agent-overlay-hover)",
+    );
     expect(visible).toContain("font-family:inherit");
     expect(visible).toContain(
       '<span style="font-size:12px;font-weight:500;line-height:1.6;letter-spacing:0">Take over anyway</span>',

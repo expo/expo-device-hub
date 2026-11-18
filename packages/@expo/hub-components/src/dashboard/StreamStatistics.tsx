@@ -1,5 +1,5 @@
 import { type DeviceClient } from "@expo/hub-client";
-import { bg, icon, radius, text, textSize } from "../primitives";
+import { bg, icon, opacity, radius, text, textSize, tone } from "../primitives";
 import { MetricChart, type MetricChartSeries, maxChartValue } from "./MetricChart";
 
 const MAX_STATS_SAMPLES = 60;
@@ -153,7 +153,7 @@ function StreamStatisticRow({
         justifyContent: "space-between",
         gap: 4,
         padding: "5px 8px",
-        opacity: stale ? 0.55 : 1,
+        opacity: stale ? opacity.stale : 1,
       }}
     >
       <span
@@ -394,7 +394,7 @@ export function StreamStatistics({
       }}
     >
       {pausedMessage && (
-        <span role="status" style={{ ...textSize.xs, color: text.warning }}>
+        <span role="status" style={{ ...textSize.xs, color: tone.warning.text }}>
           {pausedMessage}
         </span>
       )}
@@ -529,7 +529,7 @@ export function StreamStatistics({
             minWidth: 0,
             gridTemplateColumns: COMPACT_STATS_COLUMNS,
             gap: 8,
-            opacity: stats?.stale ? 0.55 : 1,
+            opacity: stats?.stale ? opacity.stale : 1,
           }}
         >
           <MetricChart

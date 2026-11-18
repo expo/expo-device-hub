@@ -2,7 +2,16 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { Toaster, toast as sonnerToast } from "sonner";
 
 import { type DeviceClient, type DeviceClipboardAction } from "@expo/hub-client";
-import { ClipboardPasteIcon, CopyIcon, bg, icon, radius, text, textSize } from "../primitives";
+import {
+  ClipboardPasteIcon,
+  CopyIcon,
+  bg,
+  radius,
+  text,
+  textSize,
+  tone,
+  type Tone,
+} from "../primitives";
 import { errorMessage, readBrowserClipboard, writeBrowserClipboard } from "./browserClipboard";
 import { TOAST_PILL_STYLE } from "./ScreenshotToast";
 
@@ -316,12 +325,12 @@ export function useClipboardToast(
 
 // serve-sim's status dot colors: blue while in flight or for a next step, green for a result,
 // amber when the user must finish, red for an error.
-const STATUS_ICON_COLOR: Record<ClipboardToastState["status"], string> = {
-  pending: icon.info,
-  info: icon.info,
-  success: icon.success,
-  manual: icon.warning,
-  error: icon.danger,
+const STATUS_TONE: Record<ClipboardToastState["status"], Tone> = {
+  pending: "info",
+  info: "info",
+  success: "success",
+  manual: "warning",
+  error: "danger",
 };
 
 /** The pill that reports one clipboard action: its icon in the status color, and its message. */
@@ -339,7 +348,7 @@ export function ClipboardToast({ toast }: { toast: ClipboardToastState }) {
           justifyContent: "center",
           borderRadius: radius.md,
           backgroundColor: bg.element,
-          color: STATUS_ICON_COLOR[toast.status],
+          color: tone[STATUS_TONE[toast.status]].icon,
         }}
       >
         <Icon size={18} />
@@ -351,7 +360,7 @@ export function ClipboardToast({ toast }: { toast: ClipboardToastState }) {
           lineHeight: 1.3,
           fontWeight: 600,
           overflowWrap: "anywhere",
-          color: toast.status === "error" ? text.danger : text.default,
+          color: toast.status === "error" ? tone.danger.text : text.default,
         }}
       >
         {toast.message}

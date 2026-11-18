@@ -1,19 +1,20 @@
 /**
- * `@expo/hub-components` — the dependency-free UI kit shared by Expo Hub and the
- * Expo dashboard website (`universe/server/website`).
+ * `@expo/hub-components` — the UI kit of the Expo Hub dashboard. It follows the
+ * design of the Expo dashboard website (`universe/server/website`) and uses the
+ * same `@expo/styleguide` design tokens. The website does not import this
+ * package; its only consumer is `expo-device-hub`.
  *
- * Components are ports of the website's `ui/components/*`, driving the same
- * `@expo/styleguide` design tokens. Two styling strategies coexist, matching the
- * originals:
- *   - Inline-style components ({@link Button}, {@link ControlButton}, …) read the
- *     typed tokens from `./theme/tokens` (CSS custom properties), so they work in
- *     any environment that defines the `--expo-theme-*` variables.
- *   - Radix + Tailwind components ({@link Dropdown}, {@link Dialog}, …) rely on the
- *     consumer providing the styleguide utility classes (the website's Tailwind
- *     preset, or Expo Hub's `global.css`).
+ * How a component is styled (the full rules are in `expo-device-hub/AGENTS.md`):
+ *   - Layout and colors are inline styles that read the typed tokens from
+ *     `./theme/tokens`.
+ *   - Hover, press and keyboard focus come from the `.hub-pressable` rules in
+ *     `./theme/theme.css` ({@link pressableStyle}), not from React state.
+ *   - The components ported 1:1 from the website ({@link Dropdown},
+ *     {@link Dialog}, the `Select` menu) keep the website's Tailwind classes,
+ *     which the consumer's stylesheet must generate (Expo Hub's `global.css`).
  *
- * The CSS variables themselves are not bundled here — import them from the
- * consumer's design system, or use the `@expo/hub-components/theme.css` copy.
+ * Import `@expo/hub-components/theme.css` once: it defines the CSS variables
+ * and the component rules above.
  */
 
 // ── Components ──
@@ -33,20 +34,18 @@ export {
   DialogFooter,
   DialogClose,
 } from "./components/Dialog";
-// Kept for the website: Expo Hub no longer renders `Dropdown`, `DropdownItem`,
-// `SegmentedControl`, `Switch`, or `StreamSection` (its inspector uses `Select`
-// pills, and the stream toolbar has no menu). Delete them once the website
-// confirms it does not import them either.
 export { Dropdown } from "./components/Dropdown";
 export { DropdownItem } from "./components/DropdownItem";
+export { IconButton, type IconButtonProps } from "./components/IconButton";
 export { Logo } from "./components/Logo";
 export { PillButton, type PillButtonProps } from "./components/PillButton";
 export { ResizeHandle } from "./components/ResizeHandle";
-export { SegmentedControl, type SegmentedControlOption } from "./components/SegmentedControl";
 export { Select, type SelectOption, type SelectProps } from "./components/Select";
 export { SidebarToggle } from "./components/SidebarToggle";
-export { Switch, type SwitchProps } from "./components/Switch";
+export { StatusDot, type StatusDotProps } from "./components/StatusDot";
+export { Tooltip, type TooltipProps } from "./components/Tooltip";
 export { cx } from "./components/cx";
+export { PRESSABLE_CLASS, pressableStyle, type PressableColors } from "./components/pressable";
 export { usePrefersReducedMotion } from "./components/usePrefersReducedMotion";
 export * from "./components/icons";
 
@@ -63,13 +62,8 @@ export * from "./theme/tokens";
 // consumer that renders it loads three.js. Screen shapes are `DeviceShape`
 // from `@expo/hub-client/shapes`, also injected, so only a consumer that
 // passes it bundles the shape table.
-export { Sidebar } from "./dashboard/Sidebar";
-export {
-  InspectorSections,
-  LogSidebar,
-  type InspectorSectionsProps,
-  type LogSidebarProps,
-} from "./dashboard/LogSidebar";
+export { Sidebar, type SidebarProps } from "./dashboard/Sidebar";
+export { InspectorSections, type InspectorSectionsProps } from "./dashboard/InspectorSections";
 export { StreamPanel } from "./dashboard/StreamPanel";
 export {
   ScreenshotToast,
@@ -80,7 +74,6 @@ export {
 export { DeviceTitle, type DeviceTitleProps } from "./dashboard/DeviceTitle";
 export { EmptyState } from "./dashboard/EmptyState";
 export { DeviceSection, type DeviceSectionProps } from "./dashboard/DeviceSection";
-export { OutputSection } from "./dashboard/OutputSection";
 export { CurrentAppSection } from "./dashboard/CurrentAppSection";
 export {
   DEVICE_SHAPE_2D_ONLY_DESCRIPTION,
@@ -90,7 +83,7 @@ export {
   ONSCREEN_KEYBOARD_DESCRIPTION,
   type ScreenShapeOption,
 } from "./dashboard/DeviceOptionsSection";
-export { ActivityCharts, ActivitySection } from "./dashboard/ActivitySection";
+export { ActivityCharts } from "./dashboard/ActivityCharts";
 export { AccessibilitySection } from "./dashboard/AccessibilitySection";
 export { CameraSection } from "./dashboard/CameraSection";
 export { ClipboardSection } from "./dashboard/ClipboardSection";
@@ -128,7 +121,6 @@ export {
   type FoldPreviewOption,
 } from "./dashboard/FoldSettings";
 export { FOLD_POSE_OPTIONS, selectedFoldPose } from "./dashboard/foldPoses";
-export { StreamSection, type StreamModeAvailability } from "./dashboard/StreamSection";
 export {
   StreamOptionsSection,
   type StreamOptionsSectionProps,

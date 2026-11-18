@@ -9,7 +9,7 @@ import {
 import type { DeviceShapeProps } from "@expo/hub-client/shapes";
 import { duoStageMaxSide } from "../foldable/duo-stage";
 import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
-import { bg } from "../primitives";
+import { bg, layer, motion } from "../primitives";
 import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
 import { type Device } from "./data";
 import { DeviceScreenStatus, deviceScreenLoading } from "./DeviceScreenStatus";
@@ -150,7 +150,11 @@ export function PhoneFrame({
   // frame widens on rotation instead of squeezing into the portrait width.
   const wrapperStyle: CSSProperties = {
     ...deviceViewportStyle({ maxShortSide: MAX_SHORT_SIDE, ratio }),
-    ...(client?.fold ? { transition: "width 250ms ease, aspect-ratio 250ms ease" } : {}),
+    ...(client?.fold
+      ? {
+          transition: `width ${motion.frame} ${motion.ease}, aspect-ratio ${motion.frame} ${motion.ease}`,
+        }
+      : {}),
     containerType: "inline-size",
   };
 
@@ -218,7 +222,7 @@ export function PhoneFrame({
       style={{
         position: "absolute",
         inset: 0,
-        zIndex: 2,
+        zIndex: layer.screenOverlay,
         pointerEvents: overlayVisible ? "auto" : "none",
       }}
     >

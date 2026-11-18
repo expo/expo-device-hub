@@ -220,22 +220,3 @@
     transform: translateY(0) scale(1);
   }
 }
-
-/* Close button in the Dialog header — a quaternary icon button with a hover fill.
-   (Radix `DialogClose asChild` injects the close handler onto this plain button.) */
-.dialog-close-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  margin-right: -8px;
-  border-radius: var(--expo-radius-md);
-  color: var(--expo-theme-icon-default);
-  background-color: transparent;
-  cursor: pointer;
-  transition: background-color 150ms ease;
-}
-.dialog-close-button:hover {
-  background-color: var(--expo-theme-background-element);
-}

@@ -10,6 +10,8 @@ import {
   font,
   radius,
   text,
+  textSize,
+  tone,
 } from "../primitives";
 
 /**
@@ -38,7 +40,7 @@ export function BootErrorModal({ open, onClose, deviceName, message }: BootError
       <DialogContent>
         <DialogTitle title="Failed to boot device" />
         <DialogContentContainer>
-          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: text.secondary }}>
+          <p style={{ ...textSize.sm, margin: 0, color: text.secondary }}>
             <strong style={{ color: text.default, fontWeight: 600 }}>{deviceName}</strong> could not
             be booted.
           </p>
@@ -51,11 +53,10 @@ export function BootErrorModal({ open, onClose, deviceName, message }: BootError
               overflowWrap: "anywhere",
               backgroundColor: bg.subtle,
               border: `1px solid ${border.default}`,
+              ...textSize.xs,
               borderRadius: radius.lg,
-              color: text.danger,
+              color: tone.danger.text,
               fontFamily: font.mono,
-              fontSize: 12,
-              lineHeight: 1.5,
             }}
           >
             {message}

@@ -6,7 +6,12 @@
  * components are typed against.
  */
 
+import { type DeviceStreamMode } from "@expo/hub-client";
+
 export type Platform = "ios" | "android";
+
+/** Which stream modes can be used: by the browser context, by the backend, or by both. */
+export type StreamModeAvailability = Record<DeviceStreamMode, boolean>;
 
 export type Device = {
   id: string;

@@ -1,4 +1,4 @@
-import { SidebarToggle } from "@expo/hub-components";
+import { SidebarToggle, layer } from "@expo/hub-components";
 
 const DEFAULT_INSET = 24;
 const DEFAULT_TOP = 28;
@@ -47,7 +47,7 @@ export function FloatingSidebarToggle({
   return (
     <div
       data-floating-sidebar-toggle={side}
-      style={{ position: "absolute", top, [side]: inset, zIndex: 15 }}
+      style={{ position: "absolute", top, [side]: inset, zIndex: layer.floatingToggle }}
     >
       <SidebarToggle floating side={side} onClick={onClick} />
     </div>

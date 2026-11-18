@@ -13,6 +13,7 @@ import { type ComponentPropsWithoutRef, type PropsWithChildren } from "react";
 
 import { heading } from "../theme/tokens";
 import { cx } from "./cx";
+import { IconButton } from "./IconButton";
 import { CloseIcon } from "./icons";
 
 /**
@@ -23,6 +24,8 @@ import { CloseIcon } from "./icons";
  * free. The styleguide classes it relies on (`bg-default`, `border-default`,
  * `z-dialogOverlay-600`, `animate-fadeIn`, …) are defined in global.css; the
  * only swap from the original is `mergeClasses` → `cx` (no @expo/styleguide here).
+ * The z-index classes carry the numbers of `layer.dialogOverlay` and
+ * `layer.dialogContent` in `theme/tokens.ts`.
  */
 
 /** Controls open/close state — wrap your `DialogContent` in this. */
@@ -52,7 +55,7 @@ export function DialogContent({
       <Overlay className="dialog-overlay group absolute z-dialogOverlay-600">
         <div
           className={cx(
-            "fixed inset-0 bg-[#000000]/50",
+            "fixed inset-0 bg-black/50",
             "group-data-[state=open]:animate-fadeIn group-data-[state=closed]:animate-fadeOut",
             overlayClassName,
           )}
@@ -94,9 +97,12 @@ export function DialogTitle({ title }: { title: string }) {
         <h2 style={{ ...heading.base, margin: 0 }}>{title}</h2>
       </Title>
       <DialogClose>
-        <button type="button" aria-label="Close" className="dialog-close-button">
-          <CloseIcon size={20} />
-        </button>
+        <IconButton
+          label="Close"
+          size={30}
+          icon={<CloseIcon size={20} />}
+          style={{ marginRight: -8 }}
+        />
       </DialogClose>
     </div>
   );

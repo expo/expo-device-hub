@@ -8,11 +8,14 @@ import {
   BUTTON_HEIGHTS,
   type ButtonSize,
   font,
-  icon,
   LOADING_LABEL,
   radius,
+  StatusDot,
   text,
   textSize,
+  tone,
+  type Tone,
+  truncate,
 } from "../primitives";
 import { type Device } from "./data";
 
@@ -31,41 +34,17 @@ const RECORDING_LABELS: Record<DeviceScreenRecordingStatus, string> = {
   failed: "Recording failed",
 };
 
+// Only the live state colors its label; the other labels stay secondary beside a colored dot.
 const STATUS_APPEARANCE: Record<
   ConnectionStatus,
-  { label: string; dotColor: string; ringColor: string; labelColor: string }
+  { label: string; tone: Tone; labelColor: string }
 > = {
-  idle: {
-    label: "Offline",
-    dotColor: icon.danger,
-    ringColor: border.danger,
-    labelColor: text.secondary,
-  },
+  idle: { label: "Offline", tone: "danger", labelColor: text.secondary },
   // The screen's first load, the same label as its spinner.
-  connecting: {
-    label: LOADING_LABEL,
-    dotColor: icon.warning,
-    ringColor: border.warning,
-    labelColor: text.secondary,
-  },
-  reconnecting: {
-    label: "Reconnecting",
-    dotColor: icon.warning,
-    ringColor: border.warning,
-    labelColor: text.secondary,
-  },
-  streaming: {
-    label: "Live",
-    dotColor: text.success,
-    ringColor: border.success,
-    labelColor: text.success,
-  },
-  error: {
-    label: "Error",
-    dotColor: icon.danger,
-    ringColor: border.danger,
-    labelColor: text.secondary,
-  },
+  connecting: { label: LOADING_LABEL, tone: "warning", labelColor: text.secondary },
+  reconnecting: { label: "Reconnecting", tone: "warning", labelColor: text.secondary },
+  streaming: { label: "Live", tone: "success", labelColor: tone.success.text },
+  error: { label: "Error", tone: "danger", labelColor: text.secondary },
 };
 
 const DEVICE_TITLE_SIZE: ButtonSize = "xs";
@@ -88,12 +67,10 @@ export function DeviceTitle({ device, status, recording = null }: DeviceTitlePro
         <span
           title={label}
           style={{
+            ...truncate,
             display: "block",
             flex: "1 1 auto",
             minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
             fontFamily: showingId ? font.mono : font.sans,
           }}
         >
@@ -102,18 +79,7 @@ export function DeviceTitle({ device, status, recording = null }: DeviceTitlePro
       }
       rightSlot={
         <>
-          <span
-            aria-hidden
-            style={{
-              width: 6,
-              height: 6,
-              flexShrink: 0,
-              boxSizing: "content-box",
-              border: `2px solid ${appearance.ringColor}`,
-              borderRadius: radius.full,
-              backgroundColor: appearance.dotColor,
-            }}
-          />
+          <StatusDot tone={appearance.tone} ring />
           <span aria-live="polite" style={{ flexShrink: 0, color: appearance.labelColor }}>
             {appearance.label}
           </span>
@@ -124,7 +90,7 @@ export function DeviceTitle({ device, status, recording = null }: DeviceTitlePro
                 flexShrink: 0,
                 color:
                   recording === "recording" || recording === "failed"
-                    ? text.danger
+                    ? tone.danger.text
                     : text.secondary,
               }}
             >

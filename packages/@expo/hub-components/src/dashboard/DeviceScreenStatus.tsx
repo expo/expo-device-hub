@@ -1,7 +1,7 @@
 import { type DeviceClient } from "@expo/hub-client";
 import { type CSSProperties } from "react";
 
-import { ActivityIndicator, bg, text, textSize } from "../primitives";
+import { ActivityIndicator, layer, textSize, tone } from "../primitives";
 
 // @ref LLP 0015#states — one spinner until the first frame; no spinner while a loaded screen reconnects
 /**
@@ -20,7 +20,7 @@ export function deviceScreenLoading(
 const LAYER_STYLE: CSSProperties = {
   position: "absolute",
   inset: 0,
-  zIndex: 1,
+  zIndex: layer.screenStatus,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -33,12 +33,12 @@ const NOTICE_STYLE: CSSProperties = {
   bottom: 0,
   left: 0,
   right: 0,
-  zIndex: 1,
+  zIndex: layer.screenStatus,
   // Centered, so a device's rounded screen corners never clip the text.
   padding: "12px 24px",
   textAlign: "center",
-  backgroundColor: bg.danger,
-  color: text.danger,
+  backgroundColor: tone.danger.bg,
+  color: tone.danger.text,
   pointerEvents: "none",
 };
 

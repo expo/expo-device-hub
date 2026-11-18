@@ -128,7 +128,7 @@ Hub has one sidebar, on the left. It lists the simulators and emulators, then sh
 selected device's inspector below them in the same scrolling column. There is no right
 sidebar, so the stream panel uses the rest of the width. The toolbar has no Theme button;
 the device's appearance is the inspector's Appearance setting. [observed: Hub
-`Dashboard.tsx`; HubComponents `Sidebar.tsx`, `LogSidebar.tsx` (`InspectorSections`),
+`Dashboard.tsx`; HubComponents `Sidebar.tsx`, `InspectorSections.tsx`,
 `StreamControls.tsx`] [confirmed: Billy Roh, 2026-10-29, requested moving the right pane
 into the left pane and removing the Theme button]
 

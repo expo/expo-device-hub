@@ -1,8 +1,5 @@
-import { useState } from "react";
-
 import { type DeviceActivitySample, type DeviceClient } from "@expo/hub-client";
 import { icon, text, textSize } from "../primitives";
-import { CollapsibleSection } from "./CollapsibleSection";
 import { MetricChart, type MetricChartSeries, maxChartValue } from "./MetricChart";
 
 const MAX_SAMPLES = 60;
@@ -26,8 +23,7 @@ function latestSample(samples: DeviceActivitySample[]) {
 /**
  * Live CPU, memory, and network history for the foreground iOS app: a status
  * line while data is missing or paused, then one sparkline card per metric.
- * Rendered inside the Current app section; {@link ActivitySection} wraps it
- * in its own collapsible section for standalone use.
+ * Rendered inside the Current app section.
  */
 export function ActivityCharts({ client }: { client?: DeviceClient }) {
   const activity = client?.activity ?? null;
@@ -111,16 +107,5 @@ export function ActivityCharts({ client }: { client?: DeviceClient }) {
         </div>
       )}
     </div>
-  );
-}
-
-/** {@link ActivityCharts} in a standalone collapsible section. */
-export function ActivitySection({ client }: { client?: DeviceClient }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <CollapsibleSection title="Activity" open={open} onOpenChange={setOpen}>
-      <ActivityCharts client={client} />
-    </CollapsibleSection>
   );
 }

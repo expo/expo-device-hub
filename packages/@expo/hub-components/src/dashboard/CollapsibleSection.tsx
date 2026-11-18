@@ -5,6 +5,7 @@ import {
   border,
   heading,
   icon,
+  motion,
   text,
   usePrefersReducedMotion,
 } from "../primitives";
@@ -12,9 +13,8 @@ import {
 /** Horizontal inset shared by every right-sidebar section. */
 export const SIDEBAR_SECTION_INSET = 16;
 
-/** How long a section takes to open or close. */
-export const SECTION_TRANSITION_MS = 200;
-const TRANSITION_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
+/** How long a section takes to open or close: `motion.panel`, as a number for the unmount timer. */
+export const SECTION_TRANSITION_MS = Number.parseInt(motion.panel, 10);
 
 /**
  * Keep closing content mounted until its collapse transition has finished, so
@@ -103,9 +103,7 @@ export function CollapsibleSection({
           style={{
             flexShrink: 0,
             transform: open ? "rotate(0deg)" : "rotate(-90deg)",
-            transition: reducedMotion
-              ? undefined
-              : `transform ${SECTION_TRANSITION_MS}ms ${TRANSITION_EASING}`,
+            transition: reducedMotion ? undefined : `transform ${motion.panel} ${motion.easeOut}`,
           }}
         />
       </button>
@@ -115,7 +113,7 @@ export function CollapsibleSection({
           gridTemplateRows: open ? "1fr" : "0fr",
           transition: reducedMotion
             ? undefined
-            : `grid-template-rows ${SECTION_TRANSITION_MS}ms ${TRANSITION_EASING}`,
+            : `grid-template-rows ${motion.panel} ${motion.easeOut}`,
         }}
       >
         <div
@@ -127,7 +125,7 @@ export function CollapsibleSection({
             overflow: "clip",
             overflowClipMargin: 4,
             opacity: open ? 1 : 0,
-            transition: reducedMotion ? undefined : `opacity ${SECTION_TRANSITION_MS}ms ease`,
+            transition: reducedMotion ? undefined : `opacity ${motion.panel} ${motion.ease}`,
           }}
         >
           {present && <div style={{ minWidth: 0, paddingBottom: 12 }}>{children}</div>}

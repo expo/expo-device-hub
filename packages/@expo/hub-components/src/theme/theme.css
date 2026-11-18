@@ -29,6 +29,16 @@
   --expo-radius-3xl: 24px;
   --expo-radius-full: 9999px;
 
+  /* The `press` and `base` durations of `motion` in tokens.ts. */
+  --hub-motion-press: 100ms;
+  --hub-motion-base: 150ms;
+  /*
+   * The keyboard focus ring: the website's `outline-icon-info`. It is an
+   * outline, not a shadow, so that forced-colors mode keeps it, and its blue
+   * has a contrast of more than 3:1 against the surfaces of both themes.
+   */
+  --hub-focus-outline: 2px solid var(--expo-theme-icon-info);
+
   /* Agent takeover prompt — stays bright against the dark status overlay. */
   --expo-theme-button-agent-overlay-background: var(--expo-color-white);
   --expo-theme-button-agent-overlay-border: transparent;
@@ -47,4 +57,74 @@
   --expo-theme-button-agent-overlay-disabled-background: var(--slate-2);
   --expo-theme-button-agent-overlay-disabled-border: transparent;
   --expo-theme-button-agent-overlay-disabled-text: var(--slate-11);
+}
+
+/*
+ * Interaction states.
+ *
+ * An inline style cannot say `:hover`, `:active` or `:focus-visible`. A control
+ * therefore takes the `hub-pressable` class and passes its colors as custom
+ * properties (see `components/pressable.ts`). These rules own the background,
+ * the box shadow, the press scale, the transition and the outline of such a
+ * control, so the control must not set those properties in its inline style.
+ *
+ * A disabled control keeps its resting look: `disabled` and
+ * `aria-disabled="true"` turn hover and press off.
+ */
+.hub-pressable {
+  outline: none;
+  background-color: var(--hub-pressable-bg, transparent);
+  box-shadow: var(--hub-pressable-shadow, 0 0 #0000);
+  transition:
+    background-color var(--hub-motion-base) ease,
+    transform var(--hub-motion-press) ease,
+    opacity var(--hub-motion-base) ease;
+}
+
+/* A touch screen keeps `:hover` on the last tapped element, so only a pointer that can hover gets the fill. */
+@media (hover: hover) {
+  .hub-pressable:hover:not(:disabled, [aria-disabled="true"]) {
+    background-color: var(--hub-pressable-bg-hover, var(--hub-pressable-bg, transparent));
+  }
+}
+
+.hub-pressable:active:not(:disabled, [aria-disabled="true"]) {
+  transform: scale(var(--hub-pressable-press-scale, 0.98));
+}
+
+.hub-pressable:focus-visible {
+  outline: var(--hub-focus-outline);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-pressable {
+    transition: none;
+  }
+  .hub-pressable:active:not(:disabled, [aria-disabled="true"]) {
+    transform: none;
+  }
+}
+
+/*
+ * The log list keeps a styled scrollbar that is always visible. Styling
+ * `::-webkit-scrollbar` opts out of the macOS overlay scrollbar in Chromium.
+ * The standard `scrollbar-width` and `scrollbar-color` properties are not set
+ * on purpose: either one makes Chromium use the overlay scrollbar again.
+ */
+.hub-log-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+.hub-log-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.hub-log-scroll::-webkit-scrollbar-thumb {
+  min-height: 24px;
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background-color: var(--expo-theme-background-selected);
+  background-clip: padding-box;
+}
+.hub-log-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--expo-theme-border-default);
 }
