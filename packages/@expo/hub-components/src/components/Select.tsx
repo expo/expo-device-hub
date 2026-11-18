@@ -26,7 +26,13 @@ import {
   truncate,
 } from "../theme/tokens";
 import { DisabledControlHint } from "./DisabledControlHint";
-import { FIELD_HEIGHT, FIELD_WIDTH, fieldControlProps } from "./field";
+import {
+  FIELD_HEIGHT,
+  FIELD_WIDTH,
+  type FieldSize,
+  LARGE_FIELD_HEIGHT,
+  fieldControlProps,
+} from "./field";
 import { CheckIcon, ChevronDownIcon } from "./icons";
 
 export type SelectOption<Value extends string = string> = {
@@ -50,6 +56,10 @@ export type SelectProps<Value extends string> = {
   placeholder?: string;
   /** Width of the trigger in px. Every select of a column has the same width. */
   width?: number;
+  /** `lg` is the select of a form in a modal: taller, and as wide as the form. */
+  size?: FieldSize;
+  /** The `id` of the trigger, for a `<label htmlFor>`. */
+  id?: string;
 };
 
 /** What a select shows for a value that is not known: the website's placeholder. */
@@ -100,12 +110,15 @@ export function Select<Value extends string>({
   onReselect,
   placeholder = SELECT_PLACEHOLDER,
   width = FIELD_WIDTH,
+  size = "md",
+  id,
 }: SelectProps<Value>) {
   const [open, setOpen] = useState(false);
   const selectedOption = options.find((option) => option.value === value);
   const selectedLabel = selectedOption?.label ?? (value || placeholder);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const field = fieldControlProps({ disabled, width });
+  const field = fieldControlProps({ disabled, width, size });
+  const large = size === "lg";
   const pointerType = useRef("touch");
   const reselect = (option: SelectOption<Value>) => {
     if (!disabled && !option.disabled && option.value === value) onReselect?.(option.value);
@@ -146,6 +159,7 @@ export function Select<Value extends string>({
       >
         <Trigger
           ref={triggerRef}
+          id={id}
           aria-label={ariaLabel}
           aria-describedby={ariaDescribedBy}
           data-test-options={options.map((option) => option.label).join("\n")}
@@ -207,7 +221,7 @@ export function Select<Value extends string>({
             boxSizing: "border-box",
             overflow: "hidden",
             border: `1px solid ${border.default}`,
-            borderRadius: radius.lg,
+            borderRadius: large ? radius.xl : radius.lg,
             outline: "none",
             backgroundColor: bg.default,
             boxShadow: shadow.md,
@@ -247,12 +261,12 @@ export function Select<Value extends string>({
                 style={{
                   display: "flex",
                   width: "100%",
-                  minHeight: FIELD_HEIGHT,
+                  minHeight: large ? LARGE_FIELD_HEIGHT - 8 : FIELD_HEIGHT,
                   alignItems: "center",
                   justifyContent: "space-between",
                   gap: 8,
                   boxSizing: "border-box",
-                  padding: "8px 12px",
+                  padding: large ? "8px 16px" : "8px 12px",
                   outline: "none",
                   color: text.default,
                   cursor: option.disabled ? "default" : "pointer",

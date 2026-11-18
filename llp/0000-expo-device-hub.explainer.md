@@ -151,6 +151,21 @@ platform's mark, the name, and the OS version. The selected row has the info sur
 border. [observed: HubComponents `DeviceSection.tsx`, `DeviceListItem.tsx`]
 [confirmed: Krystof Woldrich, 2026-11-17, gave the design frames of the lists]
 
+#### Adding a device
+
+The add button of a device list opens a menu of the recent devices of its platform: the
+shut-down devices that the list does not show, the most recently used first, each with its OS
+version. A click boots the device; the menu stays open with a spinner on its row until the
+host answers, and a failed boot opens a dialog with the host's reason. The last row,
+"Create new simulator" or "Create new emulator", opens a modal with the name, the OS version
+and the model of a new device, and one Create button. The modal stays open while the host
+creates and boots the device, and shows a failure above the button. On Android the model
+comes before the OS version, because the model narrows the system images.
+[observed: HubComponents `AddDeviceMenu.tsx`, `NewDeviceModal.tsx`, `DeviceSection.tsx`,
+`Modal.tsx`] [confirmed: Krystof Woldrich, 2026-11-17, gave the design frames of the menu and
+the modal, and asked for the two steps: the recent devices first, the modal only for a new
+device]
+
 #### Steady inspector
 
 The inspector does not add or remove sections and rows while a device connects or

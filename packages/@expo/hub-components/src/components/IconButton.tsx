@@ -12,9 +12,10 @@ export type IconButtonProps = {
   size?: number;
   /**
    * `ghost` has no border and no fill until the pointer is over it. `outline`
-   * is a circle with a hairline border on the default surface.
+   * is a circle with a hairline border on the default surface. `filled` is a
+   * circle on the element surface.
    */
-  variant?: "ghost" | "outline";
+  variant?: "ghost" | "outline" | "filled";
   /** Fill under the pointer. Defaults to the fill of the variant. */
   hoverBackground?: string;
   ref?: Ref<HTMLButtonElement>;
@@ -37,6 +38,7 @@ export function IconButton({
   ...rest
 }: IconButtonProps) {
   const outline = variant === "outline";
+  const filled = variant === "filled";
   return (
     <button
       ref={ref}
@@ -45,8 +47,8 @@ export function IconButton({
       className={cx(PRESSABLE_CLASS, className)}
       style={{
         ...pressableStyle({
-          background: outline ? bg.default : undefined,
-          hoverBackground: hoverBackground ?? (outline ? bg.hover : bg.element),
+          background: outline ? bg.default : filled ? bg.element : undefined,
+          hoverBackground: hoverBackground ?? (outline || filled ? bg.hover : bg.element),
         }),
         display: "flex",
         flexShrink: 0,
@@ -57,7 +59,7 @@ export function IconButton({
         padding: 0,
         boxSizing: "border-box",
         border: outline ? `1px solid ${border.default}` : "none",
-        borderRadius: outline ? radius.full : size >= 40 ? radius.lg : radius.md,
+        borderRadius: outline || filled ? radius.full : size >= 40 ? radius.lg : radius.md,
         color: iconColor.default,
         cursor: "pointer",
         fontFamily: "inherit",
