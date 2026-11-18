@@ -28,6 +28,13 @@ with it, and manage which devices are running from one place.
 > iOS simulators require macOS with Xcode. Android emulators require the Android SDK
 > (`emulator`, `adb`).
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/expo/expo-device-hub/main/assets/expo-device-hub-dashboard-dark-2x.png">
+    <img alt="The Expo Device Hub dashboard with the device lists, the current app, and an iPhone Duo that is partially open in the 3D preview" src="https://raw.githubusercontent.com/expo/expo-device-hub/main/assets/expo-device-hub-dashboard-light-2x.png" width="838">
+  </picture>
+</p>
+
 ## Installation
 
 > Using the Hub inside an Expo app requires **Expo SDK 57** or newer.
