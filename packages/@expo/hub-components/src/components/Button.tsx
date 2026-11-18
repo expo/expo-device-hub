@@ -102,7 +102,7 @@ const SIZE_STYLES: Record<ButtonSize, CSSProperties> = {
   },
 };
 
-export type ButtonProps = {
+type OwnButtonProps = {
   children?: ReactNode;
   theme?: ButtonTheme;
   size?: ButtonSize;
@@ -121,12 +121,16 @@ export type ButtonProps = {
   onClick?: () => void;
   className?: string;
   style?: CSSProperties;
-  /** The `<button>` element. Not passed to a link. */
+  /** The rendered `<button>`. Ignored when rendering a link. */
   ref?: Ref<HTMLButtonElement>;
-} & Pick<
-  ButtonHTMLAttributes<HTMLButtonElement>,
-  "id" | "title" | "aria-label" | "aria-describedby" | "aria-pressed" | "aria-expanded"
->;
+};
+
+/**
+ * Other `<button>` attributes, such as `aria-*` and `id`, pass through to the
+ * button, so a Radix trigger can wrap it with `asChild`. Ignored when rendering a link.
+ */
+export type ButtonProps = OwnButtonProps &
+  Omit<ButtonHTMLAttributes<HTMLButtonElement>, keyof OwnButtonProps | "color">;
 
 export function Button({
   children,
@@ -143,7 +147,7 @@ export function Button({
   className,
   style,
   ref,
-  ...aria
+  ...buttonAttributes
 }: ButtonProps) {
   const t = BUTTON_THEME_TOKENS[theme];
 
@@ -171,6 +175,14 @@ export function Button({
     ...style,
   };
   const pressableClassName = cx(PRESSABLE_CLASS, className);
+  const aria = {
+    id: buttonAttributes.id,
+    title: buttonAttributes.title,
+    "aria-label": buttonAttributes["aria-label"],
+    "aria-describedby": buttonAttributes["aria-describedby"],
+    "aria-pressed": buttonAttributes["aria-pressed"],
+    "aria-expanded": buttonAttributes["aria-expanded"],
+  };
 
   const content = (
     <>
@@ -198,13 +210,13 @@ export function Button({
 
   return (
     <button
+      {...buttonAttributes}
       ref={ref}
       type={type}
       className={pressableClassName}
       style={baseStyle}
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
-      {...aria}
     >
       {content}
     </button>

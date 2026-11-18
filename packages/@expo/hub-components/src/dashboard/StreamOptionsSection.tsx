@@ -13,7 +13,7 @@ import {
   type DeviceStreamSource,
   type DeviceWebRtcCodec,
 } from "@expo/hub-client";
-import { Select, type SelectOption } from "../primitives";
+import { Select, text, textSize, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { RECORDING_FINISH_REASON, recordingLockText } from "./recording-lock";
 import { SectionNote } from "./SectionNote";
@@ -41,6 +41,18 @@ export const TRANSPORT_UNAVAILABLE_REASON =
 /** Why the Source row is locked on an Android device that has one capture source. */
 export const SINGLE_SOURCE_REASON = "This device has one stream source.";
 
+/**
+ * What an Android device renders with: the host's CPU (a software renderer) or
+ * a GPU. `unknown` until the Hub answers, and when it cannot read the renderer.
+ */
+export type DeviceRendering = "unknown" | "cpu" | "gpu";
+
+const RENDERING_LABELS: Record<DeviceRendering, string> = {
+  unknown: "Unknown",
+  cpu: "CPU",
+  gpu: "GPU",
+};
+
 export type StreamOptionsSectionProps = {
   /** The client to read from. Pass the client of `useSteadyClient` to keep rows over a reconnect. */
   client: DeviceClient;
@@ -53,6 +65,11 @@ export type StreamOptionsSectionProps = {
   streamModeAvailability?: StreamModeAvailability;
   onStreamModeChange?: (mode: DeviceStreamMode) => void;
   onHttpCodecChange?: (codec: DeviceHttpCodec) => void;
+  /**
+   * What the device renders with. Omit to hide the row, as for iOS; an Android
+   * device shows it from the start, as `unknown`, so the rows do not move.
+   */
+  rendering?: DeviceRendering;
 };
 
 const DEFAULT_SETTINGS: DeviceStreamEncoderSettings = {
@@ -218,6 +235,7 @@ export function StreamOptionsSection({
   streamModeAvailability = DEFAULT_AVAILABILITY,
   onStreamModeChange,
   onHttpCodecChange,
+  rendering,
 }: StreamOptionsSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
   const recordingDisabledReason = recordingLockText(client.recordingLock, RECORDING_FINISH_REASON);
@@ -343,6 +361,13 @@ export function StreamOptionsSection({
 
   return (
     <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
+      {rendering && (
+        <SidebarRow label="Rendering">
+          <span aria-live="polite" style={{ ...textSize.sm, flexShrink: 0, color: text.secondary }}>
+            {RENDERING_LABELS[rendering]}
+          </span>
+        </SidebarRow>
+      )}
       {client.platform === "android" && (
         // Only Android has capture sources. The row stays for a device with one source, and
         // while the client has not reported its sources: it is then locked.
