@@ -25,7 +25,9 @@ import {
   setSoftwareKeyboard,
   getDisplayOrientation,
   getDeviceSize,
+  getDisplayRotation,
   setUserRotation,
+  type DisplayRotation,
   type NightModeStatus,
 } from "./adb.ts";
 import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
@@ -65,7 +67,19 @@ import {
 import { listPermissions, resetPermissions } from "./app-permissions.ts";
 import { getForegroundApp } from "./app-info.ts";
 import { readAppDetails } from "./apk-icon.ts";
-import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
+import {
+  availableStreamModesForSerial,
+  emulatorCaptureAvailability,
+  emulatorCaptureMissingAgent,
+  emulatorCaptureSocketFor,
+  isEmulatorSerial,
+  type EmulatorCaptureOptions,
+} from "./device-capabilities.ts";
+import {
+  GPU_CAPTURE_REPLACED_CODE,
+  GpuCaptureReplacedError,
+  GpuCaptureUnavailableError,
+} from "./gpu-session.ts";
 import { loadDeviceGrid } from "./device-grid.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
 import { FrameStatWindow } from "./frame-stat-window.ts";
@@ -226,6 +240,13 @@ export type AppOptions = {
   encoder?: GrpcEncoder;
   /** Input transport. gRPC streaming defaults to scrcpy input. */
   inputSource?: InputSource;
+  /**
+   * Experimental: the `emulator-capture` stream mode, video from an expo-emulator-capture agent
+   * inside the emulator, with scrcpy as the input transport. The Hub sets the socket directory
+   * when its feature is on, and otherwise a reason that tells the user how to turn it on.
+   * Without this option, the mode is not offered.
+   */
+  emulatorCapture?: EmulatorCaptureOptions;
   /** @internal Shared by router-managed source generations for one device. */
   deviceState?: DeviceSessionState;
   /**
@@ -385,6 +406,8 @@ export type CreateAppDependencies = {
   openHingeSensor?: typeof openHingeSensor;
   /** Read the shown display's size for a native-size MMAP fold recording; adb by default. */
   readDisplaySize?: typeof getDeviceSize;
+  /** Read Android's display rotation for emulator capture; adb by default. */
+  readDisplayRotation?: (serial: string, signal: AbortSignal) => Promise<DisplayRotation>;
 };
 
 function recordingPose(state: FoldState): RecordingPose {
@@ -409,9 +432,23 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     throw new Error(`inputSource must be one of: ${INPUT_SOURCES.join(", ")}`);
   }
   const inputSource = requestedInputSource;
-  if (streamMode === "scrcpy" && inputSource !== "scrcpy") {
-    throw new Error("scrcpy streaming requires scrcpy input");
+  if (streamMode !== "grpc-screenshot" && inputSource !== "scrcpy") {
+    throw new Error(`${streamMode} streaming requires scrcpy input`);
   }
+  const readDisplayRotation =
+    dependencies.readDisplayRotation ??
+    ((serial: string, signal: AbortSignal) =>
+      getDisplayRotation(serial, undefined, { signal, lane: "background" }));
+  /** The agent socket and the rotation reader that an emulator capture session needs. */
+  const emulatorCaptureSessionOptions = (mode: StreamMode) =>
+    mode === "emulator-capture"
+      ? {
+          emulatorCaptureSocket:
+            emulatorCaptureSocketFor(opts.serial, opts.emulatorCapture?.socketDirectory) ??
+            undefined,
+          readDisplayRotation: (signal: AbortSignal) => readDisplayRotation(opts.serial, signal),
+        }
+      : {};
   const openWebRtcPublisher = dependencies.createWebRtcPublisher ?? createWebRtcPublisher;
   const clock = dependencies.clock ?? SYSTEM_APP_CLOCK;
   const uploader = createMiddlewareUploader({
@@ -505,6 +542,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       encoder,
       inputSource,
       ...(foldRecording ? { recording: foldRecording } : {}),
+      ...emulatorCaptureSessionOptions(streamMode),
     });
     throwIfAborted(opts.signal, "serve-emu app startup aborted");
   } catch (error) {
@@ -590,58 +628,67 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     readFoldNow = foldFeed.readNow;
   }
 
-  const health = () => ({
-    ok: status === "streaming",
-    status,
-    captureRestarting,
-    serial: opts.serial,
-    device: session.meta.deviceName,
-    streamMode: session.mode,
-    grpcImageMode,
-    encoder,
-    encoderName: session.diagnostics?.().grpcCapture?.encoderName ?? null,
-    inputSource: session.inputSource,
-    grpcCapture: session.diagnostics?.().grpcCapture ?? null,
-    codec: session.meta.codecId,
-    size: { width: screen.width, height: screen.height },
-    pose: deviceState.orientation.current(),
-    clients: clients.size,
-    videoClients: Array.from(clients).filter((client) => client.video).length,
-    frames: frameCount,
-    sourceFps,
-    frameStats: frameStats.summary(),
-    configPackets: configPacketCount,
-    droppedFrames: totalDroppedFrames,
-    backpressureEvents: totalBackpressureEvents,
-    videoResetRequests,
-    lastVideoResetAt,
-    lastVideoResetReason,
-    location: deviceState.lastLocation,
-    route: routePlayback.snapshot(),
-    session: sessionRecorder.snapshot(),
-    screenRecording: opts.screenRecording?.snapshot() ?? null,
-    logcat: deviceState.logcat.snapshot(),
-    uploads: uploader.snapshot(),
-    stream: redactedStreamSettings(streamSettings),
-    encoderSettings: { ...streamEncoderSettings },
-    webrtc: webRtcPublisher?.snapshot() ?? null,
-    clientsDetail: Array.from(clients, (client) => ({
-      id: client.id,
-      video: client.video,
-      frameMeta: client.frameMeta,
-      sentFrames: client.sentFrames,
-      droppedFrames: client.droppedFrames,
-      backpressureEvents: client.backpressureEvents,
-      bufferedBytes: client.socket.bufferedAmount,
-      awaitingKeyFrame: client.awaitingKeyFrame,
-    })),
-    startedAt,
-    stoppedAt,
-    lastFrameAt: lastFrameMs > 0 ? new Date(lastFrameMs).toISOString() : null,
-    lastError,
-    lastErrorCode,
-    lastErrorMeta,
-  });
+  const health = () => {
+    // One snapshot per response, so every field describes the same moment.
+    const diagnostics = session.diagnostics?.();
+    return {
+      ok: status === "streaming",
+      status,
+      captureRestarting,
+      serial: opts.serial,
+      device: session.meta.deviceName,
+      streamMode: session.mode,
+      captureBackend: diagnostics?.experimentalGpuCapture?.backend ?? session.mode,
+      experimentalGpuCapture: diagnostics?.experimentalGpuCapture ?? null,
+      grpcImageMode,
+      encoder,
+      encoderName:
+        diagnostics?.grpcCapture?.encoderName ??
+        diagnostics?.experimentalGpuCapture?.encoderName ??
+        null,
+      inputSource: session.inputSource,
+      grpcCapture: diagnostics?.grpcCapture ?? null,
+      codec: session.meta.codecId,
+      size: { width: screen.width, height: screen.height },
+      pose: deviceState.orientation.current(),
+      clients: clients.size,
+      videoClients: Array.from(clients).filter((client) => client.video).length,
+      frames: frameCount,
+      sourceFps,
+      frameStats: frameStats.summary(),
+      configPackets: configPacketCount,
+      droppedFrames: totalDroppedFrames,
+      backpressureEvents: totalBackpressureEvents,
+      videoResetRequests,
+      lastVideoResetAt,
+      lastVideoResetReason,
+      location: deviceState.lastLocation,
+      route: routePlayback.snapshot(),
+      session: sessionRecorder.snapshot(),
+      screenRecording: opts.screenRecording?.snapshot() ?? null,
+      logcat: deviceState.logcat.snapshot(),
+      uploads: uploader.snapshot(),
+      stream: redactedStreamSettings(streamSettings),
+      encoderSettings: { ...streamEncoderSettings },
+      webrtc: webRtcPublisher?.snapshot() ?? null,
+      clientsDetail: Array.from(clients, (client) => ({
+        id: client.id,
+        video: client.video,
+        frameMeta: client.frameMeta,
+        sentFrames: client.sentFrames,
+        droppedFrames: client.droppedFrames,
+        backpressureEvents: client.backpressureEvents,
+        bufferedBytes: client.socket.bufferedAmount,
+        awaitingKeyFrame: client.awaitingKeyFrame,
+      })),
+      startedAt,
+      stoppedAt,
+      lastFrameAt: lastFrameMs > 0 ? new Date(lastFrameMs).toISOString() : null,
+      lastError,
+      lastErrorCode,
+      lastErrorMeta,
+    };
+  };
 
   const webRtcStats = (sessionId: string) => {
     if (!webRtcPublisher) return null;
@@ -1212,6 +1259,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       encoder,
       inputSource: nextInputSource,
       ...(foldRecording ? { recording: foldRecording } : {}),
+      ...emulatorCaptureSessionOptions(mode),
     });
 
   const replaceCapture = async (
@@ -1861,10 +1909,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           }
           const orientation = (payload as Record<string, unknown>).orientation;
           if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
-          return Response.json({
-            ok: true,
-            orientation: await deviceState.setOrientation(orientation),
-          });
+          const result = await deviceState.setOrientation(orientation);
+          // A source that follows the display (emulator capture) re-reads it now.
+          session.displayChanged?.();
+          return Response.json({ ok: true, orientation: result });
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -2221,6 +2269,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     deviceState,
     activateDeviceState,
     isStreaming: () => status === "streaming",
+    /** The failure code that ended this app's capture, or null. */
+    getTerminalErrorCode: (): string | null => lastErrorCode,
     /** Authoritative settings for the currently active capture generation. */
     getStreamEncoderSettings: (): StreamEncoderSettings => ({
       ...streamEncoderSettings,
@@ -2414,6 +2464,9 @@ export function createRouter(
   const pending = new Map<string, Promise<EmuApp>>();
   const failureAt = new Map<string, number>();
   const streamModeOverrides = new Map<string, StreamMode>();
+  // Emulators whose capture agent another consumer took: their default is gRPC until the user
+  // selects emulator capture again.
+  const captureTakenOver = new Set<string>();
   const grpcImageModeOverrides = new Map<string, GrpcImageMode>();
   const encoderOverrides = new Map<string, GrpcEncoder>();
   const inputSourceOverrides = new Map<string, InputSource>();
@@ -2517,8 +2570,27 @@ export function createRouter(
     return first.serial;
   };
 
-  const defaultStreamModeFor = (serial: string): StreamMode =>
-    (isEmulatorSerial(serial) ? defaults.streamMode : undefined) ?? "scrcpy";
+  const defaultStreamModeFor = (serial: string): StreamMode => {
+    const configured = isEmulatorSerial(serial) ? defaults.streamMode : undefined;
+    // @ref LLP 0020#integration — the capture default needs an agent; other emulators use gRPC
+    if (configured === "emulator-capture") {
+      if (!emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory)) {
+        captureTakenOver.delete(serial); // A new emulator on this serial starts fresh.
+        return "grpc-screenshot";
+      }
+      if (captureTakenOver.has(serial)) return "grpc-screenshot";
+    }
+    return configured ?? "scrcpy";
+  };
+
+  /** A replaced capture keeps its emulator on gRPC; an explicit capture choice ends with it. */
+  const noteCaptureTakenOver = (serial: string) => {
+    captureTakenOver.add(serial);
+    if (streamModeOverrides.get(serial) === "emulator-capture") streamModeOverrides.delete(serial);
+    console.warn(
+      `[emulator capture] ${serial}: another program took over the capture; using grpc-screenshot until emulator capture is selected again`,
+    );
+  };
 
   const createConfiguredApp = async (
     serial: string,
@@ -2585,12 +2657,38 @@ export function createRouter(
 
     const promise = (async () => {
       if (existing) {
+        // Integrations may pass apps without this method.
+        if (existing.getTerminalErrorCode?.() === GPU_CAPTURE_REPLACED_CODE) {
+          noteCaptureTakenOver(serial);
+        }
         try {
           await existing.stop();
         } catch {}
         if (apps.get(serial) === existing) apps.delete(serial);
       }
-      const created = await createConfiguredApp(serial, undefined, parentSignal);
+      // A capture choice from before the emulator restarted without its agent.
+      if (
+        streamModeOverrides.get(serial) === "emulator-capture" &&
+        !emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory)
+      ) {
+        streamModeOverrides.delete(serial);
+      }
+      let created: EmuApp;
+      try {
+        created = await createConfiguredApp(serial, undefined, parentSignal);
+      } catch (error) {
+        if (error instanceof GpuCaptureReplacedError) noteCaptureTakenOver(serial);
+        // A default capture that cannot start (nothing answers the socket of an emulator that
+        // exited, or another program has the agent): use gRPC, as for an emulator without a
+        // socket.
+        if (!(error instanceof GpuCaptureUnavailableError) || streamModeOverrides.has(serial)) {
+          throw error;
+        }
+        console.warn(
+          `[emulator capture] ${serial}: capture unavailable (${error.message}); using grpc-screenshot`,
+        );
+        created = await createConfiguredApp(serial, "grpc-screenshot", parentSignal);
+      }
       if (stopped || stoppingSerials.has(serial)) {
         try {
           await created.stop();
@@ -2709,7 +2807,7 @@ export function createRouter(
         ? configuredInputSource
         : "scrcpy";
     const inputSource =
-      streamMode === "scrcpy"
+      streamMode !== "grpc-screenshot"
         ? "scrcpy"
         : (requestedInputSource ??
           (currentMode === "grpc-screenshot" ? currentInputSource : configuredInputSource));
@@ -2868,6 +2966,19 @@ export function createRouter(
     });
   };
 
+  /** The modes this device can use now, and why `emulator-capture` cannot. */
+  const streamModeAvailability = (serial: string, current: StreamMode) => {
+    const capture = emulatorCaptureAvailability(serial, defaults.emulatorCapture);
+    // The running mode is available by definition, even if its socket went away meanwhile.
+    const emulatorCapture = !!capture.socket || current === "emulator-capture";
+    return {
+      availableModes: availableStreamModesForSerial(serial, { emulatorCapture }),
+      ...(!emulatorCapture && capture.reason
+        ? { unavailableModes: { "emulator-capture": capture.reason } }
+        : {}),
+    };
+  };
+
   const streamModeResponse = (serial: string, app: EmuApp): StreamModeResponse => ({
     ok: true,
     serial,
@@ -2890,7 +3001,7 @@ export function createRouter(
     inputSource: inputSourceForApp(app),
     availableInputSources:
       streamSessionForApp(app).mode === "grpc-screenshot" ? [...INPUT_SOURCES] : ["scrcpy"],
-    availableModes: availableStreamModesForSerial(serial),
+    ...streamModeAvailability(serial, streamSessionForApp(app).mode),
     sessionGeneration: sessionGenerations.get(serial) ?? 0,
   });
 
@@ -3046,6 +3157,10 @@ export function createRouter(
         if (mode === "grpc-screenshot" && !isEmulatorSerial(serial)) {
           throw new Error("grpc-screenshot is only available for Android Emulator devices");
         }
+        if (mode === "emulator-capture") {
+          const capture = emulatorCaptureAvailability(serial, defaults.emulatorCapture);
+          if (!capture.socket) throw new Error(capture.reason ?? "Emulator capture is not offered");
+        }
         streamMode = mode;
         encoder =
           streamModeRequest.mode === "grpc-screenshot" ? streamModeRequest.encoder : undefined;
@@ -3060,11 +3175,23 @@ export function createRouter(
       }
 
       try {
+        // An explicit choice takes the agent back from another consumer.
+        if (streamMode === "emulator-capture") captureTakenOver.delete(serial);
         const app = await switchStreamMode(serial, streamMode, grpcImageMode, inputSource, encoder);
         return Response.json(streamModeResponse(serial, app));
       } catch (err) {
         if (err instanceof ScreenRecordingConflictError) {
           return streamModeConflictResponse(err);
+        }
+        // A socket that a killed emulator left behind answers nothing: say why, not ECONNREFUSED.
+        if (
+          streamMode === "emulator-capture" &&
+          err instanceof GpuCaptureUnavailableError &&
+          !(err instanceof GpuCaptureReplacedError)
+        ) {
+          return streamModeUnavailableResponse(
+            new Error(emulatorCaptureMissingAgent(serial, defaults.emulatorCapture)),
+          );
         }
         return streamModeUnavailableResponse(err);
       }

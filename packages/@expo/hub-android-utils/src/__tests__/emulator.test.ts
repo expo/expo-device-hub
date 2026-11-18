@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -154,6 +154,22 @@ describe("formatEmulatorCommand", () => {
     expect(command.endsWith("-port 5554 -camera-back imagefile\\:/tmp/a.png")).toBe(true);
   });
 
+  test("puts the boot's variables first, so the command reproduces a preloaded agent", () => {
+    const command = formatEmulatorCommand("/sdk/emulator/emulator", {
+      name: "x",
+      port: 5554,
+      env: {
+        DYLD_INSERT_LIBRARIES: "/my cache/agent.dylib",
+        EXPO_EMULATOR_CAPTURE_SOCKET: "/tmp/a.sock",
+      },
+    });
+    expect(
+      command.startsWith(
+        "DYLD_INSERT_LIBRARIES='/my cache/agent.dylib' EXPO_EMULATOR_CAPTURE_SOCKET=/tmp/a.sock /sdk/emulator/emulator ",
+      ),
+    ).toBe(true);
+  });
+
   test("quotes parts containing whitespace", () => {
     const command = formatEmulatorCommand("/my sdk/emulator", { name: "x", port: 5554 });
     expect(command.startsWith("'/my sdk/emulator'")).toBe(true);
@@ -181,5 +197,19 @@ describe("spawnEmulator", () => {
     const spawned = await spawnEmulator(join(dir, "missing"), { name: "x", port: 5554 });
     expect(spawned.value).toBeNull();
     expect(spawned.error?.message).toBe("[android-utils] Failed to spawn `emulator`:");
+  });
+
+  test("adds env to the parent environment", async () => {
+    const emulator = join(dir, "emulator");
+    const output = join(dir, "env.txt");
+    writeFileSync(emulator, `#!/bin/sh\nprintf '%s %s' "$HUB_TEST_EXTRA" "$HOME" > "${output}"\n`);
+    chmodSync(emulator, 0o755);
+    const spawned = await spawnEmulator(emulator, {
+      name: "x",
+      port: 5554,
+      env: { HUB_TEST_EXTRA: "capture" },
+    });
+    await new Promise<void>((resolve) => spawned.value!.once("exit", () => resolve()));
+    expect(readFileSync(output, "utf8")).toBe(`capture ${process.env.HOME}`);
   });
 });

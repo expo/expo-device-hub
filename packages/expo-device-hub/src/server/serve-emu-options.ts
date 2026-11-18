@@ -11,6 +11,7 @@ import {
   type GrpcEncoder,
   type WebRtcIcePolicy,
 } from "./cli/options";
+import { emulatorCaptureRequested } from "./emulator-capture";
 import { originMatches } from "./origin-match";
 
 export const SERVE_EMU_OPTIONS_ENV = "EXPO_DEVICE_HUB_SERVE_EMU_OPTIONS";
@@ -48,10 +49,20 @@ export type StandaloneServeEmuOptions = {
   allowedOrigins?: string[];
 };
 
+/**
+ * The Android capture source without `--stream-source`. Turning the experimental emulator
+ * capture on makes it the default; serve-emu uses gRPC for an emulator without the agent.
+ */
+export function defaultAndroidStreamSource(
+  env: NodeJS.ProcessEnv = process.env,
+): AndroidStreamSource {
+  return emulatorCaptureRequested(env) ? "emulator-capture" : DEFAULT_ANDROID_STREAM_SOURCE;
+}
+
 function defaultServeEmuOptions(): StandaloneServeEmuOptions {
   return {
     maxFps: DEFAULT_VIDEO_FPS,
-    streamMode: DEFAULT_ANDROID_STREAM_SOURCE,
+    streamMode: defaultAndroidStreamSource(),
     grpcImageMode: DEFAULT_GRPC_IMAGE_MODE,
     encoder: DEFAULT_GRPC_ENCODER,
     streamSettings: { transport: "websocket" },
@@ -81,7 +92,7 @@ export function standaloneServeEmuOptions(options: CliOptions): StandaloneServeE
     ...(options.videoFps !== undefined ? { maxFps: options.videoFps } : {}),
     ...(options.videoBitrate !== undefined ? { bitRate: options.videoBitrate } : {}),
     ...(options.maxDimension !== undefined ? { maxSize: options.maxDimension } : {}),
-    streamMode: options.streamSource ?? DEFAULT_ANDROID_STREAM_SOURCE,
+    streamMode: options.streamSource ?? defaultAndroidStreamSource(),
     grpcImageMode: options.grpcImageMode ?? DEFAULT_GRPC_IMAGE_MODE,
     encoder: options.encoder ?? DEFAULT_GRPC_ENCODER,
     ...(options.corsOrigins && options.corsOrigins.length > 0

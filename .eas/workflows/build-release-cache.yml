@@ -2,7 +2,8 @@ name: Build release cache
 
 # Dispatched by .github/workflows/release.yml with --ref <release commit>.
 # Builds the release commit on macOS and writes the Turborepo remote cache, so
-# the Ubuntu release job gets cache hits for the macOS-only serve-sim build.
+# the Ubuntu release job gets cache hits for the macOS-only serve-sim and
+# expo-emulator-capture builds.
 # The version steps repeat the release job's steps: package.json versions and
 # changelogs are Turborepo inputs, so both runs must write the same tree.
 

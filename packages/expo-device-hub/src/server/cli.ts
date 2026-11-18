@@ -16,6 +16,7 @@ import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from "./cli/opti
 import { startupMessage } from "./cli/startup";
 import { localHubUrl, publishHubState } from "./cli/state-file";
 import { staticFileHandler } from "./cli/static-files";
+import { EMULATOR_CAPTURE_ENV, emulatorCaptureRequested } from "./emulator-capture";
 import { encodeStandaloneServeEmuOptions, SERVE_EMU_OPTIONS_ENV } from "./serve-emu-options";
 import { encodeStandaloneServeSimOptions, SERVE_SIM_OPTIONS_ENV } from "./serve-sim-options";
 import { FRAME_ANCESTORS_ENV, SESSION_TOKEN_ENV } from "./session-token";
@@ -95,6 +96,10 @@ async function main(): Promise<void> {
     process.env.EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE = "true";
   } else {
     delete process.env.EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE;
+  }
+  // The server reads the variable at import, as the Expo CLI plugin path does.
+  if (options.experimentalEmulatorCapture && !emulatorCaptureRequested(process.env)) {
+    process.env[EMULATOR_CAPTURE_ENV] = "1";
   }
   process.env[SERVE_EMU_OPTIONS_ENV] = encodeStandaloneServeEmuOptions(options);
   process.env[SERVE_SIM_OPTIONS_ENV] = encodeStandaloneServeSimOptions(options);

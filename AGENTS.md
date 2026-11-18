@@ -18,7 +18,7 @@ This repo uses [LLP v0.5.2](https://github.com/ccheever/llp/tree/v0.5.2). One co
 - `llp/current/` and `llp/foundation/` hold relative symlinks only. `current/` is the work in progress: link a document when work starts and remove the link when the work is done. `foundation/` is the smallest set of `Active` documents from which the design could be recreated.
 - Start with [LLP 0000](llp/0000-expo-device-hub.explainer.md), the root document. Then orient in this order: `llp/foundation/`, then `llp/current/`, then the `@ref`s in the code you touch.
 - Every document starts with a header: `Type`, `Status`, `Systems`, `Author`, `Date`; optional `Role`, `Revised`, `Related`.
-- Use these `Systems` names every time: `Hub`, `HubClient`, `HubComponents`, `AppleUtils`, `AndroidUtils`, `ServeSim`, `ServeEmu`, `Example`, `CI`, `Release`, `LLP`. LLP 0000 maps each name to its package. Add a name here before you use a new one.
+- Use these `Systems` names every time: `Hub`, `HubClient`, `HubComponents`, `AppleUtils`, `AndroidUtils`, `ServeSim`, `ServeEmu`, `EmulatorCapture`, `Example`, `CI`, `Release`, `LLP`. LLP 0000 maps each name to its package. Add a name here before you use a new one.
 - Types: RFC, Spec, Decision, Plan, Explainer, Principles, Guide, Issue, Research.
 - Documents are living. When the design changes, update the document, or mark it `Superseded` or `Tombstoned` in the header. Do not leave a stale document unmarked.
 - When an agent writes a "why" that it found by reading code, tag the claim `[observed]` (say where), `[confirmed]` (a named human and a date), or `[inferred]`. A document with `[inferred]` claims stays `Draft`.
