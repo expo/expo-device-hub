@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Fable 5.2), directed by Krystof Woldrich
 **Date:** 2026-11-17
-**Revised:** 2026-11-18 (the 3D screen takes a limited client; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-11-18 (the 3D screen takes a limited client; a check of the packed files; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0004, LLP 0016, LLP 0017
 
 ## Summary
@@ -51,7 +51,7 @@
 `three` and `three-mesh-bvh` are optional peer dependencies of hub-client [observed: `package.json`]. A consumer of the models entry installs them. A consumer of the other entries does not.
 
 - Both are peers, because `three-mesh-bvh` declares `three` as its own peer [observed: `three-mesh-bvh@0.9.18`'s `package.json`]. As a plain dependency it would ask every consumer of hub-client for `three`.
-- Both ranges are `*`. An optional peer still limits the version of a package that is installed: with the range `^0.186.0`, npm refused hub-client in an app that has `three@0.185.0` for its own use and does not import the models entry [observed: `npm install --dry-run` in a Codex review of this change, `ERESOLVE` on `peerOptional three@"^0.186.0"`]. That would break an install in a minor release.
+- Both ranges are `*`. An optional peer still limits the version of a package that is installed: with the range `^0.186.0`, npm refused hub-client in an app that has `three@0.185.0` for its own use and does not import the models entry [observed: `npm install --dry-run` in a Codex review of this change, `ERESOLVE` on `peerOptional three@"^0.186.0"`]. That would break an install in a minor release. A range with only a lower limit does the same for an older version: with `>=0.186.0`, npm 11.13.0 refused the package in an app that has `three@0.160.0` [observed: `npm install --dry-run` with a probe package, 2026-11-18].
 - The scene is tested with the versions in `devDependencies`, `three` 0.186 and `three-mesh-bvh` 0.9.18, and the README names them.
 
 ## Model files
@@ -60,6 +60,7 @@
 - A consumer imports the files of the models it shows. Its bundler emits them and gives their URLs, which the consumer passes to `DeviceModelScreen`. A model loads only when the screen mounts. A bundler without a rule for `.glb` files takes the URL with `new URL("@expo/hub-client/models/<file>.glb", import.meta.url)` [observed: a Turbopack build in a Codex review of this change].
 - The Hub imports them as Metro assets. `expo export` copies them to `dist/client/assets/_@expo/hub-client/models/`, and the standalone CLI serves them from there [observed: `expo export` output, `expo-device-hub/metro.config.js`]. For an asset outside the app's package, `expo export` writes the URL as `.//assets/…`; the dashboard removes the empty path segment [observed: `modelAssetUrl` in `expo-device-hub/src/Dashboard.tsx`].
 - The files add 14.8 MB to the package, and nothing to a bundle that does not import them.
+- A check packs the package as `npm publish` does, without writing it, and compares the file list with the manifest: every entry point's file is packed, every `files` entry matches a file, and no test file is packed. The tests read `package.json` and the source tree, so a `files` entry that matches nothing passed them [observed: a review of this change by hirbod, expo/expo-device-hub#638; `src/__tests__/packed-files.ts`, `bun run test:package`, the `Hub client package content` step of `.eas/workflows/checks.yml`]. The check runs after the build, because the entry points name build output.
 - A page with a Content Security Policy needs `blob:` in `connect-src`, because three.js fetches the textures inside a GLB file from blob URLs that it makes, and `'wasm-unsafe-eval'` in `script-src`, because the files are compressed with Meshopt and three.js decodes them with WebAssembly [observed: the expo.dev website's policy blocked both until it allowed them, `server/website/server/security.js` in expo/universe; `MeshoptDecoder` in `src/models/device-model-rig.ts`]. The README names both.
 - A description names nodes and materials of its GLB file, and the bend code is a port for these exact files (LLP 0004 [Device models](0004-serve-sim-hinge-controls.explainer.md#device-models)). So a file and its description are in one package and change in one commit.
 
