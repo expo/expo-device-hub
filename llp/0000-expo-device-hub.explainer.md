@@ -6,7 +6,7 @@
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
-**Revised:** 2026-10-03 (reviewed and made Active by Krystof Woldrich)
+**Revised:** 2026-11-16 (sidebar support warning, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
 
 ## Summary
 
@@ -216,6 +216,21 @@ platform while the settings load and disables them.
 [observed: universe `SimulatorPreviewOptions.tsx` at `d24ccaa940`] The Hub differs in one
 point: it does not hide an option that the device reports as unsupported, because a row
 that leaves after the first read is also a change of the list.
+
+#### Device support warning
+
+A device outside Hub's supported/tested set keeps an amber warning triangle in
+its sidebar row. The triangle is a separate button that opens non-modal details:
+it does not select or boot the device, and it is not nested inside the row's
+selection button. Keyboard and touch activation use the same trigger; Escape
+returns focus and outside interaction dismisses the details. The explanation is
+about device-type support and testing: streaming and controls may not work as
+expected, but the device can still be tried. It does not describe rendering or
+GPU performance. The details anchor to the warning trigger and render in a portal
+outside the sidebar's scroll container. Viewport collision handling can flip them
+above the trigger; long content scrolls within the available height. They hide when
+the trigger scrolls out of view. [observed: HubComponents `DeviceListItem.tsx` and
+`UnsupportedDeviceWarning.tsx`]
 
 ### Hub toolbar
 
