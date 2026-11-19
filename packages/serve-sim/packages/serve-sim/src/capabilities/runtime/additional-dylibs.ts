@@ -1,10 +1,6 @@
 import { existsSync, statSync } from "fs";
 import { isAbsolute, join } from "path";
-import {
-  capabilityConfigPath,
-  capabilityLoaderDir,
-  capabilityLoaderPath,
-} from "./capability-config";
+import { capabilityConfigPath, capabilityLoaderDir, capabilityLoaderPath } from "./config";
 
 export function additionalDylibs(): string[] {
   return [...new Set((process.env.SERVE_SIM_ADDITIONAL_DYLIBS ?? "").split(":").filter(Boolean))];

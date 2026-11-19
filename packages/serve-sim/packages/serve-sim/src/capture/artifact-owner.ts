@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { withLaunchStateLockSync } from "../launch-state-lock";
+import { withLaunchStateLockSync } from "../capabilities/runtime/lock";
 import { stateDir } from "../state";
 import { writeFileNoFollow } from "./no-follow";
 

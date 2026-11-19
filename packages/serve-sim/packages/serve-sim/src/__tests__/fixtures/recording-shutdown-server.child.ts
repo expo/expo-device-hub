@@ -97,9 +97,9 @@ mock.module("../../native", () => ({
     }
   },
 }));
-const launchManager = await import("../../launch-manager");
+const launchManager = await import("../../capabilities/runtime/manager");
 let armed = false;
-mock.module("../../launch-manager", () => ({
+mock.module("../../capabilities/runtime/manager", () => ({
   ...launchManager,
   applyDefaultCapabilities: async (
     ...args: Parameters<typeof launchManager.applyDefaultCapabilities>

@@ -26,7 +26,7 @@ import {
   captureScreenshotAsync,
   newScreenshotName,
 } from "./screenshot-store";
-import { approveUrlScheme, launchApp, openUrlInApp, stopApp } from "./launch-manager";
+import { approveUrlScheme, launchApp, openUrlInApp, stopApp } from "./launch-app";
 import { isSimctlTimeout } from "./simctl";
 import { CA_DEBUG_FLAGS } from "./ca-debug";
 import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";

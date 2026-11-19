@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { CapabilityLoadPhase, CapabilityScope } from "./capabilities";
-import { stateDir, stateFileForDevice } from "./state";
+import type { CapabilityLoadPhase, CapabilityScope } from "./capability";
+import { stateDir, stateFileForDevice } from "../../state";
 
 function isCapabilityScope(value: unknown): value is CapabilityScope {
   return value === "userApps" || value === "allApps";

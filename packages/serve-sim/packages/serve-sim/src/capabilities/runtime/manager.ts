@@ -1,18 +1,13 @@
 import { existsSync, readFileSync, rmSync, unlinkSync } from "fs";
 import { basename } from "path";
-import {
-  capabilitiesToApply,
-  capabilityDefinition,
-  type CapabilityContext,
-  type CapabilityDefinition,
-  type CapabilityOverrides,
-} from "./capabilities";
+import { capabilitiesToApply, capabilityDefinition } from "./registry";
+import type { CapabilityContext, CapabilityDefinition, CapabilityOverrides } from "./capability";
 import {
   prepareCapability,
   notifyPreparationFailure,
   rollbackPreparations,
   type CapabilityPreparation,
-} from "./capability-resources";
+} from "./resources";
 import {
   capabilityConfigPath,
   capabilityLoaderPath,
@@ -20,7 +15,7 @@ import {
   writeManagedStartupDylibs,
   commitCapabilityConfig,
   renderCapabilityConfig,
-} from "./capability-config";
+} from "./config";
 import {
   type Capability,
   type RecordedCapability,
@@ -30,24 +25,25 @@ import {
   writeLaunchState,
   ownerIsGone,
   assertDeviceOwnership,
-} from "./launch-state";
+} from "./state";
 import {
   withLaunchStateLock,
   withLaunchStateLockSync,
   waitForLaunchUpdates,
   LOCK_POLL_MS,
-} from "./launch-state-lock";
-import { isDeviceNotBooted, shutdownDevice, getDeviceState } from "./device";
-import { simctl, simctlSync } from "./simctl";
-import { timeStartup } from "./startup-timing";
+} from "./lock";
+import { isDeviceNotBooted, shutdownDevice, getDeviceState } from "../../device";
+import { simctl, simctlSync } from "../../simctl";
+import { timeStartup } from "../../startup-timing";
 import { additionalDylibs } from "./additional-dylibs";
+import { relaunchTarget } from "../../app-launch-host";
 
 export {
   type Capability,
   type RecordedCapability,
   readLaunchState,
   clearLaunchState,
-} from "./launch-state";
+} from "./state";
 export {
   MAX_CONFIG_BYTES,
   formatCapabilityConfig,
@@ -55,13 +51,12 @@ export {
   capabilityConfigPath,
   capabilityLoaderDir,
   capabilityLoaderPath,
-} from "./capability-config";
-export { waitForLaunchUpdates } from "./launch-state-lock";
+} from "./config";
+export { waitForLaunchUpdates } from "./lock";
 
 const CAPABILITY_LOADER_NAME = "libServeSimCapabilityLoader.dylib";
 const INSERT = "DYLD_INSERT_LIBRARIES";
 const CONFIG_VAR = "SERVE_SIM_CAPABILITIES_CONFIG";
-const TERMINATE_TIMEOUT_MS = 15_000;
 
 function releaseLaunchStateUnlocked(
   udid: string,
@@ -504,14 +499,14 @@ export async function removeCapabilityLoader(udid: string): Promise<void> {
   armedHere.delete(udid);
 }
 
-export async function launchApp(
+/** Keep publication, the host launch and its rollback in one device transaction. */
+// @ref LLP 0007#dependency-direction — host launch and URL delivery retain one publication lock.
+export async function withAppLaunchState(
   udid: string,
-  {
-    bundleId,
-    launchArgs = [],
-    restart = false,
-    openUrl,
-  }: { bundleId: string; launchArgs?: string[]; restart?: boolean; openUrl?: string },
+  bundleId: string,
+  launchArgs: string[],
+  launch: () => Promise<void>,
+  afterLaunch?: () => Promise<void>,
 ): Promise<void> {
   await withLaunchStateLock(udid, async () => {
     const previous = readLaunchState(udid);
@@ -543,9 +538,7 @@ export async function launchApp(
         writeLaunchState(udid, state);
       }
       // @ref LLP 0003#launching-an-installed-app — set up before the app stops; a failed launch restores the previous state
-      if (restart)
-        await timeStartup("app.launch.terminate", () => terminateForRelaunch(udid, bundleId), udid);
-      await simctl(["launch", udid, bundleId, ...launchArgs]);
+      await launch();
     } catch (error) {
       try {
         if (previous) writeLaunchState(udid, previous);
@@ -568,34 +561,9 @@ export async function launchApp(
       }
       throw error;
     }
-    // Keep scheme approval and delivery in the same device lock as launch.
-    if (openUrl) await openUrlInAppUnlocked(udid, bundleId, openUrl);
+    // URL delivery stays in the device lock, after launch succeeds and outside its rollback catch.
+    await afterLaunch?.();
   });
-}
-
-async function openUrlInAppUnlocked(
-  udid: string,
-  bundleId: string,
-  openUrl: string,
-): Promise<void> {
-  await preapproveUrlSchemeAsync(udid, bundleId, openUrl);
-  await simctl(["openurl", udid, openUrl]);
-}
-
-export async function openUrlInApp(udid: string, bundleId: string, openUrl: string): Promise<void> {
-  await withLaunchStateLock(udid, () => openUrlInAppUnlocked(udid, bundleId, openUrl));
-}
-
-export async function approveUrlScheme(
-  udid: string,
-  bundleId: string,
-  scheme: string,
-): Promise<void> {
-  await withLaunchStateLock(udid, () => writeUrlSchemeApprovalAsync(udid, bundleId, scheme));
-}
-
-export async function stopApp(udid: string, bundleId: string): Promise<void> {
-  await withLaunchStateLock(udid, () => simctl(["terminate", udid, bundleId]));
 }
 
 type ConfigureOptions = {
@@ -823,47 +791,6 @@ async function enableCapabilitiesUnlocked(
   if (relaunch) await relaunchTarget(udid, bundleId, state);
 }
 
-/** null when the check itself failed, which is not the same as "not running". */
-async function isRunning(udid: string, bundleId: string): Promise<boolean | null> {
-  const out = await simctl(["spawn", udid, "launchctl", "list"], 15_000).catch(() => null);
-  if (out === null) return null;
-  return out.includes(`UIKitApplication:${bundleId}`);
-}
-
-async function terminateForRelaunch(udid: string, bundleId: string): Promise<void> {
-  let stopError: unknown;
-  try {
-    await simctl(["terminate", udid, bundleId], TERMINATE_TIMEOUT_MS);
-    return;
-  } catch (error) {
-    stopError = error;
-  }
-  const running = await isRunning(udid, bundleId);
-  if (running === false) return;
-  // The cause keeps a timed-out stop recognizable, so app.launch can retry it.
-  throw new Error(
-    running === null
-      ? `Could not stop ${bundleId} on ${udid}, and could not check whether it is still running. ` +
-          `Relaunching now would do nothing if it is. Check the simulator and retry.`
-      : `Could not stop ${bundleId} on ${udid}, so it cannot be relaunched with its capabilities ` +
-          `loaded. simctl terminate did not take effect within ${TERMINATE_TIMEOUT_MS / 1000}s. ` +
-          `Stop the app yourself and retry.`,
-    { cause: stopError },
-  );
-}
-
-async function relaunchTarget(
-  udid: string,
-  bundleId: string | null,
-  state: LaunchState,
-): Promise<void> {
-  const target = bundleId ?? state.bundleId;
-  if (!target) return;
-  const args = target === state.bundleId ? state.launchArgs : [];
-  await terminateForRelaunch(udid, target);
-  await simctl(["launch", udid, target, ...args]);
-}
-
 export async function disableCapability(
   udid: string,
   bundleId: string | null,
@@ -904,46 +831,6 @@ async function disableCapabilityUnlocked(
   const state: LaunchState = { ...previous, capabilities: rest };
   const booted = await withdrawLaunchState(udid, state);
   if (relaunch && booted) await relaunchTarget(udid, bundleId, state);
-}
-
-const URL_SCHEME_APPROVAL_DOMAIN = "com.apple.launchservices.schemeapproval";
-const URL_SCHEME_APPROVAL_KEY_PREFIX = "com.apple.CoreSimulator.CoreSimulatorBridge-->";
-
-async function preapproveUrlSchemeAsync(
-  udid: string,
-  bundleId: string,
-  openUrl: string,
-): Promise<void> {
-  const scheme = new URL(openUrl).protocol.slice(0, -1);
-  if (scheme === "http" || scheme === "https") return;
-  try {
-    await writeUrlSchemeApprovalAsync(udid, bundleId, scheme);
-  } catch {
-    console.error(
-      `Could not pre-approve the ${scheme}: URL scheme for ${bundleId}. Opening the URL anyway; ` +
-        `the Simulator may ask you to confirm it.`,
-    );
-  }
-}
-
-async function writeUrlSchemeApprovalAsync(
-  udid: string,
-  bundleId: string,
-  scheme: string,
-): Promise<void> {
-  await simctl(
-    [
-      "spawn",
-      udid,
-      "defaults",
-      "write",
-      URL_SCHEME_APPROVAL_DOMAIN,
-      `${URL_SCHEME_APPROVAL_KEY_PREFIX}${scheme}`,
-      "-string",
-      bundleId,
-    ],
-    15_000,
-  );
 }
 
 export async function isCapabilityArmed(

@@ -9,8 +9,8 @@ import {
   isCapabilityEnabled,
   readLaunchState,
   releaseSessionSync,
-} from "../launch-manager";
-import { writeLaunchState } from "../launch-state";
+} from "../capabilities/runtime/manager";
+import { writeLaunchState } from "../capabilities/runtime/state";
 import { simMiddleware } from "../middleware";
 import { clipboardCapability } from "../sim-pasteboard-reader";
 import { installShims, recordState, useTempStateDir } from "./helpers";

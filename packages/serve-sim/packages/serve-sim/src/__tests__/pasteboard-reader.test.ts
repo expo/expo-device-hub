@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { promises as fs, readFileSync } from "fs";
 import { join } from "path";
-import { readLaunchState, writeLaunchState } from "../launch-state";
+import { readLaunchState, writeLaunchState } from "../capabilities/runtime/state";
 import { PasteboardUnavailableError, readSimPasteboardResult } from "../sim-pasteboard-reader";
 import { useTempStateDir, withShimsAsync } from "./helpers";
 

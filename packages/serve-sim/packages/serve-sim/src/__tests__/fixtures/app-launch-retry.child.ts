@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, mock, spyOn, test } from "bun:test";
-import * as launchManager from "../../launch-manager";
+import * as launchManager from "../../launch-app";
 import { simctlRaw } from "../../simctl";
 import { installShims } from "../helpers";
 
@@ -18,7 +18,7 @@ const timeout = (argument = "DYLD_INSERT_LIBRARIES") =>
   );
 let outcomes: (Error | undefined)[] = [];
 let calls = 0;
-mock.module("../../launch-manager", () => ({
+mock.module("../../launch-app", () => ({
   ...launchManager,
   launchApp: async () => {
     const outcome = outcomes[calls++];

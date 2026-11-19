@@ -5,16 +5,15 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 import { e2eDevice, requireE2E } from "./e2e-preconditions";
-import { launchAppAsync } from "../launch-app";
+import { launchApp, launchAppAsync } from "../launch-app";
 import {
   capabilityConfigPath,
   clearLaunchState,
   disableCapability,
   enableCapabilities,
   isCapabilityEnabled,
-  launchApp,
   listCapabilities,
-} from "../launch-manager";
+} from "../capabilities/runtime/manager";
 
 const DIST = join(import.meta.dir, "../../dist/capability-loader");
 const PROBE = join(DIST, "libServeSimProbe.dylib");

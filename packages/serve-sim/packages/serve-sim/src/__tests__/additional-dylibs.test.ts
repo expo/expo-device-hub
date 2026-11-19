@@ -12,10 +12,10 @@ import {
   removeCapabilityLoader,
   disarmStaleCapabilityLoader,
   capabilityConfigPath,
-} from "../launch-manager";
-import { writeManagedStartupDylibs, managedStartupDylibs } from "../capability-config";
-import { writeLaunchState } from "../launch-state";
-import { additionalDylibs, simulatorBootEnv } from "../additional-dylibs";
+} from "../capabilities/runtime/manager";
+import { writeManagedStartupDylibs, managedStartupDylibs } from "../capabilities/runtime/config";
+import { writeLaunchState } from "../capabilities/runtime/state";
+import { additionalDylibs, simulatorBootEnv } from "../capabilities/runtime/additional-dylibs";
 import { simMiddleware } from "../middleware";
 import { startDeviceInProcess } from "../device-lifecycle";
 import { simctl, simctlSync } from "../simctl";

@@ -1,17 +1,10 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { isAbsolute, join } from "path";
-import type { CapabilityScope } from "./capabilities";
-import type { LaunchState, RecordedCapability } from "./launch-state";
-import { stateDir } from "./state";
-import { dirnameOf } from "./runtime";
+import type { CapabilityScope } from "./capability";
+import type { LaunchState, RecordedCapability } from "./state";
+import { stateDir } from "../../state";
 
-export function capabilityLoaderDir(): string {
-  return join(dirnameOf(import.meta.url), "..", "dist", "capability-loader");
-}
-
-export function capabilityLoaderPath(): string {
-  return join(capabilityLoaderDir(), "libServeSimCapabilityLoader.dylib");
-}
+export { capabilityLoaderDir, capabilityLoaderPath } from "./assets";
 
 // Same value as MAX_CONFIG_BYTES in Sources/ServeSimCapabilityLoader/serve-sim-capability-loader.c.
 export const MAX_CONFIG_BYTES = 64 * 1024;

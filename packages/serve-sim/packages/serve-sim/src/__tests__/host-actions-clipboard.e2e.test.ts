@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { runHostActionAsync } from "../host-actions";
 import { closeDeviceSession, peekDeviceSession } from "../device-session";
-import { clearLaunchState, removeCapabilityLoaderSync } from "../launch-manager";
+import { clearLaunchState, removeCapabilityLoaderSync } from "../capabilities/runtime/manager";
 import { axDescribeAsync, locateNativeAddon } from "../native";
 import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { useTempStateDir } from "./helpers";

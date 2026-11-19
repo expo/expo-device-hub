@@ -12,7 +12,7 @@ import { join } from "path";
 import { execFileSync } from "child_process";
 import { UPLOAD_DIR } from "../host-paths";
 import { runHostActionAsync } from "../host-actions";
-import { withLaunchStateLock } from "../launch-state-lock";
+import { withLaunchStateLock } from "../capabilities/runtime/lock";
 import { UDID, installShims, withShimsAsync } from "./helpers";
 
 let root: string;

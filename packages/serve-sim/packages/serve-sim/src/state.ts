@@ -2,8 +2,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { readdirSync, writeFileSync, renameSync, readFileSync, unlinkSync } from "fs";
 import type { StreamSettings } from "./stream-settings";
-import { ownerIsGone, readLaunchState } from "./launch-state";
-import { LOCK_POLL_MS, withLaunchStateLockSync } from "./launch-state-lock";
+import { ownerIsGone, readLaunchState } from "./capabilities/runtime/state";
+import { LOCK_POLL_MS, withLaunchStateLockSync } from "./capabilities/runtime/lock";
 export type {
   HttpStreamCodec,
   StreamSettings,

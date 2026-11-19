@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { execFileSync } from "child_process";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { removeCapabilityLoader } from "../launch-manager";
+import { removeCapabilityLoader } from "../capabilities/runtime/manager";
 import { useTempStateDir, withShimsAsync } from "./helpers";
 
 test("loader cleanup removes old and new names while preserving other inserts", async () => {
@@ -23,7 +23,7 @@ fi
       },
       async () => {
         await removeCapabilityLoader("TEST-DEVICE");
-        const manager = join(import.meta.dir, "../launch-manager.ts");
+        const manager = join(import.meta.dir, "../capabilities/runtime/manager.ts");
         execFileSync(
           process.execPath,
           [

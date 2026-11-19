@@ -3,13 +3,13 @@ import { writeFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { isDeviceInjected, proxyDylibCandidates } from "../device";
 import { useTempStateDir } from "../../__tests__/helpers";
-import { writeLaunchState } from "../../launch-state";
+import { writeLaunchState } from "../../capabilities/runtime/state";
 import {
   capabilityConfigPath,
   commitCapabilityConfig,
   renderCapabilityConfig,
-} from "../../capability-config";
-import { capabilityLoaderPath } from "../../launch-manager";
+} from "../../capabilities/runtime/config";
+import { capabilityLoaderPath } from "../../capabilities/runtime/manager";
 
 const UDID = "ABCD1234-0000-0000-0000-0000000000EF";
 const DYLIB = "/opt/libSimNetProxy.dylib";
