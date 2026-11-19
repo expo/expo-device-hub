@@ -397,6 +397,19 @@ curl -N "$BASE/api/logcat?package=com.example.app&search=error"
 curl -N "$BASE/api/metrics"
 ```
 
+Screenshot requests also accept `maxWidth` (integer 1–8192, no upscaling),
+`format=jpeg`, and JPEG `quality` (integer 1–100, default 80). Omitted options
+preserve the native PNG bytes. Legacy `format=base64` still returns a JSON PNG;
+it can also use `maxWidth`. JPEG is lossy; session artifacts remain PNG at the
+requested size. Resizing/JPEG conversion runs on the host after `adb screencap`.
+
+Responses report `Server-Timing` for capture, encoding, artifact saving, and
+server total. Total includes response construction and excludes transfer. Benchmark a running local session
+with `node scripts/benchmark-screenshots.mjs http://127.0.0.1:3300`; set
+`SERVE_EMU_TOKEN` for authenticated sessions. The command reports seven samples
+per image mode after warmup, payload bytes, socket reuse, and stage timings.
+No Android device latency improvement is claimed without a baseline/device run.
+
 Logcat subscriptions share one `adb logcat` child for the active device.
 New children start at the live tail instead of replaying the device's buffered
 history. Matching lines are delivered in short `logs` SSE batches; each

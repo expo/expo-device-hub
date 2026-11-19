@@ -2530,10 +2530,16 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           return new Response("method not allowed", { status: 405 });
         }
         try {
-          const shot = await runForContext(requestContext, (context) =>
-            captureScreenshot(() => screencapPng(context.serial), context.deviceState.orientation),
+          return await screenshotResponse(
+            () =>
+              runForContext(requestContext, (context) =>
+                captureScreenshot(
+                  () => screencapPng(context.serial),
+                  context.deviceState.orientation,
+                ),
+              ),
+            url,
           );
-          return await screenshotResponse(shot.png, url, shot.metadata);
         } catch (err) {
           return errorResponse(err);
         }
