@@ -1,6 +1,4 @@
-import { type DeviceFoldCapabilities, type FoldPose } from "@expo/hub-client";
-
-import { duoPresetView } from "../foldable/duo-view";
+import { type DeviceFoldCapabilities } from "@expo/hub-client";
 
 /** The iPhone Duo's fold controls, as `@expo/hub-client` reports them for serve-sim. */
 export const DUO_FOLD_CONTROLS: Exclude<DeviceFoldCapabilities, false> = {
@@ -14,8 +12,3 @@ export const DUO_FOLD_CONTROLS: Exclude<DeviceFoldCapabilities, false> = {
   },
   tableMode: true,
 };
-
-/** A preset's view at the Duo's angle for that pose. */
-export function duoPreset(pose: FoldPose) {
-  return duoPresetView(pose, DUO_FOLD_CONTROLS.poses[pose]!.angle);
-}

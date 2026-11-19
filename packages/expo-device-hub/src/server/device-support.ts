@@ -1,6 +1,6 @@
 import { type AndroidDevice, type AndroidDeviceProfile } from "@expo/hub-android-utils";
 import { type AppleDevice, type AppleSimulatorDeviceType } from "@expo/hub-apple-utils";
-import { type DeviceModelId } from "@expo/hub-components";
+import { type DeviceModelId } from "@expo/hub-client/models/catalog";
 
 const IPHONE_18_PRO_DEVICE_TYPE = "com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro";
 const IPHONE_DUO_DEVICE_TYPE = "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo";

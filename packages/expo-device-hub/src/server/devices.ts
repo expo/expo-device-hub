@@ -17,7 +17,7 @@
 import { type AndroidDevice, listDevices as listAndroidDevices } from "@expo/hub-android-utils";
 import { listDevices as listAppleDevices } from "@expo/hub-apple-utils";
 
-import { type DeviceModelId } from "@expo/hub-components";
+import { type DeviceModelId } from "@expo/hub-client/models/catalog";
 
 import { type PlatformFilter } from "../platform-filter";
 import { androidDeviceModel, createAppleDeviceTypeNames } from "./device-models";

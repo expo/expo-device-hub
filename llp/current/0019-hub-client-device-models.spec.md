@@ -1,0 +1,1 @@
+../0019-hub-client-device-models.spec.md

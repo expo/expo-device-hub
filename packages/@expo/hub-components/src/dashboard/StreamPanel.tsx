@@ -8,9 +8,9 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
+import type { DeviceModelScreenProps } from "@expo/hub-client/models";
+import { type DeviceModelAssets } from "@expo/hub-client/models/catalog";
 import type { DeviceShapeProps, ScreenShape } from "@expo/hub-client/shapes";
-import { type DeviceModelAssets } from "../foldable/device-models";
-import type { DeviceModelScreenProps } from "../foldable/DeviceModelScreen";
 import {
   bg,
   border,
@@ -68,7 +68,7 @@ export function StreamPanel({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
-  /** 3D renderer from `@expo/hub-components/foldable`; without it every device stays flat. */
+  /** 3D renderer from `@expo/hub-client/models`; without it every device stays flat. */
   DeviceModelScreen?: ComponentType<DeviceModelScreenProps>;
   /** Screen shape clip from `@expo/hub-client/shapes`; without it the screen keeps generic corners. */
   DeviceShape?: ComponentType<DeviceShapeProps>;
