@@ -52,7 +52,7 @@ export type InspectorSectionsProps = {
   clipboardRequest?: ClipboardRequest | null;
   /** The Clipboard section took over `clipboardRequest`. */
   onClipboardRequestHandled?: () => void;
-  /** Viewer-local 2D/3D choices for an iPhone Duo. */
+  /** Viewer-local 2D/3D choices for a device with a 3D model. */
   foldPreview?: FoldPreviewOption;
 };
 

@@ -15,7 +15,8 @@ import {
 import { errorMessage, readBrowserClipboard, writeBrowserClipboard } from "./browserClipboard";
 import { TOAST_PILL_STYLE } from "./ScreenshotToast";
 
-const CLIPBOARD_TOASTER_ID = "hub-clipboard";
+/** The toaster over the device. The 3D preview's notice shows in it too. */
+export const CLIPBOARD_TOASTER_ID = "hub-clipboard";
 
 /** Clipboard feedback stays centered over the device without intercepting its input. */
 export function ClipboardToaster() {
@@ -35,7 +36,7 @@ export function ClipboardToaster() {
       gap={8}
       toastOptions={{ unstyled: true, style: { width: "100%" } }}
       hotkey={[" "]}
-      containerAriaLabel="Clipboard notifications"
+      containerAriaLabel="Device notifications"
     />
   );
 }

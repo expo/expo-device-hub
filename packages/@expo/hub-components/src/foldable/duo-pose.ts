@@ -5,13 +5,16 @@
  */
 
 import {
+  type DeviceOrientation,
   displayDeltaForRawDelta,
   displayPointForRawPoint,
+  type ScreenSize,
   streamGeometry,
   type FoldPose,
 } from "@expo/hub-client";
 import { Euler, Quaternion } from "three";
 
+import { type DeviceModelDescription, modelDisplay } from "./device-models";
 import { type DuoStreamConfig } from "./duo-displays";
 
 export interface DuoViewAngles {
@@ -23,6 +26,67 @@ export const DUO_DEFAULT_VIEW_ANGLES: Record<"laptop" | "tent", DuoViewAngles> =
   laptop: { elevation: 20, rotation: -20 },
   tent: { elevation: 10, rotation: -20 },
 };
+
+/**
+ * How far an interface orientation turns a portrait display, clockwise in
+ * degrees: what the flat view rotates a raw portrait frame by. It mirrors
+ * hub-client's internal `rotationDegreesForOrientation`.
+ */
+export function orientationDegrees(orientation: DeviceOrientation | null | undefined): number {
+  switch (orientation) {
+    case "landscape_left":
+      return 90;
+    case "landscape_right":
+      return -90;
+    case "portrait_upside_down":
+      return 180;
+    default:
+      return 0;
+  }
+}
+
+/** As in UIKit, a physical landscape shows the opposite landscape interface. */
+function interfaceForPhysical(orientation: DeviceOrientation): DeviceOrientation {
+  if (orientation === "landscape_left") return "landscape_right";
+  if (orientation === "landscape_right") return "landscape_left";
+  return orientation;
+}
+
+/**
+ * The orientation that frames a screen, named as an interface orientation, as
+ * `orientationDegrees` names it. With an observed physical pose, hub-client's
+ * `streamGeometry` frames the stream by that pose, even when the interface
+ * stays portrait, so the model does too; without one, the reported orientation.
+ */
+// @ref LLP 0004#3d-preview-in-the-hub — the model frames the screen by the physical pose, as the flat view does
+export function modelFramingOrientation(screen: ScreenSize): DeviceOrientation | undefined {
+  switch (screen.deviceOrientation) {
+    case undefined:
+      return screen.orientation;
+    case "portrait":
+      return "portrait";
+    case "pud":
+      return "portrait_upside_down";
+    case "landscape-left":
+      return "landscape_right";
+    case "landscape-right":
+      return "landscape_left";
+    default:
+      return screen.screenOrientation ?? undefined;
+  }
+}
+
+/**
+ * The orientation that rolls a model without fold events, in the convention of
+ * {@link modelFramingOrientation}. Once serve-sim observes the physical pose,
+ * iOS names `client.orientation` physically, so its landscapes swap.
+ */
+export function modelRollOrientation(
+  orientation: DeviceOrientation | null | undefined,
+  screen: Pick<ScreenSize, "deviceOrientation"> | null | undefined,
+): DeviceOrientation | null | undefined {
+  return orientation && screen?.deviceOrientation ? interfaceForPhysical(orientation) : orientation;
+}
 
 /** Camera-axis roll that makes the active panel's native UI readable. */
 export function duoScreenRoll(config: DuoStreamConfig) {
@@ -93,6 +157,37 @@ export function stepDuoSpring(value: number, velocity: number, target: number, s
   };
 }
 
+/**
+ * One spring step of the rendered hinge fold, in radians. The spring only nears
+ * its target, and a foldable's bend runs on every change of the fold, so the
+ * fold settles on its target once the rest is invisible (about 1e-4°).
+ */
+export function stepDuoFold(value: number, velocity: number, target: number, seconds: number) {
+  const step = stepDuoSpring(value, velocity, target, seconds);
+  return Math.abs(step.value - target) < 1e-6 && Math.abs(step.velocity) < 1e-4
+    ? { value: target, velocity: 0 }
+    : step;
+}
+
+/**
+ * How a frame turns onto its glass, clockwise in radians: the display's mount,
+ * and for one flat stream the turn back from an upright frame of a turned
+ * device to the hardware's own orientation. A raw frame of a turned device,
+ * which the flat view would rotate, already has that orientation.
+ */
+// @ref LLP 0004#3d-preview-in-the-hub — the glass keeps the hardware's orientation; the model turns instead
+export function modelFrameRotation(
+  description: DeviceModelDescription,
+  config: DuoStreamConfig,
+): number {
+  const mount = modelDisplay(description, config.screenId === 1 ? 1 : 3)?.mount ?? 0;
+  const turn =
+    description.streams === "screen"
+      ? orientationDegrees(modelFramingOrientation(config)) - streamGeometry(config).rotationDegrees
+      : 0;
+  return ((mount * 90 - turn) * Math.PI) / 180;
+}
+
 export interface DuoScreenMapping {
   rotation: number;
   width: number;
@@ -125,8 +220,8 @@ export function duoScreenMapping(
   config: DuoStreamConfig,
   width: number,
   height: number,
+  rotation = config.screenId === 1 ? 0 : Math.PI / 2,
 ): DuoScreenMapping {
-  const rotation = config.screenId === 1 ? 0 : Math.PI / 2;
   const cos = Math.abs(Math.cos(rotation));
   const sin = Math.abs(Math.sin(rotation));
   const rotatedWidth = config.width * cos + config.height * sin;

@@ -9,7 +9,8 @@ import {
   type ScreenSize,
 } from "@expo/hub-client";
 import type { DeviceShapeProps, ScreenShape } from "@expo/hub-client/shapes";
-import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
+import { type DeviceModelAssets } from "../foldable/device-models";
+import type { DeviceModelScreenProps } from "../foldable/DeviceModelScreen";
 import {
   bg,
   border,
@@ -26,6 +27,7 @@ import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
 import { deviceScreenLoading } from "./DeviceScreenStatus";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
 import { PhoneFrame, type PhoneFrameFoldPreview } from "./PhoneFrame";
+import { useModelUnavailableToast } from "./ModelPreviewToast";
 import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
 import { useElementHeight } from "./useElementHeight";
@@ -51,12 +53,13 @@ export function StreamPanel({
   client,
   agentInteraction,
   DeviceScreen,
-  FoldableDeviceScreen,
+  DeviceModelScreen,
   DeviceShape,
   foldPreview,
   displayScreen,
   framed = true,
   showScreenShape = true,
+  deviceModelAssets,
   screenShape,
   onClipboardFallback,
 }: {
@@ -65,8 +68,8 @@ export function StreamPanel({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
-  /** iPhone Duo 3D renderer from `@expo/hub-components/foldable`; without it the Duo stays flat. */
-  FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  /** 3D renderer from `@expo/hub-components/foldable`; without it every device stays flat. */
+  DeviceModelScreen?: ComponentType<DeviceModelScreenProps>;
   /** Screen shape clip from `@expo/hub-client/shapes`; without it the screen keeps generic corners. */
   DeviceShape?: ComponentType<DeviceShapeProps>;
   foldPreview?: PhoneFrameFoldPreview;
@@ -79,6 +82,8 @@ export function StreamPanel({
   framed?: boolean;
   /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
   showScreenShape?: boolean;
+  /** Consumer-owned 3D model files; a device whose model has no URL stays flat. */
+  deviceModelAssets?: DeviceModelAssets;
   /** The device's screen shape from `useScreenShape`: the frame's proportions before the stream connects. */
   screenShape?: ScreenShape | null;
   /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
@@ -141,6 +146,20 @@ export function StreamPanel({
   // PhoneFrame also knows whether the 3D model is loaded; until then the pill says Loading too.
   const [screenLoading, setScreenLoading] = useState(() => deviceScreenLoading(client));
   const captureScreenshot = useScreenshotToast(client, device.name);
+  // A consumer that handles a failed 3D model shows 2D from then on, so a notice
+  // that leaves by itself tells why. Without a handler the model keeps its own notice.
+  const notifyModelUnavailable = useModelUnavailableToast(device.id);
+  const onModelUnavailable = foldPreview?.onUnavailable;
+  const framePreview =
+    foldPreview && onModelUnavailable
+      ? {
+          ...foldPreview,
+          onUnavailable: () => {
+            notifyModelUnavailable();
+            onModelUnavailable();
+          },
+        }
+      : foldPreview;
   // Leave presentation in the same update that opens the inspector, restoring its
   // sibling interactivity before the Clipboard section can take focus.
   const clipboard = useClipboardToast(
@@ -311,11 +330,12 @@ export function StreamPanel({
               if (!client.clipboardPending) await clipboard.copyFromSimulator();
             }}
             DeviceScreen={DeviceScreen}
-            FoldableDeviceScreen={FoldableDeviceScreen}
+            DeviceModelScreen={DeviceModelScreen}
             DeviceShape={DeviceShape}
-            foldPreview={foldPreview}
+            foldPreview={framePreview}
             displayScreen={displayScreen}
             showScreenShape={showScreenShape}
+            deviceModelAssets={deviceModelAssets}
             screenShape={screenShape}
             onLoadingChange={setScreenLoading}
           />

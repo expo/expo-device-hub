@@ -6,7 +6,7 @@ import { CollapsibleSection } from "./CollapsibleSection";
 import { type Platform } from "./data";
 import { recordingLockText } from "./recording-lock";
 import { rotationUnavailableText } from "./rotation-availability";
-import { FoldSettings, type FoldPreviewOption } from "./FoldSettings";
+import { FoldSettings, ModelPreviewSettings, type FoldPreviewOption } from "./FoldSettings";
 import { KeyboardSection } from "./KeyboardSection";
 import { SidebarActionButton } from "./SidebarActionButton";
 import { SidebarRow } from "./SidebarRow";
@@ -169,7 +169,7 @@ export function DeviceOptionsSection({
   /** The fields of `client` that hold a kept value. Their rows lock. */
   stale?: ReadonlySet<SteadyField>;
   screenShape?: ScreenShapeOption;
-  /** Viewer-local 2D/3D choices for a foldable that the 3D model can show. */
+  /** Viewer-local 2D/3D choices for a device that the 3D model can show. */
   foldPreview?: FoldPreviewOption;
   /** Shut the device down on the host. */
   onShutdown?: () => void;
@@ -192,7 +192,7 @@ export function DeviceOptionsSection({
   // The 3D model draws its own device, so the screen shape applies to the 2D
   // view only. The 3D view shows while 3D is chosen and its model loads.
   // @ref LLP 0017#hub-dashboard — the shape option applies to the 2D view only
-  const shapeIn3D = foldPreview?.mode === "3d" && !foldPreview.unavailable;
+  const shapeIn3D = foldPreview?.mode === "3d";
   const shapeDescription = !screenShape?.available
     ? NO_DEVICE_SHAPE_DESCRIPTION
     : shapeIn3D
@@ -256,13 +256,20 @@ export function DeviceOptionsSection({
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
-      {client?.fold && client.capabilities.fold && (
+      {client?.fold && client.capabilities.fold ? (
         <FoldSettings
           fold={client.fold}
           controls={client.capabilities.fold}
           disabledReason={foldDisabledReason}
           preview={foldPreview}
+          separateDisplays={!!client.displays}
         />
+      ) : (
+        foldPreview && (
+          <div role="group" aria-label="3D preview">
+            <ModelPreviewSettings preview={foldPreview} />
+          </div>
+        )
       )}
 
       {SELECT_SETTINGS.filter(shown).map((setting) => (
