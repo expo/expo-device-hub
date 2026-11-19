@@ -921,12 +921,35 @@ describe("screenshot artifact outcome", () => {
     }
   }
 
-  function screenshotRequest(query = ""): Promise<Response | null> {
+  function screenshotRequest(query = "", body?: string): Promise<Response | null> {
     return createApiRouter(createApiRoutes()).handle(
-      new Request(`${BASE_URL}/api/screenshot${query}`, { method: "POST" }),
+      new Request(`${BASE_URL}/api/screenshot${query}`, { method: "POST", body }),
       fakeDependencies({ takeScreenshot: async () => PNG }),
     );
   }
+
+  test("an automated capture returns the PNG without saving an artifact", async () => {
+    await withScreenshotDirectory(
+      async (root) => root,
+      async (directory) => {
+        const response = await screenshotRequest("", JSON.stringify({ automation: true }));
+        expect(response!.status).toBe(200);
+        expect(response!.headers.get("x-expo-screenshot-artifact")).toBe("disabled");
+        expect(response!.headers.has("x-expo-screenshot-metadata")).toBe(true);
+        expect(new Uint8Array(await response!.arrayBuffer())).toEqual(PNG);
+        expect(await readdir(directory)).toEqual([]);
+      },
+    );
+  });
+
+  test("GET /api reports that screenshots accept automation", async () => {
+    const response = await createApiRouter(createApiRoutes()).handle(
+      new Request(`${BASE_URL}/api`),
+      fakeDependencies(),
+    );
+    const info = API_SUCCESS_PARSERS["/api"].GET(await response!.json());
+    expect(info.screenshot).toEqual({ automation: true });
+  });
 
   test("a saved capture carries only the status header", async () => {
     await withScreenshotDirectory(

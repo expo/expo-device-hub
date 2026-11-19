@@ -5,7 +5,7 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-18 (Android screenshot image options; Codex, directed by Gabe Debes), 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
+**Revised:** 2026-11-19 (Android automated screenshots skip the session artifact; Claude Code, directed by Krystof Woldrich), 2026-11-18 (Android screenshot image options; Codex, directed by Gabe Debes), 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -1043,3 +1043,16 @@ artifacts remain PNG at the requested size. Binary responses declare
 total durations; total includes response construction but excludes delivery [observed:
 `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`, its server,
 middleware, and inspection route callers].
+
+serve-emu's POST screenshot endpoint also accepts the optional JSON body
+`{ "automation": true }` (at most 1 KiB), as serve-sim's does. An empty body, `{}`, or
+`automation: false` keeps the manual behavior. `automation: true` returns the image and the
+`X-Expo-Screenshot-Metadata` header, but saves no session artifact and reports
+`X-Expo-Screenshot-Artifact: disabled`. Scheduled session previews use it, so they do not
+show up as user screenshots. Invalid JSON, unknown fields, and nonboolean values return 400,
+and oversized bodies return 413, before capture. Unlike serve-sim, it needs no extra token:
+serve-emu records no screenshot activity, so the flag only removes a side effect. `GET /api`
+reports `screenshot: { automation: true }`; older servers omit it and save every capture, so a
+client checks it before it sends automated captures [observed:
+`packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`, `middleware.ts`,
+`server.ts`].

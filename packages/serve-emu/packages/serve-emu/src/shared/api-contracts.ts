@@ -634,6 +634,11 @@ export type ApiInfoResponse = {
    * servers. `GET /api/orientation` reports the lock policy instead.
    */
   pose?: ScreenOrientation | null;
+  /**
+   * `automation: true` when `POST /api/screenshot` accepts `{ "automation": true }`, which skips
+   * the session artifact. Absent on older servers, which save every capture.
+   */
+  screenshot?: { automation: boolean };
 };
 
 export type EmptyResponse = ApiSuccess;
@@ -730,6 +735,7 @@ export type ApiContractMap = {
   "/api/logcat": { GET: EndpointContract<undefined, never> };
   "/api/metrics": { GET: EndpointContract<undefined, never> };
   "/api/screenshot": {
+    /** The UI sends no body. A worker may send `{ "automation": true }` to skip the session artifact. */
     POST: EndpointContract<undefined, ScreenshotBase64Response | BinaryPngResponse>;
   };
   "/api/foreground": { GET: EndpointContract<undefined, ForegroundResponse> };
@@ -1022,6 +1028,16 @@ export function parseApiInfoResponse(value: unknown): ApiInfoResponse {
     ...(root.pose === undefined
       ? {}
       : { pose: nullableOneOf(root.pose, SCREEN_ORIENTATIONS, "API info response.pose") }),
+    ...(root.screenshot === undefined
+      ? {}
+      : {
+          screenshot: {
+            automation: boolean(
+              record(root.screenshot, "API info response.screenshot").automation,
+              "API info response.screenshot.automation",
+            ),
+          },
+        }),
   };
 }
 
