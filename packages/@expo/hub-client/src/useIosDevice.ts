@@ -412,7 +412,27 @@ interface ResolvedConfig {
   chrome: DeviceDisplayChrome | null;
   webRtcCodec: WebRtcCodec;
   webRtcIceServers?: WebRtcIceServer[];
+  /** Each serve-sim feature the device does not have, with serve-sim's reason. */
+  unavailableFeatures: Readonly<Partial<Record<IosDeviceFeature, string>>>;
 }
+
+/** serve-sim's names for the features that a physical iPhone does not have. */
+type IosDeviceFeature =
+  | "clipboard"
+  | "apps"
+  | "permissions"
+  | "location"
+  | "logs"
+  | "deviceSettings"
+  | "appInjection"
+  | "devtools"
+  | "accessibility"
+  | "foregroundApp"
+  | "activity"
+  | "hinge"
+  | "rotate"
+  | "hardwareButtons"
+  | "lifecycle";
 
 /** Shape of the serve-sim middleware `/api` (and grid) responses we read. */
 interface PreviewApi {
@@ -434,6 +454,10 @@ interface PreviewApi {
   axEndpoint?: string;
   streamSettingsEndpoint?: string;
   gridApiEndpoint?: string;
+  /** Each feature the device does not have, with the reason; absent from older servers. */
+  unavailableFeatures?: Partial<Record<IosDeviceFeature, string>>;
+  /** In place of a config: the device's session ended, such as an unplugged iPhone. */
+  ended?: { reason: string };
   /** Bezel geometry for `device`; its identifier names the DeviceKit chrome profile. */
   chrome?: DeviceDisplayChrome | null;
   proxyHelpers?: boolean;
@@ -452,6 +476,32 @@ interface PreviewApi {
 // The requested server, device, and credentials that one resolved config belongs to.
 function connectionKey(baseUrl: string, device: string | null, token: string | null): string {
   return JSON.stringify([baseUrl, device, token]);
+}
+
+const NO_UNAVAILABLE_FEATURES: ResolvedConfig["unavailableFeatures"] = {};
+
+const CAPABILITY_FEATURES: ReadonlyArray<[keyof DeviceCapabilities, IosDeviceFeature]> = [
+  ["deviceSettings", "deviceSettings"],
+  ["orientation", "rotate"],
+  ["fold", "hinge"],
+  ["logs", "logs"],
+  ["foregroundApp", "foregroundApp"],
+  ["location", "location"],
+  ["accessibility", "accessibility"],
+  ["activity", "activity"],
+  ["clipboard", "clipboard"],
+];
+
+// @ref LLP 0027#feature-gate — serve-sim's reason for each missing feature, keyed by the capability it removes
+function capabilityReasons(
+  unavailableFeatures: ResolvedConfig["unavailableFeatures"],
+): NonNullable<DeviceClient["unavailableReasons"]> {
+  const reasons: Partial<Record<keyof DeviceCapabilities, string>> = {};
+  for (const [capability, feature] of CAPABILITY_FEATURES) {
+    const reason = unavailableFeatures[feature];
+    if (reason !== undefined) reasons[capability] = reason;
+  }
+  return reasons;
 }
 
 function configKey(config: ResolvedConfig): string {
@@ -474,6 +524,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     device: targetDevice = null,
     streamMode: requestedStreamMode,
     token = null,
+    startRequest = 0,
   } = options;
   const active = enabled && !!baseUrl;
   const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
@@ -511,6 +562,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   } | null>(null);
   const connection = resolvedConfig?.key === connectionScope ? resolvedConfig : null;
   const config = connection?.config ?? null;
+  const deviceSettingsUnavailableRef = useRef(false);
+  deviceSettingsUnavailableRef.current = !!config?.unavailableFeatures.deviceSettings;
   // @ref LLP 0015#temporary-drops — a helper restart keeps the stream mode and the device it showed
   // While a helper restarts, `/api` has no config for the same connection. The
   // last one still names the device, its transport, and its 3D model, so the
@@ -555,6 +608,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const { activityStatus, setActivityStatus } = useActivityStatus(activityScope);
   const refreshConfigRef = useRef<(() => void) | null>(null);
   const applyPreviewConfigRef = useRef<((value: PreviewApi | null) => void) | null>(null);
+  const startEndedDeviceRef = useRef<(() => void) | null>(null);
+  const handledStartRequestRef = useRef(startRequest);
   const configUpdatesReadyRef = useRef(false);
   const streamCapabilities = config ? iosStreamCapabilities(config.initialStreamSettings) : null;
   const knownStreamCapabilities = knownConfig
@@ -1147,9 +1202,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const pressButton = useCallback(
     (button: HardwareButton) => {
       const name = BUTTON_NAME[button];
-      if (name) sendWs(WS_MSG_BUTTON, { button: name });
+      if (!name) return;
+      if (name !== "home" && config?.unavailableFeatures.hardwareButtons) return;
+      sendWs(WS_MSG_BUTTON, { button: name });
     },
-    [sendWs],
+    [config, sendWs],
   );
 
   // Reload the RN/Expo bundle by injecting ⌘R over the helper's key channel
@@ -1522,15 +1579,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             ? middlewareEndpointForBrowser(path, middlewareUrl, basePath)
             : new URL(path, middlewareUrl).toString()
           : null;
-      const appStateUrl = absoluteMiddlewareUrl(c.appStateEndpoint);
+      // @ref LLP 0027#feature-gate — serve-sim decides; a feature it reports unavailable is never asked for
+      const unavailable = c.unavailableFeatures ?? {};
+      const appStateUrl = unavailable.foregroundApp
+        ? null
+        : absoluteMiddlewareUrl(c.appStateEndpoint);
       return {
         url: c.url!,
         // An <img> and an EventSource cannot set a header.
         streamUrl: withSessionTokenQuery(c.streamUrl ?? `${c.url}/stream.mjpeg`, token),
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
         inputAdmission: c.inputAdmission === true,
-        inputPaste: c.inputPaste === true,
-        inputCopy: c.inputCopy === true,
+        inputPaste: c.inputPaste === true && !unavailable.clipboard,
+        inputCopy: c.inputCopy === true && !unavailable.clipboard,
         device: c.device ?? null,
         pid: c.pid ?? null,
         configEventsPath: `${basePath}/api/events${targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ""}`,
@@ -1538,12 +1599,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         execToken: c.execToken ?? null,
         // These are subscription paths inside exec-ws, not browser URLs. The
         // server validates them against its internal middleware mount.
-        logsPath: c.logsEndpoint ?? null,
+        logsPath: unavailable.logs ? null : (c.logsEndpoint ?? null),
         appStateUrl: appStateUrl && withSessionTokenQuery(appStateUrl, token),
-        appIconUrl: absoluteMiddlewareUrl(c.appIconEndpoint),
+        appIconUrl: unavailable.apps ? null : absoluteMiddlewareUrl(c.appIconEndpoint),
         eventsPath: c.eventLogEventsEndpoint ?? null,
-        metricsPath: c.metricsEndpoint ?? null,
-        axUrl: absoluteMiddlewareUrl(c.axEndpoint),
+        metricsPath: unavailable.activity ? null : (c.metricsEndpoint ?? null),
+        axUrl: unavailable.accessibility ? null : absoluteMiddlewareUrl(c.axEndpoint),
         // A proxied helper URL uses the public middleware mount above rather
         // than an advertised internal host port that may be 0.
         streamSettingsUrl: c.streamSettingsEndpoint
@@ -1559,6 +1620,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           token,
         ),
         chrome: c.chrome ?? null,
+        unavailableFeatures: unavailable,
         webRtcCodec: c.streamSettings?.transport === "webrtc" ? c.streamSettings.codec : "h264",
         ...(c.streamSettings?.transport === "webrtc" && c.streamSettings.iceServers
           ? { webRtcIceServers: c.streamSettings.iceServers }
@@ -1569,6 +1631,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // Ask the grid to attach a helper for this device at most once per effect
     // run (i.e. per device). Resets whenever `targetDevice`/`baseUrl` change.
     let startRequested = false;
+    // A session that this run saw, or asked for, and that then ended stays ended: the device went
+    // away. Selecting the device again starts a new run, which asks for a new session.
+    let streamedOrStarted = false;
+    let endedReason: string | null = null;
 
     const applyConfig = (value: PreviewApi | null) => {
       if (cancelled) return;
@@ -1576,6 +1642,29 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       revision++;
       if (pollTimer) clearTimeout(pollTimer);
       pollTimer = null;
+      // @ref LLP 0027#device-end — a session whose device went away ends with the reason, as in serve-emu
+      const ended = !next ? value?.ended?.reason : undefined;
+      if (ended && (streamedOrStarted || startRequested)) {
+        current = null;
+        endedReason = ended;
+        setResolvedConfig((previous) =>
+          previous?.key === connectionKey(baseUrl, targetDevice, token)
+            ? { ...previous, config: null }
+            : previous,
+        );
+        setStatus("error");
+        setError(ended);
+        return;
+      }
+      if (next) {
+        streamedOrStarted = true;
+        endedReason = null;
+      }
+      if (!next && endedReason) {
+        setStatus("error");
+        setError(endedReason);
+        return;
+      }
       if (!next) {
         current = null;
         // Keep the middleware subscription alive while its helper is absent.
@@ -1637,9 +1726,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (cancelled || requestRevision !== revision) return;
         setActivityDiscoveryError(null);
         applyConfig(value);
-        if (!(value?.url && value.device) && targetDevice && !startRequested) {
+        if (!(value?.url && value.device) && targetDevice && !startRequested && !endedReason) {
           startRequested = true;
-          void startIosHelper(targetDevice, baseUrl, sessionFetch).catch(() => {});
+          void startIosHelper(targetDevice, baseUrl, sessionFetch)
+            .then((refusal) => {
+              if (!refusal || cancelled) return;
+              endedReason = refusal;
+              setStatus("error");
+              setError(refusal);
+            })
+            .catch(() => {});
         }
       } catch {
         // A failed background refresh must not tear down a working video stream.
@@ -1657,8 +1753,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const refresh = () => {
       void resolve();
     };
+    // @ref LLP 0027#device-end — a start is always the viewer's; this runs only when startRequest changes
+    const startEndedDevice = () => {
+      if (cancelled || !endedReason) return;
+      endedReason = null;
+      streamedOrStarted = false;
+      startRequested = false;
+      setStatus("connecting");
+      setError(null);
+      refresh();
+    };
     refreshConfigRef.current = refresh;
     applyPreviewConfigRef.current = applyConfig;
+    startEndedDeviceRef.current = startEndedDevice;
     refresh();
 
     return () => {
@@ -1666,6 +1773,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (pollTimer) clearTimeout(pollTimer);
       if (refreshConfigRef.current === refresh) refreshConfigRef.current = null;
       if (applyPreviewConfigRef.current === applyConfig) applyPreviewConfigRef.current = null;
+      if (startEndedDeviceRef.current === startEndedDevice) startEndedDeviceRef.current = null;
     };
   }, [
     active,
@@ -1678,6 +1786,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setError,
     setStatus,
   ]);
+
+  useEffect(() => {
+    if (handledStartRequestRef.current === startRequest) return;
+    handledStartRequestRef.current = startRequest;
+    startEndedDeviceRef.current?.();
+  }, [startRequest]);
 
   // A replacement helper/session at the same URL still needs new video readers.
   const videoSessionKey = config
@@ -2199,9 +2313,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       {
         onAdmitted() {
           // Keep main's software-character path active for browser-layout typing.
-          if (!input.trySend(WS_MSG_HARDWARE_KEYBOARD, { enabled: false })) return false;
-          hardwareKeyboardIntentRef.current = { pending: false };
-          setHardwareKeyboardConnectedState(false);
+          if (!deviceSettingsUnavailableRef.current) {
+            if (!input.trySend(WS_MSG_HARDWARE_KEYBOARD, { enabled: false })) return false;
+            hardwareKeyboardIntentRef.current = { pending: false };
+            setHardwareKeyboardConnectedState(false);
+          }
           setInputAdmitted(true);
         },
         onMessage(data) {
@@ -2610,13 +2726,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     [execWsUrl, execToken, socketProtocols, controlSocket],
   );
 
+  const unavailableFeatures = config?.unavailableFeatures ?? NO_UNAVAILABLE_FEATURES;
+  const locationUnavailable = !!unavailableFeatures.location;
   const locationBackend = useMemo<DeviceLocationBackend | null>(() => {
-    if (!runAction || !deviceUdid) return null;
+    if (!runAction || !deviceUdid || locationUnavailable) return null;
     return {
       set: (fix) => setIosLocation(runAction, deviceUdid, fix),
       clear: () => clearIosLocation(runAction, deviceUdid),
     };
-  }, [runAction, deviceUdid]);
+  }, [runAction, deviceUdid, locationUnavailable]);
   const {
     location,
     locationPending,
@@ -3018,18 +3136,29 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [gridApiUrl, sessionFetch]);
 
-  const deviceSettingsAvailable = !!execWsUrl && !!execToken && !!deviceUdid;
+  const deviceSettingsAvailable =
+    !!execWsUrl && !!execToken && !!deviceUdid && !unavailableFeatures.deviceSettings;
+  const logsAvailable = !unavailableFeatures.logs;
+  const foregroundAppAvailable = !unavailableFeatures.foregroundApp;
+  const rotateAvailable = !unavailableFeatures.rotate;
+  const hingeAvailable = !unavailableFeatures.hinge;
   const activityAvailable = !!metricsPath;
   const eventsAvailable = !!eventsPath;
   const accessibilityAvailable = accessibilityLoader !== null;
   const streamSettingsAvailable = !!streamSettingsUrl;
   const clipboardPaste = config?.inputPaste ?? false;
   const clipboardCopy = config?.inputCopy ?? false;
+  const unavailableReasons = useMemo(
+    () => capabilityReasons(unavailableFeatures),
+    [unavailableFeatures],
+  );
   const capabilities = useMemo<DeviceCapabilities>(
     () => ({
       deviceSettings: deviceSettingsAvailable,
       activity: activityAvailable,
       events: eventsAvailable,
+      logs: logsAvailable,
+      foregroundApp: foregroundAppAvailable,
       camera: false,
       accessibility: accessibilityAvailable,
       streamSettings: streamSettingsAvailable ? IOS_STREAM_SETTING_CAPABILITIES : false,
@@ -3037,11 +3166,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       permissions: false,
       clipboard:
         clipboardPaste || clipboardCopy ? { paste: clipboardPaste, copy: clipboardCopy } : false,
-      orientation: orientationCapabilities,
-      fold: foldCapabilities,
+      orientation: rotateAvailable ? orientationCapabilities : false,
+      fold: hingeAvailable ? foldCapabilities : false,
     }),
     [
       deviceSettingsAvailable,
+      logsAvailable,
+      foregroundAppAvailable,
+      rotateAvailable,
+      hingeAvailable,
       activityAvailable,
       eventsAvailable,
       accessibilityAvailable,
@@ -3146,6 +3279,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     webRtcCodec,
     setWebRtcCodec,
     capabilities,
+    unavailableReasons,
     foregroundApp,
     videoKind,
     attachVideo,

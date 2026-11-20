@@ -38,11 +38,17 @@ export type SteadyClient = {
 
 const NOTHING_STALE: ReadonlySet<SteadyField> = new Set();
 
-/** What a device without a report and without a guess can do. */
+/**
+ * What a device without a report and without a guess can do. Logs and the foreground app count as
+ * present, as the client reports them, so their sections do not say "not available" while the
+ * first device connects.
+ */
 const NO_CAPABILITIES: DeviceCapabilities = {
   deviceSettings: false,
   activity: false,
   events: false,
+  logs: true,
+  foregroundApp: true,
   camera: false,
   accessibility: false,
   streamSettings: false,
@@ -72,18 +78,35 @@ function sameData(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * Capabilities that a client reports as present until the device says it has none, as hub-client
+ * does for a phone's logs and foreground app. For them the device's latest report counts.
+ */
+const PRESENT_UNTIL_REPORTED: ReadonlySet<keyof DeviceCapabilities> = new Set([
+  "logs",
+  "foregroundApp",
+]);
+
+type UnavailableReasons = DeviceClient["unavailableReasons"];
+
+// @ref LLP 0027#feature-gate — logs, the foreground app and each capability with a reason follow the latest report
+function latestReportCounts(key: keyof DeviceCapabilities, reasons: UnavailableReasons) {
+  return PRESENT_UNTIL_REPORTED.has(key) || reasons?.[key] !== undefined;
+}
+
+/**
  * The capabilities of `first`, with each one that it lacks from `second`. It
  * is `first` itself when `second` adds nothing.
  */
 function withCapabilities(
   first: DeviceCapabilities,
   second: DeviceCapabilities | undefined,
+  reasons: UnavailableReasons,
 ): DeviceCapabilities {
   if (!second) return first;
   const merged = { ...first } as Record<keyof DeviceCapabilities, unknown>;
   let changed = false;
   for (const key of Object.keys(second) as (keyof DeviceCapabilities)[]) {
-    const value = first[key] || second[key];
+    const value = latestReportCounts(key, reasons) ? first[key] : first[key] || second[key];
     if (!sameData(value, first[key])) {
       changed = true;
       merged[key] = value;
@@ -92,16 +115,17 @@ function withCapabilities(
   return changed ? (merged as DeviceCapabilities) : first;
 }
 
-/** Each capability that the device reported once stays, with its last value. */
+/** Each capability that the device reported once stays, with its last value, except those whose latest report counts. */
 function keepCapabilities(
   previous: DeviceCapabilities | undefined,
   live: DeviceCapabilities,
+  reasons: UnavailableReasons,
 ): DeviceCapabilities {
   if (!previous) return live;
   const merged = { ...previous } as Record<keyof DeviceCapabilities, unknown>;
   let changed = false;
   for (const key of Object.keys(live) as (keyof DeviceCapabilities)[]) {
-    const value = live[key] || previous[key];
+    const value = latestReportCounts(key, reasons) ? live[key] : live[key] || previous[key];
     if (!sameData(value, previous[key])) {
       changed = true;
       merged[key] = value;
@@ -112,7 +136,13 @@ function keepCapabilities(
 
 /** The device's own reports after this one. It is `previous` itself while the client reports the same data. */
 function keep(previous: Kept | undefined, client: DeviceClient): Kept {
-  const next = { capabilities: keepCapabilities(previous?.capabilities, client.capabilities) } as {
+  const next = {
+    capabilities: keepCapabilities(
+      previous?.capabilities,
+      client.capabilities,
+      client.unavailableReasons,
+    ),
+  } as {
     -readonly [Field in keyof Kept]: Kept[Field];
   };
   let changed = !previous || next.capabilities !== previous.capabilities;
@@ -191,14 +221,16 @@ export function useSteadyClient(
   const guess = guessing ? kindGuess : undefined;
   const ownCapabilities = kept?.capabilities;
   const guessCapabilities = guess?.capabilities;
+  const reasons = client && reporting ? client.unavailableReasons : undefined;
   const capabilities = useMemo(
     () =>
       // A fold belongs to one device and is not passed on.
       withCapabilities(
         ownCapabilities ?? NO_CAPABILITIES,
         guessCapabilities && { ...guessCapabilities, fold: false },
+        reasons,
       ),
-    [ownCapabilities, guessCapabilities],
+    [ownCapabilities, guessCapabilities, reasons],
   );
   const streamCapabilities = kept?.streamCapabilities ?? guess?.streamCapabilities ?? null;
   // What this device shows is the guess for the next device of its kind. Only a

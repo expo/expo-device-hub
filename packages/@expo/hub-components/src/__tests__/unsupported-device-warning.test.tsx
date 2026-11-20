@@ -167,3 +167,26 @@ test("supported devices retain a single selection button without a warning", asy
   expect(container.querySelectorAll("button")).toHaveLength(1);
   expect(row().getAttribute("aria-pressed")).toBe("true");
 });
+
+test("a device that cannot stream names the reason in its trigger and details", async () => {
+  await act(async () =>
+    root.render(
+      <DeviceListItem
+        name="iPhone"
+        version="iOS 26.4"
+        platform="ios"
+        unsupported
+        unsupportedReason="needs iOS 27"
+      />,
+    ),
+  );
+  expect(trigger().getAttribute("aria-label")).toBe(
+    "Cannot stream iPhone: needs iOS 27. Show details",
+  );
+  await act(async () => user.click(trigger()));
+  const details = dialog()!;
+  expect(details.querySelector("h2")?.textContent).toBe("Cannot stream this device");
+  expect(details.querySelector("p")?.textContent).toBe(
+    "This device needs iOS 27 to stream in Expo Device Hub.",
+  );
+});

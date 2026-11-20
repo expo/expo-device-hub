@@ -45,11 +45,11 @@ export const STREAM_CONTROLS_HEIGHT = CONTROL_BUTTON_SIZE + TOOLBAR_PADDING * 2 
  * Paste, as in serve-sim), the Keyboard toggle of a phone layout, and Rotate.
  *
  * The controls do not follow the stream status: input can work while video
- * fails. Only Rotate locks, from the client's `orientationUnavailable`, and its
- * tooltip then gives the reason. "Reload" reloads the running React
+ * fails. Only Rotate locks, from the client's `orientationUnavailable` or a device
+ * that cannot turn at all, and its tooltip then gives the reason. "Reload" reloads the running React
  * Native/Expo bundle via the active device client.
  */
-// @ref LLP 0013#orientation — Rotate locks from orientationUnavailable only; the toolbar does not check the stream status
+// @ref LLP 0013#orientation — Rotate locks from orientationUnavailable or the device's missing-orientation reason; the toolbar does not check the stream status
 export function StreamControls({
   onBack,
   onHome,
@@ -60,6 +60,7 @@ export function StreamControls({
   onSave,
   saving = false,
   orientationUnavailable,
+  rotateNotAvailable,
   clipboard = false,
   clipboardPending = null,
   onPaste,
@@ -84,6 +85,7 @@ export function StreamControls({
   saving?: boolean;
   /** The client's `orientationUnavailable`. Locks Rotate and picks the explanation while set. */
   orientationUnavailable: DeviceOrientationUnavailableReason | null;
+  rotateNotAvailable?: string;
   /** The clipboard actions the device offers. Each one shows only when the device has it. */
   clipboard?: DeviceClipboardCapabilities;
   /** A clipboard action is in flight. The Clipboard control shows a spinner. */
@@ -95,7 +97,7 @@ export function StreamControls({
   /** Type with this device's own keyboard. The control shows only when given. */
   keyboard?: { open: boolean; onToggle: () => void };
 }) {
-  const rotateUnavailable = rotationUnavailableText(orientationUnavailable);
+  const rotateUnavailable = rotateNotAvailable ?? rotationUnavailableText(orientationUnavailable);
   const clipboardBusy = clipboardPending !== null;
   const showClipboard = !!clipboard && (clipboard.paste || clipboard.copy);
   const iconSize = CONTROL_ICON_SIZE;

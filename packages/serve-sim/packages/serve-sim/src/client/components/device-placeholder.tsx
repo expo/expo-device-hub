@@ -19,6 +19,7 @@ export function DevicePlaceholder({
   runtime,
   chrome,
   placeholderAsset,
+  physical = false,
   busy,
   busyLabel = "Starting…",
   error,
@@ -28,6 +29,7 @@ export function DevicePlaceholder({
   runtime: string;
   chrome?: DeviceKitChromeDescriptor | null;
   placeholderAsset?: DevicePlaceholderAssetDescriptor | null;
+  physical?: boolean;
   busy: boolean;
   busyLabel?: string;
   error: string | null;
@@ -82,7 +84,9 @@ export function DevicePlaceholder({
 
       <div className="flex flex-col items-center gap-1 text-center">
         <div className="text-[17px] font-semibold text-white/90">{name}</div>
-        <div className="text-[13px] text-white/45">{runtimeLabel(runtime)} Simulator</div>
+        <div className="text-[13px] text-white/45">
+          {physical ? runtimeLabel(runtime) : `${runtimeLabel(runtime)} Simulator`}
+        </div>
       </div>
 
       {error && (

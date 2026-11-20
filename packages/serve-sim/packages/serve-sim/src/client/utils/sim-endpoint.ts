@@ -17,6 +17,8 @@ declare global {
       /** Whether this preview is running on a hosted EAS worker. */
       isRunningOnEAS?: boolean;
       logsEndpoint?: string;
+      /** Each feature this device does not have, with the reason; absent from older servers. */
+      unavailableFeatures?: Partial<Record<string, string>>;
       metricsEndpoint?: string;
       crashesEndpoint?: string;
       captureEndpoint?: string;
@@ -76,6 +78,13 @@ export function streamConfigFrom(
   raw: Window["__SIM_PREVIEW__"] | null | undefined,
 ): NonNullable<Window["__SIM_PREVIEW__"]> | null {
   return raw && typeof raw.device === "string" && typeof raw.url === "string" ? raw : null;
+}
+
+export function deviceEndFrom(raw: unknown): { device: string; reason: string } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const { device, ended } = raw as { device?: unknown; ended?: { reason?: unknown } | null };
+  if (typeof device !== "string" || typeof ended?.reason !== "string") return null;
+  return { device, reason: ended.reason };
 }
 
 export function mjpegStreamUrlFrom(config: NonNullable<Window["__SIM_PREVIEW__"]>): string {

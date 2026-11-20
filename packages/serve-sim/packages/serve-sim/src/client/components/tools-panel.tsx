@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Smartphone } from "lucide-react";
 import { CollapsibleSection } from "./collapsible-section";
 import { SettingSwitch } from "./setting-switch";
@@ -16,6 +16,7 @@ import { NetworkCaptureTool } from "./network-capture-tool";
 import { PANEL_BACKGROUND } from "./panel-colors";
 import { SimulatorSettingsTool } from "./simulator-settings-tool";
 import { StreamSettingsTool } from "./stream-settings-tool";
+import { UnavailableTool } from "./unavailable-tool";
 import type { StreamPanelPeer } from "./stream-settings-tool";
 import type {
   StreamControlSettings,
@@ -50,6 +51,7 @@ export function ToolsPanel({
   onChromeEnabledChange,
   hasChrome = false,
   hingeControls,
+  unavailableFeatures = {},
 }: {
   open: boolean;
   onClose: () => void;
@@ -77,7 +79,14 @@ export function ToolsPanel({
   onChromeEnabledChange?: (enabled: boolean) => void;
   hasChrome?: boolean;
   hingeControls?: HingeControlsProps;
+  /** Each feature this device does not have, with the reason, from the preview config. */
+  unavailableFeatures?: Partial<Record<string, string>>;
 }) {
+  // @ref LLP 0027#feature-gate — serve-sim's config decides; a tool the device lacks says why
+  const tool = (feature: string, title: string, element: ReactNode) => {
+    const reason = unavailableFeatures[feature];
+    return reason ? <UnavailableTool title={title} reason={reason} /> : element;
+  };
   return (
     <Panel open={open} width={width} style={{ backgroundColor: PANEL_BACKGROUND }}>
       <PanelHeader>
@@ -87,23 +96,55 @@ export function ToolsPanel({
 
       {open && (
         <div className="p-3.5 overflow-y-auto flex-1 flex flex-col gap-3">
-          <AppDetectionTool udid={udid} currentApp={currentApp} isRunningOnEAS={isRunningOnEAS} />
-          <MetricsTool
-            udid={udid}
-            currentAppBundleId={currentApp?.bundleId ?? null}
-            metricsEndpoint={metricsEndpoint}
-          />
-          <NetworkCaptureTool udid={udid} captureEndpoint={captureEndpoint} />
+          {tool(
+            "foregroundApp",
+            "Current app",
+            <AppDetectionTool
+              udid={udid}
+              currentApp={currentApp}
+              isRunningOnEAS={isRunningOnEAS}
+            />,
+          )}
+          {tool(
+            "activity",
+            "Activity",
+            <MetricsTool
+              udid={udid}
+              currentAppBundleId={currentApp?.bundleId ?? null}
+              metricsEndpoint={metricsEndpoint}
+            />,
+          )}
+          {tool(
+            "appInjection",
+            "Network requests",
+            <NetworkCaptureTool udid={udid} captureEndpoint={captureEndpoint} />,
+          )}
           <EventLogTool udid={udid} eventsEndpoint={eventLogEventsEndpoint} />
-          <SimulatorSettingsTool
-            udid={udid}
-            runtime={deviceRuntime}
-            hingeControls={hingeControls}
-          />
-          <AxTreeTool overlayEnabled={axOverlayEnabled} onToggleOverlay={onToggleAxOverlay} />
-          <CameraTool udid={udid} bundleId={currentApp?.bundleId ?? null} />
-          <LocationEmulationTool udid={udid} />
-          <AppPermissionsTool udid={udid} bundleId={currentApp?.bundleId ?? null} />
+          {tool(
+            "deviceSettings",
+            "Simulator",
+            <SimulatorSettingsTool
+              udid={udid}
+              runtime={deviceRuntime}
+              hingeControls={hingeControls}
+            />,
+          )}
+          {tool(
+            "accessibility",
+            "Accessibility",
+            <AxTreeTool overlayEnabled={axOverlayEnabled} onToggleOverlay={onToggleAxOverlay} />,
+          )}
+          {tool(
+            "appInjection",
+            "Camera",
+            <CameraTool udid={udid} bundleId={currentApp?.bundleId ?? null} />,
+          )}
+          {tool("location", "Location", <LocationEmulationTool udid={udid} />)}
+          {tool(
+            "permissions",
+            "Permissions",
+            <AppPermissionsTool udid={udid} bundleId={currentApp?.bundleId ?? null} />,
+          )}
           {hasChrome && onChromeEnabledChange && (
             <DisplayTool
               chromeEnabled={!!chromeEnabled}
@@ -121,7 +162,7 @@ export function ToolsPanel({
             transportLocked={streamTransportLocked}
             configuredMaxDimension={streamConfiguredMaxDimension}
           />
-          <CrashTool udid={udid} crashesEndpoint={crashesEndpoint} />
+          {tool("logs", "Crashes", <CrashTool udid={udid} crashesEndpoint={crashesEndpoint} />)}
         </div>
       )}
     </Panel>

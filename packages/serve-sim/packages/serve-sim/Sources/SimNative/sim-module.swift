@@ -27,12 +27,13 @@ private func u32(_ v: Int) -> UInt32 {
     private let setup: HIDInputSetup
     private let udid: String
 
-    @NodeConstructor init(_ udid: String) throws {
+    @NodeConstructor init(_ udid: String, _ kind: String?) throws {
         self.udid = udid
         let injector = HIDInjector()
         self.injector = injector
+        let sourceKind = try ScreenSourceKind(argument: kind)
         // @ref LLP 0004#touch-transport — all commands deliberately share the setup failure gate.
-        setup = HIDInputSetup { try await injector.setup(deviceUDID: udid) }
+        setup = HIDInputSetup { try await injector.setup(deviceUDID: udid, kind: sourceKind) }
     }
 
     /// Zero omits capture metadata; ordinary iOS uses its sole profile panel.
@@ -169,7 +170,8 @@ private func u32(_ v: Int) -> UInt32 {
         _ maxDimension: Int,
         _ h264Fps: Int,
         _ h264Bitrate: Int,
-        _ screenID: Int?
+        _ screenID: Int?,
+        _ kind: String?
     ) throws {
         // Omitted/zero preserves active-display capture for existing callers.
         // Each positive ID owns an independent exact-panel capture pipeline.
@@ -190,7 +192,8 @@ private func u32(_ v: Int) -> UInt32 {
                 h264Fps: h264Fps,
                 h264Bitrate: h264Bitrate
             ),
-            screenID: requestedScreenID == 0 ? nil : requestedScreenID
+            screenID: requestedScreenID == 0 ? nil : requestedScreenID,
+            kind: try ScreenSourceKind(argument: kind)
         )
     }
 
@@ -316,6 +319,19 @@ private func u32(_ v: Int) -> UInt32 {
         return result
     }
 
+    @NodeMethod func subscribeEnd(_ onEnd: NodeFunction) async throws -> NodeFunction {
+        let unsubscribe = await engine.subscribeEnd { [weak self] end in
+            guard let self else { return }
+            let json = end.json()
+            Task {
+                try? await self.queue.run {
+                    _ = try? await onEnd.call([json]).as(NodePromise.self)?.value
+                }
+            }
+        }
+        return try NodeFunction { await unsubscribe() }
+    }
+
     @NodeMethod func subscribeScreenChanges(_ onChange: NodeFunction) async throws -> NodeFunction {
         let unsubscribe = await engine.subscribeScreenChanges { [weak self] in
             guard let self else { return }
@@ -405,6 +421,9 @@ private let screenshotConverter = ScreenshotEncoder()
         let data = try await screenshotConverter.convert(input, maxWidth: maxWidth, jpegQuality: quality)
         var buffer = try CaptureBuffer(initialCapacity: data.count)
         return try buffer.setData(data)
+    },
+    "physicalDeviceSupport": try NodeFunction { (udid: String?) async -> String in
+        await PhysicalDeviceHost.report(deviceUDID: udid).json()
     },
     "SimHID": SimHID.deferredConstructor,
     "SimCapture": SimCapture.deferredConstructor,

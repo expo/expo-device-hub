@@ -6,7 +6,7 @@
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
-**Revised:** 2026-11-16 (sidebar support warning, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
+**Revised:** 2026-11-20 (physical iPhones consolidated into LLP 0027; Claude Code, directed by Thomas Girardier); 2026-11-19 (physical iPhones: support reason, Current app and Logs capabilities, no Shut down for physical devices; Claude Code, directed by Thomas Girardier); 2026-11-16 (sidebar support warning, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
 
 ## Summary
 
@@ -176,12 +176,25 @@ and only change their value or lock]
   and Logs, and the sections of its platform: Accessibility, Location, Clipboard and Events
   on iOS; Camera, Accessibility, Location, Permissions and Events on Android. A section whose
   capability the device does not report says that it is not available, in place of its
-  controls. [observed: `PLATFORM_SECTIONS` in `InspectorSections.tsx`]
+  controls. Current app and Logs do so too, from the `foregroundApp` and `logs` capabilities,
+  which count as present until the device reports otherwise, as a physical iPhone does. For
+  these two, and for any capability that the device's backend explains as missing in the
+  client's `unavailableReasons`, the device's latest report counts, not the first
+  ([LLP 0027](0027-physical-iphones.explainer.md#feature-gate)).
+  [observed: `PLATFORM_SECTIONS` in `InspectorSections.tsx`; `latestReportCounts` in
+  `useSteadyClient.ts`]
 - **Rows.** Device options has one fixed list of rows per platform. A row that the device
   cannot change now is locked: while the settings load, without a reason; while the Hub
   cannot read them, or on a device that does not have the setting, with the reason in a
-  tooltip. A select whose value is not known shows a placeholder.
-  [observed: `SELECT_SETTINGS`, `SWITCH_SETTINGS` and `lockReason` in `DeviceOptionsSection.tsx`]
+  tooltip. A select whose value is not known shows a placeholder. A device whose backend
+  explains why it lacks a capability, in the client's `unavailableReasons`, locks the rows of
+  that capability with that reason, also while the settings load: a physical iPhone locks
+  every settings row and the keyboard toggles with the reason for `deviceSettings`, and
+  Orientation and the toolbar's Rotate with the reason for `orientation`. Device options stays
+  a section with rows, not a "not available" section, because its viewer-local rows, such as
+  Show device shape, still work ([LLP 0027](0027-physical-iphones.explainer.md#feature-gate)).
+  [observed: `SELECT_SETTINGS`, `SWITCH_SETTINGS` and `lockReason` in `DeviceOptionsSection.tsx`;
+  `rotateNotAvailableText` in `rotation-availability.ts`]
   Stream options has a fixed list of rows per platform too: Transport, the two codec rows,
   Max size, Video FPS and Video bitrate; on iOS also MJPEG FPS and MJPEG quality; on Android
   also Source. A row that the server or the device has nothing for is locked with a reason: a
@@ -226,7 +239,9 @@ selection button. Keyboard and touch activation use the same trigger; Escape
 returns focus and outside interaction dismisses the details. The explanation is
 about device-type support and testing: streaming and controls may not work as
 expected, but the device can still be tried. It does not describe rendering or
-GPU performance. The details anchor to the warning trigger and render in a portal
+GPU performance. A device that Hub knows cannot stream, such as an iPhone older than iOS 27,
+carries a reason ("needs iOS 27"); its details say that the device needs it to stream, in
+place of the general text ([LLP 0027](0027-physical-iphones.explainer.md#listing)). The details anchor to the warning trigger and render in a portal
 outside the sidebar's scroll container. Viewport collision handling can flip them
 above the trigger; long content scrolls within the available height. They hide when
 the trigger scrolls out of view. [observed: HubComponents `DeviceListItem.tsx` and
@@ -307,23 +322,24 @@ The packages are tightly coupled, so one corpus at the repo root covers all of t
 
 ## Where to look next
 
-| Topic                                                      | Source                                                          |
-| ---------------------------------------------------------- | --------------------------------------------------------------- |
-| serve-sim video pipeline and recording                     | [LLP 0001](0001-serve-sim-video-pipeline.explainer.md)          |
-| serve-sim WebRTC signaling and control                     | [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md)     |
-| serve-sim HTTP routes, auth, CORS, WebSockets              | [LLP 0003](0003-serve-sim-http-api.spec.md)                     |
-| Hinge controls for iOS and Android and display selection   | [LLP 0004](0004-serve-sim-hinge-controls.explainer.md)          |
-| serve-sim network capture and redaction                    | [LLP 0005](0005-serve-sim-network-capture.explainer.md)         |
-| How Simulator.app forwards scroll (reverse-engineered)     | [LLP 0006](0006-serve-sim-scroll-injection.research.md)         |
-| serve-sim capability loader                                | [LLP 0007](0007-serve-sim-capability-loader.explainer.md)       |
-| serve-sim CLI startup and app readiness                    | [LLP 0011](0011-serve-sim-session-startup.explainer.md) (Draft) |
-| serve-emu scrcpy framing, control packets, `SEMU` metadata | [LLP 0008](0008-serve-emu-protocol.spec.md)                     |
-| serve-emu hardware H.264 encoder spike                     | [LLP 0009](0009-serve-emu-hardware-encoder-spike.research.md)   |
-| serve-sim clipboard: pasteboard API, Paste, Copy           | [LLP 0010](0010-serve-sim-clipboard.explainer.md)               |
-| Hub UI rules and tokens                                    | `packages/expo-device-hub/AGENTS.md`                            |
-| serve-sim commands, tests, definition of done              | `packages/serve-sim/AGENTS.md`, `packages/serve-sim/REVIEW.md`  |
-| serve-emu layout and auth                                  | `packages/serve-emu/AGENTS.md`                                  |
-| Releases                                                   | `RELEASING.md`                                                  |
+| Topic                                                                             | Source                                                          |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| serve-sim video pipeline and recording                                            | [LLP 0001](0001-serve-sim-video-pipeline.explainer.md)          |
+| serve-sim WebRTC signaling and control                                            | [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md)     |
+| serve-sim HTTP routes, auth, CORS, WebSockets                                     | [LLP 0003](0003-serve-sim-http-api.spec.md)                     |
+| Hinge controls for iOS and Android and display selection                          | [LLP 0004](0004-serve-sim-hinge-controls.explainer.md)          |
+| serve-sim network capture and redaction                                           | [LLP 0005](0005-serve-sim-network-capture.explainer.md)         |
+| How Simulator.app forwards scroll (reverse-engineered)                            | [LLP 0006](0006-serve-sim-scroll-injection.research.md)         |
+| serve-sim capability loader                                                       | [LLP 0007](0007-serve-sim-capability-loader.explainer.md)       |
+| serve-sim CLI startup and app readiness                                           | [LLP 0011](0011-serve-sim-session-startup.explainer.md) (Draft) |
+| serve-emu scrcpy framing, control packets, `SEMU` metadata                        | [LLP 0008](0008-serve-emu-protocol.spec.md)                     |
+| serve-emu hardware H.264 encoder spike                                            | [LLP 0009](0009-serve-emu-hardware-encoder-spike.research.md)   |
+| serve-sim clipboard: pasteboard API, Paste, Copy                                  | [LLP 0010](0010-serve-sim-clipboard.explainer.md)               |
+| Physical iPhones: listing, stream, feature gate, device end, one stream per phone | [LLP 0027](0027-physical-iphones.explainer.md) (Draft)          |
+| Hub UI rules and tokens                                                           | `packages/expo-device-hub/AGENTS.md`                            |
+| serve-sim commands, tests, definition of done                                     | `packages/serve-sim/AGENTS.md`, `packages/serve-sim/REVIEW.md`  |
+| serve-emu layout and auth                                                         | `packages/serve-emu/AGENTS.md`                                  |
+| Releases                                                                          | `RELEASING.md`                                                  |
 
 LLPs 0001–0009 were moved here from the package `docs/` folders and from `Sources/ServeSimCapabilityLoader/DESIGN.md`. Agent instructions, READMEs, and process docs stay in their packages.
 

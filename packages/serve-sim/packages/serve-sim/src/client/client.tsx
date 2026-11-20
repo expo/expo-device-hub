@@ -106,6 +106,7 @@ import { proxyPreviewConfigForBrowser } from "./utils/preview-config";
 import {
   mjpegStreamUrlFrom,
   simEndpoint,
+  deviceEndFrom,
   streamConfigFrom,
   sameSimulator,
   webrtcCloseUrlFrom,
@@ -426,14 +427,23 @@ function App() {
     const es = openHostEventStream(eventsUrl);
     es.onmessage = (event) => {
       try {
-        applyConfig(streamConfigFrom(JSON.parse(event.data) as Window["__SIM_PREVIEW__"]));
+        const message = JSON.parse(event.data);
+        const end = deviceEndFrom(message);
+        if (end && selectedUdid && sameSimulator(end.device, selectedUdid))
+          setActionErrors((errors) => ({ ...errors, [end.device]: end.reason }));
+        applyConfig(streamConfigFrom(message as Window["__SIM_PREVIEW__"]));
       } catch {}
     };
     return () => es.close();
   }, [selectedUdid, selectedHasHelper]);
 
   useEffect(() => {
-    if (!config?.logsEndpoint || !shouldStreamSimulatorLogs(window.location)) return;
+    if (
+      !config?.logsEndpoint ||
+      config.unavailableFeatures?.logs ||
+      !shouldStreamSimulatorLogs(window.location)
+    )
+      return;
 
     const procColors = new Map<string, string>();
     const palette = [
@@ -507,7 +517,7 @@ function App() {
       if (groupOpen) console.groupEnd();
       stop();
     };
-  }, [config?.logsEndpoint]);
+  }, [config?.logsEndpoint, config?.unavailableFeatures?.logs]);
 
   // Selection drives the view: stream when the selected device's helper config
   // has arrived, otherwise a placeholder (connecting / boot-and-start).
@@ -563,9 +573,10 @@ function App() {
             runtime={selectedDevice.runtime}
             chrome={selectedDevice.chrome ?? null}
             placeholderAsset={selectedDevice.placeholderAsset ?? null}
+            physical={selectedDevice.kind === "physical"}
             busy={!!selectedDevice.helper || !!starting[selectedDevice.device]}
             busyLabel={selectedDevice.helper ? "Connecting…" : "Starting…"}
-            error={actionErrors[selectedDevice.device] ?? null}
+            error={actionErrors[selectedDevice.device] ?? selectedDevice.unsupportedReason ?? null}
             onStart={() => startDevice(selectedDevice.device)}
           />
         ) : singleDevice ? (
@@ -1150,9 +1161,11 @@ function AppWithConfig({
   // A hardware button on the device chrome was pressed/released. Forward its HID
   // (page, usage) so the helper injects it via arbitrary HID — `down`/`up` phases
   // let power / side buttons be held for their long-press menus.
+  const hardwareButtonsUnavailable = !!config.unavailableFeatures?.hardwareButtons;
   const handleChromeButton = useCallback(
     ({ phase, button }: ChromeButtonPress) => {
       if (button.usagePage == null || button.usage == null) return;
+      if (hardwareButtonsUnavailable) return;
       sendWs(0x04, {
         button: button.name,
         page: button.usagePage,
@@ -1160,7 +1173,7 @@ function AppWithConfig({
         phase,
       });
     },
-    [sendWs],
+    [hardwareButtonsUnavailable, sendWs],
   );
   const onStreamDigitalCrown = useCallback((delta: number) => sendWs(0x0a, { delta }), [sendWs]);
   const onStreamScroll = useCallback(
@@ -1186,7 +1199,9 @@ function AppWithConfig({
   );
   const currentOrientation =
     (activeStreamConfig as { orientation?: SimulatorOrientation }).orientation ?? "portrait";
-  const canRotate = deviceType !== "watch" && deviceType !== "vision";
+  const unavailableFeatures = config.unavailableFeatures ?? {};
+  const canRotate =
+    deviceType !== "watch" && deviceType !== "vision" && !unavailableFeatures.rotate;
   const rotateBy = useCallback(
     (direction: "left" | "right") => {
       if (!canRotate) return;
@@ -1794,7 +1809,8 @@ function AppWithConfig({
           className="max-sm:hidden"
           aria-label="Open WebKit DevTools"
           aria-pressed={devtoolsOpen}
-          title="WebKit DevTools"
+          disabled={!!unavailableFeatures.devtools}
+          title={unavailableFeatures.devtools ?? "WebKit DevTools"}
         >
           <Globe size={18} strokeWidth={1.75} />
         </IconButton>
@@ -1803,7 +1819,8 @@ function AppWithConfig({
         onClick={() => setLogsOpen((o) => !o)}
         aria-label="Open device logs"
         aria-pressed={logsOpen}
-        title="Logs"
+        disabled={!!unavailableFeatures.logs}
+        title={unavailableFeatures.logs ?? "Logs"}
       >
         <ScrollText size={18} strokeWidth={1.75} />
       </IconButton>
@@ -2209,10 +2226,12 @@ function AppWithConfig({
                       )}
                     </ActionMenu>
                   )}
-                  <SimulatorToolbar.RotateButton
-                    title="Rotate device"
-                    direction={isDuo ? "right" : "left"}
-                  />
+                  {!unavailableFeatures.rotate && (
+                    <SimulatorToolbar.RotateButton
+                      title="Rotate device"
+                      direction={isDuo ? "right" : "left"}
+                    />
+                  )}
                 </SimulatorToolbar.Actions>
               </SimulatorToolbar>
               <SimulatorToolbar
@@ -2279,6 +2298,7 @@ function AppWithConfig({
               metricsEndpoint={config.metricsEndpoint}
               crashesEndpoint={config.crashesEndpoint}
               captureEndpoint={config.captureEndpoint}
+              unavailableFeatures={config.unavailableFeatures}
               axOverlayEnabled={axOverlayEnabled}
               onToggleAxOverlay={() => setAxOverlayEnabled((enabled) => !enabled)}
               streamSettings={streamSettings}

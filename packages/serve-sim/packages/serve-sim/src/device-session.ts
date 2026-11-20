@@ -1,3 +1,19 @@
+import {
+  buttonFeature,
+  deviceFeatureRefusal,
+  deviceKindOf,
+  type DeviceFeature,
+  type DeviceKind,
+} from "./device-features";
+import {
+  WS_CLOSE_DEVICE_ENDED,
+  clearDeviceEnd,
+  deviceEndReason,
+  recordDeviceEnd,
+  refuseEndedDevice,
+} from "./device-end";
+import { clearServeSimState } from "./state";
+import { claimPhysicalStream } from "./physical-stream-lock";
 import { createSerialQueue, withHostActionDeadline } from "./host-actions-utils";
 import { timeStartup } from "./startup-timing";
 import { RECORDING_LEASE_MS } from "./recording-timeouts";
@@ -331,6 +347,12 @@ export class DeviceSession {
   private screenRefreshRequested = false;
   private unsubscribeScreenChanges?: NativeUnsubscribe;
   private unsubscribeDeviceState?: NativeUnsubscribe;
+  private unsubscribeEnd?: NativeUnsubscribe;
+  private releaseStream?: () => void;
+  private readonly kind: DeviceKind;
+  /** Set when the device went away; viewers' input sockets close with it. */
+  private endReason?: string;
+  private readonly videoResponses = new Set<ServerResponse>();
   private deviceStateObservationStarted = false;
   private deviceStateVersion?: {
     generation: number;
@@ -402,8 +424,9 @@ export class DeviceSession {
     const streamSettings = streamControlSettingsFrom(initialStreamSettings);
     this.transport = streamSettings.transport;
     this.encoderSettings = streamEncoderSettingsFrom(streamSettings);
-    this.hid = new NativeHid(udid);
-    this.capture = new NativeCapture(udid, this.encoderSettings);
+    this.kind = deviceKindOf(udid);
+    this.hid = new NativeHid(udid, this.kind);
+    this.capture = new NativeCapture(udid, this.encoderSettings, undefined, this.kind);
     this.activeHidKeyUsages.set(this.serverInput, new Set());
   }
 
@@ -451,15 +474,16 @@ export class DeviceSession {
     if (this.phase === "running") return this.captureStart ?? Promise.resolve();
     if (this.phase === "stopped") return Promise.reject(new Error("Capture session is stopped"));
     this.phase = "running";
-    this.captureStart = timeStartup(
-      "device-options",
-      () => refreshDeviceOptionState(this.udid),
-      this.udid,
+    this.captureStart = (
+      deviceFeatureRefusal(this.udid, "deviceSettings")
+        ? Promise.resolve()
+        : timeStartup("device-options", () => refreshDeviceOptionState(this.udid), this.udid)
     )
       .then(async () => {
-        if (this.phase === "running") {
-          await timeStartup("native-capture", () => this.capture.start(), this.udid);
-        }
+        if (this.phase !== "running") return;
+        // @ref LLP 0027#one-stream-per-phone — claim before native capture, so a second server never takes the phone over
+        if (this.kind === "physical") this.releaseStream ??= claimPhysicalStream(this.udid);
+        await timeStartup("native-capture", () => this.capture.start(), this.udid);
       })
       .then(async () => {
         if (this.phase !== "running") return;
@@ -476,6 +500,7 @@ export class DeviceSession {
           return;
         }
         this.unsubscribeScreenChanges = unsubscribe;
+        this.observeEnd();
         this.observeDeviceState();
         if (
           await timeStartup(
@@ -493,6 +518,45 @@ export class DeviceSession {
         this.captureReady = true;
       });
     return this.captureStart;
+  }
+
+  /**
+   * A device that serve-sim cannot boot, a physical one, can go away on its own. Its screen source
+   * reports that, and the session ends.
+   */
+  private observeEnd(): void {
+    if (!deviceFeatureRefusal(this.udid, "lifecycle")) return;
+    void this.capture
+      .subscribeEnd(async (end) => endDeviceSession(this, deviceEndReason(end)))
+      .then(async (unsubscribe) => {
+        if (this.phase !== "running") {
+          await unsubscribe();
+          return;
+        }
+        this.unsubscribeEnd = unsubscribe;
+      })
+      .catch((error) => {
+        console.error(`[capture] Device end observation unavailable: ${error}`);
+      });
+  }
+
+  // @ref LLP 0027#feature-gate — drop input a phone cannot take before it reaches native code
+  private lacks(feature: DeviceFeature | null): boolean {
+    return deviceFeatureRefusal(this.udid, feature) !== null;
+  }
+
+  /** Record why the device went away; `close` then tells every viewer. */
+  private trackVideoResponse(res: ServerResponse): void {
+    this.videoResponses.add(res);
+    res.once("close", () => this.videoResponses.delete(res));
+  }
+
+  markEnded(reason: string): boolean {
+    if (this.phase !== "running" || this.endReason !== undefined) return false;
+    this.endReason = reason;
+    for (const res of this.videoResponses) res.end();
+    this.videoResponses.clear();
+    return true;
   }
 
   /** Capture must be started; temporary screenshots do not need a device-pose observer. */
@@ -560,7 +624,7 @@ export class DeviceSession {
     if (this.phase !== "running" || !this.rebootSuspended) return;
     await this.capture.resumeAfterReboot();
     if (this.phase !== "running") return;
-    this.hid = new NativeHid(this.udid);
+    this.hid = new NativeHid(this.udid, this.kind);
     this.softwareKeyboardHidden = false;
     await this.refreshScreenSizeFromNative();
     if (this.phase !== "running") return;
@@ -590,12 +654,16 @@ export class DeviceSession {
     this.unsubscribeScreenChanges = undefined;
     const deviceStateDetached = this.unsubscribeDeviceState?.().catch(() => {});
     this.unsubscribeDeviceState = undefined;
+    const endDetached = this.unsubscribeEnd?.().catch(() => {});
+    this.unsubscribeEnd = undefined;
     this.queueInputCleanup(this.serverInput, true);
-    for (const ws of this.admittedHidSockets) {
+    const closing = new Set(this.endReason ? [...this.admittedHidSockets, ...this.hidSockets] : []);
+    for (const ws of this.endReason ? closing : this.admittedHidSockets) {
       this.discardQueuedInput(ws);
       this.detachHidSocket(ws);
       this.queueInputCleanup(ws, true);
-      ws.close();
+      if (this.endReason) ws.close(WS_CLOSE_DEVICE_ENDED, this.endReason);
+      else ws.close();
     }
     for (const res of this.panelRequests) res.destroy();
     for (const panel of this.panels.values()) this.stopPanel(panel);
@@ -610,7 +678,7 @@ export class DeviceSession {
     this.closing = (async () => {
       await this.retireInputConsumers();
       if (!stoppingStartup) await this.captureStart?.catch(() => {});
-      await Promise.all([screenChangesDetached, deviceStateDetached]);
+      await Promise.all([screenChangesDetached, deviceStateDetached, endDetached]);
       let recordingError: unknown = this.recordingFailure;
       try {
         await recordingStart;
@@ -627,6 +695,8 @@ export class DeviceSession {
       } catch (error) {
         recordingError ??= error;
       }
+      this.releaseStream?.();
+      this.releaseStream = undefined;
       if (recordingError) throw recordingError;
     })();
     trackClosedSessionStop(this.closing);
@@ -1126,6 +1196,7 @@ export class DeviceSession {
       Connection: "keep-alive",
       ...(panel ? { "X-Screen-Id": String(panel.screenId) } : {}),
     });
+    this.trackVideoResponse(res);
 
     void (async () => {
       let cleanup = () => {};
@@ -1181,6 +1252,7 @@ export class DeviceSession {
       Connection: "keep-alive",
       ...(panel ? { "X-Screen-Id": String(panel.screenId) } : {}),
     });
+    this.trackVideoResponse(res);
 
     void (async () => {
       let cleanup = () => {};
@@ -1646,6 +1718,12 @@ export class DeviceSession {
       case 0x04: {
         const m = json<{ button: string; page?: number; usage?: number; phase?: string }>();
         if (!m) break;
+        if (
+          this.lacks(
+            m.page != null && m.usage != null ? "hardwareButtons" : buttonFeature(m.button),
+          )
+        )
+          break;
         this.recordHidEvent(tag, m);
         if (m.page != null && m.usage != null) {
           await this.hid.buttonHid(
@@ -1716,6 +1794,7 @@ export class DeviceSession {
             if (
               m.type === "down" &&
               !supportsHingeAngle &&
+              !this.lacks("deviceSettings") &&
               character !== undefined &&
               needsCharacter
             ) {
@@ -1742,7 +1821,7 @@ export class DeviceSession {
       }
       case 0x07: {
         const m = json<{ orientation: string; deviceOrientation?: unknown }>();
-        if (!m) break;
+        if (!m || this.lacks("rotate")) break;
         const generation = this.inputGeneration;
         const operation = this.hingeControlUpdate.then(async () => {
           const value = ORIENTATION_BY_NAME[m.orientation];
@@ -1794,19 +1873,20 @@ export class DeviceSession {
       }
       case 0x08: {
         const m = json<{ option: string; enabled: boolean }>();
-        if (m) {
+        if (m && !this.lacks("deviceSettings")) {
           this.recordHidEvent(tag, m);
           await this.hid.caDebug(m.option, m.enabled);
         }
         break;
       }
       case 0x09:
+        if (this.lacks("deviceSettings")) break;
         this.recordHidEvent(tag, {});
         await this.hid.memoryWarning();
         break;
       case 0x0a: {
         const m = json<{ delta: number }>();
-        if (m) {
+        if (m && !this.lacks("hardwareButtons")) {
           this.recordHidEvent(tag, m);
           await this.hid.digitalCrown(m.delta);
         }
@@ -1846,12 +1926,13 @@ export class DeviceSession {
         break;
       }
       case 0x0c:
+        if (this.lacks("deviceSettings")) break;
         this.recordHidEvent(tag, {});
         await this.queueSoftwareKeyboardSync("toggle", ws);
         break;
       case 0x0d: {
         const m = json<{ visible?: unknown }>();
-        if (typeof m?.visible === "boolean") {
+        if (typeof m?.visible === "boolean" && !this.lacks("deviceSettings")) {
           this.recordHidEvent(tag, m);
           await this.queueSoftwareKeyboardSync(m.visible, ws);
         }
@@ -1861,7 +1942,7 @@ export class DeviceSession {
         // A touch client disconnects the hardware keyboard so the guest shows
         // its on-screen keyboard; desktop clients never send this.
         const m = json<{ enabled: boolean }>();
-        if (m) {
+        if (m && !this.lacks("deviceSettings")) {
           this.recordHidEvent(tag, m);
           const operation = this.queueInputOperation(ws, async () => {
             if (!this.hidSockets.has(ws)) return;
@@ -2028,8 +2109,10 @@ export class DeviceSession {
         const requestId = m?.requestId;
         let ok = false;
         let cleanupWarning: string | null = null;
-        let pasteError = "Could not paste into the simulator";
+        const clipboardRefusal = deviceFeatureRefusal(this.udid, "clipboard");
+        let pasteError = clipboardRefusal ?? "Could not paste into the simulator";
         if (
+          !clipboardRefusal &&
           m &&
           typeof requestId === "number" &&
           Number.isSafeInteger(requestId) &&
@@ -3198,6 +3281,7 @@ export function getDeviceSession(
     if (retainExisting) retainDeviceSession(session);
   }
   if (!session) {
+    refuseEndedDevice(udid);
     const createdSession = new DeviceSession(udid, initialStreamSettings);
     session = createdSession;
     sessions.set(udid, createdSession);
@@ -3224,6 +3308,7 @@ export async function startDeviceSession(
   signal?: AbortSignal,
 ): Promise<DeviceSession> {
   signal?.throwIfAborted();
+  clearDeviceEnd(udid);
   const session = getDeviceSession(udid, settings);
   if (!signal) {
     await session.start();
@@ -3305,6 +3390,21 @@ export async function suspendDeviceSessionForReboot(udid: string): Promise<void>
 
 export async function resumeDeviceSessionAfterReboot(udid: string): Promise<void> {
   await peekDeviceSession(udid)?.resumeAfterReboot();
+}
+
+// @ref LLP 0027#device-end — no pause or reconnect: the session ends, as serve-emu marks a session terminal
+/**
+ * The device went away, such as an unplugged iPhone. Like serve-emu's terminal session, this one
+ * ends: its viewers' input sockets close with the reason, its state is withdrawn, and discovery
+ * reports the reason until the device is started again.
+ */
+export function endDeviceSession(session: DeviceSession, reason: string): void {
+  if (!session.markEnded(reason)) return;
+  console.error(`[serve-sim] ${session.udid} session ended: ${reason}`);
+  recordDeviceEnd(session.udid, reason);
+  if (sessions.get(session.udid) === session) sessions.delete(session.udid);
+  void session.close().catch(() => {});
+  clearServeSimState(session.udid, process.pid);
 }
 
 export function closeDeviceSession(udid: string): void {

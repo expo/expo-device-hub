@@ -46,6 +46,8 @@ const NO_CAPABILITIES = {
   deviceSettings: false,
   activity: false,
   events: false,
+  logs: true,
+  foregroundApp: true,
   camera: false,
   accessibility: false,
   streamSettings: false,
@@ -137,6 +139,10 @@ describe("useSteadyClient", () => {
       <output
         data-settings={JSON.stringify(steady?.client.deviceSettings)}
         data-location={JSON.stringify(steady?.client.capabilities.location)}
+        data-logs={JSON.stringify(steady?.client.capabilities.logs)}
+        data-foreground-app={JSON.stringify(steady?.client.capabilities.foregroundApp)}
+        data-orientation={JSON.stringify(steady?.client.capabilities.orientation)}
+        data-device-settings={JSON.stringify(steady?.client.capabilities.deviceSettings)}
         data-stale={[...(steady?.stale ?? [])].sort().join(",")}
       />
     );
@@ -248,6 +254,43 @@ describe("useSteadyClient", () => {
     }
   });
 
+  test("logs and the foreground app go when the device reports it has neither", async () => {
+    const phone: Device = { ...IPHONE, id: "phone", physical: true };
+    await act(async () => {
+      renderer = create(<Probe client={CONNECTING} device={phone} />);
+    });
+    expect(probe()["data-logs"]).toBe("true");
+
+    const without = {
+      ...STREAMING,
+      capabilities: { ...STREAMING.capabilities, logs: false, foregroundApp: false },
+    } as unknown as DeviceClient;
+    await act(async () => renderer!.update(<Probe client={without} device={phone} />));
+    expect(probe()["data-logs"]).toBe("false");
+    expect(probe()["data-foreground-app"]).toBe("false");
+  });
+
+  test("a capability that the device explains as missing goes, though it reported it before", async () => {
+    const phone: Device = { ...IPHONE, id: "phone", physical: true };
+    await act(async () => {
+      renderer = create(<Probe client={STREAMING} device={phone} />);
+    });
+    expect(probe()["data-device-settings"]).toBe("true");
+
+    const gated = {
+      ...STREAMING,
+      capabilities: { ...STREAMING.capabilities, deviceSettings: false, orientation: false },
+      unavailableReasons: {
+        deviceSettings: "Simulator settings are not available on a physical device.",
+        orientation: "Rotate is not available on a physical device.",
+      },
+    } as unknown as DeviceClient;
+    await act(async () => renderer!.update(<Probe client={gated} device={phone} />));
+    expect(probe()["data-device-settings"]).toBe("false");
+    expect(probe()["data-orientation"]).toBe("false");
+    expect(JSON.parse(probe()["data-location"])).toEqual({ clear: true });
+  });
+
   test("settles when a client builds an equal object again on each render", async () => {
     // hub-client's iOS adapter creates `streamCapabilities` anew on each render.
     const rebuilt = () =>
@@ -264,6 +307,41 @@ describe("useSteadyClient", () => {
 });
 
 describe("InspectorSections", () => {
+  test("keeps Current app and Logs in place and says when the device has neither", async () => {
+    const phone = { ...IPHONE, physical: true };
+    const client = {
+      ...STREAMING,
+      capabilities: { ...STREAMING.capabilities, logs: false, foregroundApp: false },
+    } as DeviceClient;
+    await act(async () => {
+      renderer = create(<InspectorSections client={client} device={phone} />);
+    });
+    for (const title of ["Current app", "Logs"]) {
+      const section = renderer!.root.find(
+        (node) => node.type === CollapsibleSection && node.props.title === title,
+      );
+      await act(async () => section.props.onOpenChange(true));
+      expect(
+        section.findAll((node) => node.props.children === SECTION_UNAVAILABLE_NOTE).length,
+      ).toBeGreaterThan(0);
+    }
+    expect(JSON.stringify(renderer!.toJSON())).not.toContain("App ID");
+  });
+
+  test("offers no Shut down or Remove for a physical device", () => {
+    const actions = { onShutdown: () => {}, onRemove: () => {} };
+    const simulator = renderToStaticMarkup(
+      <InspectorSections client={STREAMING} device={IPHONE} {...actions} />,
+    );
+    const phone = renderToStaticMarkup(
+      <InspectorSections client={STREAMING} device={{ ...IPHONE, physical: true }} {...actions} />,
+    );
+    expect(simulator).toContain("Shut down");
+    expect(simulator).toContain("Remove");
+    expect(phone).not.toContain("Shut down");
+    expect(phone).not.toContain(">Remove<");
+  });
+
   test("shows the same sections while a device connects as once it streams", () => {
     const connecting = sectionTitles(
       renderToStaticMarkup(<InspectorSections client={CONNECTING} device={IPHONE} />),

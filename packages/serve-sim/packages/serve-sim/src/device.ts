@@ -3,6 +3,7 @@ import { execSync } from "child_process";
 import { validatedAdditionalDylibs } from "./additional-dylibs";
 import { timeStartup } from "./startup-timing";
 import { simctl } from "./simctl";
+import { deviceKindOf } from "./device-features";
 
 const SHUTDOWN_TIMEOUT_MS = 60_000;
 export const BOOT_TIMEOUT_MS = 120_000;
@@ -43,7 +44,10 @@ export function resolveDevice(nameOrUDID: string): string {
 
 /** All matching simulator UDIDs, so callers targeting existing streams can check live state. */
 export function resolveDeviceMatches(nameOrUDID: string): string[] {
-  if (/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID)) {
+  if (
+    /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID) ||
+    deviceKindOf(nameOrUDID) === "physical"
+  ) {
     return [nameOrUDID.toUpperCase()];
   }
   const matches: string[] = [];
@@ -65,7 +69,10 @@ export function resolveDeviceMatches(nameOrUDID: string): string[] {
 
 /** Canonical device identity for native capture, without exiting a middleware host. */
 export async function resolveBootedDeviceAsync(nameOrUDID: string): Promise<string> {
-  if (/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID))
+  if (
+    /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID) ||
+    deviceKindOf(nameOrUDID) === "physical"
+  )
     return nameOrUDID.toUpperCase();
   const { devices } = JSON.parse(await simctl(["list", "devices", "booted", "-j"])) as {
     devices: Record<string, Array<{ udid: string; name: string; state: string }>>;

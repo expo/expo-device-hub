@@ -40,7 +40,7 @@ struct CapturedScreenInfo {
 /// floor for late-joining clients.
 ///
 /// Pipeline: IOSurface (shared memory) → CVPixelBuffer (zero-copy) → H.264 encode
-actor FrameCapture {
+actor SimulatorScreenSource: ScreenSource {
     private let queue = DispatchSerialQueue(label: "frame-capture", qos: .userInteractive)
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
@@ -122,7 +122,8 @@ actor FrameCapture {
     }
 
     func start(deviceUDID: String, screenID: UInt32? = nil,
-               onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?, CapturedScreenInfo) -> Void) async throws {
+               onFrame: @escaping ScreenSourceFrameHandler,
+               onEnd: @escaping ScreenSourceEndHandler = { _ in }) async throws {
         self.onFrame = onFrame
         self.deviceUDID = deviceUDID
         fixedScreenID = screenID
@@ -845,6 +846,31 @@ actor FrameCapture {
     private func makeError(_ code: Int, _ msg: String) -> NSError {
         NSError(domain: "FrameCapture", code: code,
                 userInfo: [NSLocalizedDescriptionKey: msg])
+    }
+
+    static func inputTarget(deviceUDID: String) throws -> ScreenInputTarget {
+        SimFrameworks.load()
+        guard let device = findSimDevice(udid: deviceUDID) else {
+            throw NSError(domain: "HIDInjector", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Device \(deviceUDID) not found"])
+        }
+        let displayProfile = SimulatorDisplayProfile.read(from: device)
+        // @ref LLP 0004#touch-transport — ordinary iOS can also have a disconnected legacy digitizer.
+        let runtimeSelector = NSSelectorFromString("runtime")
+        let runtime = device.responds(to: runtimeSelector)
+            ? device.perform(runtimeSelector)?.takeUnretainedValue() as? NSObject : nil
+        let runtimeIdentifier = runtime?.value(forKey: "identifier") as? String ?? ""
+        let ordinaryIOS = displayProfile.integratedDisplayCount == 1 &&
+            runtimeIdentifier.hasPrefix("com.apple.CoreSimulator.SimRuntime.iOS-")
+        return ScreenInputTarget(
+            transport: .simulator(prefersCoreDevice: displayProfile.isFoldable || ordinaryIOS),
+            defaultScreenID: ordinaryIOS ? displayProfile.singleIntegratedScreenID : nil,
+            screenSize: SimDisplayMetadata.legacyScreenSize(from: device),
+            nativeScreenRotations: displayProfile.nativeRotations,
+            isFoldable: displayProfile.isFoldable,
+            simDevice: device,
+            connect: nil
+        )
     }
 
     static func findSimDevice(udid: String) -> NSObject? {

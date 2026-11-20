@@ -31,6 +31,7 @@ export type SidebarSide = "left" | "right";
 
 type DashboardStoreValues = {
   selectedDeviceId: string;
+  deviceSelections: number;
   addedDevices: Device[];
   streamMode: DeviceStreamMode;
   sidebarWidths: Record<SidebarSide, number>;
@@ -140,6 +141,7 @@ function defaultDashboardStoreValues(): DashboardStoreValues {
   const availability = browserStreamModeAvailability();
   return {
     selectedDeviceId: dashboardSingleDevice() ?? "",
+    deviceSelections: 0,
     addedDevices: [],
     streamMode: resolveStreamMode(dashboardTransport(), availability),
     sidebarWidths: { left: DEFAULT_SIDEBAR_WIDTH, right: DEFAULT_SIDEBAR_WIDTH },
@@ -159,7 +161,11 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
     ...defaultDashboardStoreValues(),
     ...initialState,
     selectDevice: (selectedDeviceId) =>
-      set({ selectedDeviceId: dashboardSingleDevice() ?? selectedDeviceId }),
+      set((state) => ({
+        selectedDeviceId: dashboardSingleDevice() ?? selectedDeviceId,
+        // @ref LLP 0027#device-end — every click counts, the selected row's too, so selecting an ended phone again starts it
+        deviceSelections: state.deviceSelections + 1,
+      })),
     reconcileSelectedDevice: (availableIds) =>
       set((state) =>
         dashboardSingleDevice()

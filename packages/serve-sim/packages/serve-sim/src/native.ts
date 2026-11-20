@@ -15,6 +15,7 @@ import { screenshotMetadata, type ScreenshotMetadata } from "./screenshot-metada
 import { DEFAULT_STREAM_ENCODER_SETTINGS, type StreamEncoderSettings } from "./stream-settings";
 import { readSenderStats, type SenderStats } from "./webrtc-sender-stats";
 import type { HingePhysicalOrientation } from "./hinge-control";
+import type { NativeDeviceEnd } from "./device-end";
 
 const require = createRequire(import.meta.url);
 
@@ -86,13 +87,14 @@ interface SimCaptureHandle {
   activeScreenId(): Promise<number>;
   subscribeScreenChanges(onChange: () => Promise<void>): Promise<NativeUnsubscribe>;
   subscribeDeviceState(onSnapshot: (json: string) => Promise<void>): Promise<NativeUnsubscribe>;
+  subscribeEnd(onEnd: (json: string) => Promise<void>): Promise<NativeUnsubscribe>;
   stop(): Promise<void>;
   subscribe(codec: number, onFrame: RawFrameCallback): Promise<NativeUnsubscribe>;
 }
 
 interface NativeAddon {
   convertScreenshot(bytes: Uint8Array, maxWidth: number, quality?: number): Promise<Uint8Array>;
-  SimHID: new (udid: string) => SimHIDHandle;
+  SimHID: new (udid: string, kind: NativeDeviceKind) => SimHIDHandle;
   SimCapture: new (
     udid: string,
     mjpegFps: number,
@@ -100,13 +102,15 @@ interface NativeAddon {
     maxDimension: number,
     h264Fps: number,
     h264Bitrate: number,
-    screenId?: number,
+    screenId: number,
+    kind: NativeDeviceKind,
   ) => SimCaptureHandle;
   axDescribe(udid: string): Promise<string>;
   axFrontmost(udid: string): Promise<string>;
   axKeyboardVisible(udid: string): Promise<boolean>;
   axTypeKeyboardCharacter(udid: string, character: string): Promise<boolean>;
   setHardwareKeyboard(udid: string, enabled: boolean): Promise<boolean>;
+  physicalDeviceSupport(udid: string): Promise<string>;
 }
 
 // (codec, data, width, height, flags) — codec 0=MJPEG 1=AVCC; flags bit0=desc bit1=keyframe.
@@ -166,6 +170,17 @@ export type NativeScreenInfo = {
   chromeIdentifier?: string;
 };
 
+export type NativeDeviceKind = "simulator" | "physical";
+
+export type PhysicalDeviceSupport = {
+  supported: boolean;
+  reason?: "needs-xcode-27" | "needs-ios-27";
+  message?: string;
+  coreDeviceVersion?: string;
+  osVersion?: string;
+  deviceFound?: boolean;
+};
+
 export type NativeUnsubscribe = () => Promise<void>;
 
 export type TouchType = "begin" | "move" | "end";
@@ -222,8 +237,8 @@ export class NativeHid {
   private setupFailed = false;
   keyboardUnavailable = false;
 
-  constructor(udid: string) {
-    this.handle = new (load().SimHID)(udid);
+  constructor(udid: string, kind: NativeDeviceKind = "simulator") {
+    this.handle = new (load().SimHID)(udid, kind);
   }
 
   /** A failed native setup stays unavailable until this session is recreated. */
@@ -427,6 +442,7 @@ export class NativeCapture {
     udid: string,
     options: NativeCaptureOptions = DEFAULT_STREAM_ENCODER_SETTINGS,
     screenId?: number,
+    kind: NativeDeviceKind = "simulator",
   ) {
     if (
       screenId !== undefined &&
@@ -442,6 +458,7 @@ export class NativeCapture {
       options.h264Fps,
       options.h264Bitrate,
       screenId ?? 0,
+      kind,
     );
   }
 
@@ -537,6 +554,25 @@ export class NativeCapture {
     return this.handle.subscribeScreenChanges(onChange);
   }
 
+  /**
+   * Called once when the screen source ends because its device went away, with
+   * `{"reason":"device-disconnected","message":"iPhone disconnected"}`. A listener that subscribes
+   * after the end is called at once.
+   */
+  async subscribeEnd(
+    onEnd: (end: NativeDeviceEnd) => Promise<void> | void,
+  ): Promise<NativeUnsubscribe> {
+    let active = true;
+    const unsubscribe = await this.handle.subscribeEnd(async (json) => {
+      if (active) await onEnd(JSON.parse(json) as NativeDeviceEnd);
+    });
+    return async () => {
+      if (!active) return;
+      active = false;
+      await unsubscribe();
+    };
+  }
+
   /** Halt frame production. Full teardown happens when this object is GC'd. */
   stop(): Promise<void> {
     return this.handle.stop();
@@ -573,6 +609,10 @@ export function axTypeKeyboardCharacterAsync(udid: string, character: string): P
  */
 export function setHardwareKeyboard(udid: string, enabled: boolean): Promise<boolean> {
   return load().setHardwareKeyboard(udid, enabled);
+}
+
+export async function physicalDeviceSupport(udid?: string): Promise<PhysicalDeviceSupport> {
+  return JSON.parse(await load().physicalDeviceSupport(udid ?? "")) as PhysicalDeviceSupport;
 }
 
 /** Resize an encoded fallback PNG or encode a JPEG response using Core Image / ImageIO. */

@@ -614,6 +614,13 @@ export interface DeviceCapabilities {
   deviceSettings: boolean;
   activity: boolean;
   events: boolean;
+  /**
+   * Device logs that the client can stream. Reported until the device says it has none, as a
+   * physical iPhone does, because every other device has them.
+   */
+  logs: boolean;
+  /** The foreground app, reported like {@link logs}. */
+  foregroundApp: boolean;
   /** Host-fed emulator camera images that the backend can read and replace. */
   camera: boolean;
   /** An accessibility tree of the current screen that the backend can read on demand. */
@@ -813,6 +820,7 @@ export interface DeviceConnectionOptions {
    * it: its cookie covers every request.
    */
   token?: string | null;
+  startRequest?: number;
 }
 
 /** Which element the implementation paints into. */
@@ -1122,6 +1130,7 @@ export interface DeviceClient {
 
   /** Backend feature availability. Presentation uses this to omit unsupported UI. */
   capabilities: DeviceCapabilities;
+  unavailableReasons?: Readonly<Partial<Record<keyof DeviceCapabilities, string>>>;
   /**
    * The app currently in the foreground, or `null` while unknown. serve-sim
    * pushes changes over its `{base}/appstate` SSE (SpringBoard log driven,

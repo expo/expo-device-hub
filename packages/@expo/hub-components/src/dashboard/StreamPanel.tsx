@@ -28,6 +28,7 @@ import { deviceScreenLoading } from "./DeviceScreenStatus";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
 import { PhoneFrame, type PhoneFrameFoldPreview } from "./PhoneFrame";
 import { useModelUnavailableToast } from "./ModelPreviewToast";
+import { rotateNotAvailableText } from "./rotation-availability";
 import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
 import { useElementHeight } from "./useElementHeight";
@@ -190,6 +191,7 @@ export function StreamPanel({
   const controls = (
     <StreamControls
       orientationUnavailable={client.orientationUnavailable}
+      rotateNotAvailable={rotateNotAvailableText(client)}
       onBack={android ? () => client.pressButton("back") : undefined}
       onHome={() => client.pressButton("home")}
       onRecents={android ? () => client.pressButton("recents") : undefined}

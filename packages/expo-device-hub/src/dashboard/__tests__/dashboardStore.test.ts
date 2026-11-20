@@ -29,6 +29,17 @@ describe("dashboard store", () => {
     expect(store.getState().selectedDeviceId).toBe("pinned");
   });
 
+  test("counts a click on the device that is already selected", () => {
+    const store = createDashboardStore({ selectedDeviceId: "phone" });
+    const before = store.getState().deviceSelections;
+
+    store.getState().selectDevice("phone");
+    store.getState().selectDevice("phone");
+
+    expect(store.getState().selectedDeviceId).toBe("phone");
+    expect(store.getState().deviceSelections).toBe(before + 2);
+  });
+
   test("tracks a replacement device and selects it", () => {
     const store = createDashboardStore({
       addedDevices: [

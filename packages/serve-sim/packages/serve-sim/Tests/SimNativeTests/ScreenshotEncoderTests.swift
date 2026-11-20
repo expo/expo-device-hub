@@ -219,7 +219,7 @@ final class ScreenshotEncoderTests: XCTestCase {
     }
 
     func testCaptureBeforeStartAndAfterStopFailsInsteadOfReturningOldPixels() async throws {
-        let capture = FrameCapture()
+        let capture = SimulatorScreenSource()
         for _ in 0..<2 {
             do {
                 _ = try await capture.screenshotPixels(screenID: 1)

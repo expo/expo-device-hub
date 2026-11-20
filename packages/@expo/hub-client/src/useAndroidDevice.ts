@@ -2305,6 +2305,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       deviceSettings: true,
       activity: true,
       events: true,
+      logs: true,
+      foregroundApp: true,
       camera: cameraSupported,
       accessibility: accessibilityAvailable,
       location: locationCapabilities,

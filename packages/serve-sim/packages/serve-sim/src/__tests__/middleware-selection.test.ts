@@ -110,6 +110,8 @@ describe("previewConfigForState", () => {
       gridMemoryEndpoint: "/preview/grid/api/memory",
       previewEndpoint: "/preview",
       execToken: "token-xyz",
+      deviceKind: "simulator",
+      unavailableFeatures: {},
     });
   });
 

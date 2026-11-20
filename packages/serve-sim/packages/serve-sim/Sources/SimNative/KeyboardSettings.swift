@@ -11,7 +11,7 @@ import ObjectiveC
 enum HardwareKeyboard {
     static func setEnabled(udid: String, enabled: Bool) throws -> Bool {
         SimFrameworks.load()
-        guard let device = FrameCapture.findSimDevice(udid: udid) else {
+        guard let device = SimulatorScreenSource.findSimDevice(udid: udid) else {
             throw NSError(domain: "HardwareKeyboard", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Device \(udid) not found"])
         }

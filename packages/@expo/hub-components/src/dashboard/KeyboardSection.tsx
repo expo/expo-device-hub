@@ -3,7 +3,13 @@ import { SidebarActionButton } from "./SidebarActionButton";
 import { SidebarRow } from "./SidebarRow";
 
 /** iOS keyboard connection controls. Browser HID forwarding stays independent. */
-export function KeyboardSection({ client }: { client: DeviceClient }) {
+export function KeyboardSection({
+  client,
+  disabledReason,
+}: {
+  client: DeviceClient;
+  disabledReason?: string;
+}) {
   const connected = client.hardwareKeyboardConnected;
 
   return (
@@ -11,6 +17,7 @@ export function KeyboardSection({ client }: { client: DeviceClient }) {
       <SidebarRow label="Hardware keyboard">
         <SidebarActionButton
           disabled={connected === null}
+          disabledReason={disabledReason}
           onClick={() => client.setHardwareKeyboardConnected(!connected)}
         >
           Toggle
@@ -19,6 +26,7 @@ export function KeyboardSection({ client }: { client: DeviceClient }) {
       <SidebarRow label="Software keyboard">
         <SidebarActionButton
           disabled={connected === null}
+          disabledReason={disabledReason}
           onClick={() => client.toggleSoftwareKeyboard()}
         >
           Toggle

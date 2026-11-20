@@ -8,6 +8,12 @@ import { installAppAsync } from "./app-install";
 import { AppRelativePath, runAppFileAction } from "./app-files";
 
 import { CAPTURE_FIELDS } from "./capture/fields";
+import {
+  type DeviceFeature,
+  buttonFeature,
+  deviceFeatureRefusal,
+  deviceKindOf,
+} from "./device-features";
 
 import {
   type HostActionResult,
@@ -58,6 +64,9 @@ export interface HostActionRequest {
 }
 
 export class InvalidHostActionError extends Error {}
+
+/** A known action that the target device does not have, such as `location.set` on a phone. */
+export class DeviceFeatureUnavailableError extends InvalidHostActionError {}
 
 const APPEARANCES = ["light", "dark"] as const;
 const PERMISSION_ACTIONS = ["grant", "revoke", "reset"] as const;
@@ -475,6 +484,102 @@ const ACTION_SCHEMAS = {
 } as const;
 
 type HostActionName = keyof typeof ACTION_SCHEMAS;
+
+const SETTINGS = "deviceSettings";
+
+/** The device feature each action needs; null for the actions every device has. */
+const HOST_ACTION_FEATURES: Record<HostActionName, DeviceFeature | null> = {
+  "clipboard.read": "clipboard",
+  "clipboard.write": "clipboard",
+  "clipboard.copy": "clipboard",
+  "clipboard.paste": "clipboard",
+  "appearance.get": SETTINGS,
+  "appearance.set": SETTINGS,
+  "hardwareKeyboard.get": SETTINGS,
+  "hardwareKeyboard.set": SETTINGS,
+  "reduceMotion.get": SETTINGS,
+  "reduceMotion.set": SETTINGS,
+  "increaseContrast.get": SETTINGS,
+  "increaseContrast.set": SETTINGS,
+  "reduceTransparency.get": SETTINGS,
+  "reduceTransparency.set": SETTINGS,
+  "voiceover.get": SETTINGS,
+  "voiceover.set": SETTINGS,
+  "liquidGlass.get": SETTINGS,
+  "liquidGlass.set": SETTINGS,
+  "colorFilter.get": SETTINGS,
+  "colorFilter.set": SETTINGS,
+  "textSize.get": SETTINGS,
+  "textSize.set": SETTINGS,
+  "showBorders.get": SETTINGS,
+  "showBorders.set": SETTINGS,
+  "settings.status": SETTINGS,
+  "softwareKeyboard.toggle": SETTINGS,
+  memoryWarning: SETTINGS,
+  "caDebug.set": SETTINGS,
+  "home.springboard": SETTINGS,
+  "springboard.restart": SETTINGS,
+  "home.watch": SETTINGS,
+  tap: null,
+  gesture: null,
+  type: null,
+  button: null,
+  "hinge.get": "hinge",
+  "hinge.set": "hinge",
+  rotate: "rotate",
+  "permissions.list": "permissions",
+  "permissions.set": "permissions",
+  "permissions.resetAll": "permissions",
+  "location.set": "location",
+  "location.clear": "location",
+  "server.detach": null,
+  "server.kill": null,
+  "camera.listWebcams": "appInjection",
+  "camera.switch": "appInjection",
+  "camera.inject": "appInjection",
+  "camera.mirror": "appInjection",
+  "camera.stopWebcam": "appInjection",
+  "capture.reboot": "appInjection",
+  "capture.enable": "appInjection",
+  "capture.fields": "appInjection",
+  "capture.clear": "appInjection",
+  "capture.body": "appInjection",
+  "app.container": "apps",
+  "app.file.upload": "apps",
+  "app.file.read": "apps",
+  "app.file.list": "apps",
+  "app.file.remove": "apps",
+  "app.stop": "apps",
+  "app.openUrl": "apps",
+  "app.approveUrlScheme": "apps",
+  "app.infoPlist": "apps",
+  "app.install": "apps",
+  "app.launch": "apps",
+  "app.iconPath": "apps",
+  "media.add": "apps",
+  reveal: null,
+  "file.readBase64": null,
+  "screenshot.capture": null,
+  "screenshot.thumbnail": null,
+  "upload.append": null,
+  "upload.remove": null,
+  "actions.describe": null,
+};
+
+/** The device feature `action` needs, or null when every device has it or the action is unknown. */
+export function hostActionFeature(action: string): DeviceFeature | null {
+  return isHostActionName(action) ? HOST_ACTION_FEATURES[action] : null;
+}
+
+function buttonValue(params: unknown): string | undefined {
+  if (typeof params !== "object" || params === null || !("value" in params)) return undefined;
+  return typeof params.value === "string" ? params.value : undefined;
+}
+
+function targetDevice(params: unknown): string | null {
+  if (typeof params !== "object" || params === null || !("udid" in params)) return null;
+  return typeof params.udid === "string" ? params.udid : null;
+}
 
 /**
  * Everything else is one child process, built by buildInvocation. These are file work done in this
@@ -997,7 +1102,8 @@ async function runProcedureAsync(
           return { ...result, metadata: screenshotMetadata() };
         };
         failure = "Could not capture the screenshot. Check the host logs for details.";
-        if (p.display !== undefined) {
+        const physical = deviceKindOf(p.udid) === "physical";
+        if (p.display !== undefined && !physical) {
           const ids = await getScreenshotDisplayIdsAsync(p.udid);
           if (ids && !ids.includes(p.display))
             return {
@@ -1032,7 +1138,7 @@ async function runProcedureAsync(
           });
         } catch (error) {
           // @ref LLP 0003#action-catalog — only a proven sole screen can bypass native election
-          const ids = !selected ? await getScreenshotDisplayIdsAsync(p.udid) : null;
+          const ids = !selected && !physical ? await getScreenshotDisplayIdsAsync(p.udid) : null;
           if (ids?.length !== 1) throw error;
           console.error(
             "Native screenshot selection unavailable; using the sole device screen:",
@@ -1084,6 +1190,12 @@ export async function runHostActionAsync(
   if (typeof action !== "string" || !isHostActionName(action)) {
     throw new InvalidHostActionError(`unknown action ${String(action)}`);
   }
+  // @ref LLP 0027#feature-gate — refuse before simctl reports a confusing failure
+  const refusal = deviceFeatureRefusal(
+    targetDevice(params),
+    action === "button" ? buttonFeature(buttonValue(params)) : HOST_ACTION_FEATURES[action],
+  );
+  if (refusal) throw new DeviceFeatureUnavailableError(refusal);
   let result: HostActionResult;
   if (action === "app.install") {
     const p = parseParams(action, params);

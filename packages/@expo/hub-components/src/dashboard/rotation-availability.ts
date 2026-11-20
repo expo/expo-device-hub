@@ -1,4 +1,11 @@
-import type { DeviceOrientationUnavailableReason } from "@expo/hub-client";
+import type { DeviceClient, DeviceOrientationUnavailableReason } from "@expo/hub-client";
+
+// @ref LLP 0027#feature-gate — Rotate and Orientation lock with serve-sim's rotate reason
+export function rotateNotAvailableText(
+  client: Pick<DeviceClient, "capabilities" | "unavailableReasons">,
+): string | undefined {
+  return client.capabilities.orientation ? undefined : client.unavailableReasons?.orientation;
+}
 
 /**
  * The explanation that Rotate and the Orientation select show for the client's

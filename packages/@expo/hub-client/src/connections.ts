@@ -41,13 +41,16 @@ export async function startIosHelper(
   udid: string,
   endpoint: string,
   fetchImpl: (input: string, init?: RequestInit) => Promise<Response> = fetch,
-): Promise<void> {
+): Promise<string | null> {
   const base = trimTrailingSlash(sameOrigin(endpoint));
-  await fetchImpl(`${base}/grid/api/start`, {
+  const response = await fetchImpl(`${base}/grid/api/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ udid }),
     // A cold boot can take well over a minute; don't time out early.
     signal: AbortSignal.timeout(190_000),
   });
+  if (response.status !== 409) return null;
+  const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+  return typeof body?.error === "string" ? body.error : null;
 }

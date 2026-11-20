@@ -73,7 +73,8 @@ let package = Package(
         ),
         .testTarget(
             name: "SimNativeTests",
-            dependencies: ["SimNative", .product(name: "LiveKitWebRTC", package: "webrtc-xcframework")]
+            dependencies: ["SimNative", .product(name: "LiveKitWebRTC", package: "webrtc-xcframework")],
+            resources: [.copy("Fixtures")]
         ),
     ],
     // The reused SimStreamHelper logic was written against the standalone helper

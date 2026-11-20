@@ -12,7 +12,7 @@ import ObjectiveC.runtime
 // -[SimDevice sendAccessibilityRequestAsync:completionQueue:completionHandler:].
 //
 // We mirror that bridge in Swift using runtime introspection only — matching
-// the rest of this helper's pattern (HIDInjector / FrameCapture). No private
+// the rest of this helper's pattern (HIDInjector / SimulatorScreenSource). No private
 // headers are imported; the framework is dlopen'd at startup and every type
 // crosses the bridge as `NSObject` / `AnyObject`.
 //
@@ -96,7 +96,7 @@ final class AccessibilityBridge: NSObject {
     func describeUI(udid: String) throws -> Data {
         try ensureLoaded()
 
-        guard let device = FrameCapture.findSimDevice(udid: udid) else {
+        guard let device = SimulatorScreenSource.findSimDevice(udid: udid) else {
             throw NSError(domain: "Accessibility", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Device \(udid) not found"])
         }
@@ -197,7 +197,7 @@ final class AccessibilityBridge: NSObject {
     func frontmostApp(udid: String) throws -> [String: Any] {
         try ensureLoaded()
 
-        guard let device = FrameCapture.findSimDevice(udid: udid) else {
+        guard let device = SimulatorScreenSource.findSimDevice(udid: udid) else {
             throw NSError(domain: "Accessibility", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Device \(udid) not found"])
         }
@@ -269,7 +269,7 @@ final class AccessibilityBridge: NSObject {
     // A nil character is a bounded read-only readiness probe, never a key press.
     private func keyboardAction(udid: String, character requestedCharacter: String?) throws -> Bool {
         try ensureLoaded()
-        guard let device = FrameCapture.findSimDevice(udid: udid),
+        guard let device = SimulatorScreenSource.findSimDevice(udid: udid),
               let translator = translator else {
             throw AccessibilityError.translatorUnavailable
         }

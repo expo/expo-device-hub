@@ -47,6 +47,7 @@ actor HIDInjector {
     private var usesUniversalHID: Bool { digitizerCapability != nil }
     private var touchTarget = HIDTargetPolicy()
     private var multiTouchTarget = HIDTargetPolicy()
+    private var isPhysical = false
 
     // IndigoHIDMessageForMouseNSEvent(CGPoint*, CGPoint*, IndigoHIDTarget, NSEventType, NSSize, IndigoHIDEdge)
     // arm64 ABI: pointer/int params → x0-x4, float params → d0-d1 (independent numbering).
@@ -82,44 +83,48 @@ actor HIDInjector {
     // Apple HID entitlements an unprivileged helper can't have, and synthetic
     // scroll events are ignored by iOS, so we scroll via a touch drag instead.
 
-    func setup(deviceUDID: String) async throws {
-        SimFrameworks.load()
-        guard let device = FrameCapture.findSimDevice(udid: deviceUDID) else {
-            throw NSError(domain: "HIDInjector", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Device \(deviceUDID) not found"])
-        }
-        self.simDevice = device
+    func setup(deviceUDID: String, kind: ScreenSourceKind = .simulator) async throws {
+        try await setup(deviceUDID: deviceUDID, target: try await kind.inputTarget(deviceUDID: deviceUDID))
+    }
+
+    func setup(deviceUDID: String, target: ScreenInputTarget) async throws {
+        self.simDevice = target.simDevice
         self.deviceUDID = deviceUDID
-        // Device Hub's physical orientation is relative to each panel's mounting.
-        // Read the static device profile once; capture supplies the active screen ID.
-        let displayProfile = SimulatorDisplayProfile.read(from: device)
-        self.nativeScreenRotations = displayProfile.nativeRotations
-        self.isFoldable = displayProfile.isFoldable
-        // @ref LLP 0004#touch-transport — ordinary iOS can also have a disconnected legacy digitizer.
-        let runtimeSelector = NSSelectorFromString("runtime")
-        let runtime = device.responds(to: runtimeSelector)
-            ? device.perform(runtimeSelector)?.takeUnretainedValue() as? NSObject : nil
-        let runtimeIdentifier = runtime?.value(forKey: "identifier") as? String ?? ""
-        let ordinaryIOS = displayProfile.integratedDisplayCount == 1 &&
-            runtimeIdentifier.hasPrefix("com.apple.CoreSimulator.SimRuntime.iOS-")
-        singleIntegratedScreenID = ordinaryIOS ? displayProfile.singleIntegratedScreenID : nil
-        if isFoldable || ordinaryIOS {
-            do {
-                try await setupCoreDeviceHID(deviceUDID: deviceUDID)
-                hidLog("[hid] Using CoreDevice touch transport")
-            } catch {
-                // Older host frameworks/runtimes may not expose these capabilities.
-                // Duo cannot fall back: its inner legacy service is disconnected.
-                // A digitizer without the keyboard service means CoreDevice owns guest
-                // input but cannot start delivery; legacy sends would be acknowledged
-                // and dropped, so report input as unavailable instead.
-                if isFoldable || (error as NSError).code == CoreDeviceHIDServices.keyboardServiceUnavailable { throw error }
-                digitizerCapability = nil
-                keyboardCapability = nil
-                hidLog("[hid] CoreDevice HID unavailable; using legacy input: \(error)")
+        self.nativeScreenRotations = target.nativeScreenRotations
+        self.isFoldable = target.isFoldable
+        singleIntegratedScreenID = target.defaultScreenID
+        switch target.transport {
+        // @ref LLP 0027#input — a phone has only CoreDevice HID; never load the Indigo legacy client
+        case .coreDeviceOnly:
+            try await target.connect?()
+            try await setupCoreDeviceHID(deviceUDID: deviceUDID)
+            isPhysical = true
+            setScreen(screenID: nil)
+            hidLog("[hid] Using CoreDevice HID for a physical device")
+            return
+        case .simulator(let prefersCoreDevice):
+            if prefersCoreDevice {
+                do {
+                    try await setupCoreDeviceHID(deviceUDID: deviceUDID)
+                    hidLog("[hid] Using CoreDevice touch transport")
+                } catch {
+                    // Older host frameworks/runtimes may not expose these capabilities.
+                    // Duo cannot fall back: its inner legacy service is disconnected.
+                    // A digitizer without the keyboard service means CoreDevice owns guest
+                    // input but cannot start delivery; legacy sends would be acknowledged
+                    // and dropped, so report input as unavailable instead.
+                    if isFoldable || (error as NSError).code == CoreDeviceHIDServices.keyboardServiceUnavailable { throw error }
+                    digitizerCapability = nil
+                    keyboardCapability = nil
+                    hidLog("[hid] CoreDevice HID unavailable; using legacy input: \(error)")
+                }
             }
         }
         setScreen(screenID: nil)
+        guard let device = target.simDevice else {
+            throw NSError(domain: "HIDInjector", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Device \(deviceUDID) not found"])
+        }
 
         guard let funcPtr = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "IndigoHIDMessageForMouseNSEvent") else {
             throw NSError(domain: "HIDInjector", code: 5,
@@ -599,6 +604,10 @@ actor HIDInjector {
     /// - phase: "down" / "up" hold the button for natural long-presses (power
     ///   off slider, side-button menus); "press" sends a momentary down+up.
     func sendButtonHID(page: UInt32, usage: UInt32, phase: String) async {
+        guard !isPhysical else {
+            print("[hid] Hardware buttons are unavailable on a physical device (page=\(page) usage=\(usage))")
+            return
+        }
         guard let arb = hidArbitraryFunc else {
             print("[hid] Arbitrary HID injection unavailable (page=\(page) usage=\(usage))")
             return
@@ -624,6 +633,15 @@ actor HIDInjector {
 
     func sendButton(button: String, deviceUDID: String) async {
         hidLog("[hid] Sending button: \(button)")
+        // @ref LLP 0027#input — Home is the bottom-edge swipe; a phone has no other simulator button
+        if isPhysical {
+            guard button == "home" || button == "swipe_home" else {
+                print("[hid] Button \(button) is unavailable on a physical device")
+                return
+            }
+            sendSwipeHome()
+            return
+        }
 
         switch button {
         case "home":
@@ -825,6 +843,7 @@ actor HIDInjector {
     /// Simulator.app itself rotates the device, and how idb's
     /// `FBSimulatorPurpleHID.orientationEvent:` is delivered.
     func sendOrientation(orientation: UInt32) async -> Bool {
+        guard !isPhysical else { return false }
         if isFoldable, let deviceUDID {
             // Modern foldable simulators acknowledge legacy GSEvent delivery
             // without changing orientation. Use the same vendor channel as
