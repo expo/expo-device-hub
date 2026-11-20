@@ -998,23 +998,41 @@ export function SimulatorView({
         style={{
           ...overlayStyle,
           zIndex: 3,
-          flexDirection: "column",
-          gap: 12,
+          background: playbackOverlayTarget ? "transparent" : overlayStyle.background,
+          padding: playbackOverlayTarget ? 24 : undefined,
+          boxSizing: "border-box",
           pointerEvents: "auto",
         }}
       >
-        <span style={{ color: "#fff", fontSize: 14 }}>
-          {playbackIssue === "blocked"
-            ? "Playback is paused in this browser."
-            : "Live video could not start."}
-        </span>
-        <button
-          type="button"
-          className="rounded-md bg-white px-4 py-2 text-sm font-medium text-black hover:bg-gray-200"
-          onClick={() => playbackRef.current?.play()}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 12,
+            ...(playbackOverlayTarget && {
+              maxWidth: 320,
+              padding: 24,
+              borderRadius: 16,
+              background: "rgba(0,0,0,0.9)",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+              textAlign: "center",
+            }),
+          }}
         >
-          {playbackIssue === "blocked" ? "Start live view" : "Retry live view"}
-        </button>
+          <span style={{ color: "#fff", fontSize: 14 }}>
+            {playbackIssue === "blocked"
+              ? "Playback is paused in this browser."
+              : "Live video could not start."}
+          </span>
+          <button
+            type="button"
+            className="rounded-md bg-white px-4 py-2 text-sm font-medium text-black hover:bg-gray-200"
+            onClick={() => playbackRef.current?.play()}
+          >
+            {playbackIssue === "blocked" ? "Start live view" : "Retry live view"}
+          </button>
+        </div>
       </div>
     ) : null;
 
