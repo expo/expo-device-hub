@@ -1,5 +1,17 @@
 # @expo/hub-client
 
+## 1.14.0
+
+### Minor Changes
+
+- e48ed23: On Android, a view that replaces the stream canvas, such as a switch between 2D and 3D, keeps showing the screen: the last frame is copied into the new canvas, and the MSE fallback draws into the current canvas.
+- bf99156: `@expo/hub-client/models` shows a device as its 3D model with the live screen: `DeviceModelScreen` takes the place of `DeviceScreen` for the iPhone Duo, the iPhone 18 Pro, the Pixel 9 Pro, and the Pixel 9 Pro Fold. `@expo/hub-client/models/catalog` tells which devices have a model without loading three.js, and its `useDeviceModelScreenClient` reads the part of the client that the 3D screen needs, as `useDeviceScreenClient` does for the flat screen, and the package has each model's GLB file as `@expo/hub-client/models/<file>.glb`. The entry needs `three` 0.186 or later and `three-mesh-bvh`, which are optional peer dependencies. An app that does not import it bundles neither three.js nor the models.
+- a104279: Add optional width, format, and JPEG quality controls to `client.screenshot()`. Calling it without options keeps native-resolution PNG. Image options require backend support.
+
+### Patch Changes
+
+- e48ed23: On Android, `client.fold` reads the hinge again as soon as the stream switches displays, instead of waiting up to 5 seconds for the next poll.
+
 ## 1.13.0
 
 ### Minor Changes

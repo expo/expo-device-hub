@@ -1,5 +1,12 @@
 # expo-device-hub
 
+## 0.26.0
+
+### Minor Changes
+
+- 6133f01: Add optional screenshot width limits and JPEG output, while preserving native PNG and legacy base64 PNG responses. Screenshot responses report capture, encoding, and artifact timings.
+- e48ed23: The 3D preview now uses Expo's own device models, and it also shows the iPhone 18 Pro, the Pixel 9 Pro, and the Pixel 9 Pro Fold with the live screen. Other devices keep the flat preview.
+
 ## 0.25.0
 
 ### Minor Changes

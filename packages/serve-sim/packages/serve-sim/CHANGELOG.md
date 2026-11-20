@@ -1,5 +1,11 @@
 # @expo/serve-sim
 
+## 0.14.5
+
+### Patch Changes
+
+- a90df2c: Capture reboots no longer fail when a just-booted simulator is slow to start processes.
+
 ## 0.14.4
 
 ### Patch Changes
