@@ -1,0 +1,245 @@
+{
+  "info": {
+    "commandType": "devicectl.list.devices",
+    "jsonVersion": 5,
+    "outcome": "success",
+    "version": "651.32"
+  },
+  "result": {
+    "devices": [
+      {
+        "identifier": "00000001-0000-5000-8000-000000000001",
+        "hardwareProperties": {
+          "deviceType": "iPhone",
+          "marketingName": "iPhone 12",
+          "platform": "iOS",
+          "productType": "iPhone13,2",
+          "reality": "physical",
+          "udid": "00008101-0000000000000001"
+        },
+        "deviceProperties": {
+          "name": "iPhone",
+          "osVersionNumber": "27.2.1",
+          "developerModeStatus": "enabled"
+        },
+        "connectionProperties": {
+          "pairingState": "paired",
+          "transportType": "wired",
+          "tunnelState": "connected"
+        },
+        "properties": {
+          "connection": {
+            "pairingState": "paired",
+            "state": "connected",
+            "transportType": "wired"
+          },
+          "hardware": {
+            "deviceType": "iPhone",
+            "marketingName": "iPhone 12",
+            "platform": "iOS",
+            "productType": "iPhone13,2",
+            "reality": "physical",
+            "udid": "00008101-0000000000000001"
+          },
+          "software": {
+            "osVersionNumber": {
+              "stringValue": "27.2.1"
+            }
+          },
+          "state": {
+            "developerModeStatus": {
+              "enabled": {
+                "mode": 1
+              }
+            },
+            "name": "iPhone"
+          }
+        }
+      },
+      {
+        "identifier": "00000002-0000-5000-8000-000000000002",
+        "hardwareProperties": {
+          "deviceType": "iPhone",
+          "marketingName": "iPhone 12",
+          "platform": "iOS",
+          "productType": "iPhone13,2",
+          "reality": "physical",
+          "udid": "00008101-0000000000000002"
+        },
+        "deviceProperties": {
+          "name": "iPhone",
+          "osVersionNumber": "27.2.1",
+          "developerModeStatus": "enabled"
+        },
+        "connectionProperties": {
+          "pairingState": "paired",
+          "transportType": "wired",
+          "tunnelState": "disconnected"
+        },
+        "properties": {
+          "connection": {
+            "pairingState": "paired",
+            "state": "disconnected",
+            "transportType": "wired"
+          },
+          "hardware": {
+            "deviceType": "iPhone",
+            "marketingName": "iPhone 12",
+            "platform": "iOS",
+            "productType": "iPhone13,2",
+            "reality": "physical",
+            "udid": "00008101-0000000000000002"
+          },
+          "software": {
+            "osVersionNumber": {
+              "stringValue": "27.2.1"
+            }
+          },
+          "state": {
+            "developerModeStatus": {
+              "enabled": {
+                "mode": 1
+              }
+            },
+            "name": "iPhone"
+          }
+        }
+      },
+      {
+        "identifier": "00000003-0000-5000-8000-000000000003",
+        "hardwareProperties": {
+          "deviceType": "iPhone",
+          "marketingName": "iPhone 12",
+          "platform": "iOS",
+          "productType": "iPhone13,2",
+          "reality": "physical",
+          "udid": "00008101-0000000000000003"
+        },
+        "deviceProperties": {
+          "name": "iPhone",
+          "osVersionNumber": "27.2.1",
+          "developerModeStatus": "enabled"
+        },
+        "connectionProperties": {
+          "pairingState": "paired",
+          "transportType": "wired",
+          "tunnelState": "disconnected"
+        },
+        "properties": {
+          "connection": {
+            "pairingState": "paired",
+            "state": "disconnected",
+            "transportType": "wired"
+          },
+          "hardware": {
+            "deviceType": "iPhone",
+            "marketingName": "iPhone 12",
+            "platform": "iOS",
+            "productType": "iPhone13,2",
+            "reality": "physical",
+            "udid": "00008101-0000000000000003"
+          },
+          "software": {
+            "osVersionNumber": {
+              "stringValue": "27.2.1"
+            }
+          },
+          "state": {
+            "developerModeStatus": {
+              "enabled": {
+                "mode": 1
+              }
+            },
+            "name": "iPhone"
+          }
+        }
+      },
+      {
+        "identifier": "00000004-0000-4000-8000-000000000004",
+        "hardwareProperties": {
+          "deviceType": "iPhone",
+          "marketingName": "iPhone 17",
+          "platform": "iOS",
+          "productType": "iPhone18,3",
+          "reality": "simulated",
+          "udid": "00000004-0000-4000-8000-000000000004"
+        },
+        "deviceProperties": {
+          "name": "iPhone 17",
+          "osVersionNumber": "27.2"
+        },
+        "connectionProperties": {
+          "pairingState": "paired",
+          "transportType": "sameMachine",
+          "tunnelState": "disconnected"
+        },
+        "properties": {
+          "connection": {
+            "pairingState": "paired",
+            "state": "disconnected",
+            "transportType": "sameMachine"
+          },
+          "hardware": {
+            "deviceType": "iPhone",
+            "marketingName": "iPhone 17",
+            "platform": "iOS",
+            "productType": "iPhone18,3",
+            "reality": "simulated",
+            "udid": "00000004-0000-4000-8000-000000000004"
+          },
+          "software": {
+            "osVersionNumber": {
+              "stringValue": "27.2"
+            }
+          },
+          "state": {
+            "name": "iPhone 17"
+          }
+        }
+      },
+      {
+        "identifier": "00000005-0000-4000-8000-000000000005",
+        "hardwareProperties": {
+          "deviceType": "iPhone",
+          "marketingName": "iPhone Duo",
+          "platform": "iOS",
+          "productType": "iPhone19,4",
+          "reality": "simulated",
+          "udid": "00000005-0000-4000-8000-000000000005"
+        },
+        "deviceProperties": {
+          "name": "iPhone Duo",
+          "osVersionNumber": "27.2"
+        },
+        "connectionProperties": {
+          "pairingState": "paired",
+          "transportType": "sameMachine",
+          "tunnelState": "connected"
+        },
+        "properties": {
+          "connection": {
+            "pairingState": "paired",
+            "state": "connected",
+            "transportType": "sameMachine"
+          },
+          "hardware": {
+            "deviceType": "iPhone",
+            "marketingName": "iPhone Duo",
+            "platform": "iOS",
+            "productType": "iPhone19,4",
+            "reality": "simulated",
+            "udid": "00000005-0000-4000-8000-000000000005"
+          },
+          "software": {
+            "osVersionNumber": {
+              "stringValue": "27.2"
+            }
+          },
+          "state": {
+            "name": "iPhone Duo"
+          }
+        }
+      }
+    ]
+  }
+}
