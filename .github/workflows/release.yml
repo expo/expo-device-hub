@@ -148,14 +148,11 @@ jobs:
 
       - name: Verify published packages are available on npm
         timeout-minutes: 30
-        run: bash scripts/verify-npm-availability.sh "$RUNNER_TEMP/release-packages"
+        run: ./scripts/verify-npm-availability.ts "$RUNNER_TEMP/release-packages"
 
       - name: Promote verified packages to latest
         if: ${{ env.IS_CANARY != 'true' }}
-        run: |
-          while IFS= read -r spec; do
-            npm dist-tag add "$spec" latest
-          done < "$RUNNER_TEMP/release-packages"
+        run: ./scripts/promote-to-latest.ts "$RUNNER_TEMP/release-packages"
 
       - name: Push git tags
         if: ${{ env.IS_CANARY != 'true' }}
