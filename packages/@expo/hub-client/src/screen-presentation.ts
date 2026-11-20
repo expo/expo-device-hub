@@ -31,6 +31,8 @@ export interface ScreenPresentationOptions {
    * its last frame. Without it, only the adapter ends a reconnect.
    */
   dropTimeoutMs?: number;
+  /** Browser playback needs a user action, so missing frames are not a stream deadline. */
+  waitingForPlayback?: boolean;
 }
 
 // @ref LLP 0015#states — only a session without a frame shows loading; a frame turns gaps into reconnects
@@ -111,7 +113,7 @@ export function useScreenPresentation(
   sessionKey: string | null,
   status: ConnectionStatus,
   error: string | null,
-  { dropTimeoutMs }: ScreenPresentationOptions = {},
+  { dropTimeoutMs, waitingForPlayback = false }: ScreenPresentationOptions = {},
 ): ScreenPresentation {
   const [session, setSession] = useState<SessionState>(() => freshSession(sessionKey));
   let current = session;
@@ -121,9 +123,15 @@ export function useScreenPresentation(
   } else if (status === "streaming" && (!current.framePresented || current.dropTimedOut)) {
     current = { ...current, framePresented: true, loadTimedOut: false, dropTimedOut: false };
   }
+  if (waitingForPlayback && (current.loadTimedOut || current.dropTimedOut)) {
+    current = { ...current, loadTimedOut: false, dropTimedOut: false };
+  }
   if (current !== session) setSession(current);
 
-  const gap = sessionKey !== null && (status === "connecting" || status === "reconnecting");
+  const gap =
+    !waitingForPlayback &&
+    sessionKey !== null &&
+    (status === "connecting" || status === "reconnecting");
   useVisibleTimeout(
     gap && !current.framePresented,
     SCREEN_LOAD_TIMEOUT_MS,

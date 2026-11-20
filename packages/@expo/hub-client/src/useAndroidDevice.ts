@@ -2256,7 +2256,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     ],
   );
 
-  const presentation = useScreenPresentation(screenSessionKey, status, error);
+  const presentation = useScreenPresentation(screenSessionKey, status, error, {
+    waitingForPlayback: playback?.state === "blocked" || playback?.state === "error",
+  });
 
   return {
     platform: "android",

@@ -2987,6 +2987,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // iOS reconnects until a real error, so a loaded screen gets the first load's limit too.
   const presentation = useScreenPresentation(screenSessionKey, status, error, {
     dropTimeoutMs: SCREEN_LOAD_TIMEOUT_MS,
+    waitingForPlayback: playback?.state === "blocked" || playback?.state === "error",
   });
 
   return {

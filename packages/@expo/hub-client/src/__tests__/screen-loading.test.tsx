@@ -311,7 +311,11 @@ class Video extends EventTarget {
   videoHeight = 200;
   srcObject: unknown = null;
   poster = "";
+  playCalls = 0;
+  rejectPlay = false;
   async play() {
+    this.playCalls++;
+    if (this.rejectPlay) throw new DOMException("Playback blocked", "NotAllowedError");
     this.paused = false;
   }
   removeAttribute(name: string) {
@@ -322,7 +326,10 @@ class Video extends EventTarget {
   }
 }
 
-function mountedClient(platform: "ios" | "android", options: { offerStatus?: number } = {}) {
+function mountedClient(
+  platform: "ios" | "android",
+  options: { offerStatus?: number; duo?: boolean } = {},
+) {
   let offerStatus = options.offerStatus ?? 200;
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("document", {
@@ -363,6 +370,7 @@ function mountedClient(platform: "ios" | "android", options: { offerStatus?: num
       return Response.json({
         url: `${url.origin}/helper/A`,
         device: "A",
+        ...(options.duo ? { chrome: { identifier: "phone15" } } : {}),
         streamSettings: { transport: "webrtc", codec: "h264" },
         size: { width: 100, height: 200 },
         stream: { transport: "webrtc", codec: "h264", iceServers: [], iceTransportPolicy: "all" },
@@ -384,7 +392,15 @@ function mountedClient(platform: "ios" | "android", options: { offerStatus?: num
     return null;
   }
   const video = new Video();
+  const innerVideo = new Video();
   return {
+    async attachPanels() {
+      await act(async () => {
+        for (const display of client.displays!) {
+          display.attachVideo((display.active ? video : innerVideo) as unknown as HTMLVideoElement);
+        }
+      });
+    },
     video,
     get client() {
       return client;
@@ -518,4 +534,120 @@ test("after an Android token change, a transport retry is loading, not an error 
   await timers.fire();
   expect(hub.client.status).toBe("connecting");
   expect(hub.client.error).toBeNull();
+});
+
+test("Duo playback recovery survives the stale-frame and presentation deadlines", async () => {
+  const timers = captureLoadTimers();
+  const nativeInterval = setInterval;
+  const nativeClearInterval = clearInterval;
+  const polls = new Map<number, () => void>();
+  let nextPoll = -1;
+  stubGlobal("setInterval", (callback: () => void, ms: number) => {
+    if (ms !== 1_000) return nativeInterval(callback, ms);
+    const id = nextPoll--;
+    polls.set(id, callback);
+    return id;
+  });
+  stubGlobal("clearInterval", (id: ReturnType<typeof setInterval>) => {
+    if (typeof id === "number" && id < 0) polls.delete(id);
+    else nativeClearInterval(id);
+  });
+  const hub = mountedClient("ios", { duo: true });
+  await hub.render();
+  await hub.attachPanels();
+  await hub.paint();
+  expect(hub.client.status).toBe("streaming");
+  const peers = [...Peer.instances];
+  const source = hub.video.srcObject;
+  await act(async () => {
+    hub.video.paused = true;
+    hub.video.dispatchEvent(new Event("pause"));
+  });
+  expect(hub.client.playback?.state).toBe("blocked");
+  // Advance beyond both the stale-frame threshold and the presentation deadline.
+  const now = Date.now;
+  Date.now = () => now() + 34_000;
+  try {
+    await act(async () => {
+      for (const poll of [...polls.values()]) poll();
+    });
+    await timers.fire();
+    expect(hub.client.status).toBe("reconnecting");
+    expect(hub.client.error).toBeNull();
+    expect(hub.client.playback?.state).toBe("blocked");
+    expect(hub.client.framePresented).toBe(true);
+    const playCalls = hub.video.playCalls;
+    await act(async () => {
+      const resumed = hub.client.playback!.resume();
+      expect(hub.video.playCalls).toBe(playCalls + 1);
+      await resumed;
+      hub.video.dispatchEvent(new Event("playing"));
+    });
+    // Playback permission does not hide a real gap after the user resumes.
+    expect(timers.count).toBe(1);
+    await timers.fire();
+    expect(hub.client.error).toBe(STREAM_DISCONNECTED_ERROR);
+    await act(async () => {
+      hub.video.dispatchEvent(new Event("timeupdate"));
+    });
+    expect(hub.client.status).toBe("streaming");
+    expect(hub.client.playback?.state).toBe("playing");
+    expect(Peer.instances).toEqual(peers);
+    expect(hub.video.srcObject).toBe(source);
+  } finally {
+    Date.now = now;
+  }
+});
+
+for (const platform of ["ios", "android"] as const) {
+  test(`${platform} blocked first playback does not become a load timeout`, async () => {
+    const timers = captureLoadTimers();
+    const hub = mountedClient(platform);
+    hub.video.rejectPlay = true;
+    await hub.render();
+    expect(hub.client.playback?.state).toBe("blocked");
+    expect(timers.count).toBe(0);
+    await timers.fire();
+    expect(hub.client.status).toBe("connecting");
+    expect(hub.client.error).toBeNull();
+  });
+}
+
+test("playback recovery clears expired presentation deadlines but preserves adapter errors", async () => {
+  const timers = captureLoadTimers();
+  stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let current!: ReturnType<typeof useScreenPresentation>;
+  function Harness({ status, waiting }: { status: ConnectionStatus; waiting: boolean }) {
+    current = useScreenPresentation(
+      "device-a",
+      status,
+      status === "error" ? "Offer refused" : null,
+      {
+        dropTimeoutMs: SCREEN_LOAD_TIMEOUT_MS,
+        waitingForPlayback: waiting,
+      },
+    );
+    return null;
+  }
+  const render = async (status: ConnectionStatus, waiting = false) => {
+    await act(async () => {
+      if (renderer) renderer.update(<Harness status={status} waiting={waiting} />);
+      else renderer = create(<Harness status={status} waiting={waiting} />);
+    });
+  };
+  for (const loaded of [false, true]) {
+    if (loaded) await render("streaming");
+    await render("connecting");
+    await timers.fire();
+    expect(current.status).toBe("error");
+    await render("connecting", true);
+    expect(current.status).toBe(loaded ? "reconnecting" : "connecting");
+    expect(current.error).toBeNull();
+    expect(timers.count).toBe(0);
+    await render("error", true);
+    expect(current.error).toBe("Offer refused");
+    await render("connecting");
+    expect(current.error).toBeNull();
+    expect(timers.count).toBe(1);
+  }
 });
