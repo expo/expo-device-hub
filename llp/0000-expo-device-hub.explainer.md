@@ -6,7 +6,7 @@
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
-**Revised:** 2026-11-16 (sidebar support warning, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
+**Revised:** 2026-11-16 (sidebar support warning and Android phone profiles, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
 
 ## Summary
 
@@ -231,6 +231,32 @@ outside the sidebar's scroll container. Viewport collision handling can flip the
 above the trigger; long content scrolls within the available height. They hide when
 the trigger scrolls out of view. [observed: HubComponents `DeviceListItem.tsx` and
 `UnsupportedDeviceWarning.tsx`]
+
+#### Android supported phone profiles
+
+The same phone predicate classifies existing AVDs and new-device choices. It
+supports Pixel phones, including the original Pixel Fold and Pixel Pro Fold
+generations, plus the generic SDK `small_phone` (Small Phone) and `medium_phone`
+(Medium Phone) profiles. Pixel Tablet, Pixel C, watches, TVs, generic tablets and
+other unrelated profiles stay outside the supported set. Physical Android devices
+remain allowed. Existing AVDs use `hw.device.name`, then avdmanager's `Device`
+metadata (including its OEM suffix); only an AVD without either falls back to its
+name. [observed: Hub `src/server/device-support.ts` and `sim-options.ts`]
+
+This classification makes these phone profiles visible by default in Recents and
+new-device choices, and removes their sidebar warning. Unsupported devices that
+are already running remain visible in the sidebar. [observed: Hub
+`src/dashboard/deviceVisibility.ts` and `Dashboard.tsx`; HubComponents
+`DeviceSection.tsx`]
+
+Android SDK Command-line Tools 22.0's `avdmanager list device` was checked on
+2026-11-16. It lists `small_phone`, `medium_phone`, `pixel_fold`,
+`pixel_9_pro_fold` and `pixel_10_pro_fold`, but no Large Phone / `large_phone`.
+The command warned about a missing `devices.xml` in one installed Android 37
+system image; the bundled `sdklib` device definitions were also inspected and
+contain Small Phone and Medium Phone, with no Large Phone. No Large Phone
+profile is added. [observed: local SDK Command-line Tools 22.0,
+`lib/sdklib/tools.sdklib.jar`, `com/android/sdklib/devices/devices.xml`]
 
 ### Hub toolbar
 
