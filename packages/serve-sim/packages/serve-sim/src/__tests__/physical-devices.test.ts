@@ -54,8 +54,9 @@ describe("parsePhysicalDevices", () => {
 });
 
 describe("physicalDeviceUnsupportedReason", () => {
-  test("needs iOS 27 first, then Xcode 27", () => {
-    expect(physicalDeviceUnsupportedReason("26.4", "518.33")).toBe("needs iOS 27");
+  test("needs Xcode 27 first, then iOS 27, like the native check", () => {
+    expect(physicalDeviceUnsupportedReason("26.4", "518.33")).toBe("needs Xcode 27");
+    expect(physicalDeviceUnsupportedReason("26.4", "642.0")).toBe("needs iOS 27");
     expect(physicalDeviceUnsupportedReason("27.0", "641.9")).toBe("needs Xcode 27");
     expect(physicalDeviceUnsupportedReason("27.0", "642.0")).toBeNull();
   });

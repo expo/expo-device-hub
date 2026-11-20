@@ -132,9 +132,9 @@ describe("physicalDeviceUnsupportedReason", () => {
     expect(physicalDeviceUnsupportedReason(device!, null)).toBe("needs Xcode 27");
   });
 
-  test("names the phone's requirement first", () => {
+  test("names the Mac's requirement first, like serve-sim's native check", () => {
     expect(physicalDeviceUnsupportedReason({ ...device!, osVersion: "18.0" }, "518.33")).toBe(
-      "needs iOS 27",
+      "needs Xcode 27",
     );
   });
 });

@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { promisify } from "util";
+import { physicalDeviceSupport } from "./native";
 
 const execFileAsync = promisify(execFile);
 
@@ -105,14 +106,35 @@ export function parsePhysicalDevices(
   });
 }
 
-/** Streaming needs iOS 27 on the device and CoreDevice 642 (Xcode 27) on this Mac. */
+/**
+ * Streaming needs CoreDevice 642 (Xcode 27) on this Mac and iOS 27 on the device. The Mac comes
+ * first, in the order and words of the native `physicalDeviceSupport`.
+ */
 export function physicalDeviceUnsupportedReason(
   osVersion: string | null,
   coreDeviceVersion: string | null,
 ): string | null {
-  if (majorVersion(osVersion) < MINIMUM_OS_MAJOR) return "needs iOS 27";
   if (majorVersion(coreDeviceVersion) < MINIMUM_CORE_DEVICE_MAJOR) return "needs Xcode 27";
+  if (majorVersion(osVersion) < MINIMUM_OS_MAJOR) return "needs iOS 27";
   return null;
+}
+
+type HostSupport = { coreDeviceVersion: string | null; unsupportedReason: string | null };
+
+/**
+ * The native addon also checks that CoreDevice has the media stream and digitizer symbols. Without
+ * the addon, the CoreDevice version decides.
+ */
+async function readHostSupport(): Promise<HostSupport> {
+  try {
+    const support = await physicalDeviceSupport();
+    return {
+      coreDeviceVersion: support.coreDeviceVersion ?? null,
+      unsupportedReason: support.supported ? null : (support.message ?? "needs Xcode 27"),
+    };
+  } catch {
+    return { coreDeviceVersion: await readCoreDeviceVersion(), unsupportedReason: null };
+  }
 }
 
 async function readCoreDeviceVersion(): Promise<string | null> {
@@ -181,8 +203,14 @@ let cached: { at: number; devices: Promise<PhysicalDevice[]> } | null = null;
 export function listPhysicalDevices(): Promise<PhysicalDevice[]> {
   const now = Date.now();
   if (cached && now - cached.at < CACHE_TTL_MS) return cached.devices;
-  const devices = Promise.all([runDevicectlList(), readCoreDeviceVersion()]).then(
-    ([json, coreDeviceVersion]) => (json ? parsePhysicalDevices(json, coreDeviceVersion) : []),
+  const devices = Promise.all([runDevicectlList(), readHostSupport()]).then(([json, host]) =>
+    json
+      ? parsePhysicalDevices(json, host.coreDeviceVersion).map((device) =>
+          host.unsupportedReason
+            ? { ...device, unsupportedReason: host.unsupportedReason }
+            : device,
+        )
+      : [],
   );
   cached = { at: now, devices };
   return devices;
