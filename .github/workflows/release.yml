@@ -137,13 +137,13 @@ jobs:
         if: ${{ env.IS_CANARY != 'true' }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: bun changeset publish --tag next
+        run: bun run changeset:publish -- --tag next
 
       - name: Publish canary to npm
         if: ${{ env.IS_CANARY == 'true' }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: bun changeset publish --tag canary
+        run: bun run changeset:publish -- --tag canary
 
       - name: Verify published packages are available on npm
         timeout-minutes: 30
