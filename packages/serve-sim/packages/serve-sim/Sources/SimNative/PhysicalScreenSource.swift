@@ -58,6 +58,7 @@ actor PhysicalScreenSource: ScreenSource {
         self.nowNanoseconds = nowNanoseconds
     }
 
+    // @ref LLP 0027#opening-and-closing — returns after the first decoded frame; a stream that ends first rejects with iPhone disconnected
     func start(deviceUDID: String, screenID: UInt32?, onFrame: @escaping ScreenSourceFrameHandler,
                onEnd: @escaping ScreenSourceEndHandler) async throws {
         generation &+= 1
@@ -177,6 +178,7 @@ actor PhysicalScreenSource: ScreenSource {
         idleTimer = timer
     }
 
+    // @ref LLP 0027#idle-floor — re-emit the last frame after 200 ms, the simulator's 5 fps floor
     private func idleTick(generation: UInt64) {
         guard generation == self.generation, !ended else { return }
         idleTicks &+= 1
@@ -213,6 +215,7 @@ actor PhysicalScreenSource: ScreenSource {
         for notify in screenObservers.values { notify() }
     }
 
+    // @ref LLP 0027#ending-device-disconnected — end once: stop the stream, drop CoreDevice's cached capabilities, report iPhone disconnected
     private func sessionEnded(_ cause: String, generation: UInt64) {
         guard generation == self.generation, !ended else { return }
         ended = true
@@ -327,6 +330,7 @@ extension PhysicalScreenSource {
         )
     }
 
+    // @ref LLP 0027#orientation — frames are the panel as mounted, so input keeps the client's panel coordinates and needs no rotation map
     static func inputTarget(deviceUDID: String) async throws -> ScreenInputTarget {
         let (_, _, display) = try await lookUp(deviceUDID: deviceUDID)
         let displayID = display.displayID

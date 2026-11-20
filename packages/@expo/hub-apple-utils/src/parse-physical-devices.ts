@@ -4,6 +4,7 @@ import type { ApplePhysicalDevice } from "./types";
 
 const STREAMABLE_PLATFORMS = new Set(["iOS", "iPadOS"]);
 
+// @ref LLP 0027#listing — serve-sim keeps a copy of these rules; both give the same reasons in the same order
 /**
  * Parse the JSON file that `xcrun devicectl list devices --json-output <file>` writes.
  *

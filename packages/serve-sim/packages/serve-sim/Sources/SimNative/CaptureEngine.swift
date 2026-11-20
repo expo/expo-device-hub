@@ -209,6 +209,7 @@ actor CaptureEngine {
         phase = .running
     }
 
+    // @ref LLP 0027#the-seam — the first end is latched, so a listener that subscribes later still hears it
     private func sourceEnded(_ end: ScreenSourceEnd) {
         guard sourceEnd == nil else { return }
         sourceEnd = end

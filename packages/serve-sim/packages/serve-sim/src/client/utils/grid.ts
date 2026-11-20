@@ -1,5 +1,6 @@
 export interface GridDevice {
   device: string;
+  // @ref LLP 0027#listing — grid rows carry kind, as serve-emu's do
   kind?: "physical" | "simulator";
   unsupportedReason?: string;
   name: string;

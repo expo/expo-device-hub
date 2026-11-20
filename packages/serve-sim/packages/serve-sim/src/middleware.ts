@@ -439,6 +439,7 @@ function getPreferredDeviceUdid(): string | null {
   return udid;
 }
 
+// @ref LLP 0027#one-stream-per-phone — a proxying server offers no config for a phone another server streams, so its client asks for a start
 function servedHere<State extends { device: string }>(
   state: State | null | undefined,
   proxyHelpers: boolean | undefined,

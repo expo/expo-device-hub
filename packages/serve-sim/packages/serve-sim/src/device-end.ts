@@ -43,6 +43,7 @@ export function recordDeviceEnd(udid: string, reason: string): void {
 
 export class DeviceEndedError extends Error {}
 
+// @ref LLP 0027#device-end — nothing reopens an ended phone on its own; only a start clears the end
 export function refuseEndedDevice(udid: string): void {
   const reason = ended.get(udid.toUpperCase());
   if (reason) throw new DeviceEndedError(reason);
@@ -53,6 +54,7 @@ export function clearDeviceEnd(udid: string): void {
   if (ended.delete(udid.toUpperCase())) notifyDeviceEnds();
 }
 
+// @ref LLP 0027#device-end — this server's end wins over another server's state file for the same phone
 /**
  * What `/api` and `/api/events` report for an ended device in place of its config. It has no
  * `url`, so a client that does not know `ended` reads it as no device, as before.

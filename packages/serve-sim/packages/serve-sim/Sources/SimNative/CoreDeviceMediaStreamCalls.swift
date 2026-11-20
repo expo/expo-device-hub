@@ -8,6 +8,7 @@ struct CoreDeviceMediaStreamError: Error, CustomStringConvertible {
     init(_ description: String) { self.description = description }
 }
 
+// @ref LLP 0027.000#how-each-call-is-made — private CoreDevice Swift entry points, resolved by CoreDeviceShim and called through these declarations
 final class CoreDeviceUsageAssertionObject {
     @_silgen_name("SSCDMSRelease")
     final func releaseAssertion()

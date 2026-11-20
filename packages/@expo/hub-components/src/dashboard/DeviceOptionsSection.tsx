@@ -202,6 +202,7 @@ export function DeviceOptionsSection({
   const onscreenKeyboardDescriptionId = useId();
   const orientationErrorId = useId();
   const settings = client?.deviceSettings ?? null;
+  // @ref LLP 0027#feature-gate — Device options keeps its rows and locks each with serve-sim's reason
   const settingsNotAvailable = client?.capabilities.deviceSettings
     ? undefined
     : client?.unavailableReasons?.deviceSettings;

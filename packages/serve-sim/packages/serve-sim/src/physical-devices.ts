@@ -50,6 +50,7 @@ function majorVersion(version: string | null): number {
   return Number.isFinite(major) ? major : 0;
 }
 
+// @ref LLP 0027#listing — serve-sim's own copy of the devicectl rules in @expo/hub-apple-utils
 /**
  * Keep real iOS and iPadOS hardware from `devicectl list devices --json-output` that is paired and
  * has Developer Mode on, also when its tunnel is disconnected: opening the device connects it.
@@ -108,7 +109,10 @@ export function parsePhysicalDevices(
   });
 }
 
-/** Streaming needs iOS 27 on the device and CoreDevice 642 (Xcode 27) on this Mac. */
+/**
+ * Streaming needs CoreDevice 642 (Xcode 27) on this Mac and iOS 27 on the device. The Mac comes
+ * first, in the order and words of the native `physicalDeviceSupport`.
+ */
 export function physicalDeviceUnsupportedReason(
   osVersion: string | null,
   coreDeviceVersion: string | null,
@@ -120,6 +124,7 @@ export function physicalDeviceUnsupportedReason(
 
 type HostSupport = { coreDeviceVersion: string | null; unsupportedReason: string | null };
 
+// @ref LLP 0027#listing — the native add-on also checks the media stream, digitizer and keyboard symbols; without it the CoreDevice version decides
 async function readHostSupport(): Promise<HostSupport> {
   try {
     const support = await physicalDeviceSupport();

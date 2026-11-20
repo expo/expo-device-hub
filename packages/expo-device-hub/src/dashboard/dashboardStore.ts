@@ -163,6 +163,7 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
     selectDevice: (selectedDeviceId) =>
       set((state) => ({
         selectedDeviceId: dashboardSingleDevice() ?? selectedDeviceId,
+        // @ref LLP 0027#device-end — every click counts, the selected row's too, so selecting an ended phone again starts it
         deviceSelections: state.deviceSelections + 1,
       })),
     reconcileSelectedDevice: (availableIds) =>

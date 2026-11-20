@@ -37,12 +37,14 @@ public struct PhysicalContentSize: Equatable, Sendable {
 public enum PhysicalScreenPolicy {
     public static let universalHIDServiceBase: UInt32 = 0x100
 
+    // @ref LLP 0027#display-choice — no display reports active on the iPhone 12, so the primary display wins
     public static func chooseDisplay(_ displays: [PhysicalDisplayCandidate]) -> PhysicalDisplayCandidate? {
         let active = displays.filter { $0.isActive == true }
         if active.count == 1 { return active[0] }
         return displays.first(where: \.isPrimary) ?? displays.first(where: \.isIntegrated)
     }
 
+    // @ref LLP 0027#cropping-and-scaling — the encoded frame pads the right and bottom; fit the native size and only scale down
     public static func contentSize(encodedWidth: Int, encodedHeight: Int,
                                    nativeWidth: Double?, nativeHeight: Double?) -> PhysicalContentSize {
         let encoded = PhysicalContentSize(width: encodedWidth, height: encodedHeight)

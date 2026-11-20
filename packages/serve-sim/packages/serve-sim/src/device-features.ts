@@ -12,6 +12,7 @@
 
 export type DeviceKind = "simulator" | "physical";
 
+// @ref LLP 0027#feature-gate — the one table that decides what a physical device lacks
 export const DEVICE_FEATURES = {
   clipboard: { subject: "Clipboard", plural: false },
   apps: { subject: "App install, launch, files and icons", plural: true },
@@ -75,6 +76,10 @@ export function deviceFeatureRefusal(
 
 const HOME_BUTTONS = new Set(["home", "swipe_home"]);
 
+/**
+ * The feature a hardware button needs. Every device has Home: a physical device sends it as the
+ * swipe up from the bottom edge. Power, volume, the action button and the rest are simulator HID.
+ */
 export function buttonFeature(button: string | undefined): DeviceFeature | null {
   return button !== undefined && HOME_BUTTONS.has(button) ? null : "hardwareButtons";
 }

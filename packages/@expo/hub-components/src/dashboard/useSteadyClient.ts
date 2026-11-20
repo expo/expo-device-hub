@@ -77,6 +77,10 @@ function sameData(a: unknown, b: unknown): boolean {
   return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
+/**
+ * Capabilities that a client reports as present until the device says it has none, as hub-client
+ * does for a phone's logs and foreground app. For them the device's latest report counts.
+ */
 const PRESENT_UNTIL_REPORTED: ReadonlySet<keyof DeviceCapabilities> = new Set([
   "logs",
   "foregroundApp",
@@ -84,6 +88,7 @@ const PRESENT_UNTIL_REPORTED: ReadonlySet<keyof DeviceCapabilities> = new Set([
 
 type UnavailableReasons = DeviceClient["unavailableReasons"];
 
+// @ref LLP 0027#feature-gate — logs, the foreground app and each capability with a reason follow the latest report
 function latestReportCounts(key: keyof DeviceCapabilities, reasons: UnavailableReasons) {
   return PRESENT_UNTIL_REPORTED.has(key) || reasons?.[key] !== undefined;
 }

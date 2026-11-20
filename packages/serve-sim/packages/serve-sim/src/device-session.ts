@@ -481,6 +481,7 @@ export class DeviceSession {
     )
       .then(async () => {
         if (this.phase !== "running") return;
+        // @ref LLP 0027#one-stream-per-phone — claim before native capture, so a second server never takes the phone over
         if (this.kind === "physical") this.releaseStream ??= claimPhysicalStream(this.udid);
         await timeStartup("native-capture", () => this.capture.start(), this.udid);
       })
@@ -539,6 +540,7 @@ export class DeviceSession {
       });
   }
 
+  // @ref LLP 0027#feature-gate — drop input a phone cannot take before it reaches native code
   private lacks(feature: DeviceFeature | null): boolean {
     return deviceFeatureRefusal(this.udid, feature) !== null;
   }
@@ -3390,6 +3392,7 @@ export async function resumeDeviceSessionAfterReboot(udid: string): Promise<void
   await peekDeviceSession(udid)?.resumeAfterReboot();
 }
 
+// @ref LLP 0027#device-end — no pause or reconnect: the session ends, as serve-emu marks a session terminal
 /**
  * The device went away, such as an unplugged iPhone. Like serve-emu's terminal session, this one
  * ends: its viewers' input sockets close with the reason, its state is withdrawn, and discovery

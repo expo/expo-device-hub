@@ -335,6 +335,7 @@ actor CoreDeviceBridge {
         return device
     }
 
+    // @ref LLP 0027#device-identity — CoreDevice identifiers first, so simulators match as before; then a phone's hardware UDID
     static func first<Device>(matching udid: String, in devices: [Device], identifier: (Device) -> String,
                               hardwareUDID: (Device) -> String?) -> Device? {
         if let device = devices.first(where: {

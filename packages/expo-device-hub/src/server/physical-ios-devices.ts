@@ -2,6 +2,7 @@ import { type ApplePhysicalDeviceListing } from "@expo/hub-apple-utils";
 
 import { type HubDevice } from "./devices";
 
+// @ref LLP 0027#listing — the hardware UDID is the public id everywhere; only native code uses the CoreDevice identifier
 /**
  * A phone is always booted: Hub cannot boot, shut down, or remove it. Its id is the hardware
  * UDID, the id that serve-sim streams it under.

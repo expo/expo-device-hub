@@ -492,6 +492,7 @@ const CAPABILITY_FEATURES: ReadonlyArray<[keyof DeviceCapabilities, IosDeviceFea
   ["clipboard", "clipboard"],
 ];
 
+// @ref LLP 0027#feature-gate — serve-sim's reason for each missing feature, keyed by the capability it removes
 function capabilityReasons(
   unavailableFeatures: ResolvedConfig["unavailableFeatures"],
 ): NonNullable<DeviceClient["unavailableReasons"]> {
@@ -1752,6 +1753,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const refresh = () => {
       void resolve();
     };
+    // @ref LLP 0027#device-end — a start is always the viewer's; this runs only when startRequest changes
     const startEndedDevice = () => {
       if (cancelled || !endedReason) return;
       endedReason = null;

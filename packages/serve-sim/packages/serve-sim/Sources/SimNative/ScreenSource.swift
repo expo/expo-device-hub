@@ -45,6 +45,7 @@ enum ScreenSourceKind: String, Sendable {
         }
     }
 
+    // @ref LLP 0027#the-seam — HID takes its transport, screen and rotations from the source kind
     func inputTarget(deviceUDID: String) async throws -> ScreenInputTarget {
         switch self {
         case .simulator: return try SimulatorScreenSource.inputTarget(deviceUDID: deviceUDID)
@@ -68,6 +69,7 @@ struct ScreenInputTarget: @unchecked Sendable {
     let connect: (@Sendable () async throws -> Void)?
 }
 
+// @ref LLP 0027#the-seam — CaptureEngine reads a simulator and a phone through one protocol; only a phone calls onEnd
 protocol ScreenSource: Actor {
     var isFoldable: Bool { get }
     var supportsDevicePose: Bool { get }

@@ -94,6 +94,7 @@ actor HIDInjector {
         self.isFoldable = target.isFoldable
         singleIntegratedScreenID = target.defaultScreenID
         switch target.transport {
+        // @ref LLP 0027#input — a phone has only CoreDevice HID; never load the Indigo legacy client
         case .coreDeviceOnly:
             try await target.connect?()
             try await setupCoreDeviceHID(deviceUDID: deviceUDID)
@@ -632,6 +633,7 @@ actor HIDInjector {
 
     func sendButton(button: String, deviceUDID: String) async {
         hidLog("[hid] Sending button: \(button)")
+        // @ref LLP 0027#input — Home is the bottom-edge swipe; a phone has no other simulator button
         if isPhysical {
             guard button == "home" || button == "swipe_home" else {
                 print("[hid] Button \(button) is unavailable on a physical device")
