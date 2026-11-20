@@ -139,6 +139,8 @@ describe("useSteadyClient", () => {
       <output
         data-settings={JSON.stringify(steady?.client.deviceSettings)}
         data-location={JSON.stringify(steady?.client.capabilities.location)}
+        data-logs={JSON.stringify(steady?.client.capabilities.logs)}
+        data-foreground-app={JSON.stringify(steady?.client.capabilities.foregroundApp)}
         data-stale={[...(steady?.stale ?? [])].sort().join(",")}
       />
     );
@@ -248,6 +250,23 @@ describe("useSteadyClient", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  test("logs and the foreground app go when the device reports it has neither", async () => {
+    // hub-client counts both as present until the device's config says otherwise.
+    const phone: Device = { ...IPHONE, id: "phone", physical: true };
+    await act(async () => {
+      renderer = create(<Probe client={CONNECTING} device={phone} />);
+    });
+    expect(probe()["data-logs"]).toBe("true");
+
+    const without = {
+      ...STREAMING,
+      capabilities: { ...STREAMING.capabilities, logs: false, foregroundApp: false },
+    } as unknown as DeviceClient;
+    await act(async () => renderer!.update(<Probe client={without} device={phone} />));
+    expect(probe()["data-logs"]).toBe("false");
+    expect(probe()["data-foreground-app"]).toBe("false");
   });
 
   test("settles when a client builds an equal object again on each render", async () => {

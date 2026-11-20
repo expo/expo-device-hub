@@ -78,6 +78,15 @@ function sameData(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * Capabilities that a client reports as present until the device says it has none, as hub-client
+ * does for a phone's logs and foreground app. For them the device's latest report counts.
+ */
+const PRESENT_UNTIL_REPORTED: ReadonlySet<keyof DeviceCapabilities> = new Set([
+  "logs",
+  "foregroundApp",
+]);
+
+/**
  * The capabilities of `first`, with each one that it lacks from `second`. It
  * is `first` itself when `second` adds nothing.
  */
@@ -89,7 +98,7 @@ function withCapabilities(
   const merged = { ...first } as Record<keyof DeviceCapabilities, unknown>;
   let changed = false;
   for (const key of Object.keys(second) as (keyof DeviceCapabilities)[]) {
-    const value = first[key] || second[key];
+    const value = PRESENT_UNTIL_REPORTED.has(key) ? first[key] : first[key] || second[key];
     if (!sameData(value, first[key])) {
       changed = true;
       merged[key] = value;
@@ -98,7 +107,10 @@ function withCapabilities(
   return changed ? (merged as DeviceCapabilities) : first;
 }
 
-/** Each capability that the device reported once stays, with its last value. */
+/**
+ * Each capability that the device reported once stays, with its last value. One that counts as
+ * present until reported goes when the device reports it has none.
+ */
 function keepCapabilities(
   previous: DeviceCapabilities | undefined,
   live: DeviceCapabilities,
@@ -107,7 +119,7 @@ function keepCapabilities(
   const merged = { ...previous } as Record<keyof DeviceCapabilities, unknown>;
   let changed = false;
   for (const key of Object.keys(live) as (keyof DeviceCapabilities)[]) {
-    const value = live[key] || previous[key];
+    const value = PRESENT_UNTIL_REPORTED.has(key) ? live[key] : live[key] || previous[key];
     if (!sameData(value, previous[key])) {
       changed = true;
       merged[key] = value;
