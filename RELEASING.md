@@ -86,6 +86,25 @@ Real releases only version and publish the packages that have a changeset; the o
 Canary releases assign every public package a canary version so they can also run without
 pending changesets.
 
+## Recover a stable release after verification or promotion fails
+
+Once the workflow has pushed the version commit and published to `next`, the changesets for
+those versions are consumed. A later release can skip those packages.
+
+1. From the failed run’s **Commit & push version bump** and **Publish to npm** logs, identify
+   the version commit and the exact published `package@version` entries. Put one entry per
+   line in a temporary manifest. The version summary also lists unchanged packages.
+2. Run `./scripts/verify-npm-availability.ts "$manifest"` from the release checkout, with
+   `manifest` set to the file’s path. Continue once every tarball is downloadable.
+3. Coordinate with anyone cutting another stable release. For each entry, inspect
+   `npm dist-tag ls <package>`. If `latest` still needs to move forward, run
+   `npm dist-tag add <package>@<exact-version> latest` as an authorized npm maintainer.
+   Skip entries where `latest` already points to that version or a newer release.
+4. The workflow pushes Git tags and creates GitHub releases after promotion. Check each
+   published version for a missing tag or release. Create missing tags at the **version
+   commit**, and attach the published tarball (downloaded with `npm pack <package>@<exact-version>`)
+   to the corresponding GitHub release with that version’s changelog notes.
+
 ## One-time setup for a new public package
 
 The workflow publishes with npm Trusted Publishing, so npm must know the package before its
