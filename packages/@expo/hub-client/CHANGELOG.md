@@ -1,5 +1,11 @@
 # @expo/hub-client
 
+## 1.14.1
+
+### Patch Changes
+
+- 9f38980: Re-releasing because promotion to `latest` failed.
+
 ## 1.14.0
 
 ### Minor Changes

@@ -1,5 +1,11 @@
 # expo-device-hub
 
+## 0.26.1
+
+### Patch Changes
+
+- 9f38980: Re-releasing because promotion to `latest` failed.
+
 ## 0.26.0
 
 ### Minor Changes

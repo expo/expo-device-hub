@@ -1,5 +1,11 @@
 # @expo/serve-sim
 
+## 0.14.6
+
+### Patch Changes
+
+- 9f38980: Re-releasing because promotion to `latest` failed.
+
 ## 0.14.5
 
 ### Patch Changes
