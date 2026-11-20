@@ -121,6 +121,17 @@ import {
 } from "./sim-pasteboard";
 import { PasteboardUnavailableError, readSimPasteboardResult } from "./sim-pasteboard-reader";
 import { createClipboardSession } from "./clipboard-session";
+import { clearDeviceEnd, deviceEndConfig } from "./device-end";
+import { gridRowForPhysical, listPhysicalDevices } from "./physical-devices";
+import {
+  type DeviceFeature,
+  type DeviceKind,
+  deviceFeatureRefusal,
+  deviceKindOf,
+  helperRouteFeature,
+  routeFeature,
+  unavailableDeviceFeatures,
+} from "./device-features";
 import { PasteboardCopyTimeoutError, cleanupWarningOf } from "./sim-pasteboard-copy";
 
 /** Captured traffic is decrypted credentials and clipboard text is user data; `no-cache` would still let a cache keep a copy. */
@@ -989,6 +1000,10 @@ export function previewConfigForState(
   gridMemoryEndpoint: string;
   previewEndpoint: string;
   execToken: string;
+  /** `"physical"` for an iPhone or iPad, `"simulator"` otherwise. */
+  deviceKind: DeviceKind;
+  /** Each feature this device does not have, with the reason a client shows in its place. */
+  unavailableFeatures: Partial<Record<DeviceFeature, string>>;
   /** Inlined so the first paint has the bezel instead of reflowing into it. */
   chrome: DeviceKitChromeDescriptor | null;
   /** @deprecated Use streamSettings. */
@@ -1009,6 +1024,11 @@ export function previewConfigForState(
   // Every serve-sim's state file is readable here and ?device= is caller-supplied, so neither the
   // token nor the TURN credentials may ride along: that hands one instance's secrets to another.
   const { token: _sessionToken, streamSettings: _foreignStreamSettings, ...publicState } = state;
+  const unavailableFeatures = unavailableDeviceFeatures(state.device);
+  if (unavailableFeatures.clipboard) {
+    delete publicState.inputPaste;
+    delete publicState.inputCopy;
+  }
   return {
     ...publicState,
     ...(singleDevice ? { singleDevice } : {}),
@@ -1035,6 +1055,8 @@ export function previewConfigForState(
     gridMemoryEndpoint: gridApiBase + "/memory",
     previewEndpoint: base === "" ? "/" : base,
     execToken,
+    deviceKind: deviceKindOf(state.device),
+    unavailableFeatures,
     chrome: bootedDeviceChrome(state.device),
     ...(legacyCodec ? { codec: legacyCodec } : {}),
     ...(streamSettings ? { streamSettings } : {}),
@@ -1227,12 +1249,24 @@ interface SimctlDevice {
   runtime: string;
 }
 
+/** A grid row: a simulator from simctl or a paired iPhone or iPad from devicectl. */
+interface GridDevice extends SimctlDevice {
+  /** Mirrors serve-emu's `GridDevice.kind`. */
+  kind: DeviceKind;
+  /** The model whose DeviceKit chrome frames the device; its name for a simulator. */
+  chromeName: string;
+  /** Why a physical device cannot stream yet, such as "needs iOS 27". */
+  unsupportedReason?: string;
+}
+
 type GridHelperStatus = Pick<ServeSimState, "port" | "url" | "streamUrl" | "wsUrl">;
 
 type GridCatalogDevice = {
   device: string;
+  kind: DeviceKind;
   name: string;
   runtime: string;
+  unsupportedReason?: string;
   chrome: ReturnType<typeof resolveDeviceKitChrome>;
   placeholderAsset: ReturnType<typeof resolveDevicePlaceholderAsset>;
 };
@@ -1248,26 +1282,38 @@ type GridDeviceStatus = {
 // objects before JSON serialization.
 const gridCatalogDeviceCache = new Map<string, { signature: string; device: GridCatalogDevice }>();
 
-function catalogDeviceForSimulator(device: SimctlDevice): GridCatalogDevice {
-  const signature = [device.name, device.runtime, device.deviceTypeIdentifier ?? ""].join("\0");
+function catalogDeviceForSimulator(device: GridDevice): GridCatalogDevice {
+  const signature = [
+    device.name,
+    device.runtime,
+    device.deviceTypeIdentifier ?? "",
+    device.chromeName,
+    device.unsupportedReason ?? "",
+  ].join("\0");
   const cached = gridCatalogDeviceCache.get(device.udid);
   if (cached?.signature === signature) return cached.device;
+  const chromeDevice = {
+    name: device.chromeName,
+    deviceTypeIdentifier: device.deviceTypeIdentifier,
+  };
   const catalogDevice: GridCatalogDevice = {
     device: device.udid,
+    kind: device.kind,
     name: device.name,
     runtime: device.runtime,
-    chrome: resolveDeviceKitChrome(device),
-    placeholderAsset: resolveDevicePlaceholderAsset(device),
+    ...(device.unsupportedReason ? { unsupportedReason: device.unsupportedReason } : {}),
+    chrome: resolveDeviceKitChrome(chromeDevice),
+    placeholderAsset: resolveDevicePlaceholderAsset(chromeDevice),
   };
   gridCatalogDeviceCache.set(device.udid, { signature, device: catalogDevice });
   return catalogDevice;
 }
 
 function sortGridSimulators(
-  simulators: SimctlDevice[],
+  simulators: GridDevice[],
   helperByUdid: ReadonlyMap<string, ServeSimState>,
   selectedDevice: string | null,
-): SimctlDevice[] {
+): GridDevice[] {
   const preferredUdid = getPreferredDeviceUdid();
   const familyRank = (name: string): number => {
     if (/iphone/i.test(name)) return 0;
@@ -1277,7 +1323,7 @@ function sortGridSimulators(
     if (/vision|reality/i.test(name)) return 4;
     return 5;
   };
-  const stateRank = (device: SimctlDevice): number => {
+  const stateRank = (device: GridDevice): number => {
     if (helperByUdid.has(device.udid.toUpperCase())) return 0;
     if (selectedDevice && device.udid === selectedDevice) return 1;
     if (device.state === "Booted") return 2;
@@ -1299,7 +1345,7 @@ function sortGridSimulators(
   );
 }
 
-function listAllSimulators(): Promise<SimctlDevice[]> {
+function listAllSimulators(): Promise<GridDevice[]> {
   return new Promise((resolve) => {
     execFile(
       "xcrun",
@@ -1309,14 +1355,19 @@ function listAllSimulators(): Promise<SimctlDevice[]> {
         if (err) return resolve([]);
         try {
           const data = JSON.parse(stdout) as SimctlAllList;
-          const out: SimctlDevice[] = [];
+          const out: GridDevice[] = [];
           for (const [runtime, devices] of Object.entries(data.devices)) {
             // Keep this to touch-capable simulator families that serve-sim can
             // frame and inject into. tvOS is intentionally left out for now.
             if (!/SimRuntime\.(iOS|watchOS|visionOS|xrOS)-/i.test(runtime)) continue;
             for (const d of devices) {
               if (d.isAvailable === false) continue;
-              out.push({ ...d, runtime: runtime.replace(/^.*SimRuntime\./, "") });
+              out.push({
+                ...d,
+                kind: "simulator",
+                chromeName: d.name,
+                runtime: runtime.replace(/^.*SimRuntime\./, ""),
+              });
             }
           }
           resolve(out);
@@ -1332,22 +1383,24 @@ async function readGridSnapshot(
   selectedDevice: string | null,
   deviceScope?: string,
 ): Promise<{
-  simulators: SimctlDevice[];
+  simulators: GridDevice[];
   helperByUdid: Map<string, ServeSimState>;
 }> {
-  const [states, simulators] = await Promise.all([
+  const [states, simulators, phones] = await Promise.all([
     readServeSimStates(deviceScope),
     listAllSimulators(),
+    listPhysicalDevices(),
   ]);
   const helperByUdid = new Map(states.map((state) => [state.device.toUpperCase(), state] as const));
+  const devices: GridDevice[] = [...simulators, ...phones.map(gridRowForPhysical)];
   return {
-    simulators: sortGridSimulators(simulators, helperByUdid, selectedDevice),
+    simulators: sortGridSimulators(devices, helperByUdid, selectedDevice),
     helperByUdid,
   };
 }
 
 function gridStatusesForRequest(
-  simulators: readonly SimctlDevice[],
+  simulators: readonly GridDevice[],
   helperByUdid: ReadonlyMap<string, ServeSimState>,
   req: SimReq,
   base: string,
@@ -2013,6 +2066,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const clipboard =
     clipboardOption === "unmanaged" ? null : createClipboardSession(clipboardOption);
   const initializeClipboard = async (udid: string, rebooted = false): Promise<void> => {
+    if (deviceFeatureRefusal(udid, "clipboard")) return;
     try {
       await clipboard?.initialize(udid, rebooted);
     } catch (error) {
@@ -2056,7 +2110,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     } catch {}
     if (
       typeof udid !== "string" ||
-      !/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(udid)
+      (!/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(udid) &&
+        deviceKindOf(udid) !== "physical")
     ) {
       return refuse(400, "Invalid or missing udid");
     }
@@ -2074,6 +2129,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (typeof p.device !== "string" || !/^[0-9A-Za-z][0-9A-Za-z-]{0,255}$/.test(p.device)) {
       throw new Error("missing or invalid device udid");
     }
+    const uiRefusal = deviceFeatureRefusal(p.device, "deviceSettings");
+    if (uiRefusal) throw new Error(uiRefusal);
     if (p.option === undefined) {
       return { status: await sanitizeUiFailure(getUiStatus(p.device)) };
     }
@@ -2186,6 +2243,18 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     }
 
     const helperTarget = helperProxyTarget(rawUrl, helperPrefix);
+    // @ref LLP 0020#feature-gate — one refusal for every route a physical device lacks
+    const featureRefusal = helperTarget
+      ? deviceFeatureRefusal(
+          helperTarget.device ?? selectedDevice,
+          helperRouteFeature(helperTarget.upstreamPath),
+        )
+      : deviceFeatureRefusal(selectedDevice, routeFeature(url.slice(base.length)));
+    if (featureRefusal) {
+      res.writeHead(409, { "Content-Type": "application/json", ...NO_STORE });
+      res.end(JSON.stringify({ error: featureRefusal }));
+      return;
+    }
     if (helperTarget) {
       if (
         requirePreviewToken &&
@@ -2494,6 +2563,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       req.on("end", async () => {
         const udid = resolveLifecycleDevice(body, res);
         if (udid === null) return;
+        const refusal = deviceFeatureRefusal(udid, "lifecycle");
+        if (refusal) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: refusal }));
+          return;
+        }
         bootedGeneration++;
         bootedSnapshot = { at: 0, booted: null, names: new Map(), deviceTypes: new Map() };
         try {
@@ -2526,6 +2601,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       req.on("end", () => {
         const udid = resolveLifecycleDevice(body, res);
         if (udid === null) return;
+        clearDeviceEnd(udid);
         const port = req.socket.localPort ?? 0;
         void startDeviceInProcess(
           udid,
@@ -2535,7 +2611,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           gridStateToken(execToken, { requirePreviewToken, loopbackOnly: options?.loopbackOnly }),
           async () => {
             await initializeClipboard(udid, true);
-            await enableNetworkCaptureForStartedDevice(udid, networkCapture);
+            if (!deviceFeatureRefusal(udid, "appInjection"))
+              await enableNetworkCaptureForStartedDevice(udid, networkCapture);
           },
         )
           .then(() => {
@@ -2767,7 +2844,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 disableShare,
                 policy?.device,
               )
-            : null,
+            : deviceEndConfig(selectedDevice),
         ),
       );
       return;
@@ -3122,7 +3199,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 disableShare,
                 policy?.device,
               )
-            : null,
+            : deviceEndConfig(selectedDevice),
         );
       };
 

@@ -46,6 +46,8 @@ const NO_CAPABILITIES = {
   deviceSettings: false,
   activity: false,
   events: false,
+  logs: true,
+  foregroundApp: true,
   camera: false,
   accessibility: false,
   streamSettings: false,
@@ -264,6 +266,41 @@ describe("useSteadyClient", () => {
 });
 
 describe("InspectorSections", () => {
+  test("keeps Current app and Logs in place and says when the device has neither", async () => {
+    const phone = { ...IPHONE, physical: true };
+    const client = {
+      ...STREAMING,
+      capabilities: { ...STREAMING.capabilities, logs: false, foregroundApp: false },
+    } as DeviceClient;
+    await act(async () => {
+      renderer = create(<InspectorSections client={client} device={phone} />);
+    });
+    for (const title of ["Current app", "Logs"]) {
+      const section = renderer!.root.find(
+        (node) => node.type === CollapsibleSection && node.props.title === title,
+      );
+      await act(async () => section.props.onOpenChange(true));
+      expect(
+        section.findAll((node) => node.props.children === SECTION_UNAVAILABLE_NOTE).length,
+      ).toBeGreaterThan(0);
+    }
+    expect(JSON.stringify(renderer!.toJSON())).not.toContain("App ID");
+  });
+
+  test("offers no Shut down or Remove for a physical device", () => {
+    const actions = { onShutdown: () => {}, onRemove: () => {} };
+    const simulator = renderToStaticMarkup(
+      <InspectorSections client={STREAMING} device={IPHONE} {...actions} />,
+    );
+    const phone = renderToStaticMarkup(
+      <InspectorSections client={STREAMING} device={{ ...IPHONE, physical: true }} {...actions} />,
+    );
+    expect(simulator).toContain("Shut down");
+    expect(simulator).toContain("Remove");
+    expect(phone).not.toContain("Shut down");
+    expect(phone).not.toContain(">Remove<");
+  });
+
   test("shows the same sections while a device connects as once it streams", () => {
     const connecting = sectionTitles(
       renderToStaticMarkup(<InspectorSections client={CONNECTING} device={IPHONE} />),

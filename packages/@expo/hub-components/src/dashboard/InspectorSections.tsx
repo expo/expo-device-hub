@@ -44,7 +44,7 @@ export type InspectorSectionsProps = {
   onStreamModeChange?: (mode: DeviceStreamMode) => void;
   /** Change the viewer-local HTTP codec. */
   onHttpCodecChange?: (codec: DeviceHttpCodec) => void;
-  /** Shut the selected device down on the host. */
+  /** Shut the selected device down on the host. Ignored for physical devices. */
   onShutdown?: () => void;
   /** Remove/delete the selected device on the host. Ignored for physical devices. */
   onRemove?: () => void;
@@ -133,7 +133,8 @@ export function InspectorSections({
         onVisibleChange: onShowScreenShapeChange ?? (() => {}),
       }
     : undefined;
-  // Physical devices cannot be deleted from the host.
+  // The host cannot shut down or delete a physical device.
+  const onShutdownDevice = device?.physical ? undefined : onShutdown;
   const onRemoveDevice = device?.physical ? undefined : onRemove;
 
   // A section shows for a capability of the device's platform, or one that the device reported.
@@ -146,19 +147,23 @@ export function InspectorSections({
 
   return (
     <>
-      <CurrentAppSection client={client} />
+      {client && !client.capabilities.foregroundApp ? (
+        <UnavailableSection title="Current app" />
+      ) : (
+        <CurrentAppSection client={client} />
+      )}
       {(device ||
         client?.capabilities.deviceSettings ||
         client?.capabilities.fold ||
         client?.platform === "android" ||
-        (client && (onShutdown || onRemoveDevice))) && (
+        (client && (onShutdownDevice || onRemoveDevice))) && (
         <DeviceOptionsSection
           client={client}
           platform={platform}
           stale={stale}
           screenShape={screenShape}
           foldPreview={foldPreview}
-          onShutdown={onShutdown}
+          onShutdown={onShutdownDevice}
           onRemove={onRemoveDevice}
         />
       )}
@@ -196,7 +201,11 @@ export function InspectorSections({
       {section("events", (client) => (
         <EventsSection client={client} />
       ))}
-      <LogsSection client={client} />
+      {client && !client.capabilities.logs ? (
+        <UnavailableSection title="Logs" />
+      ) : (
+        <LogsSection client={client} />
+      )}
     </>
   );
 }

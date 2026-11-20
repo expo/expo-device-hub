@@ -1,3 +1,6 @@
+import { deviceFeatureRefusal } from "./device-features";
+import { WS_CLOSE_DEVICE_ENDED, deviceEndReason, recordDeviceEnd } from "./device-end";
+import { clearServeSimState } from "./state";
 import { createSerialQueue, withHostActionDeadline } from "./host-actions-utils";
 import { timeStartup } from "./startup-timing";
 import { RECORDING_LEASE_MS } from "./recording-timeouts";
@@ -331,6 +334,9 @@ export class DeviceSession {
   private screenRefreshRequested = false;
   private unsubscribeScreenChanges?: NativeUnsubscribe;
   private unsubscribeDeviceState?: NativeUnsubscribe;
+  private unsubscribeEnd?: NativeUnsubscribe;
+  /** Set when the device went away; viewers' input sockets close with it. */
+  private endReason?: string;
   private deviceStateObservationStarted = false;
   private deviceStateVersion?: {
     generation: number;
@@ -451,10 +457,10 @@ export class DeviceSession {
     if (this.phase === "running") return this.captureStart ?? Promise.resolve();
     if (this.phase === "stopped") return Promise.reject(new Error("Capture session is stopped"));
     this.phase = "running";
-    this.captureStart = timeStartup(
-      "device-options",
-      () => refreshDeviceOptionState(this.udid),
-      this.udid,
+    this.captureStart = (
+      deviceFeatureRefusal(this.udid, "deviceSettings")
+        ? Promise.resolve()
+        : timeStartup("device-options", () => refreshDeviceOptionState(this.udid), this.udid)
     )
       .then(async () => {
         if (this.phase === "running") {
@@ -476,6 +482,7 @@ export class DeviceSession {
           return;
         }
         this.unsubscribeScreenChanges = unsubscribe;
+        this.observeEnd();
         this.observeDeviceState();
         if (
           await timeStartup(
@@ -493,6 +500,33 @@ export class DeviceSession {
         this.captureReady = true;
       });
     return this.captureStart;
+  }
+
+  /**
+   * A device that serve-sim cannot boot, a physical one, can go away on its own. Its screen source
+   * reports that, and the session ends.
+   */
+  private observeEnd(): void {
+    if (!deviceFeatureRefusal(this.udid, "lifecycle")) return;
+    void this.capture
+      .subscribeEnd(async (end) => endDeviceSession(this, deviceEndReason(end)))
+      .then(async (unsubscribe) => {
+        if (this.phase !== "running") {
+          await unsubscribe();
+          return;
+        }
+        this.unsubscribeEnd = unsubscribe;
+      })
+      .catch((error) => {
+        console.error(`[capture] Device end observation unavailable: ${error}`);
+      });
+  }
+
+  /** Record why the device went away; `close` then tells every viewer. */
+  markEnded(reason: string): boolean {
+    if (this.phase !== "running" || this.endReason !== undefined) return false;
+    this.endReason = reason;
+    return true;
   }
 
   /** Capture must be started; temporary screenshots do not need a device-pose observer. */
@@ -590,12 +624,16 @@ export class DeviceSession {
     this.unsubscribeScreenChanges = undefined;
     const deviceStateDetached = this.unsubscribeDeviceState?.().catch(() => {});
     this.unsubscribeDeviceState = undefined;
+    const endDetached = this.unsubscribeEnd?.().catch(() => {});
+    this.unsubscribeEnd = undefined;
     this.queueInputCleanup(this.serverInput, true);
-    for (const ws of this.admittedHidSockets) {
+    const closing = new Set(this.endReason ? [...this.admittedHidSockets, ...this.hidSockets] : []);
+    for (const ws of this.endReason ? closing : this.admittedHidSockets) {
       this.discardQueuedInput(ws);
       this.detachHidSocket(ws);
       this.queueInputCleanup(ws, true);
-      ws.close();
+      if (this.endReason) ws.close(WS_CLOSE_DEVICE_ENDED, this.endReason);
+      else ws.close();
     }
     for (const res of this.panelRequests) res.destroy();
     for (const panel of this.panels.values()) this.stopPanel(panel);
@@ -610,7 +648,7 @@ export class DeviceSession {
     this.closing = (async () => {
       await this.retireInputConsumers();
       if (!stoppingStartup) await this.captureStart?.catch(() => {});
-      await Promise.all([screenChangesDetached, deviceStateDetached]);
+      await Promise.all([screenChangesDetached, deviceStateDetached, endDetached]);
       let recordingError: unknown = this.recordingFailure;
       try {
         await recordingStart;
@@ -3305,6 +3343,20 @@ export async function suspendDeviceSessionForReboot(udid: string): Promise<void>
 
 export async function resumeDeviceSessionAfterReboot(udid: string): Promise<void> {
   await peekDeviceSession(udid)?.resumeAfterReboot();
+}
+
+/**
+ * The device went away, such as an unplugged iPhone. Like serve-emu's terminal session, this one
+ * ends: its viewers' input sockets close with the reason, its state is withdrawn, and discovery
+ * reports the reason until the device is started again.
+ */
+export function endDeviceSession(session: DeviceSession, reason: string): void {
+  if (!session.markEnded(reason)) return;
+  console.error(`[serve-sim] ${session.udid} session ended: ${reason}`);
+  recordDeviceEnd(session.udid, reason);
+  if (sessions.get(session.udid) === session) sessions.delete(session.udid);
+  void session.close().catch(() => {});
+  clearServeSimState(session.udid, process.pid);
 }
 
 export function closeDeviceSession(udid: string): void {

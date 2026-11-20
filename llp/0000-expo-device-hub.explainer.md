@@ -6,7 +6,7 @@
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
-**Revised:** 2026-11-16 (sidebar support warning, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
+**Revised:** 2026-11-19 (physical iPhones: support reason, Current app and Logs capabilities, no Shut down for physical devices; Claude Code, directed by Thomas Girardier); 2026-11-16 (sidebar support warning, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
 
 ## Summary
 
@@ -176,7 +176,10 @@ and only change their value or lock]
   and Logs, and the sections of its platform: Accessibility, Location, Clipboard and Events
   on iOS; Camera, Accessibility, Location, Permissions and Events on Android. A section whose
   capability the device does not report says that it is not available, in place of its
-  controls. [observed: `PLATFORM_SECTIONS` in `InspectorSections.tsx`]
+  controls. Current app and Logs do so too, from the `foregroundApp` and `logs` capabilities,
+  which count as present until the device reports otherwise, as a physical iPhone does
+  ([LLP 0020](0020-physical-ios-devices.spec.md#feature-gate)).
+  [observed: `PLATFORM_SECTIONS` in `InspectorSections.tsx`]
 - **Rows.** Device options has one fixed list of rows per platform. A row that the device
   cannot change now is locked: while the settings load, without a reason; while the Hub
   cannot read them, or on a device that does not have the setting, with the reason in a
@@ -226,7 +229,9 @@ selection button. Keyboard and touch activation use the same trigger; Escape
 returns focus and outside interaction dismisses the details. The explanation is
 about device-type support and testing: streaming and controls may not work as
 expected, but the device can still be tried. It does not describe rendering or
-GPU performance. The details anchor to the warning trigger and render in a portal
+GPU performance. A device that Hub knows cannot stream, such as an iPhone older than iOS 27,
+carries a reason ("needs iOS 27"); its details say that the device needs it to stream, in
+place of the general text ([LLP 0020](0020-physical-ios-devices.spec.md#listing)). The details anchor to the warning trigger and render in a portal
 outside the sidebar's scroll container. Viewport collision handling can flip them
 above the trigger; long content scrolls within the available height. They hide when
 the trigger scrolls out of view. [observed: HubComponents `DeviceListItem.tsx` and
@@ -320,6 +325,7 @@ The packages are tightly coupled, so one corpus at the repo root covers all of t
 | serve-emu scrcpy framing, control packets, `SEMU` metadata | [LLP 0008](0008-serve-emu-protocol.spec.md)                     |
 | serve-emu hardware H.264 encoder spike                     | [LLP 0009](0009-serve-emu-hardware-encoder-spike.research.md)   |
 | serve-sim clipboard: pasteboard API, Paste, Copy           | [LLP 0010](0010-serve-sim-clipboard.explainer.md)               |
+| Physical iPhones: listing, feature gate, device end        | [LLP 0020](0020-physical-ios-devices.spec.md) (Draft)           |
 | Hub UI rules and tokens                                    | `packages/expo-device-hub/AGENTS.md`                            |
 | serve-sim commands, tests, definition of done              | `packages/serve-sim/AGENTS.md`, `packages/serve-sim/REVIEW.md`  |
 | serve-emu layout and auth                                  | `packages/serve-emu/AGENTS.md`                                  |

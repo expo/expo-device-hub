@@ -62,6 +62,41 @@ describe("ToolsPanel", () => {
     else Reflect.deleteProperty(globalThis, "window");
   });
 
+  test("a physical device's simulator-only tools keep their place and say why", () => {
+    const unavailableFeatures = {
+      foregroundApp: "The foreground app is not available on a physical device.",
+      activity: "Activity metrics are not available on a physical device.",
+      appInjection: "Camera injection and network capture are not available on a physical device.",
+      deviceSettings: "Simulator settings are not available on a physical device.",
+      accessibility: "The accessibility tree is not available on a physical device.",
+      location: "Location is not available on a physical device.",
+      permissions: "App permissions are not available on a physical device.",
+      logs: "Device logs and crash reports are not available on a physical device.",
+    };
+    const html = renderPanel({ open: true, unavailableFeatures });
+    const unavailable = [...html.matchAll(/data-unavailable-tool="([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+
+    expect(unavailable).toEqual([
+      "Current app",
+      "Activity",
+      "Network requests",
+      "Simulator",
+      "Accessibility",
+      "Camera",
+      "Location",
+      "Permissions",
+      "Crashes",
+    ]);
+    expect(html).toContain("Location is not available on a physical device.");
+    expect(html).not.toContain("data-simulator-settings");
+  });
+
+  test("a simulator's tools have no unavailable card", () => {
+    expect(renderPanel({ open: true })).not.toContain("data-unavailable-tool");
+  });
+
   test("uses the shared panel background variable", () => {
     const html = renderPanel();
     expect(html).toContain("background-color:var(--serve-sim-panel-bg)");

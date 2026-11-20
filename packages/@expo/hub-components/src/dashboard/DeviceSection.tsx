@@ -131,6 +131,7 @@ export function DeviceSection({
               version={device.version}
               platform={device.platform}
               unsupported={!device.supported}
+              unsupportedReason={device.unsupportedReason}
               usedByAgent={agentDeviceIds.includes(device.id)}
               selected={device.id === selectedId}
               onClick={() => onSelect(device.id)}

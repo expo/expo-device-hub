@@ -28,6 +28,8 @@ export type Device = {
   physical: boolean;
   /** Whether this device type is in the set currently supported and tested by Hub. */
   supported: boolean;
+  /** Why an unsupported device cannot stream, such as "needs iOS 27", when Hub knows. */
+  unsupportedReason?: string;
   /**
    * The exact hardware model, which picks the screen shape: the simulator
    * device type name on iOS, such as `"iPhone 17 Pro"`, or the AVD hardware

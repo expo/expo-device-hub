@@ -412,7 +412,26 @@ interface ResolvedConfig {
   chrome: DeviceDisplayChrome | null;
   webRtcCodec: WebRtcCodec;
   webRtcIceServers?: WebRtcIceServer[];
+  /** Each serve-sim feature the device does not have, with serve-sim's reason. */
+  unavailableFeatures: Readonly<Partial<Record<IosDeviceFeature, string>>>;
 }
+
+/** serve-sim's names for the features that a physical iPhone does not have. */
+type IosDeviceFeature =
+  | "clipboard"
+  | "apps"
+  | "permissions"
+  | "location"
+  | "logs"
+  | "deviceSettings"
+  | "appInjection"
+  | "devtools"
+  | "accessibility"
+  | "foregroundApp"
+  | "activity"
+  | "hinge"
+  | "rotate"
+  | "lifecycle";
 
 /** Shape of the serve-sim middleware `/api` (and grid) responses we read. */
 interface PreviewApi {
@@ -434,6 +453,10 @@ interface PreviewApi {
   axEndpoint?: string;
   streamSettingsEndpoint?: string;
   gridApiEndpoint?: string;
+  /** Each feature the device does not have, with the reason; absent from older servers. */
+  unavailableFeatures?: Partial<Record<IosDeviceFeature, string>>;
+  /** In place of a config: the device's session ended, such as an unplugged iPhone. */
+  ended?: { reason: string };
   /** Bezel geometry for `device`; its identifier names the DeviceKit chrome profile. */
   chrome?: DeviceDisplayChrome | null;
   proxyHelpers?: boolean;
@@ -453,6 +476,8 @@ interface PreviewApi {
 function connectionKey(baseUrl: string, device: string | null, token: string | null): string {
   return JSON.stringify([baseUrl, device, token]);
 }
+
+const NO_UNAVAILABLE_FEATURES: ResolvedConfig["unavailableFeatures"] = {};
 
 function configKey(config: ResolvedConfig): string {
   const settings = config.initialStreamSettings as PreviewApi["streamSettings"];
@@ -1522,15 +1547,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             ? middlewareEndpointForBrowser(path, middlewareUrl, basePath)
             : new URL(path, middlewareUrl).toString()
           : null;
-      const appStateUrl = absoluteMiddlewareUrl(c.appStateEndpoint);
+      // @ref LLP 0020#feature-gate — serve-sim decides; a feature it reports unavailable is never asked for
+      const unavailable = c.unavailableFeatures ?? {};
+      const appStateUrl = unavailable.foregroundApp
+        ? null
+        : absoluteMiddlewareUrl(c.appStateEndpoint);
       return {
         url: c.url!,
         // An <img> and an EventSource cannot set a header.
         streamUrl: withSessionTokenQuery(c.streamUrl ?? `${c.url}/stream.mjpeg`, token),
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
         inputAdmission: c.inputAdmission === true,
-        inputPaste: c.inputPaste === true,
-        inputCopy: c.inputCopy === true,
+        inputPaste: c.inputPaste === true && !unavailable.clipboard,
+        inputCopy: c.inputCopy === true && !unavailable.clipboard,
         device: c.device ?? null,
         pid: c.pid ?? null,
         configEventsPath: `${basePath}/api/events${targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ""}`,
@@ -1538,12 +1567,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         execToken: c.execToken ?? null,
         // These are subscription paths inside exec-ws, not browser URLs. The
         // server validates them against its internal middleware mount.
-        logsPath: c.logsEndpoint ?? null,
+        logsPath: unavailable.logs ? null : (c.logsEndpoint ?? null),
         appStateUrl: appStateUrl && withSessionTokenQuery(appStateUrl, token),
-        appIconUrl: absoluteMiddlewareUrl(c.appIconEndpoint),
+        appIconUrl: unavailable.apps ? null : absoluteMiddlewareUrl(c.appIconEndpoint),
         eventsPath: c.eventLogEventsEndpoint ?? null,
-        metricsPath: c.metricsEndpoint ?? null,
-        axUrl: absoluteMiddlewareUrl(c.axEndpoint),
+        metricsPath: unavailable.activity ? null : (c.metricsEndpoint ?? null),
+        axUrl: unavailable.accessibility ? null : absoluteMiddlewareUrl(c.axEndpoint),
         // A proxied helper URL uses the public middleware mount above rather
         // than an advertised internal host port that may be 0.
         streamSettingsUrl: c.streamSettingsEndpoint
@@ -1559,6 +1588,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           token,
         ),
         chrome: c.chrome ?? null,
+        unavailableFeatures: unavailable,
         webRtcCodec: c.streamSettings?.transport === "webrtc" ? c.streamSettings.codec : "h264",
         ...(c.streamSettings?.transport === "webrtc" && c.streamSettings.iceServers
           ? { webRtcIceServers: c.streamSettings.iceServers }
@@ -1569,6 +1599,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // Ask the grid to attach a helper for this device at most once per effect
     // run (i.e. per device). Resets whenever `targetDevice`/`baseUrl` change.
     let startRequested = false;
+    // A session that this run saw, or asked for, and that then ended stays ended: the device went
+    // away. Selecting the device again starts a new run, which asks for a new session.
+    let streamedOrStarted = false;
+    let endedReason: string | null = null;
 
     const applyConfig = (value: PreviewApi | null) => {
       if (cancelled) return;
@@ -1576,6 +1610,24 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       revision++;
       if (pollTimer) clearTimeout(pollTimer);
       pollTimer = null;
+      // @ref LLP 0020#device-end — a session whose device went away ends with the reason, as in serve-emu
+      const ended = !next ? value?.ended?.reason : undefined;
+      if (ended && (streamedOrStarted || startRequested)) {
+        current = null;
+        endedReason = ended;
+        setResolvedConfig((previous) =>
+          previous?.key === connectionKey(baseUrl, targetDevice, token)
+            ? { ...previous, config: null }
+            : previous,
+        );
+        setStatus("error");
+        setError(ended);
+        return;
+      }
+      if (next) {
+        streamedOrStarted = true;
+        endedReason = null;
+      }
       if (!next) {
         current = null;
         // Keep the middleware subscription alive while its helper is absent.
@@ -1637,7 +1689,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (cancelled || requestRevision !== revision) return;
         setActivityDiscoveryError(null);
         applyConfig(value);
-        if (!(value?.url && value.device) && targetDevice && !startRequested) {
+        if (!(value?.url && value.device) && targetDevice && !startRequested && !endedReason) {
           startRequested = true;
           void startIosHelper(targetDevice, baseUrl, sessionFetch).catch(() => {});
         }
@@ -2610,13 +2662,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     [execWsUrl, execToken, socketProtocols, controlSocket],
   );
 
+  const unavailableFeatures = config?.unavailableFeatures ?? NO_UNAVAILABLE_FEATURES;
+  const locationUnavailable = !!unavailableFeatures.location;
   const locationBackend = useMemo<DeviceLocationBackend | null>(() => {
-    if (!runAction || !deviceUdid) return null;
+    if (!runAction || !deviceUdid || locationUnavailable) return null;
     return {
       set: (fix) => setIosLocation(runAction, deviceUdid, fix),
       clear: () => clearIosLocation(runAction, deviceUdid),
     };
-  }, [runAction, deviceUdid]);
+  }, [runAction, deviceUdid, locationUnavailable]);
   const {
     location,
     locationPending,
@@ -3018,7 +3072,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [gridApiUrl, sessionFetch]);
 
-  const deviceSettingsAvailable = !!execWsUrl && !!execToken && !!deviceUdid;
+  const deviceSettingsAvailable =
+    !!execWsUrl && !!execToken && !!deviceUdid && !unavailableFeatures.deviceSettings;
+  const logsAvailable = !unavailableFeatures.logs;
+  const foregroundAppAvailable = !unavailableFeatures.foregroundApp;
+  const rotateAvailable = !unavailableFeatures.rotate;
+  const hingeAvailable = !unavailableFeatures.hinge;
   const activityAvailable = !!metricsPath;
   const eventsAvailable = !!eventsPath;
   const accessibilityAvailable = accessibilityLoader !== null;
@@ -3030,6 +3089,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       deviceSettings: deviceSettingsAvailable,
       activity: activityAvailable,
       events: eventsAvailable,
+      logs: logsAvailable,
+      foregroundApp: foregroundAppAvailable,
       camera: false,
       accessibility: accessibilityAvailable,
       streamSettings: streamSettingsAvailable ? IOS_STREAM_SETTING_CAPABILITIES : false,
@@ -3037,11 +3098,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       permissions: false,
       clipboard:
         clipboardPaste || clipboardCopy ? { paste: clipboardPaste, copy: clipboardCopy } : false,
-      orientation: orientationCapabilities,
-      fold: foldCapabilities,
+      orientation: rotateAvailable ? orientationCapabilities : false,
+      fold: hingeAvailable ? foldCapabilities : false,
     }),
     [
       deviceSettingsAvailable,
+      logsAvailable,
+      foregroundAppAvailable,
+      rotateAvailable,
+      hingeAvailable,
       activityAvailable,
       eventsAvailable,
       accessibilityAvailable,

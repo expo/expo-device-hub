@@ -78,6 +78,8 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
     deviceSettings: false,
     activity: false,
     events: false,
+    logs: false,
+    foregroundApp: false,
     camera: false,
     accessibility: false,
     fold: false,

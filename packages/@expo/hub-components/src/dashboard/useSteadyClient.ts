@@ -38,11 +38,17 @@ export type SteadyClient = {
 
 const NOTHING_STALE: ReadonlySet<SteadyField> = new Set();
 
-/** What a device without a report and without a guess can do. */
+/**
+ * What a device without a report and without a guess can do. Logs and the foreground app count as
+ * present, as the client reports them, so their sections do not say "not available" while the
+ * first device connects.
+ */
 const NO_CAPABILITIES: DeviceCapabilities = {
   deviceSettings: false,
   activity: false,
   events: false,
+  logs: true,
+  foregroundApp: true,
   camera: false,
   accessibility: false,
   streamSettings: false,

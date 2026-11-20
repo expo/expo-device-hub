@@ -1,4 +1,5 @@
 import { bootDevice, confirmDeviceBooted, shutdownDevice } from "./device";
+import { deviceFeatureRefusal } from "./device-features";
 import { retireDeviceSession } from "./device-session";
 import { captureRuntime } from "./capture";
 import { releaseSession } from "./launch-manager";
@@ -22,7 +23,9 @@ export async function startDeviceInProcess(
 ): Promise<void> {
   const { signal } = options;
   signal?.throwIfAborted();
-  await bootDevice(udid, { allowBootedRecovery: !options.requireReady });
+  // A physical device is always booted, and simctl does not know it.
+  if (!deviceFeatureRefusal(udid, "lifecycle"))
+    await bootDevice(udid, { allowBootedRecovery: !options.requireReady });
   signal?.throwIfAborted();
   await onBoot?.();
   signal?.throwIfAborted();

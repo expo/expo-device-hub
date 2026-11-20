@@ -104,3 +104,33 @@ export interface BootDeviceOptions {
   /** UDID of the simulator to boot (e.g. the value returned by {@link createDevice}). */
   udid: string;
 }
+
+/** A paired iPhone or iPad from `xcrun devicectl list devices`. */
+export interface ApplePhysicalDevice {
+  /** Hardware UDID, such as `"00008101-0016603236F0801E"`. The public id of the device. */
+  udid: string;
+  /** CoreDevice identifier, a UUID that only CoreDevice uses. */
+  identifier: string;
+  /** The name the owner gave the device, such as `"iPhone"`. */
+  name: string;
+  /** Model name, such as `"iPhone 12"`; null when absent. */
+  marketingName: string | null;
+  /** Model identifier, such as `"iPhone13,2"`; null when absent. */
+  productType: string | null;
+  /** Device family, such as `"iPhone"` or `"iPad"`; null when absent. */
+  deviceType: string | null;
+  /** `"iOS"` or `"iPadOS"`. */
+  platform: string;
+  /** Dot-separated OS version, such as `"27.2.1"`; null when absent. */
+  osVersion: string | null;
+  /** `"wired"` or `"localNetwork"`; null when absent. */
+  transportType: string | null;
+  /** Whether CoreDevice has a tunnel to the device now. Opening a device connects it. */
+  connected: boolean;
+}
+
+/** A listed physical device and why it cannot stream yet. */
+export interface ApplePhysicalDeviceListing extends ApplePhysicalDevice {
+  /** `"needs iOS 27"` or `"needs Xcode 27"`, or null when the device can stream. */
+  unsupportedReason: string | null;
+}

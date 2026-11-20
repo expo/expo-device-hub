@@ -137,6 +137,8 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       deviceSettings: true,
       activity: true,
       events: true,
+      logs: true,
+      foregroundApp: true,
       camera: false,
       accessibility: true,
       permissions: false,
@@ -1434,7 +1436,7 @@ test("renders boolean device options as compact switches", () => {
   expect(reduceMotion).toContain("transform:translateX(0px)");
 });
 
-test("moves device actions into Device options and hides Remove for physical devices", () => {
+test("moves device actions into Device options and hides Shut down and Remove for physical devices", () => {
   const android = renderToStaticMarkup(
     <InspectorSections
       client={inspectorClient("android")}
@@ -1469,7 +1471,7 @@ test("moves device actions into Device options and hides Remove for physical dev
       onRemove={() => {}}
     />,
   );
-  expect(physical).toContain(">Shut down device</span>");
+  expect(physical).not.toContain(">Shut down device</span>");
   expect(physical).not.toContain(">Remove device</span>");
 
   const ios = renderToStaticMarkup(<InspectorSections client={inspectorClient("ios")} />);
@@ -1710,6 +1712,8 @@ test("keeps the shape option off and disabled, with an explanation, for a device
         deviceSettings: false,
         activity: false,
         events: true,
+        logs: true,
+        foregroundApp: true,
         camera: false,
         accessibility: false,
         permissions: false,
@@ -1744,6 +1748,8 @@ test("keeps the viewer-local shape option free while iOS device settings are una
       deviceSettings: false,
       activity: false,
       events: true,
+      logs: true,
+      foregroundApp: true,
       camera: false,
       accessibility: false,
       location: false,
@@ -1810,6 +1816,8 @@ test("keeps the Android on-screen keyboard row off iOS while device settings loa
       deviceSettings: true,
       activity: false,
       events: true,
+      logs: true,
+      foregroundApp: true,
       camera: false,
       accessibility: false,
       location: false,

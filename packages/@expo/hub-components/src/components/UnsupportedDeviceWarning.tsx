@@ -8,10 +8,18 @@ import { WarningIcon } from "./icons";
 // Row border + padding + platform mark + gap: align with its reserved slot.
 const TRIGGER_LEFT = 29;
 
-/** A separate, non-modal details trigger beside the device's selection button. */
-export function UnsupportedDeviceWarning({ name }: { name: string }) {
+/**
+ * A separate, non-modal details trigger beside the device's selection button. With a `reason`,
+ * such as "needs iOS 27", the details say why the device cannot stream; without one, that Hub has
+ * not tested the device type.
+ */
+export function UnsupportedDeviceWarning({ name, reason }: { name: string; reason?: string }) {
   const titleId = useId();
   const descriptionId = useId();
+  const title = reason ? "Cannot stream this device" : "Unsupported or untested device";
+  const label = reason
+    ? `Cannot stream ${name}: ${reason}. Show details`
+    : `Unsupported or untested device: ${name}. Show details`;
 
   return (
     <Root modal={false}>
@@ -19,7 +27,7 @@ export function UnsupportedDeviceWarning({ name }: { name: string }) {
         <Button
           theme="tertiary"
           size="2xs"
-          aria-label={`Unsupported or untested device: ${name}. Show details`}
+          aria-label={label}
           leftSlot={<WarningIcon size={16} />}
           style={{
             position: "absolute",
@@ -64,14 +72,15 @@ export function UnsupportedDeviceWarning({ name }: { name: string }) {
           }}
         >
           <h2 id={titleId} style={{ ...heading.sm, margin: 0, color: text.default }}>
-            Unsupported or untested device
+            {title}
           </h2>
           <p
             id={descriptionId}
             style={{ ...textSize.xs, fontWeight: 400, margin: 0, color: text.secondary }}
           >
-            This device type is unsupported or has not been tested with Expo Device Hub. You can
-            still try using it, but screen streaming and device controls may not work as expected.
+            {reason
+              ? `This device ${reason} to stream in Expo Device Hub.`
+              : "This device type is unsupported or has not been tested with Expo Device Hub. You can still try using it, but screen streaming and device controls may not work as expected."}
           </p>
         </Content>
       </Portal>

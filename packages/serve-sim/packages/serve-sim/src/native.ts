@@ -15,6 +15,7 @@ import { screenshotMetadata, type ScreenshotMetadata } from "./screenshot-metada
 import { DEFAULT_STREAM_ENCODER_SETTINGS, type StreamEncoderSettings } from "./stream-settings";
 import { readSenderStats, type SenderStats } from "./webrtc-sender-stats";
 import type { HingePhysicalOrientation } from "./hinge-control";
+import type { NativeDeviceEnd } from "./device-end";
 
 const require = createRequire(import.meta.url);
 
@@ -171,11 +172,6 @@ export type NativeScreenInfo = {
 };
 
 export type NativeDeviceKind = "simulator" | "physical";
-
-export type NativeCaptureEnd = {
-  reason: "device-disconnected";
-  message: string;
-};
 
 export type PhysicalDeviceSupport = {
   supported: boolean;
@@ -559,10 +555,23 @@ export class NativeCapture {
     return this.handle.subscribeScreenChanges(onChange);
   }
 
-  subscribeEnd(onEnd: (end: NativeCaptureEnd) => Promise<void> | void): Promise<NativeUnsubscribe> {
-    return this.handle.subscribeEnd(async (json) => {
-      await onEnd(JSON.parse(json) as NativeCaptureEnd);
+  /**
+   * Called once when the screen source ends because its device went away, with
+   * `{"reason":"device-disconnected","message":"iPhone disconnected"}`. A listener that subscribes
+   * after the end is called at once.
+   */
+  async subscribeEnd(
+    onEnd: (end: NativeDeviceEnd) => Promise<void> | void,
+  ): Promise<NativeUnsubscribe> {
+    let active = true;
+    const unsubscribe = await this.handle.subscribeEnd(async (json) => {
+      if (active) await onEnd(JSON.parse(json) as NativeDeviceEnd);
     });
+    return async () => {
+      if (!active) return;
+      active = false;
+      await unsubscribe();
+    };
   }
 
   /** Halt frame production. Full teardown happens when this object is GC'd. */

@@ -83,6 +83,8 @@ const BASE_CLIENT: DeviceClient = {
     deviceSettings: false,
     activity: false,
     events: false,
+    logs: true,
+    foregroundApp: true,
     camera: true,
     accessibility: false,
     permissions: false,
