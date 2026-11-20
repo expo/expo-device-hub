@@ -24,16 +24,17 @@ swiftc -emit-library -static -module-name StreamingPolicy -emit-module \
   -emit-module-path "$OUT_DIR/StreamingPolicy.swiftmodule" -swift-version 5 -O -target "$TARGET" \
   "$SOURCES"/StreamingPolicy/*.swift -o "$OUT_DIR/libStreamingPolicy.a"
 
-NATIVE=(
-  CoreDeviceBridge CoreDeviceDisplayInfo CoreDeviceDisplayState CoreDeviceHingeReadback CoreDeviceState
-  CoreDeviceStateReadback CoreDeviceMediaStreamCalls CoreDeviceMediaStreamSession HEVCRTPReceiver HEVCDecoder
-)
+EXCLUDED=(sim-module CaptureEngine WebRTCPublisher SharedWebRTCEncoder)
 FILES=()
-for name in "${NATIVE[@]}"; do FILES+=("$SOURCES/SimNative/$name.swift"); done
+for file in "$SOURCES"/SimNative/*.swift; do
+  name="$(basename "$file" .swift)"
+  [[ " ${EXCLUDED[*]} " == *" $name "* ]] || FILES+=("$file")
+done
 
 swiftc -parse-as-library -swift-version 5 -O -target "$TARGET" -module-name PhysicalDeviceStreamSpike \
   -I "$OUT_DIR" -Xcc -fmodule-map-file="$OUT_DIR/shim/module.modulemap" \
   "${FILES[@]}" "$HERE/main.swift" "$OUT_DIR"/obj/*.o "$OUT_DIR/libStreamingPolicy.a" \
+  -framework IOKit -framework Accelerate -framework AppKit \
   -o "$OUT_DIR/physical-device-stream-spike"
 
 echo "$OUT_DIR/physical-device-stream-spike"

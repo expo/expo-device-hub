@@ -5,7 +5,8 @@
 **Systems:** ServeSim
 **Author:** Claude Code (Claude Opus 5.5)
 **Date:** 2026-11-19
-**Related:** LLP 0004, LLP 0014
+**Revised:** 2026-11-20 (the receive loop ends the session and the source keeps an idle floor; the spike harness gained subcommands; see LLP 0026)
+**Related:** LLP 0004, LLP 0014, LLP 0026
 
 > File paths such as `Sources/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -17,7 +18,7 @@ The receive path is a port of Simlock's device capture (callstackincubator/simlo
 
 ## Result
 
-Yes. On 2026-11-19, on Xcode 27.2 (CoreDevice 651.32), macOS 27.2.1, with an iPhone 12 on iOS 27.2.1 over USB, the spike streamed the home screen [observed: `Sources/PhysicalDeviceStreamSpike`]:
+Yes. On 2026-11-19, on Xcode 27.2 (CoreDevice 651.32), macOS 27.2.1, with an iPhone 12 on iOS 27.2.1 over USB, the spike streamed the home screen [observed: `Sources/PhysicalDeviceStreamSpike`, now its `stream` subcommand]:
 
 | Run      | Start returned | First decoded frame | Frames in 10 s | Frame size  | Decoder  |
 | -------- | -------------- | ------------------- | -------------- | ----------- | -------- |
@@ -52,4 +53,4 @@ All CoreDevice symbols are resolved in `SSCoreDeviceMediaStreamAvailable` (`Sour
 
 - Whether Xcode 26's CoreDevice has these symbols. This Mac has only Xcode 27.2. If any is missing, `SSCoreDeviceMediaStreamAvailable` returns false and nothing else is called.
 - The stream id was 0 in every run. Stopping by id 0 succeeded, but a second concurrent stream has not been tried.
-- The receive loop does not re-emit the last frame when the phone sends nothing, and it does not yet end the session when the assertion is invalidated.
+- Answered on 2026-11-20 by [LLP 0026](0026-serve-sim-physical-iphone-screen-source.explainer.md): the receive loop now ends the session on a socket failure, an RTCP BYE, an invalidated assertion or silence, and `PhysicalScreenSource` re-emits the last frame on the simulator's idle floor.

@@ -3,7 +3,13 @@ import CoreVideo
 import Foundation
 import Network
 
-final class CoreDeviceMediaStreamSession: @unchecked Sendable {
+protocol PhysicalStreamSession: AnyObject, Sendable {
+    func start(onFrame: @escaping @Sendable (CVPixelBuffer) -> Void,
+               onEnd: @escaping @Sendable (String) -> Void) async throws
+    func stop() async
+}
+
+final class CoreDeviceMediaStreamSession: PhysicalStreamSession, @unchecked Sendable {
     static let requiredDeviceStates = [
         "com.apple.coredevice.developerModeEnabledIfRequired",
         "com.apple.coredevice.coreDeviceServicesLoaded",
@@ -37,16 +43,32 @@ final class CoreDeviceMediaStreamSession: @unchecked Sendable {
     private var stopping = false
     private let loopEnded = DispatchSemaphore(value: 0)
     private var loopRunning = false
-    private let log: (String) -> Void
+    private var ended = false
+    private var onEnd: (@Sendable (String) -> Void)?
+    private let log: @Sendable (String) -> Void
+    var onDatagram: (@Sendable (Data) -> Void)?
 
-    init(device: CoreDeviceRemoteDevice, log: @escaping (String) -> Void) {
+    init(device: CoreDeviceRemoteDevice, log: @escaping @Sendable (String) -> Void) {
         self.device = device
         self.log = log
     }
 
     private var isStopping: Bool { lock.withLock { stopping } }
 
-    func start(onFrame: @escaping (CVPixelBuffer) -> Void) async throws {
+    private func end(_ cause: String) {
+        let handler: (@Sendable (String) -> Void)? = lock.withLock {
+            guard !stopping, !ended else { return nil }
+            ended = true
+            return onEnd
+        }
+        guard let handler else { return }
+        log("media stream ended: \(cause)")
+        handler(cause)
+    }
+
+    func start(onFrame: @escaping @Sendable (CVPixelBuffer) -> Void,
+               onEnd: @escaping @Sendable (String) -> Void) async throws {
+        lock.withLock { self.onEnd = onEnd }
         let began = ProcessInfo.processInfo.systemUptime
         func mark(_ path: WritableKeyPath<Timings, TimeInterval>) {
             timings[keyPath: path] = ProcessInfo.processInfo.systemUptime - began
@@ -59,8 +81,8 @@ final class CoreDeviceMediaStreamSession: @unchecked Sendable {
             requirements: ["deviceStates": Self.requiredDeviceStates.map { ["identifier": $0] }, "capabilities": [Any]()]
         )
         self.assertion = assertion
-        assertion.registerInvalidationHandler(queue: CoreDeviceMediaStreamCalls.queue) { [log] error in
-            if let error { log("usage assertion invalidated: \(error)") }
+        assertion.registerInvalidationHandler(queue: CoreDeviceMediaStreamCalls.queue) { [weak self] error in
+            self?.end("usage assertion invalidated: \(error.map { "\($0)" } ?? "no error")")
         }
         mark(\.asserted)
 
@@ -127,13 +149,25 @@ final class CoreDeviceMediaStreamSession: @unchecked Sendable {
         guard adopted else { throw CoreDeviceMediaStreamError("no shared socket for the stream") }
         mark(\.receiving)
 
-        let loop = CoreDeviceMediaStreamReceiveLoop(receiver: receiver, remoteSSRC: remoteSSRC, onFrame: onFrame, log: log,
-                                                    isStopping: { [weak self] in self?.isStopping ?? true })
+        let device = self.device
+        let loop = CoreDeviceMediaStreamReceiveLoop(
+            receiver: receiver, remoteSSRC: remoteSSRC, onFrame: onFrame, log: log,
+            isStopping: { [weak self] in self?.isStopping ?? true },
+            isDeviceConnected: { Self.isConnected(device) }
+        )
+        loop.onDatagram = onDatagram
         lock.withLock { loopRunning = true }
-        Thread.detachNewThread { [loopEnded] in
-            loop.run()
+        Thread.detachNewThread { [weak self, loopEnded] in
+            let cause = loop.run()
             loopEnded.signal()
+            if let cause { self?.end(cause) }
         }
+    }
+
+    static func isConnected(_ device: CoreDeviceRemoteDevice) -> Bool {
+        guard let info = try? CoreDeviceMediaStreamCalls.jsonObject(try CoreDeviceMediaStreamCalls.deviceInfo(device)),
+              let state = deviceInfoValue(info, key: "state") as? String else { return true }
+        return state == "connected"
     }
 
     func stop() async {
@@ -167,23 +201,32 @@ final class CoreDeviceMediaStreamSession: @unchecked Sendable {
 }
 
 final class CoreDeviceMediaStreamReceiveLoop: @unchecked Sendable {
+    static let silenceLimit: TimeInterval = 5
+    static let presenceCheckInterval: TimeInterval = 1
+
     private let receiver: SSMediaStreamReceiver
     private let remoteSSRC: UInt32
     private let onFrame: (CVPixelBuffer) -> Void
     private let log: (String) -> Void
     private let isStopping: () -> Bool
+    private let isDeviceConnected: () -> Bool
     private let parser = HEVCRTPReceiver()
     private let decoder = HEVCDecoder()
     private var lastReport = 0.0
     private var lastKeyframeRequest = 0.0
+    private var lastDatagram = ProcessInfo.processInfo.systemUptime
+    private var lastPresenceCheck = 0.0
+    var onDatagram: ((Data) -> Void)?
 
     init(receiver: SSMediaStreamReceiver, remoteSSRC: UInt32, onFrame: @escaping (CVPixelBuffer) -> Void,
-         log: @escaping (String) -> Void, isStopping: @escaping () -> Bool) {
+         log: @escaping (String) -> Void, isStopping: @escaping () -> Bool,
+         isDeviceConnected: @escaping () -> Bool) {
         self.receiver = receiver
         self.remoteSSRC = remoteSSRC
         self.onFrame = onFrame
         self.log = log
         self.isStopping = isStopping
+        self.isDeviceConnected = isDeviceConnected
         parser.onAccessUnit = { [decoder] unit in decoder.decode(unit.nals, timestamp: unit.timestamp) }
         parser.onLoss = { [decoder] in decoder.invalidate() }
         decoder.onFrame = onFrame
@@ -191,11 +234,26 @@ final class CoreDeviceMediaStreamReceiveLoop: @unchecked Sendable {
         decoder.onConfiguration = log
     }
 
-    func run() {
+    func run() -> String? {
+        let cause = receiveUntilEnd()
+        if cause == nil { _ = receiver.send(parser.report(receiver: remoteSSRC, bye: true)) }
+        return cause
+    }
+
+    private func receiveUntilEnd() -> String? {
         while !isStopping() {
-            if let datagram = receiver.receive(withTimeout: 5) { parser.receive(datagram) }
-            parser.flushPending()
+            var failed = ObjCBool(false)
+            let datagram = receiver.receive(withTimeout: 5, failed: &failed)
+            if failed.boolValue { return "the stream socket failed" }
             let now = ProcessInfo.processInfo.systemUptime
+            if let datagram {
+                lastDatagram = now
+                onDatagram?(datagram)
+                parser.receive(datagram)
+            }
+            parser.flushPending()
+            if parser.senderEnded { return "the phone ended the stream" }
+            if let cause = silenceCause(now: now) { return cause }
             guard parser.source != nil else { continue }
             let requesting = decoder.needsKeyframe && now - lastKeyframeRequest >= 0.5
             if now - lastReport >= 1 || requesting, receiver.send(parser.report(receiver: remoteSSRC, requestKeyframe: requesting)) {
@@ -203,6 +261,15 @@ final class CoreDeviceMediaStreamReceiveLoop: @unchecked Sendable {
                 if requesting { lastKeyframeRequest = now }
             }
         }
-        _ = receiver.send(parser.report(receiver: remoteSSRC, bye: true))
+        return nil
+    }
+
+    // @ref LLP 0026#ending-device-disconnected — the phone streams continuously, so silence means it went away.
+    private func silenceCause(now: TimeInterval) -> String? {
+        let silence = now - lastDatagram
+        if silence >= Self.silenceLimit { return String(format: "no packets for %.1f s", silence) }
+        guard silence >= Self.presenceCheckInterval, now - lastPresenceCheck >= Self.presenceCheckInterval else { return nil }
+        lastPresenceCheck = now
+        return isDeviceConnected() ? nil : "the phone is no longer connected"
     }
 }

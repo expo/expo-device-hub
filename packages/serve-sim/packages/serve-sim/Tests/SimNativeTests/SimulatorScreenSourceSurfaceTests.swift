@@ -72,7 +72,7 @@ private final class FrameLog: @unchecked Sendable {
     func recordScreenChange() { lock.withLock { screenChangeCount += 1 } }
 }
 
-final class FrameCaptureSurfaceTests: XCTestCase {
+final class SimulatorScreenSourceSurfaceTests: XCTestCase {
     private let panel = SimDisplayMetadata(screenID: 1, orientation: nil, chromeIdentifier: nil, screenType: 0)
 
     private func surface(width: Int, height: Int, gray: UInt8) -> IOSurface {
@@ -88,12 +88,12 @@ final class FrameCaptureSurfaceTests: XCTestCase {
 
     private func capture(with descriptor: FakeFramebufferDescriptor, io: NSObject? = nil,
                          clock: FakeMonotonicClock? = nil,
-                         device: NSObject? = nil) async -> (FrameCapture, FrameLog) {
-        let capture: FrameCapture
+                         device: NSObject? = nil) async -> (SimulatorScreenSource, FrameLog) {
+        let capture: SimulatorScreenSource
         if let clock {
-            capture = FrameCapture(nowNanoseconds: { clock.now() })
+            capture = SimulatorScreenSource(nowNanoseconds: { clock.now() })
         } else {
-            capture = FrameCapture()
+            capture = SimulatorScreenSource()
         }
         let log = FrameLog()
         await capture.installDescriptorsForTesting([(descriptor, panel)], io: io, device: device) { pixelBuffer, _, canvas in
@@ -104,7 +104,7 @@ final class FrameCaptureSurfaceTests: XCTestCase {
 
     func testLegacySingleScreenUsesProfileGeometryWithoutCoreDevice() async throws {
         let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
-        let capture = FrameCapture(readDisplayInfo: { _ in
+        let capture = SimulatorScreenSource(readDisplayInfo: { _ in
             XCTFail("A proven legacy single screen must not query CoreDevice")
             return nil
         })
@@ -121,7 +121,7 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         for metadata in [nil,
             SimDisplayMetadata(screenID: 3, orientation: nil, chromeIdentifier: nil, screenType: 0),
             SimDisplayMetadata(screenID: 2, orientation: nil, chromeIdentifier: nil, screenType: nil)] {
-            let capture = FrameCapture(readDisplayInfo: { _ in nil })
+            let capture = SimulatorScreenSource(readDisplayInfo: { _ in nil })
             let first = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
             let other = FakeFramebufferDescriptor(nil)
             await capture.installDescriptorsForTesting([(first, panel), (other, metadata)],
@@ -154,7 +154,7 @@ final class FrameCaptureSurfaceTests: XCTestCase {
             [CoreDeviceDisplayState(screenID: 3, isActive: true, orientation: nil)],
             [CoreDeviceDisplayState(screenID: 1, isActive: false, orientation: nil)]]
         for observation in observations {
-            let capture = FrameCapture(readDisplayInfo: { _ in observation })
+            let capture = SimulatorScreenSource(readDisplayInfo: { _ in observation })
             let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
             await capture.installDescriptorsForTesting([(descriptor, panel)], deviceUDID: "unknown-profile") { _, _, _ in }
             do {
@@ -167,7 +167,7 @@ final class FrameCaptureSurfaceTests: XCTestCase {
 
     func testActiveReadCannotOutliveCaptureGeneration() async throws {
         let gate = DisplayReadGate()
-        let capture = FrameCapture(readDisplayInfo: { _ in await gate.read() })
+        let capture = SimulatorScreenSource(readDisplayInfo: { _ in await gate.read() })
         let outer = FakeFramebufferDescriptor(nil), inner = FakeFramebufferDescriptor(nil)
         await capture.installDescriptorsForTesting([
             (outer, panel),
@@ -204,7 +204,7 @@ final class FrameCaptureSurfaceTests: XCTestCase {
 
     func testFoldableProfileCannotFallBackToOneCachedDescriptor() async throws {
         let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
-        let capture = FrameCapture(readDisplayInfo: { _ in
+        let capture = SimulatorScreenSource(readDisplayInfo: { _ in
             [CoreDeviceDisplayState(screenID: 3, isActive: true, orientation: nil)]
         })
         await capture.installDescriptorsForTesting([(descriptor, panel)], deviceUDID: "test-duo",
@@ -312,7 +312,7 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 0))
         let io = FakeFramebufferIO()
         io.deviceIOPorts = [FakeFramebufferPort(descriptor)]
-        let capture = FrameCapture()
+        let capture = SimulatorScreenSource()
         let log = FrameLog()
         await capture.installDescriptorsForTesting([(descriptor, panel)], io: io) { pixelBuffer, _, canvas in
             log.append(pixelBuffer, canvas: canvas)
@@ -333,7 +333,7 @@ final class FrameCaptureSurfaceTests: XCTestCase {
     func testRewireWithResizedSurfaceNotifiesScreenObservers() async throws {
         let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 0))
         let io = FakeFramebufferIO()
-        let capture = FrameCapture()
+        let capture = SimulatorScreenSource()
         let log = FrameLog()
         await capture.installDescriptorsForTesting([(descriptor, nil)], io: io) { pixelBuffer, _, canvas in
             log.append(pixelBuffer, canvas: canvas)

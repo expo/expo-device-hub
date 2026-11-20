@@ -13,7 +13,7 @@ NSDictionary * _Nullable SSMediaStreamApplyAnswer(NSObject *negotiator, NSData *
 - (nullable NSString *)bindForTunnel:(NSString *)tunnelAddress;
 - (void)releaseReservedSocket;
 - (BOOL)adoptSharedSockets:(xpc_object_t)sockets;
-- (nullable NSData *)receiveWithTimeout:(int)milliseconds;
+- (nullable NSData *)receiveWithTimeout:(int)milliseconds failed:(BOOL *)failed;
 - (BOOL)send:(NSData *)packet;
 - (void)close;
 @end

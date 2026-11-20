@@ -7,7 +7,7 @@ import VideoToolbox
 /// Real-time H.264 encoder backed by `VTCompressionSession`, producing AVCC
 /// (length-prefixed NAL) output for the `/stream.avcc` endpoint.
 ///
-/// Encoding suspends until VideoToolbox returns a sample. FrameCapture owns the
+/// Encoding suspends until VideoToolbox returns a sample. SimulatorScreenSource owns the
 /// IOSurface snapshot, while CaptureConsumer bounds each subscriber to the
 /// newest pending frame so a slow encoder cannot stall capture or other viewers.
 actor H264Encoder {

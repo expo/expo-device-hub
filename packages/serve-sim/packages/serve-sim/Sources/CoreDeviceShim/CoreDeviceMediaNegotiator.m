@@ -1,6 +1,7 @@
 #import "CoreDeviceMediaNegotiator.h"
 #import <arpa/inet.h>
 #import <dlfcn.h>
+#import <errno.h>
 #import <netinet/in.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
@@ -167,13 +168,30 @@ static void SSEnlargeReceiveBuffer(int descriptor) {
     return YES;
 }
 
-- (NSData *)receiveWithTimeout:(int)milliseconds {
+- (NSData *)receiveWithTimeout:(int)milliseconds failed:(BOOL *)failed {
+    *failed = NO;
     int descriptor = [self descriptor];
-    if (descriptor < 0) return nil;
+    if (descriptor < 0) {
+        *failed = YES;
+        return nil;
+    }
     struct pollfd waiter = {descriptor, POLLIN, 0};
-    if (poll(&waiter, 1, milliseconds) <= 0) return nil;
+    int ready = poll(&waiter, 1, milliseconds);
+    if (ready < 0) {
+        *failed = errno != EINTR;
+        return nil;
+    }
+    if (ready == 0) return nil;
+    if (waiter.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+        *failed = YES;
+        return nil;
+    }
     uint8_t buffer[65536];
     ssize_t received = recv(descriptor, buffer, sizeof(buffer), 0);
+    if (received < 0) {
+        *failed = errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK;
+        return nil;
+    }
     return received > 0 ? [NSData dataWithBytes:buffer length:(NSUInteger)received] : nil;
 }
 

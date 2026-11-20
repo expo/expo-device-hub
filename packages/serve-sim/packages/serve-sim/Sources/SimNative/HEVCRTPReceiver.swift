@@ -10,6 +10,7 @@ final class HEVCRTPReceiver {
     private(set) var lossEvents = 0
     private(set) var reorderedPackets = 0
     private(set) var latePackets = 0
+    private(set) var senderEnded = false
 
     private let reorderWindow: TimeInterval = 0.025
     private let maxUnitBytes = 8 * 1_024 * 1_024
@@ -264,6 +265,10 @@ final class HEVCRTPReceiver {
                         (Self.uint32(bytes, offset + 8) << 16) | (Self.uint32(bytes, offset + 12) >> 16)
                     lastSenderReportAt = now
                 }
+            }
+            if bytes[offset + 1] == 203, bytes[offset] & 31 > 0, length >= 8,
+               source == nil || source == Self.uint32(bytes, offset + 4) {
+                senderEnded = true
             }
             offset += length
         }

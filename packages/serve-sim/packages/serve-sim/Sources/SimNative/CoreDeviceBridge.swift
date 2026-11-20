@@ -329,9 +329,25 @@ actor CoreDeviceBridge {
         }
         try Task.checkCancellation()
         guard capabilities.isCurrent(lookup) else { throw BridgeError.resetDuringLookup }
-        guard let device = manager.allDevices().first(where: { $0.identifier().uuidString.caseInsensitiveCompare(udid) == .orderedSame })
+        guard let device = Self.first(matching: udid, in: manager.allDevices(), identifier: { $0.identifier().uuidString },
+                                      hardwareUDID: Self.physicalHardwareUDID)
         else { throw BridgeError.deviceUnavailable }
         return device
+    }
+
+    static func first<Device>(matching udid: String, in devices: [Device], identifier: (Device) -> String,
+                              hardwareUDID: (Device) -> String?) -> Device? {
+        if let device = devices.first(where: {
+            CoreDeviceIdentity.matches(udid, identifier: identifier($0), hardwareUDID: nil)
+        }) { return device }
+        return devices.first {
+            CoreDeviceIdentity.matches(udid, identifier: identifier($0), hardwareUDID: hardwareUDID($0))
+        }
+    }
+
+    nonisolated private static func physicalHardwareUDID(_ device: CoreDeviceRemoteDevice) -> String? {
+        guard PhysicalDeviceHost.support() == .supported else { return nil }
+        return (try? PhysicalDeviceDescription.read(device))?.hardwareUDID
     }
 
     nonisolated private static func createManager() -> CoreDeviceManagerObject? {
