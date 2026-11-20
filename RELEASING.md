@@ -37,11 +37,17 @@ for it.
 Go to **Actions → Release → Run workflow**. The only input is **canary**:
 
 - **off** (default) → real release. The workflow versions packages, builds and tests them,
-  pushes the release commit, publishes to npm, pushes tags, and creates GitHub releases.
+  pushes the release commit, and publishes changed versions under the **`next`** npm dist-tag.
+  After every release tarball is available, it promotes those versions to **`latest`**, pushes
+  Git tags, and creates GitHub releases.
 - **on** → canary release. The workflow versions packages, then rewrites each published
   package's version into a prerelease, builds and tests, and publishes under the **`canary`** npm
   dist-tag — without committing the version bump, pushing tags, or creating GitHub releases.
-  Install it with `npm install expo-device-hub@canary`, and `latest` stays untouched.
+  The job waits for every canary tarball to become available. Install it with `npm install expo-device-hub@canary`, and `latest` stays untouched.
+
+Both paths use the [EAS CLI availability check](https://github.com/expo/eas-cli/blob/b78cda16a5eea09480faa27fd6489dfceda967c1/.github/workflows/release.yml#L97-L123)
+to look up each exact version with `npm view --prefer-online`, then download its tarball.
+The verification step retries after 10 seconds and times out after 30 minutes.
 
 Both paths build all packages after the final version changes so bundled version metadata and
 vendored artifacts match the versions being published. Build or test failures stop the workflow
@@ -80,6 +86,20 @@ Real releases only version and publish the packages that have a changeset; the o
 Canary releases assign every public package a canary version so they can also run without
 pending changesets.
 
+## Recover a stable release after verification or promotion fails
+
+The version commit has already consumed the changesets. Recover by releasing a fresh patch
+through CI, which holds the trusted publishing permissions.
+
+1. Check the failed run’s publish and promotion logs to identify which packages still need
+   promotion. If the failure was a configuration issue, fix it before retrying.
+2. From `main`, open a PR containing just a new changeset. Run `bun changeset`, select each
+   affected package, and choose **patch** for each. A summary such as “Republish the previous
+   release after npm promotion failed” is enough. No package code changes are needed.
+3. Merge the PR, then go to **Actions → Release → Run workflow**, select `main`, and leave
+   **canary** off. CI publishes a new patch version under `next`, verifies the tarballs, and
+   promotes the verified versions to `latest`.
+
 ## One-time setup for a new public package
 
 The workflow publishes with npm Trusted Publishing, so npm must know the package before its
@@ -89,7 +109,9 @@ first release. For every package that is not `private`:
    Expo org owns it.
 2. On npmjs.com, open the package's **Settings → Trusted Publisher** and add a GitHub Actions
    publisher for the repository `expo/expo-device-hub`, the workflow file `release.yml`, and the
-   environment `npm-publish`.
+   environment `npm-publish`. Enable both **Allow npm publish** and **Allow npm dist-tag**.
+   Existing packages also need dist-tag permission before their first release under this workflow.
+   See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/#managing-dist-tags-with-trusted-publishing).
 3. Keep `repository.url` in the package's `package.json` set to
    `https://github.com/expo/expo-device-hub.git`. npm rejects a provenance-signed publish when
    the URL does not match the repository that runs the workflow.
