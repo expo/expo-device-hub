@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { peekDeviceSession, withScreenshotDeviceSession } from "./device-session";
 import { convertScreenshot } from "./native";
+import { deviceKindOf } from "./device-features";
 import { screenshotMetadata, type ScreenshotMetadata } from "./screenshot-metadata";
 import {
   getScreenshotDisplayIdsAsync,
@@ -42,10 +43,13 @@ export async function captureScreenshotPngAsync(p: {
     const png = await readFile(file);
     return p.maxWidth ? await convertScreenshot(png, p.maxWidth) : png;
   };
+  const physical = deviceKindOf(p.udid) === "physical";
   try {
-    if (p.display !== undefined) return { png: await capture(p.display), nativeMs, metadata };
+    if (p.display !== undefined && !physical)
+      return { png: await capture(p.display), nativeMs, metadata };
     // @ref LLP 0003#action-catalog -- a cold session with one verified display needs no native video
-    const sole = peekDeviceSession(p.udid) ? null : await getSoleScreenshotDisplayIdAsync(p.udid);
+    const sole =
+      physical || peekDeviceSession(p.udid) ? null : await getSoleScreenshotDisplayIdAsync(p.udid);
     // A viewer can start a session while the probes run; recheck with no await before simctl starts.
     if (sole !== null && !peekDeviceSession(p.udid))
       return { png: await capture(sole), nativeMs, metadata };
@@ -69,7 +73,8 @@ export async function captureScreenshotPngAsync(p: {
         ),
       );
     }).catch(async (error) => {
-      if (error instanceof Error && error.message === SCREENSHOT_DISPLAY_CHANGED) throw error;
+      if (physical || (error instanceof Error && error.message === SCREENSHOT_DISPLAY_CHANGED))
+        throw error;
       // A sole integrated display needs no native panel election. Never
       // fall back on an unknown profile or a multi-display device.
       if (!(await p.isBooted())) throw error;

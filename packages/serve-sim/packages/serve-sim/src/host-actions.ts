@@ -8,7 +8,12 @@ import { installAppAsync } from "./app-install";
 import { AppRelativePath, runAppFileAction } from "./app-files";
 
 import { CAPTURE_FIELDS } from "./capture/fields";
-import { type DeviceFeature, buttonFeature, deviceFeatureRefusal } from "./device-features";
+import {
+  type DeviceFeature,
+  buttonFeature,
+  deviceFeatureRefusal,
+  deviceKindOf,
+} from "./device-features";
 
 import {
   type HostActionResult,
@@ -1097,7 +1102,8 @@ async function runProcedureAsync(
           return { ...result, metadata: screenshotMetadata() };
         };
         failure = "Could not capture the screenshot. Check the host logs for details.";
-        if (p.display !== undefined) {
+        const physical = deviceKindOf(p.udid) === "physical";
+        if (p.display !== undefined && !physical) {
           const ids = await getScreenshotDisplayIdsAsync(p.udid);
           if (ids && !ids.includes(p.display))
             return {
@@ -1132,7 +1138,7 @@ async function runProcedureAsync(
           });
         } catch (error) {
           // @ref LLP 0003#action-catalog — only a proven sole screen can bypass native election
-          const ids = !selected ? await getScreenshotDisplayIdsAsync(p.udid) : null;
+          const ids = !selected && !physical ? await getScreenshotDisplayIdsAsync(p.udid) : null;
           if (ids?.length !== 1) throw error;
           console.error(
             "Native screenshot selection unavailable; using the sole device screen:",

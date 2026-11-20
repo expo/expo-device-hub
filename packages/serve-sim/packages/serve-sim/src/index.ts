@@ -117,7 +117,7 @@ import {
 } from "./device-session";
 import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "./stop-process";
 import { captureHarPaths, followCaptureHar } from "./capture";
-import { buttonFeature, deviceFeatureRefusal } from "./device-features";
+import { buttonFeature, deviceFeatureRefusal, deviceKindOf } from "./device-features";
 
 // Budget for capture teardown and capability disarming together.
 const SHUTDOWN_TIMEOUT_MS = 20_000;
@@ -257,7 +257,7 @@ function readStateFile(file: string): ServerState | null {
     // but never emits frames, so clients hang on "Connecting...". Detect and
     // recycle here so --detach / --list always return a working stream.
     const booted = getBootedUdids();
-    if (booted && !booted.has(state.device)) {
+    if (booted && deviceKindOf(state.device) === "simulator" && !booted.has(state.device)) {
       if (rebootedWithCaptureSince(state.device, bootedSnapshot.at)) {
         debugState("keeping state for capture reboot on device %s", state.device);
         return state;
@@ -452,6 +452,7 @@ async function findAvailablePort(start: number): Promise<number> {
 }
 
 async function ensureBooted(udid: string, openHost = true): Promise<void> {
+  if (deviceFeatureRefusal(udid, "lifecycle")) return;
   await bootDevice(udid);
   if (openHost) {
     try {
@@ -3025,8 +3026,19 @@ Examples:
           await ensureBooted(udid);
           if (sessionStopping) return;
         }
+        const simulatorTargets = targets.filter(
+          (udid) => !deviceFeatureRefusal(udid, "appInjection"),
+        );
+        if ((installAppPath || bundleId) && simulatorTargets.length < targets.length) {
+          throw new Error(
+            deviceFeatureRefusal(
+              targets.find((udid) => deviceFeatureRefusal(udid, "apps"))!,
+              "apps",
+            )!,
+          );
+        }
         if (!isStreamHelper) {
-          for (const udid of targets) {
+          for (const udid of simulatorTargets) {
             if (combineInitialDefaults) {
               try {
                 await timeStartup(
@@ -3065,7 +3077,7 @@ Examples:
           !!opts.quiet,
         );
         if (sessionStopping) return;
-        for (const udid of isStreamHelper ? [] : targets) {
+        for (const udid of isStreamHelper ? [] : simulatorTargets) {
           if (sessionStopping) return;
           if (installAppPath) {
             const result = await timeStartup(

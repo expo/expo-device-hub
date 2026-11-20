@@ -2889,7 +2889,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       }
       if (automated && !assertBearerAccess(req, res, execToken)) return;
       let udid = selectedDevice;
-      if (udid && !isSimulatorUdid(udid)) {
+      if (udid && !isSimulatorUdid(udid) && deviceKindOf(udid) !== "physical") {
         res.writeHead(400, {
           "Cache-Control": "no-store",
           "Content-Type": "application/json",
