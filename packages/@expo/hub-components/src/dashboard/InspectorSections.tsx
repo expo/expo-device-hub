@@ -147,7 +147,11 @@ export function InspectorSections({
 
   return (
     <>
-      <CurrentAppSection client={client} />
+      {client && !client.capabilities.foregroundApp ? (
+        <UnavailableSection title="Current app" />
+      ) : (
+        <CurrentAppSection client={client} />
+      )}
       {(device ||
         client?.capabilities.deviceSettings ||
         client?.capabilities.fold ||
@@ -197,7 +201,11 @@ export function InspectorSections({
       {section("events", (client) => (
         <EventsSection client={client} />
       ))}
-      <LogsSection client={client} />
+      {client && !client.capabilities.logs ? (
+        <UnavailableSection title="Logs" />
+      ) : (
+        <LogsSection client={client} />
+      )}
     </>
   );
 }
