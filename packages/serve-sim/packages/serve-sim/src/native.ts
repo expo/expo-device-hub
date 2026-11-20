@@ -15,6 +15,7 @@ import { screenshotMetadata, type ScreenshotMetadata } from "./screenshot-metada
 import { DEFAULT_STREAM_ENCODER_SETTINGS, type StreamEncoderSettings } from "./stream-settings";
 import { readSenderStats, type SenderStats } from "./webrtc-sender-stats";
 import type { HingePhysicalOrientation } from "./hinge-control";
+import type { NativeDeviceEnd } from "./device-end";
 
 const require = createRequire(import.meta.url);
 
@@ -86,6 +87,8 @@ interface SimCaptureHandle {
   activeScreenId(): Promise<number>;
   subscribeScreenChanges(onChange: () => Promise<void>): Promise<NativeUnsubscribe>;
   subscribeDeviceState(onSnapshot: (json: string) => Promise<void>): Promise<NativeUnsubscribe>;
+  /** Present on an addon whose screen source can end on its own, such as a physical device's. */
+  subscribeEnded?(onEnded: (json: string) => Promise<void>): Promise<NativeUnsubscribe>;
   stop(): Promise<void>;
   subscribe(codec: number, onFrame: RawFrameCallback): Promise<NativeUnsubscribe>;
 }
@@ -535,6 +538,25 @@ export class NativeCapture {
 
   subscribeScreenChanges(onChange: () => Promise<void>): Promise<NativeUnsubscribe> {
     return this.handle.subscribeScreenChanges(onChange);
+  }
+
+  /**
+   * Called once when the screen source ends because its device went away, with JSON such as
+   * `{"reason":"device-disconnected"}`. An addon without the method never ends this way.
+   */
+  async subscribeEnded(
+    onEnded: (end: NativeDeviceEnd) => Promise<void>,
+  ): Promise<NativeUnsubscribe> {
+    if (!this.handle.subscribeEnded) return async () => {};
+    let active = true;
+    const unsubscribe = await this.handle.subscribeEnded(async (json) => {
+      if (active) await onEnded(JSON.parse(json) as NativeDeviceEnd);
+    });
+    return async () => {
+      if (!active) return;
+      active = false;
+      await unsubscribe();
+    };
   }
 
   /** Halt frame production. Full teardown happens when this object is GC'd. */

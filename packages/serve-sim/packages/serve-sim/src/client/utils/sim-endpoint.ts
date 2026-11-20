@@ -17,6 +17,8 @@ declare global {
       /** Whether this preview is running on a hosted EAS worker. */
       isRunningOnEAS?: boolean;
       logsEndpoint?: string;
+      /** Each feature this device does not have, with the reason; absent from older servers. */
+      unavailableFeatures?: Partial<Record<string, string>>;
       metricsEndpoint?: string;
       crashesEndpoint?: string;
       captureEndpoint?: string;

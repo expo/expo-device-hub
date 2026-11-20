@@ -29,6 +29,7 @@ describe("grid catalog and status endpoints", () => {
       expect(Object.keys(device).sort()).toEqual([
         "chrome",
         "device",
+        "kind",
         "name",
         "placeholderAsset",
         "runtime",

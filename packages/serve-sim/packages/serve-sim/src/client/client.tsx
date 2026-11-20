@@ -433,7 +433,12 @@ function App() {
   }, [selectedUdid, selectedHasHelper]);
 
   useEffect(() => {
-    if (!config?.logsEndpoint || !shouldStreamSimulatorLogs(window.location)) return;
+    if (
+      !config?.logsEndpoint ||
+      config.unavailableFeatures?.logs ||
+      !shouldStreamSimulatorLogs(window.location)
+    )
+      return;
 
     const procColors = new Map<string, string>();
     const palette = [
@@ -507,7 +512,7 @@ function App() {
       if (groupOpen) console.groupEnd();
       stop();
     };
-  }, [config?.logsEndpoint]);
+  }, [config?.logsEndpoint, config?.unavailableFeatures?.logs]);
 
   // Selection drives the view: stream when the selected device's helper config
   // has arrived, otherwise a placeholder (connecting / boot-and-start).
@@ -1186,7 +1191,9 @@ function AppWithConfig({
   );
   const currentOrientation =
     (activeStreamConfig as { orientation?: SimulatorOrientation }).orientation ?? "portrait";
-  const canRotate = deviceType !== "watch" && deviceType !== "vision";
+  const unavailableFeatures = config.unavailableFeatures ?? {};
+  const canRotate =
+    deviceType !== "watch" && deviceType !== "vision" && !unavailableFeatures.rotate;
   const rotateBy = useCallback(
     (direction: "left" | "right") => {
       if (!canRotate) return;
@@ -1794,7 +1801,8 @@ function AppWithConfig({
           className="max-sm:hidden"
           aria-label="Open WebKit DevTools"
           aria-pressed={devtoolsOpen}
-          title="WebKit DevTools"
+          disabled={!!unavailableFeatures.devtools}
+          title={unavailableFeatures.devtools ?? "WebKit DevTools"}
         >
           <Globe size={18} strokeWidth={1.75} />
         </IconButton>
@@ -1803,7 +1811,8 @@ function AppWithConfig({
         onClick={() => setLogsOpen((o) => !o)}
         aria-label="Open device logs"
         aria-pressed={logsOpen}
-        title="Logs"
+        disabled={!!unavailableFeatures.logs}
+        title={unavailableFeatures.logs ?? "Logs"}
       >
         <ScrollText size={18} strokeWidth={1.75} />
       </IconButton>
@@ -2209,10 +2218,12 @@ function AppWithConfig({
                       )}
                     </ActionMenu>
                   )}
-                  <SimulatorToolbar.RotateButton
-                    title="Rotate device"
-                    direction={isDuo ? "right" : "left"}
-                  />
+                  {!unavailableFeatures.rotate && (
+                    <SimulatorToolbar.RotateButton
+                      title="Rotate device"
+                      direction={isDuo ? "right" : "left"}
+                    />
+                  )}
                 </SimulatorToolbar.Actions>
               </SimulatorToolbar>
               <SimulatorToolbar
@@ -2279,6 +2290,7 @@ function AppWithConfig({
               metricsEndpoint={config.metricsEndpoint}
               crashesEndpoint={config.crashesEndpoint}
               captureEndpoint={config.captureEndpoint}
+              unavailableFeatures={config.unavailableFeatures}
               axOverlayEnabled={axOverlayEnabled}
               onToggleAxOverlay={() => setAxOverlayEnabled((enabled) => !enabled)}
               streamSettings={streamSettings}
