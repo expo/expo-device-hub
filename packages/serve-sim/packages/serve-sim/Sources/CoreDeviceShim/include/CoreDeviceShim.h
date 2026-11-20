@@ -5,6 +5,10 @@
 #include "CoreDeviceDisplayStateShim.h"
 #include "CoreDeviceMotionShim.h"
 #include "CoreDeviceDigitizerShim.h"
+#include "CoreDeviceMediaStreamShim.h"
+#ifdef __OBJC__
+#import "CoreDeviceMediaNegotiator.h"
+#endif
 
 // The private framework has no public Swift module. These entry points isolate
 // its calling convention, and resolve every symbol before exposing the bridge.

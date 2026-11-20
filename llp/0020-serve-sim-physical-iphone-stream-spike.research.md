@@ -1,0 +1,55 @@
+# LLP 0020: Physical iPhone stream spike
+
+**Type:** Research
+**Status:** Draft
+**Systems:** ServeSim
+**Author:** Claude Code (Claude Opus 5.5)
+**Date:** 2026-11-19
+**Related:** LLP 0004, LLP 0014
+
+> File paths such as `Sources/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
+
+## Question
+
+Can serve-sim view a physical iPhone's screen through CoreDevice's media stream without compiling against Xcode 27-only interfaces? serve-sim is published from an Xcode 26 build ([LLP 0014](0014-serve-sim-xcode-support-and-ci.decision.md)), so the code must reach CoreDevice the way `CoreDeviceBridge` already does: symbols looked up at run time and called through trampolines, with no private symbol as a load-time dependency.
+
+The receive path is a port of Simlock's device capture (callstackincubator/simlock, MIT, commit `f8cf4b37bbc4bab9ec9c57541a5cab395dce6e46`, `vendor/screen-capture/Sources/simlock-device-capture/` and `SimlockMediaBridge`). Simlock compiles against hand-written `.swiftinterface` stubs that only build with Xcode 27.
+
+## Result
+
+Yes. On 2026-11-19, on Xcode 27.2 (CoreDevice 651.32), macOS 27.2.1, with an iPhone 12 on iOS 27.2.1 over USB, the spike streamed the home screen [observed: `Sources/PhysicalDeviceStreamSpike`]:
+
+| Run      | Start returned | First decoded frame | Frames in 10 s | Frame size  | Decoder  |
+| -------- | -------------- | ------------------- | -------------- | ----------- | -------- |
+| 1 (cold) | 0.90 s         | 1.20 s              | 224 (22.4 fps) | 1184 × 2576 | hardware |
+| 2        | 0.30 s         | 0.54 s              | 225 (22.5 fps) | 1184 × 2576 | hardware |
+| 3        | 0.26 s         | 0.49 s              | 233 (23.3 fps) | 1184 × 2576 | hardware |
+
+Times are from the device lookup. The saved frames show no tearing with Simlock's HEVC overrides applied. Each run stopped its own stream by id and released its usage assertion.
+
+## How each call is made
+
+All CoreDevice symbols are resolved in `SSCoreDeviceMediaStreamAvailable` (`Sources/CoreDeviceShim/CoreDeviceMediaStreamShim.c`) and reached through `br` forwarders in `CoreDeviceMediaStreamTrampolines.S`. Swift declares each forwarder with `@_silgen_name` in `Sources/SimNative/CoreDeviceMediaStreamCalls.swift` [observed].
+
+- **Resilient values are opened generically.** A declaration such as `func deviceInfoValue<Info>() -> Info` returns through the indirect-result register exactly as CoreDevice's getter does; the extra generic metadata argument lands in a register the callee ignores. The metadata comes from CoreDevice's own accessors, so Swift sizes and destroys the values correctly.
+- **Values are built and read through `Codable`.** `StartRequest`, `StopRequest`, `UsageAssertionRequirements`, `StartResponse`, `SupportInfoResponse` and `DeviceInfo` are all `Codable` in CoreDevice. The spike decodes requests from JSON with the real metatype and encodes responses back to JSON. `CodableValue` options are made with CoreDevice's own `CodableValue.init(Any)`, then encoded, so the option format is never written by hand.
+- **Media stream calls must be async.** The completion-handler variants (`getMediaStreamSupportInfo(completingOn:completion:)` and the `startMediaStream`/`stopMediaStream` equivalents) are deprecated stubs: the support query fails at once with `CoreDeviceError` 9011, "Unable to complete operation as this is using deprecated functionality" [observed: first spike run]. The async entry points are reached the same way `CoreDeviceBridge` reaches `getImplementation`: an async function pointer (`…Tu`) record in the assembly, whose context size is copied from CoreDevice's record at resolve time.
+- **`connect(targetQueue:completionHandler:)` and `acquireDeviceUsageAssertion(withReason:requirements:invokingCompletionHandlerOn:completionHandler:)` still work** through their completion handlers [observed]. `RemoteDevice` and `DeviceUsageAssertion` derive from `_SwiftObject`, so native stand-in classes give `Result<DeviceUsageAssertion, Error>` the same layout [observed: Objective-C runtime superclass chain].
+- **Negotiation is Objective-C only.** AVConference's `AVCMediaStreamNegotiator` (mode 5) is reached through the runtime in `CoreDeviceMediaNegotiator.m`, with Simlock's two overrides: payload 100's feature string replaced by the standalone-decoder string, and `ltrpEnabled` returning `NO`.
+
+## Sequence
+
+1. Look the device up by its CoreDevice identifier (`0BC25F62-…`), not its hardware UDID, through `CoreDeviceBridge.remoteDevice(udid:)`.
+2. `connect`, then take a usage assertion for the five `com.apple.coredevice.*` device states (`developerModeEnabledIfRequired`, `coreDeviceServicesLoaded`, `extendedDeviceInfoLoaded`, `remoteServiceDiscoveryTrustedConnectivityAvailable`, `secureNetworkingAvailable`).
+3. Read `mediaStreamSupportInfo` for `client.supportedFeatures`.
+4. Read `deviceInfo`. Its JSON is `{identifier, serviceDeviceIdentifier, values: [{descriptorIdentifier: {domain, key}, value}]}`; the tunnel address is the value whose key is `tunnelIPAddressString`.
+5. Bind a UDP socket on the host address that routes to the tunnel, build the offer from `MediaStreamHelper.getNegotiatorOptions(for:)` plus the client name, session id and call id, and start the stream with `{"timeout", "type": "video", "direction": "output", "negotiatorOffer", "clientSupportedFeatures", "receiverIP", "receiverPort", "options"}`.
+6. Apply the answer, refuse an SRTP suite other than 0, release the reserved socket and adopt the socket from `NetworkUtils.withSharedSocketDictionary`.
+7. Receive RTP (RFC 7798, payload 100), send RTCP receiver reports and picture loss indications, and decode HEVC with VideoToolbox.
+8. On stop: RTCP bye, `stopMediaStream` with `stopAll: false` and the stream's own id, release the assertion, close the socket.
+
+## Open questions for the next phases
+
+- Whether Xcode 26's CoreDevice has these symbols. This Mac has only Xcode 27.2. If any is missing, `SSCoreDeviceMediaStreamAvailable` returns false and nothing else is called.
+- The stream id was 0 in every run. Stopping by id 0 succeeded, but a second concurrent stream has not been tried.
+- The receive loop does not re-emit the last frame when the phone sends nothing, and it does not yet end the session when the assertion is invalidated.
