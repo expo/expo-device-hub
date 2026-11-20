@@ -65,3 +65,5 @@ export { createPacedKeySender, type PacedKeySender } from "./paced-key-sender";
 export { textToKeyEventsLenient } from "./text-to-keys";
 
 export { useMobileViewport } from "./useMobileViewport";
+
+export { usePlaybackRecovery } from "./usePlaybackRecovery";

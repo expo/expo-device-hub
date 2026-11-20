@@ -3,4 +3,6 @@
 "expo-device-hub": patch
 ---
 
-Show a Start live view button when the browser blocks WebRTC playback, including Safari Low Power Mode and disabled autoplay. Starting playback does not send input to the device.
+Expose WebRTC playback state and an immediate resume action so consumers can present recovery before the first frame. Device Hub shows recovery above flat and Duo previews when autoplay is blocked, without sending device input.
+
+Consumers that render `DeviceScreen` directly must use `usePlaybackRecovery(client)` and present recovery outside hidden or inert media wrappers. `DeviceScreen` does not render playback notices.

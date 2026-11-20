@@ -1,3 +1,5 @@
+import { useVideoPlayback } from "./useVideoPlayback";
+import { usePlaybackRecoveryWarning } from "./usePlaybackRecovery";
 import { listenForInputCancellation } from "./input-cancellation";
 import { createControlSocket } from "./control-socket";
 /**
@@ -720,6 +722,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     Readonly<Record<DuoPanelId, DuoPanelElement | null>>
   >({ 1: null, 3: null });
   // The consumer streams the displays itself, so the flat stream parks meanwhile.
+  const currentPanelElements = useRef(panelElements);
   const displayStreaming = isDuo && (panelElements[1] !== null || panelElements[3] !== null);
   // @ref LLP 0015#screen-sessions — a new device, server, token, surface, or media element loads again
   // Without a requested device, `/api` picks one; another pick is another session.
@@ -1834,10 +1837,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
     const onTimeUpdate = () => markFrame();
     const onLoadedData = () => markFrame(0);
-    const onVisibilityChange = () => {
-      if (stopped || document.hidden || videoRef.current !== video || !video.paused) return;
-      void video.play().catch(() => {});
-    };
 
     video.srcObject = webRtcStream;
     webRtcAttachedRef.current = {
@@ -1849,12 +1848,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (supportsVideoFrameCallback) frameCallback = video.requestVideoFrameCallback(onVideoFrame);
     else video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("loadeddata", onLoadedData, { once: true });
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    void video.play().catch(() => {});
 
     return () => {
       stopped = true;
-      document.removeEventListener("visibilitychange", onVisibilityChange);
       video.removeEventListener("loadeddata", onLoadedData);
       video.removeEventListener("timeupdate", onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === "function") {
@@ -1883,6 +1879,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [useWebRtc, webRtcVideoElement, screenSessionKey]);
 
+  const flatPlayback = useVideoPlayback(
+    webRtcVideoElement,
+    webRtcStream,
+    useWebRtc,
+    () =>
+      videoRef.current === webRtcVideoElement &&
+      webRtcAttachedRef.current?.session === screenSessionKeyRef.current,
+  );
   // ── H.264 AVCC (WebCodecs) with serve-sim's MJPEG fallback policy. ──
   // The fallback is about this browser and this device's stream, so a
   // replacement helper for the same device (a new pid) keeps it, as does the
@@ -2365,19 +2369,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // A new kind re-registers the consumer's elements through new ref callbacks,
   // as the flat `attachVideo` does.
   const attachCover = useCallback(
-    (element: DuoPanelElement["element"] | null) =>
-      setPanelElements((previous) => ({
-        ...previous,
-        1: element ? { kind: videoKind, element } : null,
-      })),
+    (element: DuoPanelElement["element"] | null) => {
+      const attached: DuoPanelElement | null = element ? { kind: videoKind, element } : null;
+      currentPanelElements.current = { ...currentPanelElements.current, 1: attached };
+      setPanelElements((previous) => ({ ...previous, 1: attached }));
+    },
     [videoKind],
   );
   const attachInner = useCallback(
-    (element: DuoPanelElement["element"] | null) =>
-      setPanelElements((previous) => ({
-        ...previous,
-        3: element ? { kind: videoKind, element } : null,
-      })),
+    (element: DuoPanelElement["element"] | null) => {
+      const attached: DuoPanelElement | null = element ? { kind: videoKind, element } : null;
+      currentPanelElements.current = { ...currentPanelElements.current, 3: attached };
+      setPanelElements((previous) => ({ ...previous, 3: attached }));
+    },
     [videoKind],
   );
   const displays = useMemo<readonly DeviceDisplay[] | null>(
@@ -2427,7 +2431,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     streaming: panelStreaming,
     error: panelError,
     stats: panelStats,
-  } = useDuoPanelStreams(panelFeeds, panelElements, activeScreenId);
+    playback: panelPlayback,
+  } = useDuoPanelStreams(panelFeeds, panelElements, activeScreenId, currentPanelElements);
+  const playback = displayStreaming ? panelPlayback : flatPlayback;
+  usePlaybackRecoveryWarning(playback);
   // While the consumer streams the displays, the active display's health is the connection status.
   useEffect(() => {
     if (!displayStreaming) return;
@@ -3059,6 +3066,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     foregroundApp,
     videoKind,
     attachVideo,
+    playback,
     sendTouch,
     sendMultiTouch,
     cancelInput,

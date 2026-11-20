@@ -1,3 +1,5 @@
+import { useVideoPlayback } from "./useVideoPlayback";
+import { usePlaybackRecoveryWarning } from "./usePlaybackRecovery";
 /**
  * serve-emu (Android) implementation of the {@link DeviceClient} interface.
  *
@@ -1307,20 +1309,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
     const onTimeUpdate = () => markFrame();
     const onLoadedData = () => markFrame(0);
-    const onVisibilityChange = () => {
-      const owner = webRtcVideoOwnerRef.current;
-      if (
-        stopped ||
-        document.hidden ||
-        attachedVideoRef.current !== video ||
-        owner?.video !== video ||
-        owner.stream !== webRtcStream ||
-        owner.scope !== deviceScopeRef.current ||
-        !video.paused
-      )
-        return;
-      void video.play().catch(() => {});
-    };
 
     video.srcObject = webRtcStream;
     webRtcVideoOwnerRef.current = { video, stream: webRtcStream, scope: deviceScopeRef.current };
@@ -1331,12 +1319,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       video.addEventListener("timeupdate", onTimeUpdate);
     }
     video.addEventListener("loadeddata", onLoadedData, { once: true });
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    void video.play().catch(() => {});
 
     return () => {
       stopped = true;
-      document.removeEventListener("visibilitychange", onVisibilityChange);
       video.removeEventListener("loadeddata", onLoadedData);
       video.removeEventListener("timeupdate", onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === "function") {
@@ -1359,6 +1344,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [useWebRtc, webRtcVideoElement, baseUrl, targetDevice]);
 
+  const playback = useVideoPlayback(
+    webRtcVideoElement,
+    webRtcStream,
+    useWebRtc,
+    () =>
+      attachedVideoRef.current === webRtcVideoElement &&
+      webRtcVideoOwnerRef.current?.scope === deviceScopeRef.current,
+  );
+  usePlaybackRecoveryWarning(playback);
   // ── H.264 video + input WebSocket (with reconnect) ──
   useEffect(() => {
     if (!active || !baseUrl) {
@@ -2338,6 +2332,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     foregroundApp,
     videoKind: useWebRtc ? "video" : "canvas",
     attachVideo,
+    playback,
     sendTouch,
     sendMultiTouch,
     sendKey,

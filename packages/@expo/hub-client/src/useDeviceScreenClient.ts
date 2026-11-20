@@ -3,6 +3,7 @@ import type { DeviceClient, DeviceScreenClient } from "./types";
 
 function selectDeviceScreenClient(client: DeviceClient): DeviceScreenClient {
   const {
+    playback,
     videoKind,
     attachVideo,
     sendTouch,
@@ -20,6 +21,7 @@ function selectDeviceScreenClient(client: DeviceClient): DeviceScreenClient {
     inputError,
   } = client;
   return {
+    playback,
     videoKind,
     attachVideo,
     sendTouch,

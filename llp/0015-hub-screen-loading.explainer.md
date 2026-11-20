@@ -102,9 +102,11 @@ On iOS, a temporary drop stays `reconnecting` until the stream returns, the adap
 
 LLP 0004 [3D preview in the Hub](0004-serve-sim-hinge-controls.explainer.md#3d-preview-in-the-hub) and LLP 0013 [Input feedback](0013-hub-client-input-and-control.explainer.md#input-feedback) give the rule: hub-client supplies controls, streams, and state; product notices belong to consumers.
 
-- **hub-client** decides the state: `status`, `error`, and `framePresented` on `DeviceClient` and `DeviceScreenClient` [observed: `types.ts`, `useDeviceScreenClient.ts`]. `DeviceScreen` draws no background, spinner, or error; it only hides media without a session frame [observed: `DeviceScreen.tsx`]. A consumer that uses `DeviceScreen` without `PhoneFrame`, such as the Expo website, draws loading and errors itself.
+- **hub-client** decides the state: `status`, `error`, and `framePresented` on `DeviceClient` and `DeviceScreenClient` [observed: `types.ts`, `useDeviceScreenClient.ts`]. `DeviceScreen` draws no background, spinner, error, or playback recovery; it only hides media without a session frame [observed: `DeviceScreen.tsx`]. A consumer that uses `DeviceScreen` without `PhoneFrame`, such as the Expo website, draws loading and errors itself.
 - **hub-components** draws them. `ActivityIndicator` is the spinner; its status region holds the label "Loading" as visually hidden text, and the status pill uses the same label [observed: `components/ActivityIndicator.tsx`, `dashboard/DeviceTitle.tsx`]. `DeviceScreenStatus` draws the spinner and one error notice, over the flat screen and over the 3D stage, with the input notice's tokens [observed: `dashboard/DeviceScreenStatus.tsx`, `dashboard/PhoneFrame.tsx`]. `PhoneFrame` puts `bg.element` under the live screen, so an empty screen is never black.
 - **The Hub** renders `StreamPanel` and needs no code of its own for this.
+
+Browser playback permission is separate from connection and first-frame state. `PhoneFrame` registers `usePlaybackRecovery(client)` and draws recovery beside the flat media wrapper or the 3D stage, so hidden texture sources cannot hide it. A blocked or failed playback replaces the spinner, while a connection error takes priority; `DeviceScreen` remains a media/input renderer [confirmed: Gabe Debes, 2026-11-20; observed: `hub-components/src/dashboard/PhoneFrame.tsx`, `PlaybackRecovery.tsx`].
 
 ## Decisions for review
 

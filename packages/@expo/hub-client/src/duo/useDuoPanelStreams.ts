@@ -1,3 +1,5 @@
+import { useVideoPlayback } from "../useVideoPlayback";
+import type { DevicePlayback } from "../types";
 /**
  * Streams the iPhone Duo's panels into the elements a consumer attached
  * through `DeviceClient.displays`, following serve-sim's
@@ -63,7 +65,10 @@ export const DUO_PANEL_KIND: Record<DuoPanelStreamMode, VideoSurfaceKind> = {
   webrtc: "video",
 };
 
-type DuoPanelStreamState = DuoPanelStatus & { stats: DeviceStreamStats | null };
+type DuoPanelStreamState = DuoPanelStatus & {
+  stats: DeviceStreamStats | null;
+  playback: DevicePlayback | undefined;
+};
 
 /** Without feeds, no reader runs; a stable function keeps them stopped. */
 const NO_FEEDS_FETCH: SessionFetch = (input, init) => fetch(input, init);
@@ -73,6 +78,7 @@ function useDuoPanelStream(
   attached: DuoPanelElement | null,
   feeds: DuoPanelFeeds | null,
   activeScreenId: DuoPanelId,
+  isCurrent?: () => boolean,
 ): DuoPanelStreamState {
   const mode = feeds?.mode;
   const token = feeds?.token ?? null;
@@ -190,12 +196,6 @@ function useDuoPanelStream(
       markFrameDecoded(0);
       onFrame();
     };
-    // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — a browser can pause a background tab's video; the same peer plays again
-    // The cleanup retires an element that the consumer replaced or detached.
-    const onVisibilityChange = () => {
-      if (stopped || document.hidden || !video.paused) return;
-      void video.play().catch(() => {});
-    };
     video.srcObject = webRtcStream;
     if (webRtcStream) {
       if (typeof video.requestVideoFrameCallback === "function") {
@@ -204,12 +204,9 @@ function useDuoPanelStream(
         video.addEventListener("timeupdate", onTimeUpdate);
       }
       video.addEventListener("loadeddata", onLoadedData, { once: true });
-      document.addEventListener("visibilitychange", onVisibilityChange);
-      void video.play().catch(() => {});
     }
     return () => {
       stopped = true;
-      document.removeEventListener("visibilitychange", onVisibilityChange);
       video.removeEventListener("loadeddata", onLoadedData);
       video.removeEventListener("timeupdate", onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === "function") {
@@ -269,7 +266,9 @@ function useDuoPanelStream(
     return () => clearTimeout(timer);
   }, [url, canvas, active, sessionFetch, feedGeneration]);
 
+  const playback = useVideoPlayback(video, webRtcStream, mode === "webrtc", isCurrent);
   return {
+    playback,
     streaming,
     // A transport retry reconnects by itself, as on the flat stream.
     error: video && !webRtcRetrying ? webRtcError : null,
@@ -286,9 +285,28 @@ export function useDuoPanelStreams(
   feeds: DuoPanelFeeds | null,
   elements: Readonly<Record<DuoPanelId, DuoPanelElement | null>>,
   activeScreenId: DuoPanelId,
-): { streaming: boolean; error: string | null; stats: DeviceStreamStats | null } {
-  const cover = useDuoPanelStream(1, elements[1], feeds, activeScreenId);
-  const inner = useDuoPanelStream(3, elements[3], feeds, activeScreenId);
+  currentElements?: { current: Readonly<Record<DuoPanelId, DuoPanelElement | null>> },
+): {
+  streaming: boolean;
+  error: string | null;
+  stats: DeviceStreamStats | null;
+  playback: DevicePlayback | undefined;
+} {
+  const cover = useDuoPanelStream(
+    1,
+    elements[1],
+    feeds,
+    activeScreenId,
+    () => !currentElements || currentElements.current[1]?.element === elements[1]?.element,
+  );
+  const inner = useDuoPanelStream(
+    3,
+    elements[3],
+    feeds,
+    activeScreenId,
+    () => !currentElements || currentElements.current[3]?.element === elements[3]?.element,
+  );
   const status = duoPanelStatus(feeds?.mode ?? "mjpeg", activeScreenId, { 1: cover, 3: inner });
-  return { ...status, stats: (activeScreenId === 1 ? cover : inner).stats };
+  const activePanel = activeScreenId === 1 ? cover : inner;
+  return { ...status, stats: activePanel.stats, playback: activePanel.playback };
 }

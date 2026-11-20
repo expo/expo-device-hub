@@ -841,12 +841,21 @@ export type ScreenshotCapture = {
   artifact: ScreenshotArtifact | null;
 };
 
+export interface DevicePlayback {
+  state: "idle" | "starting" | "playing" | "blocked" | "error";
+  error: string | null;
+  /** Calls video.play() immediately. Browser failures update state and error. */
+  resume(): Promise<void>;
+}
+
 /**
  * The live state + controls for one device connection. Returned by the hook and
  * consumed by {@link DeviceScreen} (for video + input) and by the surrounding
  * Hub UI (logs panel, Home control, device lists).
  */
 export interface DeviceClient {
+  /** Browser playback for the presented WebRTC surface; consumers render recovery. */
+  playback?: DevicePlayback;
   platform: DevicePlatform;
   status: ConnectionStatus;
   error: string | null;
@@ -1224,6 +1233,7 @@ export type DeviceClientHook = (options: DeviceConnectionOptions) => DeviceClien
  */
 export type DeviceScreenClient = Pick<
   DeviceClient,
+  | "playback"
   | "videoKind"
   | "attachVideo"
   | "sendTouch"

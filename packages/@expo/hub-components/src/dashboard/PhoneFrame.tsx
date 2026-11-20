@@ -1,6 +1,7 @@
 import { type ComponentType, type CSSProperties, useLayoutEffect, useState } from "react";
 
 import {
+  usePlaybackRecovery,
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
@@ -9,6 +10,7 @@ import {
 import { duoStageMaxSide } from "../foldable/duo-stage";
 import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
 import { bg } from "../primitives";
+import { PlaybackRecovery } from "./PlaybackRecovery";
 import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
 import { type Device } from "./data";
 import { DeviceScreenStatus, deviceScreenLoading } from "./DeviceScreenStatus";
@@ -79,9 +81,8 @@ const CONFIG: Record<
 /**
  * The selected device's screen. When a {@link DeviceClient} connection is active
  * (a serve-sim/serve-emu server is selected) it renders the live, interactive
- * `DeviceScreen` — injected by the consumer from `@expo/hub-client` so this
- * library stays free of a runtime dependency on it; otherwise it shows an empty
- * idle surface. It draws the screen's loading spinner and errors over both
+ * `DeviceScreen` — injected by the consumer from `@expo/hub-client`; otherwise
+ * it shows an empty idle surface. It draws the screen's loading spinner and errors over both
  * renderers, which draw neither.
  *
  * The phone stays as large as fits (short side capped at {@link MAX_SHORT_SIDE},
@@ -127,6 +128,12 @@ export function PhoneFrame({
   /** Whether the screen shows its first-load spinner, for a status label beside the frame. */
   onLoadingChange?: (loading: boolean) => void;
 }) {
+  const playback = usePlaybackRecovery(client ?? {});
+  const needsRecovery =
+    !!client &&
+    client.status !== "idle" &&
+    client.status !== "error" &&
+    (playback?.state === "blocked" || playback?.state === "error");
   const [hovered, setHovered] = useState(false);
   // The device whose 3D model is loaded or unavailable; the 3D preview loads until it has one.
   const [modelSettledDevice, setModelSettledDevice] = useState<string | null>(null);
@@ -185,7 +192,9 @@ export function PhoneFrame({
     client.deviceModelUrl
   );
   const loading =
-    !!live && deviceScreenLoading(client, !foldable || modelSettledDevice === device.id);
+    !!live &&
+    !needsRecovery &&
+    deviceScreenLoading(client, !foldable || modelSettledDevice === device.id);
   useLayoutEffect(() => {
     onLoadingChange?.(loading);
   }, [onLoadingChange, loading]);
@@ -193,7 +202,7 @@ export function PhoneFrame({
     <DeviceScreenStatus
       loading={loading}
       error={client.status === "error" ? (client.error ?? "Disconnected") : null}
-      inputError={client.inputError}
+      inputError={needsRecovery ? null : client.inputError}
     />
   ) : null;
   const overlayVisible =
@@ -249,6 +258,7 @@ export function PhoneFrame({
             onModelSettledChange={(settled) => setModelSettledDevice(settled ? device.id : null)}
             {...modelOptions}
           />
+          {needsRecovery && playback && <PlaybackRecovery playback={playback} />}
           {screenStatus}
           {takeoverOverlay}
         </div>
@@ -303,6 +313,7 @@ export function PhoneFrame({
         >
           {deviceSurface}
         </div>
+        {needsRecovery && playback && <PlaybackRecovery playback={playback} />}
         {screenStatus}
         {takeoverOverlay}
       </div>
