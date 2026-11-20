@@ -229,10 +229,6 @@ actor CaptureEngine {
 
     private func removeEndObserver(_ id: UUID) { endObservers.removeValue(forKey: id) }
 
-    func framesUpright() async -> Bool {
-        await screenSource.framesUpright()
-    }
-
     private func addConsumer<E: FrameEncoder>(
         id: UUID = UUID(),
         encoder: E,

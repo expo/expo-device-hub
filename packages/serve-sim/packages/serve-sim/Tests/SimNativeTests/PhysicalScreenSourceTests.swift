@@ -132,8 +132,6 @@ final class PhysicalScreenSourceTests: XCTestCase {
         XCTAssertEqual(first.screen.display?.chromeIdentifier, "com.apple.dt.devicekit.chrome.phone4")
         let canvas = await source.webRTCEncodeCanvasSize()
         XCTAssertEqual(canvas, Dimensions(width: 1170, height: 2532))
-        let upright = await source.framesUpright()
-        XCTAssertTrue(upright)
 
         let screenshot = try await source.screenshotPixels(screenID: 1)
         XCTAssertEqual(screenshot.pixels.dimensions, Dimensions(width: 1170, height: 2532))
@@ -271,8 +269,6 @@ final class PhysicalScreenSourceTests: XCTestCase {
         await waitUntil { session.started }
         session.deliver(paddedFrame(width: 1184, height: 2576, contentWidth: 1170, contentHeight: 2532))
         try await started
-        let upright = await engine.framesUpright()
-        XCTAssertTrue(upright)
         let size = await engine.currentScreenSize()
         XCTAssertEqual(size.width, 1170)
         XCTAssertEqual(size.height, 2532)

@@ -59,37 +59,6 @@ struct PhysicalScreenPolicyTests {
         #expect(PhysicalScreenPolicy.contentSize(encodedWidth: 1184, encodedHeight: 2576, nativeWidth: 0, nativeHeight: 2532) == encoded)
     }
 
-    @Test("maps displayed touches to the portrait digitizer in every interface orientation")
-    func mapsTouches() {
-        func point(_ orientation: String?) -> [Double] {
-            let mapped = PhysicalScreenPolicy.digitizerPoint(x: 0.25, y: 0.75, orientation: orientation)
-            return [mapped.x, mapped.y]
-        }
-        #expect(point("portrait") == [0.25, 0.75])
-        #expect(point(nil) == [0.25, 0.75])
-        #expect(point("portrait_upside_down") == [0.75, 0.25])
-        #expect(point("landscape_left") == [0.75, 0.75])
-        #expect(point("landscape_right") == [0.25, 0.25])
-    }
-
-    @Test("maps a landscape display edge to the digitizer edge its points land on")
-    func mapsEdges() {
-        let left: UInt32 = 1, top: UInt32 = 2, bottom: UInt32 = 3, right: UInt32 = 4
-        for edge in [left, top, bottom, right] {
-            #expect(PhysicalScreenPolicy.digitizerEdge(edge, orientation: "portrait") == edge)
-            #expect(PhysicalScreenPolicy.digitizerEdge(edge, orientation: nil) == edge)
-        }
-        #expect(PhysicalScreenPolicy.digitizerEdge(0, orientation: "landscape_left") == 0)
-        let probes: [(edge: UInt32, x: Double, y: Double)] = [(left, 0, 0.5), (top, 0.5, 0), (bottom, 0.5, 1), (right, 1, 0.5)]
-        for orientation in ["landscape_left", "landscape_right", "portrait_upside_down"] {
-            for probe in probes {
-                let point = PhysicalScreenPolicy.digitizerPoint(x: probe.x, y: probe.y, orientation: orientation)
-                let landed: UInt32 = point.x == 0 ? left : point.y == 0 ? top : point.y == 1 ? bottom : right
-                #expect(PhysicalScreenPolicy.digitizerEdge(probe.edge, orientation: orientation) == landed)
-            }
-        }
-    }
-
     @Test("requires CoreDevice 642 or later with every symbol present")
     func hostSupport() {
         #expect(PhysicalDeviceSupport.host(coreDeviceVersion: "651.32", symbolsAvailable: true) == .supported)

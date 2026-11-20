@@ -82,7 +82,7 @@ class Capture {
     return async () => {};
   }
   async screenSize() {
-    return { width: 1170, height: 2532, screenId: 1, orientation: "portrait", framesUpright: true };
+    return { width: 1170, height: 2532, screenId: 1, orientation: "portrait" };
   }
 }
 mock.module("../../native", () => ({ ...native, NativeHid: Hid, NativeCapture: Capture }));

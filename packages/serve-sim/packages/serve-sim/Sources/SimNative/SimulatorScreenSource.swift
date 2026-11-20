@@ -701,8 +701,6 @@ actor SimulatorScreenSource: ScreenSource {
         (ticks: pollTicks, lateSumNs: pollLateSumNs)
     }
 
-    func framesUpright() -> Bool { false }
-
     func getScreenSize() -> CapturedScreenInfo? {
         guard capturedWidth > 0, capturedHeight > 0 else { return nil }
         return CapturedScreenInfo(width: capturedWidth, height: capturedHeight, display: capturedDisplay,
@@ -871,8 +869,7 @@ actor SimulatorScreenSource: ScreenSource {
             nativeScreenRotations: displayProfile.nativeRotations,
             isFoldable: displayProfile.isFoldable,
             simDevice: device,
-            connect: nil,
-            interfaceOrientation: nil
+            connect: nil
         )
     }
 

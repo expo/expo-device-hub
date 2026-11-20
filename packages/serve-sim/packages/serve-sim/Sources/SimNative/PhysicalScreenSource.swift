@@ -204,9 +204,6 @@ actor PhysicalScreenSource: ScreenSource {
         guard generation == self.generation, !ended, let connection else { return }
         let read = await connection.readOrientation()
         guard generation == self.generation, !ended, let read else { return }
-        if let deviceUDID {
-            PhysicalOrientationObservation.shared.record(udid: deviceUDID, orientation: read, nowNs: nowNanoseconds())
-        }
         guard read != orientation else { return }
         orientation = read
         notifyScreenObservers()
@@ -231,7 +228,6 @@ actor PhysicalScreenSource: ScreenSource {
             Task { await connection.session.stop() }
         }
         if let deviceUDID {
-            PhysicalOrientationObservation.shared.remove(udid: deviceUDID)
             Task { await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID) }
         }
         handler?(.iPhoneDisconnected)
@@ -260,7 +256,6 @@ actor PhysicalScreenSource: ScreenSource {
         lastEmitNs = 0
         copier.reset()
         if !preservingObservers { screenObservers.removeAll() }
-        if let deviceUDID { PhysicalOrientationObservation.shared.remove(udid: deviceUDID) }
         deviceUDID = nil
         if let connection, !wasEnded { await connection.session.stop() }
     }
@@ -301,8 +296,6 @@ actor PhysicalScreenSource: ScreenSource {
     func recordingCanvasSize() -> Dimensions? {
         content.map { Dimensions(width: $0.width + $0.width % 2, height: $0.height + $0.height % 2) }
     }
-
-    func framesUpright() -> Bool { true }
 
     func frameCounts() -> (screen: UInt64, idle: UInt64) { (screen: screenFrames, idle: idleFrames) }
 
@@ -347,11 +340,6 @@ extension PhysicalScreenSource {
             connect: {
                 let device = try await CoreDeviceBridge.shared.remoteDevice(udid: deviceUDID)
                 try await CoreDeviceMediaStreamCalls.connect(device)
-            },
-            interfaceOrientation: {
-                await PhysicalOrientationObservation.shared.current(udid: deviceUDID) {
-                    await liveOrientation(deviceUDID: deviceUDID, displayID: displayID)
-                }
             }
         )
     }
@@ -371,41 +359,5 @@ extension PhysicalScreenSource {
     static func liveOrientation(deviceUDID: String, displayID: UInt32) async -> String? {
         guard let displays = try? await CoreDeviceDisplayInfo.read(udid: deviceUDID) else { return nil }
         return displays.first { $0.screenID == displayID }?.orientation
-    }
-}
-
-final class PhysicalOrientationObservation: @unchecked Sendable {
-    static let shared = PhysicalOrientationObservation()
-    static let freshnessNs: UInt64 = 1_500_000_000
-
-    private struct Entry {
-        let orientation: String
-        let observedNs: UInt64
-    }
-
-    private let lock = NSLock()
-    private var entries: [String: Entry] = [:]
-
-    func record(udid: String, orientation: String, nowNs: UInt64 = DispatchTime.now().uptimeNanoseconds) {
-        lock.withLock { entries[udid] = Entry(orientation: orientation, observedNs: nowNs) }
-    }
-
-    func fresh(udid: String, nowNs: UInt64 = DispatchTime.now().uptimeNanoseconds) -> String? {
-        lock.withLock {
-            guard let entry = entries[udid], nowNs >= entry.observedNs,
-                  nowNs - entry.observedNs <= Self.freshnessNs else { return nil }
-            return entry.orientation
-        }
-    }
-
-    func current(udid: String, read: () async -> String?) async -> String? {
-        if let fresh = fresh(udid: udid) { return fresh }
-        guard let read = await read() else { return nil }
-        record(udid: udid, orientation: read)
-        return read
-    }
-
-    func remove(udid: String) {
-        lock.withLock { _ = entries.removeValue(forKey: udid) }
     }
 }

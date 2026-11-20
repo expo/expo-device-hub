@@ -66,7 +66,6 @@ struct ScreenInputTarget: @unchecked Sendable {
     let isFoldable: Bool
     let simDevice: NSObject?
     let connect: (@Sendable () async throws -> Void)?
-    let interfaceOrientation: (@Sendable () async -> String?)?
 }
 
 protocol ScreenSource: Actor {
@@ -83,7 +82,6 @@ protocol ScreenSource: Actor {
     func subscribeScreenChanges(_ callback: @escaping @Sendable () -> Void) -> @Sendable () async -> Void
     func webRTCEncodeCanvasSize() -> Dimensions?
     func recordingCanvasSize() -> Dimensions?
-    func framesUpright() -> Bool
     func frameCounts() -> (screen: UInt64, idle: UInt64)
     func pickTimings() -> (count: UInt64, sumNs: UInt64, maxNs: UInt64)
     func captureTimings() -> (attempts: UInt64, gapSumNs: UInt64, stalls: UInt64, stallSumNs: UInt64,

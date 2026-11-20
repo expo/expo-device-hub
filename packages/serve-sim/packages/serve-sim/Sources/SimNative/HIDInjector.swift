@@ -47,54 +47,7 @@ actor HIDInjector {
     private var usesUniversalHID: Bool { digitizerCapability != nil }
     private var touchTarget = HIDTargetPolicy()
     private var multiTouchTarget = HIDTargetPolicy()
-    private var physicalInput: PhysicalInputState?
-    private var interfaceOrientationTask: Task<Void, Never>?
-
-    private struct PhysicalInputState {
-        let orientation: (@Sendable () async -> String?)?
-        var latestOrientation: String?
-        var touchOrientation: String?
-        var multiTouchOrientation: String?
-
-        init(orientation: (@Sendable () async -> String?)?) {
-            self.orientation = orientation
-        }
-    }
-
-    static let interfaceOrientationRefresh: Duration = .milliseconds(500)
-
-    deinit { interfaceOrientationTask?.cancel() }
-
-    private func refreshInterfaceOrientation() async {
-        guard let read = physicalInput?.orientation, let orientation = await read() else { return }
-        physicalInput?.latestOrientation = orientation
-    }
-
-    private func startInterfaceOrientationUpdates() {
-        interfaceOrientationTask?.cancel()
-        interfaceOrientationTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: Self.interfaceOrientationRefresh)
-                guard !Task.isCancelled, let self else { return }
-                await self.refreshInterfaceOrientation()
-            }
-        }
-    }
-
-    private func physicalOrientation(for type: String, multiTouch: Bool) -> String? {
-        guard var state = physicalInput else { return nil }
-        let pinned = multiTouch ? state.multiTouchOrientation : state.touchOrientation
-        let orientation = type == "begin" || pinned == nil ? state.latestOrientation : pinned
-        let next: String? = type == "end" ? nil : orientation
-        if multiTouch { state.multiTouchOrientation = next } else { state.touchOrientation = next }
-        physicalInput = state
-        return orientation
-    }
-
-    private func digitizerContact(x: Double, y: Double, orientation: String?) -> SSCoreDeviceTouch {
-        let point = PhysicalScreenPolicy.digitizerPoint(x: x, y: y, orientation: orientation)
-        return SSCoreDeviceTouch(x: point.x, y: point.y)
-    }
+    private var isPhysical = false
 
     // IndigoHIDMessageForMouseNSEvent(CGPoint*, CGPoint*, IndigoHIDTarget, NSEventType, NSSize, IndigoHIDEdge)
     // arm64 ABI: pointer/int params → x0-x4, float params → d0-d1 (independent numbering).
@@ -144,9 +97,7 @@ actor HIDInjector {
         case .coreDeviceOnly:
             try await target.connect?()
             try await setupCoreDeviceHID(deviceUDID: deviceUDID)
-            physicalInput = PhysicalInputState(orientation: target.interfaceOrientation)
-            await refreshInterfaceOrientation()
-            startInterfaceOrientationUpdates()
+            isPhysical = true
             setScreen(screenID: nil)
             hidLog("[hid] Using CoreDevice HID for a physical device")
             return
@@ -323,13 +274,6 @@ actor HIDInjector {
     /// idle touch-up, and swipe-home. Routing is pinned until touch-up.
     private func rawSendTouch(type: String, x: Double, y: Double, edge: UInt32 = 0) {
         guard let target = touchTarget.target(for: type) else { return }
-        // @ref LLP 0026#input — the phone's digitizer stays portrait while its frames follow the interface.
-        if physicalInput != nil {
-            let orientation = physicalOrientation(for: type, multiTouch: false)
-            sendUniversalTouches(target: target, type: type, contacts: [digitizerContact(x: x, y: y, orientation: orientation)],
-                                 edge: PhysicalScreenPolicy.digitizerEdge(edge, orientation: orientation))
-            return
-        }
         if usesUniversalHID {
             sendUniversalTouches(target: target, type: type, contacts: [.init(x: x, y: y)], edge: edge)
             return
@@ -356,13 +300,6 @@ actor HIDInjector {
     func sendMultiTouch(type: String, x1: Double, y1: Double, x2: Double, y2: Double, screenWidth: Int, screenHeight: Int) {
         if type == "begin" { interruptScroll() }
         guard let target = multiTouchTarget.target(for: type) else { return }
-        if physicalInput != nil {
-            let orientation = physicalOrientation(for: type, multiTouch: true)
-            sendUniversalTouches(target: target, type: type,
-                                 contacts: [digitizerContact(x: x1, y: y1, orientation: orientation),
-                                            digitizerContact(x: x2, y: y2, orientation: orientation)])
-            return
-        }
         if usesUniversalHID {
             sendUniversalTouches(target: target, type: type,
                                  contacts: [.init(x: x1, y: y1), .init(x: x2, y: y2)])
@@ -666,7 +603,7 @@ actor HIDInjector {
     /// - phase: "down" / "up" hold the button for natural long-presses (power
     ///   off slider, side-button menus); "press" sends a momentary down+up.
     func sendButtonHID(page: UInt32, usage: UInt32, phase: String) async {
-        guard physicalInput == nil else {
+        guard !isPhysical else {
             print("[hid] Hardware buttons are unavailable on a physical device (page=\(page) usage=\(usage))")
             return
         }
@@ -695,7 +632,7 @@ actor HIDInjector {
 
     func sendButton(button: String, deviceUDID: String) async {
         hidLog("[hid] Sending button: \(button)")
-        if physicalInput != nil {
+        if isPhysical {
             guard button == "home" || button == "swipe_home" else {
                 print("[hid] Button \(button) is unavailable on a physical device")
                 return
@@ -904,7 +841,7 @@ actor HIDInjector {
     /// Simulator.app itself rotates the device, and how idb's
     /// `FBSimulatorPurpleHID.orientationEvent:` is delivered.
     func sendOrientation(orientation: UInt32) async -> Bool {
-        guard physicalInput == nil else { return false }
+        guard !isPhysical else { return false }
         if isFoldable, let deviceUDID {
             // Modern foldable simulators acknowledge legacy GSEvent delivery
             // without changing orientation. Use the same vendor channel as

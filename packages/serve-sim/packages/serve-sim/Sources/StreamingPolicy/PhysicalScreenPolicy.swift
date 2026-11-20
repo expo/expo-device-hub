@@ -58,34 +58,6 @@ public enum PhysicalScreenPolicy {
             height: min(encodedHeight, Int((height * scale).rounded()))
         )
     }
-
-    public static func digitizerPoint(x: Double, y: Double, orientation: String?) -> (x: Double, y: Double) {
-        switch orientation {
-        case "landscape_left": return (y, 1 - x)
-        case "landscape_right": return (1 - y, x)
-        case "portrait_upside_down": return (1 - x, 1 - y)
-        default: return (x, y)
-        }
-    }
-
-    public static func digitizerEdge(_ edge: UInt32, orientation: String?) -> UInt32 {
-        let left: UInt32 = 1, top: UInt32 = 2, bottom: UInt32 = 3, right: UInt32 = 4
-        switch (orientation, edge) {
-        case ("landscape_left", left): return bottom
-        case ("landscape_left", top): return left
-        case ("landscape_left", bottom): return right
-        case ("landscape_left", right): return top
-        case ("landscape_right", left): return top
-        case ("landscape_right", top): return right
-        case ("landscape_right", bottom): return left
-        case ("landscape_right", right): return bottom
-        case ("portrait_upside_down", left): return right
-        case ("portrait_upside_down", top): return bottom
-        case ("portrait_upside_down", bottom): return top
-        case ("portrait_upside_down", right): return left
-        default: return edge
-        }
-    }
 }
 
 public enum PhysicalDeviceSupport: String, Sendable {

@@ -316,7 +316,6 @@ private func u32(_ v: Int) -> UInt32 {
             if let orientation = display.orientation { result["orientation"] = orientation }
             if let chromeIdentifier = display.chromeIdentifier { result["chromeIdentifier"] = chromeIdentifier }
         }
-        if await engine.framesUpright() { result["framesUpright"] = true }
         return result
     }
 

@@ -168,7 +168,6 @@ export type NativeScreenInfo = {
   orientation?: "portrait" | "portrait_upside_down" | "landscape_left" | "landscape_right";
   screenId?: number;
   chromeIdentifier?: string;
-  framesUpright?: boolean;
 };
 
 export type NativeDeviceKind = "simulator" | "physical";
