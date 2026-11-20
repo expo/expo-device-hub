@@ -77,10 +77,6 @@ function sameData(a: unknown, b: unknown): boolean {
   return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
-/**
- * Capabilities that a client reports as present until the device says it has none, as hub-client
- * does for a phone's logs and foreground app. For them the device's latest report counts.
- */
 const PRESENT_UNTIL_REPORTED: ReadonlySet<keyof DeviceCapabilities> = new Set([
   "logs",
   "foregroundApp",
@@ -107,10 +103,7 @@ function withCapabilities(
   return changed ? (merged as DeviceCapabilities) : first;
 }
 
-/**
- * Each capability that the device reported once stays, with its last value. One that counts as
- * present until reported goes when the device reports it has none.
- */
+/** Each capability that the device reported once stays, with its last value, except logs and the foreground app. */
 function keepCapabilities(
   previous: DeviceCapabilities | undefined,
   live: DeviceCapabilities,

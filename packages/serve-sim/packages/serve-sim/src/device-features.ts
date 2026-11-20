@@ -75,10 +75,6 @@ export function deviceFeatureRefusal(
 
 const HOME_BUTTONS = new Set(["home", "swipe_home"]);
 
-/**
- * The feature a hardware button needs. Every device has Home: a physical device sends it as the
- * swipe up from the bottom edge. Power, volume, the action button and the rest are simulator HID.
- */
 export function buttonFeature(button: string | undefined): DeviceFeature | null {
   return button !== undefined && HOME_BUTTONS.has(button) ? null : "hardwareButtons";
 }

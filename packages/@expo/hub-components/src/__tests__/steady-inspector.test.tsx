@@ -253,7 +253,6 @@ describe("useSteadyClient", () => {
   });
 
   test("logs and the foreground app go when the device reports it has neither", async () => {
-    // hub-client counts both as present until the device's config says otherwise.
     const phone: Device = { ...IPHONE, id: "phone", physical: true };
     await act(async () => {
       renderer = create(<Probe client={CONNECTING} device={phone} />);

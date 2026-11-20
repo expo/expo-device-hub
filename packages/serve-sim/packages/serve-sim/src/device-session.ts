@@ -530,7 +530,6 @@ export class DeviceSession {
       });
   }
 
-  /** A physical device lacks the simulator-only features; see device-features.ts. */
   private lacks(feature: DeviceFeature | null): boolean {
     return deviceFeatureRefusal(this.udid, feature) !== null;
   }

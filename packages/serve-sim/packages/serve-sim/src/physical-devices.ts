@@ -106,10 +106,7 @@ export function parsePhysicalDevices(
   });
 }
 
-/**
- * Streaming needs CoreDevice 642 (Xcode 27) on this Mac and iOS 27 on the device. The Mac comes
- * first, in the order and words of the native `physicalDeviceSupport`.
- */
+/** Streaming needs iOS 27 on the device and CoreDevice 642 (Xcode 27) on this Mac. */
 export function physicalDeviceUnsupportedReason(
   osVersion: string | null,
   coreDeviceVersion: string | null,
@@ -121,10 +118,6 @@ export function physicalDeviceUnsupportedReason(
 
 type HostSupport = { coreDeviceVersion: string | null; unsupportedReason: string | null };
 
-/**
- * The native addon also checks that CoreDevice has the media stream and digitizer symbols. Without
- * the addon, the CoreDevice version decides.
- */
 async function readHostSupport(): Promise<HostSupport> {
   try {
     const support = await physicalDeviceSupport();
