@@ -13,6 +13,7 @@ import {
   refuseEndedDevice,
 } from "./device-end";
 import { clearServeSimState } from "./state";
+import { claimPhysicalStream } from "./physical-stream-lock";
 import { createSerialQueue, withHostActionDeadline } from "./host-actions-utils";
 import { timeStartup } from "./startup-timing";
 import { RECORDING_LEASE_MS } from "./recording-timeouts";
@@ -347,6 +348,7 @@ export class DeviceSession {
   private unsubscribeScreenChanges?: NativeUnsubscribe;
   private unsubscribeDeviceState?: NativeUnsubscribe;
   private unsubscribeEnd?: NativeUnsubscribe;
+  private releaseStream?: () => void;
   private readonly kind: DeviceKind;
   /** Set when the device went away; viewers' input sockets close with it. */
   private endReason?: string;
@@ -478,9 +480,9 @@ export class DeviceSession {
         : timeStartup("device-options", () => refreshDeviceOptionState(this.udid), this.udid)
     )
       .then(async () => {
-        if (this.phase === "running") {
-          await timeStartup("native-capture", () => this.capture.start(), this.udid);
-        }
+        if (this.phase !== "running") return;
+        if (this.kind === "physical") this.releaseStream ??= claimPhysicalStream(this.udid);
+        await timeStartup("native-capture", () => this.capture.start(), this.udid);
       })
       .then(async () => {
         if (this.phase !== "running") return;
@@ -691,6 +693,8 @@ export class DeviceSession {
       } catch (error) {
         recordingError ??= error;
       }
+      this.releaseStream?.();
+      this.releaseStream = undefined;
       if (recordingError) throw recordingError;
     })();
     trackClosedSessionStop(this.closing);

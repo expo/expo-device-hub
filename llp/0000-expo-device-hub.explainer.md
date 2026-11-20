@@ -322,24 +322,24 @@ The packages are tightly coupled, so one corpus at the repo root covers all of t
 
 ## Where to look next
 
-| Topic                                                       | Source                                                          |
-| ----------------------------------------------------------- | --------------------------------------------------------------- |
-| serve-sim video pipeline and recording                      | [LLP 0001](0001-serve-sim-video-pipeline.explainer.md)          |
-| serve-sim WebRTC signaling and control                      | [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md)     |
-| serve-sim HTTP routes, auth, CORS, WebSockets               | [LLP 0003](0003-serve-sim-http-api.spec.md)                     |
-| Hinge controls for iOS and Android and display selection    | [LLP 0004](0004-serve-sim-hinge-controls.explainer.md)          |
-| serve-sim network capture and redaction                     | [LLP 0005](0005-serve-sim-network-capture.explainer.md)         |
-| How Simulator.app forwards scroll (reverse-engineered)      | [LLP 0006](0006-serve-sim-scroll-injection.research.md)         |
-| serve-sim capability loader                                 | [LLP 0007](0007-serve-sim-capability-loader.explainer.md)       |
-| serve-sim CLI startup and app readiness                     | [LLP 0011](0011-serve-sim-session-startup.explainer.md) (Draft) |
-| serve-emu scrcpy framing, control packets, `SEMU` metadata  | [LLP 0008](0008-serve-emu-protocol.spec.md)                     |
-| serve-emu hardware H.264 encoder spike                      | [LLP 0009](0009-serve-emu-hardware-encoder-spike.research.md)   |
-| serve-sim clipboard: pasteboard API, Paste, Copy            | [LLP 0010](0010-serve-sim-clipboard.explainer.md)               |
-| Physical iPhones: listing, stream, feature gate, device end | [LLP 0027](0027-physical-iphones.explainer.md) (Draft)          |
-| Hub UI rules and tokens                                     | `packages/expo-device-hub/AGENTS.md`                            |
-| serve-sim commands, tests, definition of done               | `packages/serve-sim/AGENTS.md`, `packages/serve-sim/REVIEW.md`  |
-| serve-emu layout and auth                                   | `packages/serve-emu/AGENTS.md`                                  |
-| Releases                                                    | `RELEASING.md`                                                  |
+| Topic                                                                             | Source                                                          |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| serve-sim video pipeline and recording                                            | [LLP 0001](0001-serve-sim-video-pipeline.explainer.md)          |
+| serve-sim WebRTC signaling and control                                            | [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md)     |
+| serve-sim HTTP routes, auth, CORS, WebSockets                                     | [LLP 0003](0003-serve-sim-http-api.spec.md)                     |
+| Hinge controls for iOS and Android and display selection                          | [LLP 0004](0004-serve-sim-hinge-controls.explainer.md)          |
+| serve-sim network capture and redaction                                           | [LLP 0005](0005-serve-sim-network-capture.explainer.md)         |
+| How Simulator.app forwards scroll (reverse-engineered)                            | [LLP 0006](0006-serve-sim-scroll-injection.research.md)         |
+| serve-sim capability loader                                                       | [LLP 0007](0007-serve-sim-capability-loader.explainer.md)       |
+| serve-sim CLI startup and app readiness                                           | [LLP 0011](0011-serve-sim-session-startup.explainer.md) (Draft) |
+| serve-emu scrcpy framing, control packets, `SEMU` metadata                        | [LLP 0008](0008-serve-emu-protocol.spec.md)                     |
+| serve-emu hardware H.264 encoder spike                                            | [LLP 0009](0009-serve-emu-hardware-encoder-spike.research.md)   |
+| serve-sim clipboard: pasteboard API, Paste, Copy                                  | [LLP 0010](0010-serve-sim-clipboard.explainer.md)               |
+| Physical iPhones: listing, stream, feature gate, device end, one stream per phone | [LLP 0027](0027-physical-iphones.explainer.md) (Draft)          |
+| Hub UI rules and tokens                                                           | `packages/expo-device-hub/AGENTS.md`                            |
+| serve-sim commands, tests, definition of done                                     | `packages/serve-sim/AGENTS.md`, `packages/serve-sim/REVIEW.md`  |
+| serve-emu layout and auth                                                         | `packages/serve-emu/AGENTS.md`                                  |
+| Releases                                                                          | `RELEASING.md`                                                  |
 
 LLPs 0001–0009 were moved here from the package `docs/` folders and from `Sources/ServeSimCapabilityLoader/DESIGN.md`. Agent instructions, READMEs, and process docs stay in their packages.
 

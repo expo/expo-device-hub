@@ -523,6 +523,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     device: targetDevice = null,
     streamMode: requestedStreamMode,
     token = null,
+    startRequest = 0,
   } = options;
   const active = enabled && !!baseUrl;
   const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
@@ -606,6 +607,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const { activityStatus, setActivityStatus } = useActivityStatus(activityScope);
   const refreshConfigRef = useRef<(() => void) | null>(null);
   const applyPreviewConfigRef = useRef<((value: PreviewApi | null) => void) | null>(null);
+  const startEndedDeviceRef = useRef<(() => void) | null>(null);
+  const handledStartRequestRef = useRef(startRequest);
   const configUpdatesReadyRef = useRef(false);
   const streamCapabilities = config ? iosStreamCapabilities(config.initialStreamSettings) : null;
   const knownStreamCapabilities = knownConfig
@@ -1749,8 +1752,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const refresh = () => {
       void resolve();
     };
+    const startEndedDevice = () => {
+      if (cancelled || !endedReason) return;
+      endedReason = null;
+      streamedOrStarted = false;
+      startRequested = false;
+      setStatus("connecting");
+      setError(null);
+      refresh();
+    };
     refreshConfigRef.current = refresh;
     applyPreviewConfigRef.current = applyConfig;
+    startEndedDeviceRef.current = startEndedDevice;
     refresh();
 
     return () => {
@@ -1758,6 +1771,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (pollTimer) clearTimeout(pollTimer);
       if (refreshConfigRef.current === refresh) refreshConfigRef.current = null;
       if (applyPreviewConfigRef.current === applyConfig) applyPreviewConfigRef.current = null;
+      if (startEndedDeviceRef.current === startEndedDevice) startEndedDeviceRef.current = null;
     };
   }, [
     active,
@@ -1770,6 +1784,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setError,
     setStatus,
   ]);
+
+  useEffect(() => {
+    if (handledStartRequestRef.current === startRequest) return;
+    handledStartRequestRef.current = startRequest;
+    startEndedDeviceRef.current?.();
+  }, [startRequest]);
 
   // A replacement helper/session at the same URL still needs new video readers.
   const videoSessionKey = config

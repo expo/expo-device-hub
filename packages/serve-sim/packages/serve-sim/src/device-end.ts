@@ -25,9 +25,20 @@ export function deviceEndReason(end: NativeDeviceEnd): string {
 }
 
 const ended = new Map<string, string>();
+const endListeners = new Set<() => void>();
+
+export function subscribeDeviceEnds(listener: () => void): () => void {
+  endListeners.add(listener);
+  return () => endListeners.delete(listener);
+}
+
+function notifyDeviceEnds(): void {
+  for (const listener of endListeners) listener();
+}
 
 export function recordDeviceEnd(udid: string, reason: string): void {
   ended.set(udid.toUpperCase(), reason);
+  notifyDeviceEnds();
 }
 
 export class DeviceEndedError extends Error {}
@@ -39,7 +50,7 @@ export function refuseEndedDevice(udid: string): void {
 
 /** A new start of the device clears its end. */
 export function clearDeviceEnd(udid: string): void {
-  ended.delete(udid.toUpperCase());
+  if (ended.delete(udid.toUpperCase())) notifyDeviceEnds();
 }
 
 /**

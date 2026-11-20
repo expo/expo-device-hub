@@ -129,6 +129,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   } = useDashboardDevices(platform);
   const selectedId = useDashboardStore((state) => state.selectedDeviceId);
   const selectDevice = useDashboardStore((state) => state.selectDevice);
+  const deviceSelections = useDashboardStore((state) => state.deviceSelections);
   const reconcileSelectedDevice = useDashboardStore((state) => state.reconcileSelectedDevice);
   const streamModeAvailability = useMemo<StreamModeAvailability>(browserStreamModeAvailability, []);
   const streamMode = useDashboardStore((state) => state.streamMode);
@@ -231,7 +232,12 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   // model is shown and attaches them; the flat screen streams otherwise.
   const client = useActiveDeviceClient(
     connectionStatus === "connected" && selected
-      ? { platform: selected.platform, device: selected.id, streamMode }
+      ? {
+          platform: selected.platform,
+          device: selected.id,
+          streamMode,
+          startRequest: deviceSelections,
+        }
       : null,
     basePath(),
   );

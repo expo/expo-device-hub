@@ -124,8 +124,9 @@ async function renderClient(
   });
 
   let client!: DeviceClient;
+  let startRequest = 0;
   function Harness() {
-    client = useIosDeviceClient({ baseUrl: "/sim", device, streamMode: "mjpeg" });
+    client = useIosDeviceClient({ baseUrl: "/sim", device, streamMode: "mjpeg", startRequest });
     return null;
   }
   await act(async () => {
@@ -150,7 +151,20 @@ async function renderClient(
       }),
     );
   };
-  return Object.assign(() => client, { pushConfig, starts, sockets: () => sockets });
+  const selectAgain = async () => {
+    startRequest++;
+    await act(async () => renderer?.update(<Harness />));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  };
+  return Object.assign(() => client, {
+    pushConfig,
+    selectAgain,
+    starts,
+    sockets: () => sockets,
+    respondWith: (value: object | undefined) => {
+      response = value;
+    },
+  });
 }
 
 test("a physical iPhone reports every simulator feature as unavailable", async () => {
@@ -228,6 +242,48 @@ test("opening a phone whose last session ended starts a new one", async () => {
 
   expect(client.starts).toEqual([JSON.stringify({ udid: PHONE })]);
   expect(client().error).not.toBe("iPhone disconnected");
+});
+
+test("selecting an ended phone again starts it", async () => {
+  const client = await renderClient(PHONE, PHONE_UNAVAILABLE);
+  await client.pushConfig({ device: PHONE, ended: { reason: "iPhone disconnected" } });
+  client.respondWith({ device: PHONE, ended: { reason: "iPhone disconnected" } });
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  expect(client.starts).toEqual([]);
+
+  await client.selectAgain();
+
+  expect(client.starts).toEqual([JSON.stringify({ udid: PHONE })]);
+  expect(client().error).toBeNull();
+  expect(client().status).not.toBe("error");
+});
+
+test("selecting a streaming phone again neither starts nor reconnects it", async () => {
+  const client = await renderClient(PHONE, PHONE_UNAVAILABLE);
+  const socketsBefore = client.sockets().length;
+
+  await client.selectAgain();
+  await client.selectAgain();
+
+  expect(client.starts).toEqual([]);
+  expect(client.sockets().length).toBe(socketsBefore);
+  expect(client().error).toBeNull();
+});
+
+test("selecting a phone again after its start was refused asks once more", async () => {
+  const client = await renderClient(
+    PHONE,
+    PHONE_UNAVAILABLE,
+    {},
+    { status: 409, error: "needs Xcode 27" },
+  );
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  expect(client.starts).toHaveLength(1);
+
+  await client.selectAgain();
+
+  expect(client.starts).toHaveLength(2);
+  expect(client().error).toBe("needs Xcode 27");
 });
 
 test("a phone that cannot stream shows why its start was refused", async () => {

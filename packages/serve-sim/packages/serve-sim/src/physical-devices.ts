@@ -5,6 +5,7 @@ import { join } from "path";
 import { promisify } from "util";
 import { deviceKindOf } from "./device-features";
 import { physicalDeviceSupport } from "./native";
+import { physicalStreamHolder, physicalStreamInUseReason } from "./physical-stream-lock";
 
 const execFileAsync = promisify(execFile);
 
@@ -204,6 +205,8 @@ export function physicalStartRefusal(
 
 export async function physicalDeviceStartRefusal(udid: string): Promise<string | null> {
   if (deviceKindOf(udid) !== "physical") return null;
+  const holder = physicalStreamHolder(udid);
+  if (holder !== null) return physicalStreamInUseReason(holder);
   return physicalStartRefusal(udid, await listPhysicalDevices());
 }
 

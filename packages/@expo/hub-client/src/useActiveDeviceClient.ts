@@ -10,6 +10,7 @@ export interface ActiveDeviceTarget {
   device?: string | null;
   /** Explicit consumer-owned stream selection. */
   streamMode: DeviceConnectionOptions["streamMode"];
+  startRequest?: number;
 }
 
 export interface ActiveDeviceClientOptions {
@@ -37,6 +38,7 @@ export function useActiveDeviceClient(
     device: iosActive ? (target?.device ?? null) : null,
     streamMode: target?.streamMode as DeviceConnectionOptions["streamMode"],
     token,
+    startRequest: target?.startRequest,
   });
   const android = useAndroidDeviceClient({
     enabled: androidActive,

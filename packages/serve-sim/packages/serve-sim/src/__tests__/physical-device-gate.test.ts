@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { DeviceFeatureUnavailableError, runHostActionAsync } from "../host-actions";
 import { previewConfigForState, simMiddleware } from "../middleware";
-import { recordDeviceEnd } from "../device-end";
-import { clearServeSimState, inProcessServeSimState } from "../state";
+import { clearDeviceEnd, recordDeviceEnd } from "../device-end";
+import { rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { clearServeSimState, inProcessServeSimState, stateDir, stateFileForDevice } from "../state";
 
 const PHONE = "00008101-0016603236F0801E";
 const SIMULATOR = "C485D903-49A6-4A6D-A199-7893ACF635AE";
@@ -156,5 +158,100 @@ describe("a phone's lifecycle", () => {
     expect(config.device).toBe(PHONE);
     expect(config.deviceKind).toBe("physical");
     clearServeSimState(PHONE, process.pid);
+  });
+
+  test("discovery reports this server's end while another server publishes the phone", async () => {
+    const otherServer = process.ppid;
+    writeFileSync(
+      stateFileForDevice(PHONE),
+      JSON.stringify({ ...inProcessServeSimState(PHONE, 57665), pid: otherServer }),
+    );
+    recordDeviceEnd(PHONE, "iPhone disconnected");
+
+    const ended = await request(`/api?device=${PHONE}`);
+
+    expect(await ended.json()).toEqual({ device: PHONE, ended: { reason: "iPhone disconnected" } });
+    clearServeSimState(PHONE, otherServer);
+  });
+
+  test("the discovery feed reports the end while another server publishes the phone", async () => {
+    const otherServer = process.ppid;
+    writeFileSync(
+      stateFileForDevice(PHONE),
+      JSON.stringify({ ...inProcessServeSimState(PHONE, 57665), pid: otherServer }),
+    );
+    clearDeviceEnd(PHONE);
+    const controller = new AbortController();
+    const response = await request(`/api/events?device=${PHONE}`, { signal: controller.signal });
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    const nextPayload = async () => {
+      for (;;) {
+        const match = /data: (.*)\n\n/.exec(text);
+        if (match) {
+          text = text.slice(match.index + match[0].length);
+          return JSON.parse(match[1]!) as {
+            device?: string;
+            url?: string;
+            ended?: { reason: string };
+          };
+        }
+        const { value, done } = await reader.read();
+        if (done) throw new Error("The feed closed");
+        text += decoder.decode(value, { stream: true });
+      }
+    };
+    try {
+      expect((await nextPayload()).url).toBeDefined();
+      await Bun.sleep(600);
+
+      recordDeviceEnd(PHONE, "iPhone disconnected");
+
+      const ended = await Promise.race([nextPayload(), Bun.sleep(2_000).then(() => null)]);
+      expect(ended).toEqual({ device: PHONE, ended: { reason: "iPhone disconnected" } });
+    } finally {
+      controller.abort();
+      await reader.cancel().catch(() => {});
+      clearServeSimState(PHONE, otherServer);
+    }
+  });
+
+  test("starting a phone that another server streams answers 409 with the reason", async () => {
+    const lock = join(stateDir(), `physical-stream-${PHONE}.lock`);
+    writeFileSync(lock, String(process.ppid));
+    try {
+      const started = await request("/grid/api/start", {
+        method: "POST",
+        body: JSON.stringify({ udid: PHONE }),
+      });
+
+      expect(started.status).toBe(409);
+      expect(await started.json()).toEqual({
+        ok: false,
+        error: `iPhone is streaming in another serve-sim (pid ${process.ppid})`,
+      });
+    } finally {
+      rmSync(lock, { force: true });
+    }
+  });
+
+  test("discovery offers no proxied config for a phone that another server streams", async () => {
+    const lock = join(stateDir(), `physical-stream-${PHONE}.lock`);
+    const otherServer = process.ppid;
+    writeFileSync(
+      stateFileForDevice(PHONE),
+      JSON.stringify({ ...inProcessServeSimState(PHONE, 3398), pid: otherServer }),
+    );
+    writeFileSync(lock, String(otherServer));
+    clearDeviceEnd(PHONE);
+    try {
+      const response = await request(`/api?device=${PHONE}`);
+
+      expect(await response.json()).toBeNull();
+    } finally {
+      rmSync(lock, { force: true });
+      clearServeSimState(PHONE, otherServer);
+    }
   });
 });

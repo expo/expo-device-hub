@@ -820,6 +820,7 @@ export interface DeviceConnectionOptions {
    * it: its cookie covers every request.
    */
   token?: string | null;
+  startRequest?: number;
 }
 
 /** Which element the implementation paints into. */

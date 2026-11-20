@@ -1,19 +1,27 @@
 import { expect, mock, test } from "bun:test";
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import * as native from "../../native";
 import * as ui from "../../ui-settings";
-import { inProcessServeSimState, stateFileForDevice, writeServeSimState } from "../../state";
+import {
+  inProcessServeSimState,
+  stateDir,
+  stateFileForDevice,
+  writeServeSimState,
+} from "../../state";
 
 const PHONE = "00008101-0016603236F0801E";
 const INPUT_PHONE = "00008101-0000000000000002";
 const VIEWED_PHONE = "00008101-0000000000000003";
 const SIMULATOR = "00000000-0000-0000-0000-000000000444";
+const BUSY_PHONE = "00008101-0000000000000004";
 
 const endListeners = new Map<string, (json: string) => Promise<void>>();
 let nativeStops = 0;
+const nativeStarts: string[] = [];
 let deviceOptionReads: string[] = [];
 const kinds: Array<{ udid: string; hid?: string; capture?: string }> = [];
 const hidCalls: string[] = [];
@@ -70,7 +78,9 @@ class Capture {
   ) {
     kinds.push({ udid, capture: kind });
   }
-  async start() {}
+  async start() {
+    nativeStarts.push(this.udid);
+  }
   async stop() {
     nativeStops++;
   }
@@ -243,4 +253,27 @@ test("a simulator's session does not wait for a device end", async () => {
   expect(endListeners.has(SIMULATOR)).toBe(false);
   expect(deviceOptionReads).toEqual([SIMULATOR]);
   await session.close();
+});
+
+test("a phone that another server streams is refused before its capture starts", async () => {
+  const lock = join(stateDir(), `physical-stream-${BUSY_PHONE}.lock`);
+  writeFileSync(lock, String(process.ppid));
+  try {
+    await expect(startDeviceSession(BUSY_PHONE, undefined)).rejects.toThrow(
+      `iPhone is streaming in another serve-sim (pid ${process.ppid})`,
+    );
+    expect(nativeStarts).not.toContain(BUSY_PHONE);
+    expect(peekDeviceSession(BUSY_PHONE)).toBeUndefined();
+  } finally {
+    rmSync(lock, { force: true });
+  }
+});
+
+test("a phone's session holds its stream until it closes", async () => {
+  const lock = join(stateDir(), `physical-stream-${BUSY_PHONE}.lock`);
+  const session = await startDeviceSession(BUSY_PHONE, undefined);
+
+  expect(readFileSync(lock, "utf8")).toBe(String(process.pid));
+  await session.close();
+  expect(existsSync(lock)).toBe(false);
 });

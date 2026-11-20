@@ -126,7 +126,9 @@ import {
   WS_CLOSE_DEVICE_ENDED,
   clearDeviceEnd,
   deviceEndConfig,
+  subscribeDeviceEnds,
 } from "./device-end";
+import { physicalStreamHolder } from "./physical-stream-lock";
 import {
   gridRowForPhysical,
   listPhysicalDevices,
@@ -435,6 +437,14 @@ function getPreferredDeviceUdid(): string | null {
   }
   preferredSnapshot = { at: now, udid };
   return udid;
+}
+
+function servedHere<State extends { device: string }>(
+  state: State | null | undefined,
+  proxyHelpers: boolean | undefined,
+): State | null {
+  if (!state) return null;
+  return proxyHelpers && physicalStreamHolder(state.device) !== null ? null : state;
 }
 
 export async function readServeSimStates(device?: string): Promise<ServeSimState[]> {
@@ -2818,7 +2828,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // JSON API: serve-sim state
     if (url === base + "/api") {
       const states = await readServeSimStates(policy?.device);
-      const state = selectServeSimState(states, selectedDevice);
+      const ended = deviceEndConfig(selectedDevice);
+      const state = ended
+        ? null
+        : servedHere(selectServeSimState(states, selectedDevice), proxyHelpers);
       if (state && !awaitingAdoption) void initializeClipboard(state.device);
       // The web UI polls /api every ~2s, so logging every hit floods the
       // debug stream with identical lines. Only log when the selection
@@ -2862,7 +2875,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 disableShare,
                 policy?.device,
               )
-            : deviceEndConfig(selectedDevice),
+            : ended,
         ),
       );
       return;
@@ -3200,7 +3213,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (url === base + "/api/events") {
       const computeConfig = async (): Promise<string> => {
         const states = await readServeSimStates(policy?.device);
-        const state = selectServeSimState(states, selectedDevice);
+        const ended = deviceEndConfig(selectedDevice);
+        const state = ended
+          ? null
+          : servedHere(selectServeSimState(states, selectedDevice), proxyHelpers);
         if (state && !awaitingAdoption) void initializeClipboard(state.device);
         const remoteState = state
           ? rewriteStateForRequestHost(
@@ -3224,7 +3240,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 disableShare,
                 policy?.device,
               )
-            : deviceEndConfig(selectedDevice),
+            : ended,
         );
       };
 
@@ -3243,12 +3259,14 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       let watcher: FSWatcher | null = null;
       let watcherRetry: ReturnType<typeof setTimeout> | null = null;
       let heartbeat: ReturnType<typeof setInterval> | null = null;
+      let unsubscribeEnds: (() => void) | null = null;
       req.on("close", () => {
         closed = true;
         if (debounce) clearTimeout(debounce);
         if (watcherRetry) clearTimeout(watcherRetry);
         if (heartbeat) clearInterval(heartbeat);
         watcher?.close();
+        unsubscribeEnds?.();
       });
 
       let lastSent = await computeConfig();
@@ -3293,6 +3311,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         }, 250);
       };
       ensureWatcher();
+      unsubscribeEnds = subscribeDeviceEnds(onFsEvent);
 
       // Keep the connection alive through buffering proxies + catch any change
       // an fs event missed (e.g. dir created after we failed to watch it).
