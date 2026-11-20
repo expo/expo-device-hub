@@ -117,6 +117,7 @@ import {
 } from "./device-session";
 import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "./stop-process";
 import { captureHarPaths, followCaptureHar } from "./capture";
+import { buttonFeature, deviceFeatureRefusal } from "./device-features";
 
 // Budget for capture teardown and capability disarming together.
 const SHUTDOWN_TIMEOUT_MS = 20_000;
@@ -1139,6 +1140,11 @@ async function button(buttonName = "home", deviceArg?: string) {
     process.exit(1);
   }
 
+  const refusal = deviceFeatureRefusal(state.device, buttonFeature(buttonName));
+  if (refusal) {
+    console.error(refusal);
+    process.exit(1);
+  }
   const hid = HID_BUTTON_CODES[buttonName];
   const payload = hid ? { button: buttonName, ...hid } : { button: buttonName };
 
@@ -1969,6 +1975,7 @@ async function serve(
         options.stream,
         previewToken,
         async () => {
+          if (deviceFeatureRefusal(udid, "appInjection")) return;
           await disarmStaleCapabilityLoader(udid);
           signal?.throwIfAborted();
           await armCapabilityLoader(udid);

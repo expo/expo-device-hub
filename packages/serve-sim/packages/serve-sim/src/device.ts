@@ -44,7 +44,10 @@ export function resolveDevice(nameOrUDID: string): string {
 
 /** All matching simulator UDIDs, so callers targeting existing streams can check live state. */
 export function resolveDeviceMatches(nameOrUDID: string): string[] {
-  if (/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID)) {
+  if (
+    /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID) ||
+    deviceKindOf(nameOrUDID) === "physical"
+  ) {
     return [nameOrUDID.toUpperCase()];
   }
   const matches: string[] = [];

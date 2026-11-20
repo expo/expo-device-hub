@@ -1155,9 +1155,11 @@ function AppWithConfig({
   // A hardware button on the device chrome was pressed/released. Forward its HID
   // (page, usage) so the helper injects it via arbitrary HID — `down`/`up` phases
   // let power / side buttons be held for their long-press menus.
+  const hardwareButtonsUnavailable = !!config.unavailableFeatures?.hardwareButtons;
   const handleChromeButton = useCallback(
     ({ phase, button }: ChromeButtonPress) => {
       if (button.usagePage == null || button.usage == null) return;
+      if (hardwareButtonsUnavailable) return;
       sendWs(0x04, {
         button: button.name,
         page: button.usagePage,
@@ -1165,7 +1167,7 @@ function AppWithConfig({
         phase,
       });
     },
-    [sendWs],
+    [hardwareButtonsUnavailable, sendWs],
   );
   const onStreamDigitalCrown = useCallback((delta: number) => sendWs(0x0a, { delta }), [sendWs]);
   const onStreamScroll = useCallback(

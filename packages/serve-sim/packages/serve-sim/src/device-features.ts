@@ -26,6 +26,7 @@ export const DEVICE_FEATURES = {
   activity: { subject: "Activity metrics", plural: true },
   hinge: { subject: "Hinge controls", plural: true },
   rotate: { subject: "Rotate", plural: false },
+  hardwareButtons: { subject: "Hardware buttons other than Home", plural: true },
   lifecycle: { subject: "Booting and shutting down", plural: true },
 } as const satisfies Record<string, { subject: string; plural: boolean }>;
 
@@ -70,6 +71,16 @@ export function deviceFeatureRefusal(
   if (!device || !feature) return null;
   const kind = deviceKindOf(device);
   return AVAILABLE[kind](feature) ? null : reason(feature, kind);
+}
+
+const HOME_BUTTONS = new Set(["home", "swipe_home"]);
+
+/**
+ * The feature a hardware button needs. Every device has Home: a physical device sends it as the
+ * swipe up from the bottom edge. Power, volume, the action button and the rest are simulator HID.
+ */
+export function buttonFeature(button: string | undefined): DeviceFeature | null {
+  return button !== undefined && HOME_BUTTONS.has(button) ? null : "hardwareButtons";
 }
 
 const ROUTE_FEATURES: ReadonlyArray<[match: (path: string) => boolean, feature: DeviceFeature]> = [

@@ -6,13 +6,47 @@ import * as ui from "../../ui-settings";
 import { inProcessServeSimState, stateFileForDevice, writeServeSimState } from "../../state";
 
 const PHONE = "00008101-0016603236F0801E";
+const INPUT_PHONE = "00008101-0000000000000002";
 const SIMULATOR = "00000000-0000-0000-0000-000000000444";
 
-const endListeners: Array<(json: string) => Promise<void>> = [];
+const endListeners = new Map<string, (json: string) => Promise<void>>();
 let nativeStops = 0;
 let deviceOptionReads: string[] = [];
+const kinds: Array<{ udid: string; hid?: string; capture?: string }> = [];
+const hidCalls: string[] = [];
 
 class Hid {
+  inputUnavailable = false;
+  keyboardUnavailable = false;
+  constructor(udid: string, kind: string) {
+    kinds.push({ udid, hid: kind });
+  }
+  async button(name: string) {
+    hidCalls.push(`button ${name}`);
+  }
+  async buttonHid(page: number, usage: number) {
+    hidCalls.push(`buttonHid ${page}/${usage}`);
+  }
+  async orientation(value: number) {
+    hidCalls.push(`orientation ${value}`);
+    return true;
+  }
+  async caDebug() {
+    hidCalls.push("caDebug");
+    return true;
+  }
+  async memoryWarning() {
+    hidCalls.push("memoryWarning");
+  }
+  async digitalCrown() {
+    hidCalls.push("digitalCrown");
+  }
+  async softwareKeyboard() {
+    hidCalls.push("softwareKeyboard");
+  }
+  async touch(type: string) {
+    hidCalls.push(`touch ${type}`);
+  }
   async setScreen() {}
   async supportsHingeAngle() {
     return false;
@@ -25,6 +59,14 @@ class Hid {
   }
 }
 class Capture {
+  constructor(
+    private readonly udid: string,
+    _options: unknown,
+    _screenId: unknown,
+    kind: string,
+  ) {
+    kinds.push({ udid, capture: kind });
+  }
   async start() {}
   async stop() {
     nativeStops++;
@@ -36,11 +78,11 @@ class Capture {
     return async () => {};
   }
   async subscribeEnd(onEnd: (end: { reason: string }) => Promise<void>) {
-    endListeners.push((json) => onEnd(JSON.parse(json)));
+    endListeners.set(this.udid, (json) => onEnd(JSON.parse(json)));
     return async () => {};
   }
   async screenSize() {
-    return { width: 1170, height: 2532, screenId: 1, orientation: "portrait" };
+    return { width: 1170, height: 2532, screenId: 1, orientation: "portrait", framesUpright: true };
   }
 }
 mock.module("../../native", () => ({ ...native, NativeHid: Hid, NativeCapture: Capture }));
@@ -55,7 +97,10 @@ const { deviceEndConfig } = await import("../../device-end");
 
 class Socket extends EventEmitter {
   closed?: { code?: number; reason?: string };
-  send() {}
+  sent: Buffer[] = [];
+  send(data: Buffer) {
+    this.sent.push(Buffer.from(data));
+  }
   close(code?: number, reason?: string) {
     this.closed = { code, reason };
     this.emit("close");
@@ -66,17 +111,72 @@ async function settle() {
   for (let i = 0; i < 5; i++) await Bun.sleep(5);
 }
 
+function message(tag: number, body?: unknown): Buffer {
+  return body === undefined
+    ? Buffer.from([tag])
+    : Buffer.concat([Buffer.from([tag]), Buffer.from(JSON.stringify(body))]);
+}
+
+test("a phone's session opens physical capture and HID", async () => {
+  const session = getDeviceSession(INPUT_PHONE);
+  await session.start();
+  await settle();
+
+  expect(kinds.filter((kind) => kind.udid === INPUT_PHONE)).toEqual([
+    { udid: INPUT_PHONE, hid: "physical" },
+    { udid: INPUT_PHONE, capture: "physical" },
+  ]);
+});
+
+test("a phone takes touch and Home, and ignores simulator-only input", async () => {
+  const session = getDeviceSession(INPUT_PHONE);
+  await session.start();
+  const socket = new Socket();
+  session.attachHidSocket(socket as never);
+  await settle();
+  hidCalls.length = 0;
+
+  for (const input of [
+    message(0x03, { type: "begin", x: 0.5, y: 0.5 }),
+    message(0x03, { type: "end", x: 0.5, y: 0.5 }),
+    message(0x04, { button: "home" }),
+    message(0x04, { button: "lock" }),
+    message(0x04, { button: "power", page: 12, usage: 48, phase: "press" }),
+    message(0x07, { orientation: "landscape_left" }),
+    message(0x08, { option: "debug_color_blended", enabled: true }),
+    message(0x09),
+    message(0x0a, { delta: 1 }),
+    message(0x0c),
+    message(0x0e, { enabled: false }),
+  ]) {
+    socket.emit("message", input);
+    await settle();
+  }
+  socket.emit("message", message(0x12, { requestId: 7, text: "hello" }));
+  await settle();
+
+  expect(hidCalls).toEqual(["touch begin", "touch end", "button home"]);
+  const reply = socket.sent.find((frame) => frame[0] === 0x92);
+  expect(JSON.parse(reply!.subarray(1).toString())).toEqual({
+    requestId: 7,
+    ok: false,
+    error: "Clipboard is not available on a physical device.",
+  });
+  await session.close();
+});
+
 test("a disconnected phone ends its session with the reason", async () => {
+  nativeStops = 0;
   writeServeSimState(inProcessServeSimState(PHONE, 3200));
   const session = getDeviceSession(PHONE);
   await session.start();
   const socket = new Socket();
   session.attachHidSocket(socket as never);
   await settle();
-  expect(endListeners).toHaveLength(1);
+  expect(endListeners.has(PHONE)).toBe(true);
   expect(deviceOptionReads).toEqual([]);
 
-  await endListeners[0]!(JSON.stringify({ reason: "device-disconnected" }));
+  await endListeners.get(PHONE)!(JSON.stringify({ reason: "device-disconnected" }));
   await settle();
 
   expect(socket.closed).toEqual({ code: 4410, reason: "iPhone disconnected" });
@@ -90,13 +190,12 @@ test("a disconnected phone ends its session with the reason", async () => {
 });
 
 test("a simulator's session does not wait for a device end", async () => {
-  endListeners.length = 0;
   deviceOptionReads = [];
   const session = getDeviceSession(SIMULATOR);
   await session.start();
   await settle();
 
-  expect(endListeners).toHaveLength(0);
+  expect(endListeners.has(SIMULATOR)).toBe(false);
   expect(deviceOptionReads).toEqual([SIMULATOR]);
   await session.close();
 });

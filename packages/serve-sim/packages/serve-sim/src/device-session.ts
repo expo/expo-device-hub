@@ -1,4 +1,10 @@
-import { deviceFeatureRefusal } from "./device-features";
+import {
+  buttonFeature,
+  deviceFeatureRefusal,
+  deviceKindOf,
+  type DeviceFeature,
+  type DeviceKind,
+} from "./device-features";
 import { WS_CLOSE_DEVICE_ENDED, deviceEndReason, recordDeviceEnd } from "./device-end";
 import { clearServeSimState } from "./state";
 import { createSerialQueue, withHostActionDeadline } from "./host-actions-utils";
@@ -335,6 +341,7 @@ export class DeviceSession {
   private unsubscribeScreenChanges?: NativeUnsubscribe;
   private unsubscribeDeviceState?: NativeUnsubscribe;
   private unsubscribeEnd?: NativeUnsubscribe;
+  private readonly kind: DeviceKind;
   /** Set when the device went away; viewers' input sockets close with it. */
   private endReason?: string;
   private deviceStateObservationStarted = false;
@@ -408,8 +415,9 @@ export class DeviceSession {
     const streamSettings = streamControlSettingsFrom(initialStreamSettings);
     this.transport = streamSettings.transport;
     this.encoderSettings = streamEncoderSettingsFrom(streamSettings);
-    this.hid = new NativeHid(udid);
-    this.capture = new NativeCapture(udid, this.encoderSettings);
+    this.kind = deviceKindOf(udid);
+    this.hid = new NativeHid(udid, this.kind);
+    this.capture = new NativeCapture(udid, this.encoderSettings, undefined, this.kind);
     this.activeHidKeyUsages.set(this.serverInput, new Set());
   }
 
@@ -522,6 +530,11 @@ export class DeviceSession {
       });
   }
 
+  /** A physical device lacks the simulator-only features; see device-features.ts. */
+  private lacks(feature: DeviceFeature | null): boolean {
+    return deviceFeatureRefusal(this.udid, feature) !== null;
+  }
+
   /** Record why the device went away; `close` then tells every viewer. */
   markEnded(reason: string): boolean {
     if (this.phase !== "running" || this.endReason !== undefined) return false;
@@ -594,7 +607,7 @@ export class DeviceSession {
     if (this.phase !== "running" || !this.rebootSuspended) return;
     await this.capture.resumeAfterReboot();
     if (this.phase !== "running") return;
-    this.hid = new NativeHid(this.udid);
+    this.hid = new NativeHid(this.udid, this.kind);
     this.softwareKeyboardHidden = false;
     await this.refreshScreenSizeFromNative();
     if (this.phase !== "running") return;
@@ -1684,6 +1697,12 @@ export class DeviceSession {
       case 0x04: {
         const m = json<{ button: string; page?: number; usage?: number; phase?: string }>();
         if (!m) break;
+        if (
+          this.lacks(
+            m.page != null && m.usage != null ? "hardwareButtons" : buttonFeature(m.button),
+          )
+        )
+          break;
         this.recordHidEvent(tag, m);
         if (m.page != null && m.usage != null) {
           await this.hid.buttonHid(
@@ -1754,6 +1773,7 @@ export class DeviceSession {
             if (
               m.type === "down" &&
               !supportsHingeAngle &&
+              !this.lacks("deviceSettings") &&
               character !== undefined &&
               needsCharacter
             ) {
@@ -1780,7 +1800,7 @@ export class DeviceSession {
       }
       case 0x07: {
         const m = json<{ orientation: string; deviceOrientation?: unknown }>();
-        if (!m) break;
+        if (!m || this.lacks("rotate")) break;
         const generation = this.inputGeneration;
         const operation = this.hingeControlUpdate.then(async () => {
           const value = ORIENTATION_BY_NAME[m.orientation];
@@ -1832,19 +1852,20 @@ export class DeviceSession {
       }
       case 0x08: {
         const m = json<{ option: string; enabled: boolean }>();
-        if (m) {
+        if (m && !this.lacks("deviceSettings")) {
           this.recordHidEvent(tag, m);
           await this.hid.caDebug(m.option, m.enabled);
         }
         break;
       }
       case 0x09:
+        if (this.lacks("deviceSettings")) break;
         this.recordHidEvent(tag, {});
         await this.hid.memoryWarning();
         break;
       case 0x0a: {
         const m = json<{ delta: number }>();
-        if (m) {
+        if (m && !this.lacks("hardwareButtons")) {
           this.recordHidEvent(tag, m);
           await this.hid.digitalCrown(m.delta);
         }
@@ -1884,12 +1905,13 @@ export class DeviceSession {
         break;
       }
       case 0x0c:
+        if (this.lacks("deviceSettings")) break;
         this.recordHidEvent(tag, {});
         await this.queueSoftwareKeyboardSync("toggle", ws);
         break;
       case 0x0d: {
         const m = json<{ visible?: unknown }>();
-        if (typeof m?.visible === "boolean") {
+        if (typeof m?.visible === "boolean" && !this.lacks("deviceSettings")) {
           this.recordHidEvent(tag, m);
           await this.queueSoftwareKeyboardSync(m.visible, ws);
         }
@@ -1899,7 +1921,7 @@ export class DeviceSession {
         // A touch client disconnects the hardware keyboard so the guest shows
         // its on-screen keyboard; desktop clients never send this.
         const m = json<{ enabled: boolean }>();
-        if (m) {
+        if (m && !this.lacks("deviceSettings")) {
           this.recordHidEvent(tag, m);
           const operation = this.queueInputOperation(ws, async () => {
             if (!this.hidSockets.has(ws)) return;
@@ -2066,8 +2088,10 @@ export class DeviceSession {
         const requestId = m?.requestId;
         let ok = false;
         let cleanupWarning: string | null = null;
-        let pasteError = "Could not paste into the simulator";
+        const clipboardRefusal = deviceFeatureRefusal(this.udid, "clipboard");
+        let pasteError = clipboardRefusal ?? "Could not paste into the simulator";
         if (
+          !clipboardRefusal &&
           m &&
           typeof requestId === "number" &&
           Number.isSafeInteger(requestId) &&

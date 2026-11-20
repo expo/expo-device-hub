@@ -79,12 +79,26 @@ describe("host actions a physical device does not have", () => {
     ["hinge.get", { udid: PHONE }, "Hinge controls are not available"],
     ["rotate", { udid: PHONE, value: "landscape" }, "Rotate is not available"],
     ["clipboard.read", { udid: PHONE }, "Clipboard is not available"],
+    [
+      "button",
+      { udid: PHONE, value: "lock" },
+      "Hardware buttons other than Home are not available",
+    ],
   ])("%s refuses before running anything", async (action, params, reason) => {
     const run = runHostActionAsync({ action, params }, "/nonexistent/serve-sim");
 
     await expect(run).rejects.toBeInstanceOf(DeviceFeatureUnavailableError);
     await expect(run).rejects.toThrow(reason);
   });
+});
+
+test("a physical device's Home button goes past the gate", async () => {
+  const run = runHostActionAsync(
+    { action: "button", params: { udid: PHONE, value: "home" } },
+    "/nonexistent/serve-sim",
+  );
+
+  await expect(run).resolves.toHaveProperty("exitCode");
 });
 
 describe("preview config", () => {
@@ -95,7 +109,7 @@ describe("preview config", () => {
     expect(config.unavailableFeatures.location).toBe(
       "Location is not available on a physical device.",
     );
-    expect(Object.keys(config.unavailableFeatures)).toHaveLength(14);
+    expect(Object.keys(config.unavailableFeatures)).toHaveLength(15);
     expect(config.inputPaste).toBeUndefined();
     expect(config.inputCopy).toBeUndefined();
   });

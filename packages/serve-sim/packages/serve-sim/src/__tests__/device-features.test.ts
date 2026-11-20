@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEVICE_FEATURES,
+  buttonFeature,
   deviceKindOf,
   deviceFeatureRefusal,
   helperRouteFeature,
@@ -27,6 +28,19 @@ describe("deviceKindOf", () => {
   });
 });
 
+describe("buttonFeature", () => {
+  test("every device has Home; other buttons are hardware buttons", () => {
+    expect(buttonFeature("home")).toBeNull();
+    expect(buttonFeature("swipe_home")).toBeNull();
+    expect(buttonFeature("lock")).toBe("hardwareButtons");
+    expect(buttonFeature(undefined)).toBe("hardwareButtons");
+    expect(deviceFeatureRefusal(PHONE, buttonFeature("lock"))).toBe(
+      "Hardware buttons other than Home are not available on a physical device.",
+    );
+    expect(deviceFeatureRefusal(SIMULATOR, buttonFeature("lock"))).toBeNull();
+  });
+});
+
 describe("unavailableDeviceFeatures", () => {
   test("a simulator has every feature", () => {
     expect(unavailableDeviceFeatures(SIMULATOR)).toEqual({});
@@ -50,6 +64,7 @@ describe("unavailableDeviceFeatures", () => {
       "deviceSettings",
       "devtools",
       "foregroundApp",
+      "hardwareButtons",
       "hinge",
       "lifecycle",
       "location",

@@ -431,6 +431,7 @@ type IosDeviceFeature =
   | "activity"
   | "hinge"
   | "rotate"
+  | "hardwareButtons"
   | "lifecycle";
 
 /** Shape of the serve-sim middleware `/api` (and grid) responses we read. */
@@ -1172,9 +1173,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const pressButton = useCallback(
     (button: HardwareButton) => {
       const name = BUTTON_NAME[button];
-      if (name) sendWs(WS_MSG_BUTTON, { button: name });
+      if (!name) return;
+      if (name !== "home" && config?.unavailableFeatures.hardwareButtons) return;
+      sendWs(WS_MSG_BUTTON, { button: name });
     },
-    [sendWs],
+    [config, sendWs],
   );
 
   // Reload the RN/Expo bundle by injecting ⌘R over the helper's key channel

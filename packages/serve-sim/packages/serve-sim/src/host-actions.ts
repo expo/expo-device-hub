@@ -8,7 +8,7 @@ import { installAppAsync } from "./app-install";
 import { AppRelativePath, runAppFileAction } from "./app-files";
 
 import { CAPTURE_FIELDS } from "./capture/fields";
-import { type DeviceFeature, deviceFeatureRefusal } from "./device-features";
+import { type DeviceFeature, buttonFeature, deviceFeatureRefusal } from "./device-features";
 
 import {
   type HostActionResult,
@@ -564,6 +564,11 @@ const HOST_ACTION_FEATURES: Record<HostActionName, DeviceFeature | null> = {
 /** The device feature `action` needs, or null when every device has it or the action is unknown. */
 export function hostActionFeature(action: string): DeviceFeature | null {
   return isHostActionName(action) ? HOST_ACTION_FEATURES[action] : null;
+}
+
+function buttonValue(params: unknown): string | undefined {
+  if (typeof params !== "object" || params === null || !("value" in params)) return undefined;
+  return typeof params.value === "string" ? params.value : undefined;
 }
 
 function targetDevice(params: unknown): string | null {
@@ -1180,7 +1185,10 @@ export async function runHostActionAsync(
     throw new InvalidHostActionError(`unknown action ${String(action)}`);
   }
   // @ref LLP 0020#feature-gate — refuse before simctl reports a confusing failure
-  const refusal = deviceFeatureRefusal(targetDevice(params), HOST_ACTION_FEATURES[action]);
+  const refusal = deviceFeatureRefusal(
+    targetDevice(params),
+    action === "button" ? buttonFeature(buttonValue(params)) : HOST_ACTION_FEATURES[action],
+  );
   if (refusal) throw new DeviceFeatureUnavailableError(refusal);
   let result: HostActionResult;
   if (action === "app.install") {

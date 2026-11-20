@@ -32,6 +32,7 @@ const PHONE_UNAVAILABLE = Object.fromEntries(
     "activity",
     "hinge",
     "rotate",
+    "hardwareButtons",
     "lifecycle",
   ].map((feature) => [feature, `${feature} is not available on a physical device.`]),
 );
