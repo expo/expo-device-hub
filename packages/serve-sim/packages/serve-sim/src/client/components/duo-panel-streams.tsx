@@ -21,6 +21,7 @@ interface DuoPanelStreamsProps {
   streamUrl: string;
   mode: SimulatorStreamMode;
   activeScreenId?: number;
+  playbackOverlayTarget?: HTMLElement | null;
   codec: WebRtcCodec;
   iceServers?: IceServer[];
   transportLocked?: boolean;
@@ -79,6 +80,7 @@ function DuoPanelStream({
   streamUrl,
   mode,
   activeScreenId,
+  playbackOverlayTarget,
   codec,
   iceServers,
   transportLocked,
@@ -176,6 +178,7 @@ function DuoPanelStream({
         onStreamingChange={setStreaming}
         onStreamTouch={ignoreSourceTouch}
         hideControls
+        playbackOverlayTarget={activeScreenId === screenId ? playbackOverlayTarget : null}
       />
     </div>
   );
