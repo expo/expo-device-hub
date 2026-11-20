@@ -1190,7 +1190,7 @@ export async function runHostActionAsync(
   if (typeof action !== "string" || !isHostActionName(action)) {
     throw new InvalidHostActionError(`unknown action ${String(action)}`);
   }
-  // @ref LLP 0020#feature-gate — refuse before simctl reports a confusing failure
+  // @ref LLP 0027#feature-gate — refuse before simctl reports a confusing failure
   const refusal = deviceFeatureRefusal(
     targetDevice(params),
     action === "button" ? buttonFeature(buttonValue(params)) : HOST_ACTION_FEATURES[action],

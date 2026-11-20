@@ -1,1 +1,0 @@
-../0020-physical-ios-devices.spec.md

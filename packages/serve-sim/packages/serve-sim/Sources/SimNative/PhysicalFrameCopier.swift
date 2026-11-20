@@ -48,7 +48,7 @@ struct PhysicalFrameCopier {
             poolDrops &+= 1
             return nil
         }
-        // @ref LLP 0026#cropping-and-scaling — pixel transfer has no source crop; a clean aperture anchors the crop top-left.
+        // @ref LLP 0027#cropping-and-scaling — pixel transfer has no source crop; a clean aperture anchors the crop top-left.
         CVBufferSetAttachment(source, kCVImageBufferCleanApertureKey,
                               Self.cleanAperture(content: content, encoded: source.dimensions) as CFDictionary,
                               .shouldNotPropagate)

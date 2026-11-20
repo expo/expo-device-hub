@@ -1552,7 +1552,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             ? middlewareEndpointForBrowser(path, middlewareUrl, basePath)
             : new URL(path, middlewareUrl).toString()
           : null;
-      // @ref LLP 0020#feature-gate — serve-sim decides; a feature it reports unavailable is never asked for
+      // @ref LLP 0027#feature-gate — serve-sim decides; a feature it reports unavailable is never asked for
       const unavailable = c.unavailableFeatures ?? {};
       const appStateUrl = unavailable.foregroundApp
         ? null
@@ -1615,7 +1615,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       revision++;
       if (pollTimer) clearTimeout(pollTimer);
       pollTimer = null;
-      // @ref LLP 0020#device-end — a session whose device went away ends with the reason, as in serve-emu
+      // @ref LLP 0027#device-end — a session whose device went away ends with the reason, as in serve-emu
       const ended = !next ? value?.ended?.reason : undefined;
       if (ended && (streamedOrStarted || startRequested)) {
         current = null;
@@ -2255,8 +2255,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       wsUrl,
       {
         onAdmitted() {
-          // Keep main's software-character path active for browser-layout typing. A device
-          // without simulator settings, a phone, has no such setting.
+          // Keep main's software-character path active for browser-layout typing.
           if (!deviceSettingsUnavailableRef.current) {
             if (!input.trySend(WS_MSG_HARDWARE_KEYBOARD, { enabled: false })) return false;
             hardwareKeyboardIntentRef.current = { pending: false };

@@ -264,7 +264,7 @@ final class CoreDeviceMediaStreamReceiveLoop: @unchecked Sendable {
         return nil
     }
 
-    // @ref LLP 0026#ending-device-disconnected — the phone streams continuously, so silence means it went away.
+    // @ref LLP 0027#ending-device-disconnected — the phone streams continuously, so silence means it went away.
     private func silenceCause(now: TimeInterval) -> String? {
         let silence = now - lastDatagram
         if silence >= Self.silenceLimit { return String(format: "no packets for %.1f s", silence) }

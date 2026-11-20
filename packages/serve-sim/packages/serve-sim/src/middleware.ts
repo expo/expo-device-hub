@@ -2243,7 +2243,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     }
 
     const helperTarget = helperProxyTarget(rawUrl, helperPrefix);
-    // @ref LLP 0020#feature-gate — one refusal for every route a physical device lacks
+    // @ref LLP 0027#feature-gate — one refusal for every route a physical device lacks
     const featureRefusal = helperTarget
       ? deviceFeatureRefusal(
           helperTarget.device ?? selectedDevice,

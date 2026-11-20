@@ -82,7 +82,7 @@ export function ToolsPanel({
   /** Each feature this device does not have, with the reason, from the preview config. */
   unavailableFeatures?: Partial<Record<string, string>>;
 }) {
-  // @ref LLP 0020#feature-gate — serve-sim's config decides; a tool the device lacks says why
+  // @ref LLP 0027#feature-gate — serve-sim's config decides; a tool the device lacks says why
   const tool = (feature: string, title: string, element: ReactNode) => {
     const reason = unavailableFeatures[feature];
     return reason ? <UnavailableTool title={title} reason={reason} /> : element;
