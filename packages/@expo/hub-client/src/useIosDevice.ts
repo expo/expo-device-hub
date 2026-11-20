@@ -537,6 +537,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   } | null>(null);
   const connection = resolvedConfig?.key === connectionScope ? resolvedConfig : null;
   const config = connection?.config ?? null;
+  const deviceSettingsUnavailableRef = useRef(false);
+  deviceSettingsUnavailableRef.current = !!config?.unavailableFeatures.deviceSettings;
   // @ref LLP 0015#temporary-drops — a helper restart keeps the stream mode and the device it showed
   // While a helper restarts, `/api` has no config for the same connection. The
   // last one still names the device, its transport, and its 3D model, so the
@@ -2253,10 +2255,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       wsUrl,
       {
         onAdmitted() {
-          // Keep main's software-character path active for browser-layout typing.
-          if (!input.trySend(WS_MSG_HARDWARE_KEYBOARD, { enabled: false })) return false;
-          hardwareKeyboardIntentRef.current = { pending: false };
-          setHardwareKeyboardConnectedState(false);
+          // Keep main's software-character path active for browser-layout typing. A device
+          // without simulator settings, a phone, has no such setting.
+          if (!deviceSettingsUnavailableRef.current) {
+            if (!input.trySend(WS_MSG_HARDWARE_KEYBOARD, { enabled: false })) return false;
+            hardwareKeyboardIntentRef.current = { pending: false };
+            setHardwareKeyboardConnectedState(false);
+          }
           setInputAdmitted(true);
         },
         onMessage(data) {

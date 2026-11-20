@@ -144,7 +144,7 @@ async function renderClient(
       }),
     );
   };
-  return Object.assign(() => client, { pushConfig, starts });
+  return Object.assign(() => client, { pushConfig, starts, sockets: () => sockets });
 }
 
 test("a physical iPhone reports every simulator feature as unavailable", async () => {
@@ -205,4 +205,28 @@ test("opening a phone whose last session ended starts a new one", async () => {
 
   expect(client.starts).toEqual([JSON.stringify({ udid: PHONE })]);
   expect(client().error).not.toBe("iPhone disconnected");
+});
+
+async function admitInput(client: Awaited<ReturnType<typeof renderClient>>) {
+  const input = client.sockets().find((socket) => socket.url.includes("/helper/"))!;
+  input.readyState = 1;
+  await act(async () => {
+    input.onopen?.();
+    input.onmessage?.({ data: new Uint8Array([0x83]).buffer });
+  });
+  return input.sent.map((data) => new Uint8Array(data as ArrayBuffer)[0]);
+}
+
+test("a phone's input socket leaves the simulator keyboard setting alone", async () => {
+  const client = await renderClient(PHONE, PHONE_UNAVAILABLE);
+
+  expect(await admitInput(client)).not.toContain(0x0e);
+  expect(client().hardwareKeyboardConnected).toBeNull();
+});
+
+test("a simulator's input socket disconnects the hardware keyboard on admission", async () => {
+  const client = await renderClient(SIMULATOR, {});
+
+  expect(await admitInput(client)).toContain(0x0e);
+  expect(client().hardwareKeyboardConnected).toBe(false);
 });
