@@ -90,6 +90,8 @@ While a helper restarts, iOS keeps what the last config of the same connection s
 
 On iOS, a temporary drop stays `reconnecting` until the stream returns, the adapter reports a real error, or the drop lasts 30 s (see [Errors](#errors)). Android keeps its own reconnect grace: after 5 s without the stream, it reports `error` ("Disconnected — retrying…" or the WebRTC error), and a source switch can hold `reconnecting` longer [observed: `STREAM_RECONNECT_GRACE_MS` in `stream-reconnect.ts`, the WebRTC status effect in `useAndroidDevice.ts`].
 
+The Duo playback prompt is a compact rounded card over the model, while flat previews retain their full recovery surface. Both keep their media mounted [observed: `PlaybackRecovery.tsx` and `PhoneFrame.tsx`].
+
 ## Errors
 
 - **First-load timeout.** A session without a frame after 30 s reports `error` with "The device screen did not load. Retrying…". The adapter keeps retrying, and a later frame turns the session to `streaming`. The timer stops while the tab is hidden and starts again when it is visible, like the WebRTC first-frame timeout [observed: `SCREEN_LOAD_TIMEOUT_MS` and `useScreenPresentation` in `screen-presentation.ts`].

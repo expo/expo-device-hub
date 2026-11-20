@@ -258,7 +258,7 @@ export function PhoneFrame({
             onModelSettledChange={(settled) => setModelSettledDevice(settled ? device.id : null)}
             {...modelOptions}
           />
-          {needsRecovery && playback && <PlaybackRecovery playback={playback} />}
+          {needsRecovery && playback && <PlaybackRecovery playback={playback} overModel />}
           {screenStatus}
           {takeoverOverlay}
         </div>
