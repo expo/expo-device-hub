@@ -317,7 +317,8 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         flex: 1,
         width: "100%",
         minWidth: 0,
-        height: viewport.mobile ? viewport.height : "100vh",
+        // @ref LLP 0000#mobile-hub-layout — 100dvh: tablet browsers make 100vh taller than the visible page.
+        height: viewport.mobile ? viewport.height : "100dvh",
         ...(viewport.mobile
           ? ({
               position: "fixed",

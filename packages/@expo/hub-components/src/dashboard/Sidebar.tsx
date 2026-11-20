@@ -74,7 +74,7 @@ export function Sidebar({
         flexDirection: "column",
         width: `min(${width}px, 100vw)`,
         flexShrink: 0,
-        height: "var(--hub-viewport-height, 100vh)",
+        height: "var(--hub-viewport-height, 100dvh)",
         boxSizing: "border-box",
         padding: `${topInset}px 0 0`,
         backgroundColor: bg.default,

@@ -105,7 +105,7 @@ export function ServerConnectionOverlay({ status, onReload }: ServerConnectionOv
         justifyContent: "center",
         boxSizing: "border-box",
         minWidth: 0,
-        minHeight: "100vh",
+        minHeight: "100dvh",
         padding: 24,
         backgroundColor: `color-mix(in srgb, ${bg.screen} 68%, transparent)`,
         backdropFilter: "blur(12px)",
