@@ -24,6 +24,8 @@ export type DeviceListItemProps = {
   platform: "ios" | "android";
   /** Shows an accessible warning for a device type that Hub does not support or test. */
   unsupported?: boolean;
+  /** Why an unsupported device cannot stream, such as "needs iOS 27", when Hub knows. */
+  unsupportedReason?: string;
   usedByAgent?: boolean;
   selected?: boolean;
   onClick?: () => void;
@@ -34,6 +36,7 @@ export function DeviceListItem({
   version,
   platform,
   unsupported = false,
+  unsupportedReason,
   usedByAgent = false,
   selected = false,
   onClick,
@@ -149,7 +152,7 @@ export function DeviceListItem({
   return (
     <div style={{ position: "relative", minWidth: 0, width: "100%" }}>
       {row}
-      <UnsupportedDeviceWarning name={name} />
+      <UnsupportedDeviceWarning name={name} reason={unsupportedReason} />
     </div>
   );
 }

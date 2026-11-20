@@ -3,7 +3,8 @@
  *
  * iOS simulators are listed via `@expo/hub-apple-utils` (which shells out to
  * `simctl`) when CoreSimulator has usage history for them — both booted and
- * shut-down. Android devices are listed via `@expo/hub-android-utils` (which
+ * shut-down. Paired iPhones and iPads are listed through `devicectl` and are
+ * always booted. Android devices are listed via `@expo/hub-android-utils` (which
  * shells out to `avdmanager` / `adb`) when Android Emulator has successful boot
  * history for them, plus any currently connected device. Each device carries a
  * `booted` flag, so the caller can show the running devices in the sidebar and
@@ -15,7 +16,10 @@
  */
 
 import { type AndroidDevice, listDevices as listAndroidDevices } from "@expo/hub-android-utils";
-import { listDevices as listAppleDevices } from "@expo/hub-apple-utils";
+import {
+  listDevices as listAppleDevices,
+  listPhysicalDevices as listApplePhysicalDevices,
+} from "@expo/hub-apple-utils";
 
 import { type DeviceModelId } from "@expo/hub-client/models/catalog";
 
@@ -27,6 +31,7 @@ import {
   isSupportedAndroidDevice,
   isSupportedAppleDevice,
 } from "./device-support";
+import { physicalIosHubDevice } from "./physical-ios-devices";
 import { filterSessionDevices } from "./single-device";
 import { type SerializableError, toSerializableError } from "./utility-errors";
 
@@ -48,6 +53,11 @@ export interface HubDevice {
   physical: boolean;
   /** Whether this device type is in the set currently supported and tested by Hub. */
   supported: boolean;
+  /**
+   * Why this device cannot stream, such as "needs iOS 27", when Hub knows. Absent when the
+   * device is supported, or unsupported only because Hub has not tested its type.
+   */
+  unsupportedReason?: string;
   /**
    * The exact hardware model, which picks the screen shape: the simulator device
    * type name on iOS, such as "iPhone 17 Pro", or the AVD hardware profile id on
@@ -117,6 +127,15 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
   };
 }
 
+/** Paired iPhones and iPads, via `@expo/hub-apple-utils` → `devicectl`. */
+export async function listIosPhysicalDevices(): Promise<PlatformDeviceList> {
+  const listed = await listApplePhysicalDevices();
+  return {
+    devices: listed.value.map(physicalIosHubDevice),
+    error: toSerializableError(listed.error),
+  };
+}
+
 /**
  * Android AVDs with successful boot history plus currently connected devices,
  * via `@expo/hub-android-utils` → `avdmanager` / `adb`.
@@ -162,15 +181,16 @@ function latestTimestamp(...timestamps: Array<number | null>): number | undefine
 /** Every requested simulator and emulator/device, each tagged with its `booted` state. */
 export async function listDevices(platform?: PlatformFilter): Promise<HubDeviceList> {
   const empty = (): PlatformDeviceList => ({ devices: [], error: null });
-  const [simulators, emulators] = await Promise.all([
+  const [simulators, phones, emulators] = await Promise.all([
     platform === "android" ? empty() : listIosSimulators(),
+    platform === "android" ? empty() : listIosPhysicalDevices(),
     platform === "ios" ? empty() : listAndroidEmulators(),
   ]);
 
   return filterSessionDevices({
-    simulators: simulators.devices,
+    simulators: [...simulators.devices, ...phones.devices],
     emulators: emulators.devices,
-    errors: [simulators.error, emulators.error].filter(
+    errors: [simulators.error, phones.error, emulators.error].filter(
       (error): error is SerializableError => error !== null,
     ),
   });

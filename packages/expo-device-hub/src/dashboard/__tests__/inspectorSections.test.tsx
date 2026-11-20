@@ -1434,7 +1434,7 @@ test("renders boolean device options as compact switches", () => {
   expect(reduceMotion).toContain("transform:translateX(0px)");
 });
 
-test("moves device actions into Device options and hides Remove for physical devices", () => {
+test("moves device actions into Device options and hides Shut down and Remove for physical devices", () => {
   const android = renderToStaticMarkup(
     <InspectorSections
       client={inspectorClient("android")}
@@ -1469,7 +1469,7 @@ test("moves device actions into Device options and hides Remove for physical dev
       onRemove={() => {}}
     />,
   );
-  expect(physical).toContain(">Shut down device</span>");
+  expect(physical).not.toContain(">Shut down device</span>");
   expect(physical).not.toContain(">Remove device</span>");
 
   const ios = renderToStaticMarkup(<InspectorSections client={inspectorClient("ios")} />);

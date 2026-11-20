@@ -264,6 +264,20 @@ describe("useSteadyClient", () => {
 });
 
 describe("InspectorSections", () => {
+  test("offers no Shut down or Remove for a physical device", () => {
+    const actions = { onShutdown: () => {}, onRemove: () => {} };
+    const simulator = renderToStaticMarkup(
+      <InspectorSections client={STREAMING} device={IPHONE} {...actions} />,
+    );
+    const phone = renderToStaticMarkup(
+      <InspectorSections client={STREAMING} device={{ ...IPHONE, physical: true }} {...actions} />,
+    );
+    expect(simulator).toContain("Shut down");
+    expect(simulator).toContain("Remove");
+    expect(phone).not.toContain("Shut down");
+    expect(phone).not.toContain(">Remove<");
+  });
+
   test("shows the same sections while a device connects as once it streams", () => {
     const connecting = sectionTitles(
       renderToStaticMarkup(<InspectorSections client={CONNECTING} device={IPHONE} />),
