@@ -1,5 +1,7 @@
 export interface GridDevice {
   device: string;
+  kind?: "physical" | "simulator";
+  unsupportedReason?: string;
   name: string;
   runtime: string;
   state: string;

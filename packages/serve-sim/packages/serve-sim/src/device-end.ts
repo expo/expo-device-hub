@@ -30,6 +30,13 @@ export function recordDeviceEnd(udid: string, reason: string): void {
   ended.set(udid.toUpperCase(), reason);
 }
 
+export class DeviceEndedError extends Error {}
+
+export function refuseEndedDevice(udid: string): void {
+  const reason = ended.get(udid.toUpperCase());
+  if (reason) throw new DeviceEndedError(reason);
+}
+
 /** A new start of the device clears its end. */
 export function clearDeviceEnd(udid: string): void {
   ended.delete(udid.toUpperCase());

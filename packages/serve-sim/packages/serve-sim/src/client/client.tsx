@@ -106,6 +106,7 @@ import { proxyPreviewConfigForBrowser } from "./utils/preview-config";
 import {
   mjpegStreamUrlFrom,
   simEndpoint,
+  deviceEndFrom,
   streamConfigFrom,
   sameSimulator,
   webrtcCloseUrlFrom,
@@ -426,7 +427,11 @@ function App() {
     const es = openHostEventStream(eventsUrl);
     es.onmessage = (event) => {
       try {
-        applyConfig(streamConfigFrom(JSON.parse(event.data) as Window["__SIM_PREVIEW__"]));
+        const message = JSON.parse(event.data);
+        const end = deviceEndFrom(message);
+        if (end && selectedUdid && sameSimulator(end.device, selectedUdid))
+          setActionErrors((errors) => ({ ...errors, [end.device]: end.reason }));
+        applyConfig(streamConfigFrom(message as Window["__SIM_PREVIEW__"]));
       } catch {}
     };
     return () => es.close();
@@ -568,9 +573,10 @@ function App() {
             runtime={selectedDevice.runtime}
             chrome={selectedDevice.chrome ?? null}
             placeholderAsset={selectedDevice.placeholderAsset ?? null}
+            physical={selectedDevice.kind === "physical"}
             busy={!!selectedDevice.helper || !!starting[selectedDevice.device]}
             busyLabel={selectedDevice.helper ? "Connecting…" : "Starting…"}
-            error={actionErrors[selectedDevice.device] ?? null}
+            error={actionErrors[selectedDevice.device] ?? selectedDevice.unsupportedReason ?? null}
             onStart={() => startDevice(selectedDevice.device)}
           />
         ) : singleDevice ? (

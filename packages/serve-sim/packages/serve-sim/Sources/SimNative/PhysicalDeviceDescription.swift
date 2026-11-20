@@ -73,15 +73,21 @@ extension PhysicalDeviceError: LocalizedError {
 }
 
 enum PhysicalDeviceHost {
-    static let coreDeviceInfoPlist = "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/Resources/Info.plist"
+    static let installedCoreDeviceInfoPlist = "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/Resources/Info.plist"
+    static let coreDeviceInfoPlistOverride = "SERVE_SIM_COREDEVICE_INFO_PLIST"
 
-    static func coreDeviceVersion() -> String? {
-        guard let info = NSDictionary(contentsOfFile: coreDeviceInfoPlist) else { return nil }
+    static func coreDeviceInfoPlist(environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
+        guard let path = environment[coreDeviceInfoPlistOverride], !path.isEmpty else { return installedCoreDeviceInfoPlist }
+        return path
+    }
+
+    static func coreDeviceVersion(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        guard let info = NSDictionary(contentsOfFile: coreDeviceInfoPlist(environment: environment)) else { return nil }
         return info["CFBundleShortVersionString"] as? String
     }
 
-    static func support() -> PhysicalDeviceSupport {
-        let version = coreDeviceVersion()
+    static func support(environment: [String: String] = ProcessInfo.processInfo.environment) -> PhysicalDeviceSupport {
+        let version = coreDeviceVersion(environment: environment)
         guard PhysicalDeviceSupport.host(coreDeviceVersion: version, symbolsAvailable: true) == .supported else {
             return .needsXcode27
         }

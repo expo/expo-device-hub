@@ -118,6 +118,7 @@ import {
 import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "./stop-process";
 import { captureHarPaths, followCaptureHar } from "./capture";
 import { buttonFeature, deviceFeatureRefusal, deviceKindOf } from "./device-features";
+import { physicalDeviceStartRefusal } from "./physical-devices";
 
 // Budget for capture teardown and capability disarming together.
 const SHUTDOWN_TIMEOUT_MS = 20_000;
@@ -3021,6 +3022,10 @@ Examples:
               process.exit(0);
             });
           }
+        }
+        for (const udid of targets) {
+          const unsupported = await physicalDeviceStartRefusal(udid);
+          if (unsupported) throw new Error(`${udid} cannot stream: ${unsupported}`);
         }
         for (const udid of targets) {
           await ensureBooted(udid);

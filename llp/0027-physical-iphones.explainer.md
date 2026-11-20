@@ -5,6 +5,7 @@
 **Systems:** ServeSim, Hub, HubClient, HubComponents, AppleUtils
 **Author:** Claude Code (claude-opus-5-5), directed by Thomas Girardier
 **Date:** 2026-11-20
+**Revised:** 2026-11-20 (validation follow-up: a real CoreDevice disconnect, Xcode 26 compilers and an older CoreDevice)
 **Related:** LLP 0000, LLP 0001, LLP 0003, LLP 0004, LLP 0011, LLP 0014, LLP 0027.000
 
 > File paths such as `Sources/…` and `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -27,6 +28,8 @@ The Hub and serve-sim's grid both list the iPhones and iPads that `xcrun devicec
 - The Hub marks it `physical: true`. serve-sim's grid rows carry `kind: "physical"` or `kind: "simulator"`, as serve-emu's carry `kind`.
 - A device that cannot stream is still listed, unsupported, with a reason. The Mac comes first: `"needs Xcode 27"` when CoreDevice on this Mac is older than 642 (its `CFBundleShortVersionString`), then `"needs iOS 27"` when the device runs an older iOS. The Hub's sidebar warning shows the reason [observed: `UnsupportedDeviceWarning.tsx`].
 - serve-sim asks its native add-on for the Mac's part, `physicalDeviceSupport()`, which also checks that the media stream, digitizer and keyboard symbols resolve. Without the add-on, the CoreDevice version decides. The device's own iOS version comes from devicectl, so listing never connects to a phone [observed: `readHostSupport` in `src/physical-devices.ts`].
+- The version check reads CoreDevice's version first and resolves no media-stream symbol when it is older than 642 [observed: `PhysicalDeviceHost.support`].
+- `SERVE_SIM_COREDEVICE_INFO_PLIST` names another `Info.plist` for that version, such as one that reports `600.1`, so a Mac with Xcode 27 can act as one with an older CoreDevice. Only the version check reads it: the native `PhysicalDeviceHost.coreDeviceInfoPlist`, serve-sim's fallback in `coreDeviceInfoPlist` (`src/physical-devices.ts`), and the Hub's `coreDeviceInfoPlist` in `@expo/hub-apple-utils`. The Hub runs serve-sim in its own process, so one variable sets both.
 - serve-sim cannot depend on the private `@expo/hub-apple-utils`, because it is published on its own, so it has its own copy of the devicectl rules. Both copies parse the same fixture and give the same reasons in the same order.
 
 ## Starting a session
@@ -36,6 +39,8 @@ The Hub and serve-sim's grid both list the iPhones and iPads that `xcrun devicec
 - no `simctl boot`, clipboard set-up, network capture, capability loader or default capabilities;
 - the CLI refuses `--install-app-path` and `--launch-app-identifier` for a phone with the apps reason;
 - the CLI's stale-helper check never recycles a phone's server because simctl does not list it as booted.
+
+A phone that the listing marks unsupported is refused before anything starts: `/grid/api/start` and the screenshot route answer 409 with the listing's reason, such as `{ "ok": false, "error": "needs Xcode 27" }`, and the CLI exits with `<udid> cannot stream: needs Xcode 27` [observed: `physicalStartRefusal` in `src/physical-devices.ts`]. `@expo/hub-client` shows a 409 from the start request as the device's error and does not ask again; any other start failure keeps the earlier behavior, waiting for the helper. serve-sim's preview shows the reason under the phone in its placeholder, which names a phone's runtime without "Simulator".
 
 `DeviceSession` creates `NativeCapture(udid, settings, undefined, "physical")` and `NativeHid(udid, "physical")` for a hardware UDID. It skips the simulator option read, and it has no reboot handling. If the phone is gone before the first frame, `start()` rejects with "iPhone disconnected" [observed: `src/device-session.ts`, `PhysicalScreenSource.start`].
 
@@ -77,7 +82,9 @@ When a phone goes away, by an unplugged cable or a lost connection, its session 
 - The native screen source reports the end once through `NativeCapture.subscribeEnd(onEnd)`, with `{"reason":"device-disconnected","message":"iPhone disconnected"}`. A listener that subscribes after the end is called at once. Only a device that serve-sim cannot boot is observed.
 - The session closes every viewer's input socket with code 4410 and the reason as its close reason, withdraws the device's state file, and records the reason. For `device-disconnected` the reason is "iPhone disconnected"; for another end, the native `message`.
 - Until the device is started again through `/grid/api/start`, `/api?device=<udid>` and the `/api/events` feed answer `{ "device": "<udid>", "ended": { "reason": "<reason>" } }` in place of a config. It has no `url`, so an older client reads it as no device.
-- `@expo/hub-client` shows the reason as the device's error and does not start the device again in that connection. Selecting the device again starts it again.
+- Its video responses (`stream.mjpeg`, `stream.avcc`) end with the session.
+- Until then nothing opens a session for it on its own. A request to its helper routes, such as a viewer's reconnecting input socket or video stream, gets no session: `getDeviceSession` throws `DeviceEndedError`, an input socket closes with 4410 and the reason, and the screenshot route answers 409 with the reason. Only `/grid/api/start` and the CLI's start (`startDeviceSession`) clear the end. Without this, the Hub's viewer reconnected 1.5 s after the end, which started the phone again and replaced the `ended` report [observed: Hub run on 2026-11-20].
+- `@expo/hub-client` shows the reason as the device's error and does not start the device again in that connection. Selecting another device and then the phone starts it again; clicking the phone's row while it is selected does nothing. serve-sim's preview shows the reason under the phone in its placeholder, with Start.
 
 ## The native screen source
 
@@ -147,8 +154,8 @@ The source then stops emitting, stops the stream, releases the assertion, clears
 
 Unit tests cover each part without a phone:
 
-- Swift: `PhysicalScreenPolicyTests` (display choice, crop geometry, the Xcode and iOS gates, identifier or UDID matching), `PhysicalScreenSourceTests` and `PhysicalDeviceDescriptionTests` (crop, scale, idle floor, end signal, an end before the first frame, the engine's latched end), and `HEVCFixtureReplayTests`, which replays `Tests/SimNativeTests/Fixtures/iphone12-home-screen.rtp` (3 s, 493 packets) through the receiver and decoder.
-- TypeScript: the binding against a fake add-on (`native-physical.test.ts`), the listing and its fixture in both packages, the feature table, routes and host actions (`device-features.test.ts`, `physical-device-gate.test.ts`), a phone's session with fake native classes (`device-session-end.test.ts`: physical capture and HID, the input it drops, the paste refusal, and the end), the Hub's physical rows, hub-client's capabilities, end and keyboard handling, and the steady inspector.
+- Swift: `PhysicalScreenPolicyTests` (display choice, crop geometry, the Xcode and iOS gates, identifier or UDID matching), `PhysicalScreenSourceTests` and `PhysicalDeviceDescriptionTests` (crop, scale, idle floor, end signal, an end before the first frame, the engine's latched end), `PhysicalDeviceHostTests` (the `SERVE_SIM_COREDEVICE_INFO_PLIST` override and an older or missing CoreDevice), and `HEVCFixtureReplayTests`, which replays `Tests/SimNativeTests/Fixtures/iphone12-home-screen.rtp` (3 s, 493 packets) through the receiver and decoder.
+- TypeScript: the binding against a fake add-on (`native-physical.test.ts`), the listing and its fixture in both packages, the feature table, routes and host actions (`device-features.test.ts`, `physical-device-gate.test.ts`), a phone's session with fake native classes (`device-session-end.test.ts`: physical capture and HID, the input it drops, the paste refusal, the end, video responses ending with it, and no session for an ended phone until it is started), an ended phone's input socket and screenshot (`helper-hid-websocket.test.ts`, `physical-device-gate.test.ts`), the start refusal and the plist override in both packages, the preview's end reason and placeholder (`stream-config.test.ts`, `device-placeholder.test.tsx`), the Hub's physical rows, hub-client's capabilities, end, start refusal and keyboard handling, and the steady inspector.
 
 On 2026-11-20 the integrated build ran against an iPhone 12 (iOS 27.2.1, USB, Xcode 27.2, CoreDevice 651.32) [observed]:
 
@@ -161,9 +168,30 @@ On 2026-11-20 the integrated build ran against an iPhone 12 (iOS 27.2.1, USB, Xc
 
 These runs found and fixed: the CLI booting and recycling a phone, the screenshot route refusing a hardware UDID, the frames reported as upright, the inspector keeping Current app and Logs, and the inspector keeping Orientation and the settings rows unlocked.
 
+### Validation on 2026-11-20: a real disconnect
+
+An agent cannot pull the cable, so CoreDevice dropped the connection instead: `RemoteDevice.disconnect(targetQueue:completionHandler:)`, the API behind the phone's "Disconnect Device" feature (`com.apple.coredevice.feature.disconnectdevice`), called from a harness built like the spike, with `CoreDeviceBridge.remoteDevice(udid:)` and a forwarder whose target is resolved at run time. It tears down the phone's CoreDevice tunnel and leaves it paired: devicectl went from `connected` to `available (paired)` for that phone only, the other two phones stayed connected, and the streaming session's usage assertion was invalidated with `CoreDeviceError` 4006, "The tunnel was forcefully disconnected by a client". The tunnel stayed down for at least 60 s until a client asked for it; opening the phone in serve-sim reconnected it, with the first frame after 1.4 s. The real end path ran, not a fake: the receive loop's assertion check, `PhysicalScreenSource`, the end subscription and `endDeviceSession` [observed].
+
+- **serve-sim alone** (CLI and its preview in headless Chrome): the server logged `media stream ended` and `session ended: iPhone disconnected` once, 106–114 ms after the disconnect call; the preview's input socket closed with 4410 "iPhone disconnected" about 100 ms after; `/api` and `/api/events` answered `ended`; the preview showed "iPhone · iOS 27.2.1 · iPhone disconnected · Start"; the server idled at 0 % CPU and exited 6 ms after SIGINT. `/grid/api/start` after `devicectl device info details` streamed again, 62 frames in 3 s.
+- **The Hub** (`--platform ios`): end 114–120 ms after the disconnect; the dashboard showed "iPhone · Error" and "iPhone disconnected" over the last frame; in 30 s it sent no start and the phone did not stream; `/api` stayed `ended`. Selecting the simulator and then the phone streamed again, 61 frames in 3 s.
+- **T3 Code** with this Hub: its Hub reported `ended` 125 ms after the disconnect and ended the viewer's video response at 123 ms. Then `device_screenshot` failed with "The device hub could not complete the request" (the Hub answered 409 "iPhone disconnected"), and `device_list` still listed the phone as booted, physical and open. After `device_close`, `device_open` streamed it again. T3 starts a capture only while something views the phone: with no viewer, a disconnect ends nothing, and the next screenshot reconnects the phone.
+
+These runs found and fixed: viewers' reconnecting sockets and streams started an ended phone again, video responses stayed open after the end, and the preview fell back to its "Simulator" placeholder without the reason.
+
+### Validation on 2026-11-20: Xcode 26
+
+Xcode 26 is not installed on this Mac. Expo publishes serve-sim from Xcode 26.6 ([LLP 0014](0014-serve-sim-xcode-support-and-ci.decision.md)), which ships Swift 6.3.3; Xcode 26.0 to 26.3 ship Swift 6.2.x, and this Mac's Xcode 27.2 ships Swift 6.4.2 (swift.org's release list). The swift.org toolchains for Swift 6.2.4 and 6.3.3 were installed without sudo into `~/Library/Developer/Toolchains`; each package is signed by "Developer ID Installer: Swift Open Source (V9AUD2URP3)" and notarized. Builds used the macOS 26.5 SDK from the Command Line Tools, with SwiftPM's native build system: Swift Build applied Xcode 27's compiler flags [observed].
+
+- **Swift 6.2.4**: the add-on and the spike build. `swift test` cannot: Xcode 27.2's XCTest was built with Swift 6.4.2. The 6.2.4 add-on, swapped into serve-sim, streamed the phone and ended on the disconnect as above.
+- **Swift 6.3.3**: the add-on, the spike and `swift test` (330 XCTest and 106 Swift Testing tests) pass.
+- They found one problem: `static NSNumber *const SSHEVCPayload = @100;` in `CoreDeviceMediaNegotiator.m` is a constant only for Xcode 27's clang; the swift.org clangs of 6.2.4 and 6.3.3 reject it. The payload is now an integer, boxed where it is used.
+- **Deployment targets**: with `-Werror=unguarded-availability` and `-Werror=unguarded-availability-new`, the add-on builds for `arm64-apple-macosx14.0` (Package.swift) and `arm64-apple-macosx26.0`, and the spike for macOS 14 and 26. Building against the macOS 26.5 SDK also shows that the code uses nothing newer.
+- **Load**: `nm -u` lists no CoreDevice, CoreDeviceProtocols or AVConference symbol in the add-on built by 6.2.4, 6.3.3 or 6.4.2, and no private framework is a load command.
+- **An older CoreDevice**, with `SERVE_SIM_COREDEVICE_INFO_PLIST` reporting `600.1`: serve-sim's grid, its preview and the Hub listed all three phones unsupported with "needs Xcode 27" (the Hub's sidebar: "Cannot stream iPhone: needs Xcode 27"); `/grid/api/start` and the screenshot route answered 409, the CLI exited with the reason, and the Hub showed "Device screen unavailable — needs Xcode 27". Under lldb, `SSCoreDeviceMediaStreamAvailable` and `SSCoreDeviceMediaStreamTypeMetadata` were never called, against 258–260 calls in the same runs without the override. A simulator streamed in both serve-sim and the Hub. Without the override, the phones were supported and streamed.
+
 ## Manual checklist: unplugging
 
-An unplug cannot be run by an agent. The end flow is covered by the fake-session tests above. Before this ships, a person runs it once with a phone that only they use:
+CoreDevice's disconnect drops the tunnel, but the cable and the phone's USB connection stay. Before this ships, a person runs it once with a phone that only they use:
 
 1. Start `node packages/serve-sim/packages/serve-sim/dist/serve-sim.js <hardware udid>` and open the preview. Also open the phone in the Hub.
 2. Unplug the cable. Within 5 s, check:
@@ -177,8 +205,9 @@ An unplug cannot be run by an agent. The end flow is covered by the fake-session
 
 ## Open questions
 
-- Xcode 26: whether its CoreDevice has the symbols. This Mac has only Xcode 27.2. If one is missing, the phone is listed as "needs Xcode 27" and nothing else is called.
+- Xcode 26 on a Mac: only its compilers and SDK were tried, and an older CoreDevice was simulated with `SERVE_SIM_COREDEVICE_INFO_PLIST`. A Mac with Xcode 26 and its own CoreDevice has not run serve-sim.
 - A real unplug and a Wi-Fi connection have not been tried (see the checklist).
+- Whether clicking the selected phone in the Hub, after its session ended, should start it again.
 - A second stream to the same phone at the same time has not been tried; stream id 0 was used in every run.
 - iPads have not been tried, including their display choice and frame orientation.
 - agent-device in T3 Code needs an XCTest runner on the phone. It was not run, so whether it can drive a physical iPhone is not known.

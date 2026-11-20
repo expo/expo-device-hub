@@ -49,6 +49,7 @@ async function renderClient(
   device: string,
   unavailableFeatures?: Record<string, string>,
   firstResponse?: object,
+  startFailure?: { status: number; error: string },
 ) {
   const sockets: FakeSocket[] = [];
   const starts: string[] = [];
@@ -91,6 +92,11 @@ async function renderClient(
     const endpoint = new URL(String(url), "http://localhost:3200");
     if (endpoint.pathname === "/sim/grid/api/start") {
       starts.push(String(init?.body));
+      if (startFailure)
+        return Response.json(
+          { ok: false, error: startFailure.error },
+          { status: startFailure.status },
+        );
       response = undefined;
       return Response.json({ ok: true });
     }
@@ -222,6 +228,34 @@ test("opening a phone whose last session ended starts a new one", async () => {
 
   expect(client.starts).toEqual([JSON.stringify({ udid: PHONE })]);
   expect(client().error).not.toBe("iPhone disconnected");
+});
+
+test("a phone that cannot stream shows why its start was refused", async () => {
+  const client = await renderClient(
+    PHONE,
+    PHONE_UNAVAILABLE,
+    {},
+    { status: 409, error: "needs Xcode 27" },
+  );
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+
+  expect(client.starts).toEqual([JSON.stringify({ udid: PHONE })]);
+  expect(client().status).toBe("error");
+  expect(client().error).toBe("needs Xcode 27");
+});
+
+test("a simulator whose start fails keeps waiting for its helper", async () => {
+  const client = await renderClient(
+    SIMULATOR,
+    undefined,
+    {},
+    { status: 500, error: "boot failed" },
+  );
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+
+  expect(client.starts).toEqual([JSON.stringify({ udid: SIMULATOR })]);
+  expect(client().status).not.toBe("error");
+  expect(client().error).toBeNull();
 });
 
 async function admitInput(client: Awaited<ReturnType<typeof renderClient>>) {

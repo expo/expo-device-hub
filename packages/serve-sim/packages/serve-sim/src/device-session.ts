@@ -5,7 +5,13 @@ import {
   type DeviceFeature,
   type DeviceKind,
 } from "./device-features";
-import { WS_CLOSE_DEVICE_ENDED, deviceEndReason, recordDeviceEnd } from "./device-end";
+import {
+  WS_CLOSE_DEVICE_ENDED,
+  clearDeviceEnd,
+  deviceEndReason,
+  recordDeviceEnd,
+  refuseEndedDevice,
+} from "./device-end";
 import { clearServeSimState } from "./state";
 import { createSerialQueue, withHostActionDeadline } from "./host-actions-utils";
 import { timeStartup } from "./startup-timing";
@@ -344,6 +350,7 @@ export class DeviceSession {
   private readonly kind: DeviceKind;
   /** Set when the device went away; viewers' input sockets close with it. */
   private endReason?: string;
+  private readonly videoResponses = new Set<ServerResponse>();
   private deviceStateObservationStarted = false;
   private deviceStateVersion?: {
     generation: number;
@@ -535,9 +542,16 @@ export class DeviceSession {
   }
 
   /** Record why the device went away; `close` then tells every viewer. */
+  private trackVideoResponse(res: ServerResponse): void {
+    this.videoResponses.add(res);
+    res.once("close", () => this.videoResponses.delete(res));
+  }
+
   markEnded(reason: string): boolean {
     if (this.phase !== "running" || this.endReason !== undefined) return false;
     this.endReason = reason;
+    for (const res of this.videoResponses) res.end();
+    this.videoResponses.clear();
     return true;
   }
 
@@ -1176,6 +1190,7 @@ export class DeviceSession {
       Connection: "keep-alive",
       ...(panel ? { "X-Screen-Id": String(panel.screenId) } : {}),
     });
+    this.trackVideoResponse(res);
 
     void (async () => {
       let cleanup = () => {};
@@ -1231,6 +1246,7 @@ export class DeviceSession {
       Connection: "keep-alive",
       ...(panel ? { "X-Screen-Id": String(panel.screenId) } : {}),
     });
+    this.trackVideoResponse(res);
 
     void (async () => {
       let cleanup = () => {};
@@ -3259,6 +3275,7 @@ export function getDeviceSession(
     if (retainExisting) retainDeviceSession(session);
   }
   if (!session) {
+    refuseEndedDevice(udid);
     const createdSession = new DeviceSession(udid, initialStreamSettings);
     session = createdSession;
     sessions.set(udid, createdSession);
@@ -3285,6 +3302,7 @@ export async function startDeviceSession(
   signal?: AbortSignal,
 ): Promise<DeviceSession> {
   signal?.throwIfAborted();
+  clearDeviceEnd(udid);
   const session = getDeviceSession(udid, settings);
   if (!signal) {
     await session.start();

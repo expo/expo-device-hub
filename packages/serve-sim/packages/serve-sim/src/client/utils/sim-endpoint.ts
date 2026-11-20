@@ -80,6 +80,13 @@ export function streamConfigFrom(
   return raw && typeof raw.device === "string" && typeof raw.url === "string" ? raw : null;
 }
 
+export function deviceEndFrom(raw: unknown): { device: string; reason: string } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const { device, ended } = raw as { device?: unknown; ended?: { reason?: unknown } | null };
+  if (typeof device !== "string" || typeof ended?.reason !== "string") return null;
+  return { device, reason: ended.reason };
+}
+
 export function mjpegStreamUrlFrom(config: NonNullable<Window["__SIM_PREVIEW__"]>): string {
   const streamUrl = new URL(config.streamUrl);
   streamUrl.pathname = streamUrl.pathname.replace(/\/stream\.[^/]+$/, "/stream.mjpeg");

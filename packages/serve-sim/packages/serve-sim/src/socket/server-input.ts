@@ -1,4 +1,5 @@
 import { EXEC_WS_MAX_MESSAGE_BYTES } from "./control-utils";
+import { DeviceEndedError, WS_CLOSE_DEVICE_ENDED } from "../device-end";
 import type { Socket } from "net";
 import type { HidSocket } from "../device-session";
 import { HID_HEARTBEAT, createSocketHeartbeat } from "./heartbeat";
@@ -87,8 +88,9 @@ export function claimHelperHidSocket(
   let session: { attachHidSocket(ws: UpgradeHandlerWebSocket): void };
   try {
     session = resolveSession(device);
-  } catch {
-    websocket.close(); // not booted / capture unavailable
+  } catch (error) {
+    if (error instanceof DeviceEndedError) websocket.close(WS_CLOSE_DEVICE_ENDED, error.message);
+    else websocket.close(); // not booted / capture unavailable
     return true;
   }
   // Known host integrations use `ws` sockets. Preserve input on a host without

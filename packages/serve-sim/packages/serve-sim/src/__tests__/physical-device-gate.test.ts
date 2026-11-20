@@ -124,6 +124,18 @@ describe("preview config", () => {
 });
 
 describe("a phone's lifecycle", () => {
+  test("a screenshot of a phone whose session ended answers with the reason", async () => {
+    recordDeviceEnd(PHONE, "iPhone disconnected");
+
+    const response = await request(`/api/screenshot?device=${PHONE}`, {
+      method: "POST",
+      body: "{}",
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ ok: false, error: "iPhone disconnected" });
+  });
+
   test("discovery reports why the phone's session ended until the phone is started again", async () => {
     recordDeviceEnd(PHONE, "iPhone disconnected");
 

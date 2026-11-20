@@ -1656,6 +1656,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         streamedOrStarted = true;
         endedReason = null;
       }
+      if (!next && endedReason) {
+        setStatus("error");
+        setError(endedReason);
+        return;
+      }
       if (!next) {
         current = null;
         // Keep the middleware subscription alive while its helper is absent.
@@ -1719,7 +1724,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         applyConfig(value);
         if (!(value?.url && value.device) && targetDevice && !startRequested && !endedReason) {
           startRequested = true;
-          void startIosHelper(targetDevice, baseUrl, sessionFetch).catch(() => {});
+          void startIosHelper(targetDevice, baseUrl, sessionFetch)
+            .then((refusal) => {
+              if (!refusal || cancelled) return;
+              endedReason = refusal;
+              setStatus("error");
+              setError(refusal);
+            })
+            .catch(() => {});
         }
       } catch {
         // A failed background refresh must not tear down a working video stream.

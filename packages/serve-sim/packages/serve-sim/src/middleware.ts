@@ -121,8 +121,17 @@ import {
 } from "./sim-pasteboard";
 import { PasteboardUnavailableError, readSimPasteboardResult } from "./sim-pasteboard-reader";
 import { createClipboardSession } from "./clipboard-session";
-import { clearDeviceEnd, deviceEndConfig } from "./device-end";
-import { gridRowForPhysical, listPhysicalDevices } from "./physical-devices";
+import {
+  DeviceEndedError,
+  WS_CLOSE_DEVICE_ENDED,
+  clearDeviceEnd,
+  deviceEndConfig,
+} from "./device-end";
+import {
+  gridRowForPhysical,
+  listPhysicalDevices,
+  physicalDeviceStartRefusal,
+} from "./physical-devices";
 import {
   type DeviceFeature,
   type DeviceKind,
@@ -943,8 +952,11 @@ function attachHidInProcess(
   let session;
   try {
     session = getDeviceSession(device, initialStreamSettings);
-  } catch {
-    return false;
+  } catch (error) {
+    if (!(error instanceof DeviceEndedError)) return false;
+    if (writeWebSocketAccept(req, socket, execToken))
+      rawHidSocket(socket, head).close(WS_CLOSE_DEVICE_ENDED, error.message);
+    return true;
   }
   if (!writeWebSocketAccept(req, socket, execToken)) return true; // bad request handled
   session.attachHidSocket(rawHidSocket(socket, head));
@@ -2598,9 +2610,15 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       req.on("data", (chunk: Buffer | string) => {
         body += typeof chunk === "string" ? chunk : chunk.toString();
       });
-      req.on("end", () => {
+      req.on("end", async () => {
         const udid = resolveLifecycleDevice(body, res);
         if (udid === null) return;
+        const unsupported = await physicalDeviceStartRefusal(udid);
+        if (unsupported) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: unsupported }));
+          return;
+        }
         clearDeviceEnd(udid);
         const port = req.socket.localPort ?? 0;
         void startDeviceInProcess(
@@ -2930,6 +2948,13 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         return;
       }
       udid = udid.toUpperCase();
+      const refusal =
+        deviceEndConfig(udid)?.ended.reason ?? (await physicalDeviceStartRefusal(udid));
+      if (refusal) {
+        res.writeHead(409, { "Cache-Control": "no-store", "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: refusal }));
+        return;
+      }
       try {
         const captureStarted = performance.now();
         const { png, nativeMs, metadata } = await captureScreenshotPngAsync({

@@ -11,11 +11,15 @@ function renderPlaceholder({
   runtime = "xrOS-26-5",
   chrome = null,
   placeholderAsset = null,
+  physical = false,
+  error = null,
 }: {
   name?: string;
   runtime?: string;
   chrome?: DeviceKitChromeDescriptor | null;
   placeholderAsset?: DevicePlaceholderAssetDescriptor | null;
+  physical?: boolean;
+  error?: string | null;
 } = {}) {
   return renderToStaticMarkup(
     <DevicePlaceholder
@@ -23,14 +27,34 @@ function renderPlaceholder({
       runtime={runtime}
       chrome={chrome}
       placeholderAsset={placeholderAsset}
+      physical={physical}
       busy={false}
-      error={null}
+      error={error}
       onStart={() => {}}
     />,
   );
 }
 
 describe("DevicePlaceholder", () => {
+  test("names a simulator's runtime as a simulator", () => {
+    expect(renderPlaceholder({ name: "iPhone 17", runtime: "iOS-27-2" })).toContain(
+      "iOS 27.2 Simulator",
+    );
+  });
+
+  test("does not call a physical iPhone a simulator, and shows why its session ended", () => {
+    const html = renderPlaceholder({
+      name: "iPhone",
+      runtime: "iOS-27-2-1",
+      physical: true,
+      error: "iPhone disconnected",
+    });
+
+    expect(html).toContain("iOS 27.2.1");
+    expect(html).not.toContain("Simulator");
+    expect(html).toContain("iPhone disconnected");
+  });
+
   test("uses a headset-shaped Vision fallback instead of the generic blue screen", () => {
     const html = renderPlaceholder({
       placeholderAsset: {

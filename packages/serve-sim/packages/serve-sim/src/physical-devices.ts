@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { promisify } from "util";
+import { deviceKindOf } from "./device-features";
 import { physicalDeviceSupport } from "./native";
 
 const execFileAsync = promisify(execFile);
@@ -130,11 +131,17 @@ async function readHostSupport(): Promise<HostSupport> {
   }
 }
 
+export function coreDeviceInfoPlist(
+  environment: Record<string, string | undefined> = process.env,
+): string {
+  return environment.SERVE_SIM_COREDEVICE_INFO_PLIST || CORE_DEVICE_INFO_PLIST;
+}
+
 async function readCoreDeviceVersion(): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync(
       "plutil",
-      ["-extract", "CFBundleShortVersionString", "raw", "-o", "-", CORE_DEVICE_INFO_PLIST],
+      ["-extract", "CFBundleShortVersionString", "raw", "-o", "-", coreDeviceInfoPlist()],
       { timeout: LIST_TIMEOUT_MS },
     );
     return stdout.trim() || null;
@@ -185,6 +192,19 @@ export function gridRowForPhysical(device: PhysicalDevice): PhysicalGridRow {
     runtime: [device.platform, ...(device.osVersion?.split(".") ?? [])].join("-"),
     ...(device.unsupportedReason ? { unsupportedReason: device.unsupportedReason } : {}),
   };
+}
+
+export function physicalStartRefusal(
+  udid: string,
+  devices: readonly PhysicalDevice[],
+): string | null {
+  const upper = udid.toUpperCase();
+  return devices.find((device) => device.udid.toUpperCase() === upper)?.unsupportedReason ?? null;
+}
+
+export async function physicalDeviceStartRefusal(udid: string): Promise<string | null> {
+  if (deviceKindOf(udid) !== "physical") return null;
+  return physicalStartRefusal(udid, await listPhysicalDevices());
 }
 
 let cached: { at: number; devices: Promise<PhysicalDevice[]> } | null = null;

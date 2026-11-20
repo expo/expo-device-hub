@@ -1,12 +1,15 @@
 import { expect, mock, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import * as native from "../../native";
 import * as ui from "../../ui-settings";
 import { inProcessServeSimState, stateFileForDevice, writeServeSimState } from "../../state";
 
 const PHONE = "00008101-0016603236F0801E";
 const INPUT_PHONE = "00008101-0000000000000002";
+const VIEWED_PHONE = "00008101-0000000000000003";
 const SIMULATOR = "00000000-0000-0000-0000-000000000444";
 
 const endListeners = new Map<string, (json: string) => Promise<void>>();
@@ -74,6 +77,9 @@ class Capture {
   async subscribeScreenChanges() {
     return async () => {};
   }
+  async subscribeMjpeg() {
+    return async () => {};
+  }
   async subscribeDeviceState() {
     return async () => {};
   }
@@ -92,7 +98,8 @@ mock.module("../../ui-settings", () => ({
     deviceOptionReads.push(udid);
   },
 }));
-const { getDeviceSession, peekDeviceSession } = await import("../../device-session");
+const { getDeviceSession, peekDeviceSession, startDeviceSession } =
+  await import("../../device-session");
 const { deviceEndConfig } = await import("../../device-end");
 
 class Socket extends EventEmitter {
@@ -187,6 +194,44 @@ test("a disconnected phone ends its session with the reason", async () => {
     device: PHONE,
     ended: { reason: "iPhone disconnected" },
   });
+});
+
+test("a phone's video viewers see their stream end with the session", async () => {
+  const session = getDeviceSession(VIEWED_PHONE);
+  await session.start();
+  const server = createServer((req, res) => session.handleMjpeg(req, res));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { port } = server.address() as AddressInfo;
+    const response = fetch(`http://127.0.0.1:${port}/stream.mjpeg`);
+    await settle();
+
+    await endListeners.get(VIEWED_PHONE)!(JSON.stringify({ reason: "device-disconnected" }));
+    const read = await Promise.race([
+      (async () => {
+        const body = (await response).body!.getReader();
+        while (!(await body.read()).done);
+        return "ended";
+      })(),
+      Bun.sleep(1000).then(() => "still open"),
+    ]);
+
+    expect(read).toBe("ended");
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test("an ended phone opens no session until it is started again", async () => {
+  expect(() => getDeviceSession(PHONE)).toThrow("iPhone disconnected");
+  expect(peekDeviceSession(PHONE)).toBeUndefined();
+
+  const session = await startDeviceSession(PHONE, undefined);
+
+  expect(peekDeviceSession(PHONE)).toBe(session);
+  expect(deviceEndConfig(PHONE)).toBeNull();
+  await session.close();
 });
 
 test("a simulator's session does not wait for a device end", async () => {

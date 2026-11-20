@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { simMiddleware } from "../middleware";
+import { DeviceEndedError } from "../device-end";
 import { claimHelperHidSocket } from "../socket/server-input";
 import type { UpgradeHandlerWebSocket } from "../socket/types";
 
@@ -161,4 +162,27 @@ test("host-accepted HID rejection preserves the retry code and reason", () => {
     1013,
     "Simulator input unavailable; retry after other clients disconnect",
   ]);
+});
+
+test("an ended device's HID socket closes with the end's code and reason", () => {
+  let closedWith: [number | undefined, string | undefined] | undefined;
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send() {},
+    close(code?: number, reason?: string) {
+      closedWith = [code, reason];
+    },
+    ping() {},
+    on() {},
+  } as UpgradeHandlerWebSocket;
+  const handled = claimHelperHidSocket(new Request("http://localhost/preview/helper/ws"), socket, {
+    helperProxyTarget: () => ({ device: null, upstreamPath: "/ws" }),
+    fallbackDevice: "00008101-0016603236F0801E",
+    resolveSession: () => {
+      throw new DeviceEndedError("iPhone disconnected");
+    },
+  });
+  expect(handled).toBe(true);
+  expect(closedWith).toEqual([4410, "iPhone disconnected"]);
 });

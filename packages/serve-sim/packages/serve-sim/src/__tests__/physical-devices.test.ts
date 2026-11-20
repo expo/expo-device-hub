@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import fixture from "./fixtures/devicectl-list-devices.json";
 import {
+  coreDeviceInfoPlist,
   gridRowForPhysical,
   parsePhysicalDevices,
+  physicalStartRefusal,
   physicalDeviceUnsupportedReason,
 } from "../physical-devices";
 
@@ -80,5 +82,38 @@ describe("gridRowForPhysical", () => {
     const [phone] = parsePhysicalDevices(json, "518.33");
 
     expect(gridRowForPhysical(phone!).unsupportedReason).toBe("needs Xcode 27");
+  });
+});
+
+describe("coreDeviceInfoPlist", () => {
+  test("is the installed CoreDevice's Info.plist unless SERVE_SIM_COREDEVICE_INFO_PLIST names another", () => {
+    const installed =
+      "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/Resources/Info.plist";
+    expect(coreDeviceInfoPlist({})).toBe(installed);
+    expect(coreDeviceInfoPlist({ SERVE_SIM_COREDEVICE_INFO_PLIST: "" })).toBe(installed);
+    expect(
+      coreDeviceInfoPlist({ SERVE_SIM_COREDEVICE_INFO_PLIST: "/tmp/CoreDevice-600.plist" }),
+    ).toBe("/tmp/CoreDevice-600.plist");
+  });
+});
+
+describe("physicalStartRefusal", () => {
+  const phone = {
+    udid: "00008101-0016603236F0801E",
+    name: "iPhone",
+    marketingName: "iPhone 12",
+    platform: "iOS",
+    osVersion: "27.2.1",
+    unsupportedReason: "needs Xcode 27",
+  };
+
+  test("refuses a listed phone that cannot stream, with the reason the grid shows", () => {
+    expect(physicalStartRefusal("00008101-0016603236f0801e", [phone])).toBe("needs Xcode 27");
+  });
+
+  test("lets a supported phone, an unlisted phone and a simulator start", () => {
+    expect(physicalStartRefusal(phone.udid, [{ ...phone, unsupportedReason: null }])).toBeNull();
+    expect(physicalStartRefusal(phone.udid, [])).toBeNull();
+    expect(physicalStartRefusal("C485D903-49A6-4A6D-A199-7893ACF635AE", [phone])).toBeNull();
   });
 });

@@ -10,13 +10,19 @@ const PLUTIL_TIMEOUT_MS = 5_000;
 export const CORE_DEVICE_INFO_PLIST =
   "/Library/Developer/PrivateFrameworks/CoreDevice.framework/Versions/A/Resources/Info.plist";
 
+export function coreDeviceInfoPlist(
+  environment: Record<string, string | undefined> = process.env,
+): string {
+  return environment.SERVE_SIM_COREDEVICE_INFO_PLIST || CORE_DEVICE_INFO_PLIST;
+}
+
 /**
  * The CoreDevice version installed on this Mac, such as `"651.32"`, or null when Xcode has not
  * installed CoreDevice. The Info.plist is binary, so `plutil` reads its
  * `CFBundleShortVersionString`. Never throws.
  */
 export async function readCoreDeviceVersion(
-  path = CORE_DEVICE_INFO_PLIST,
+  path = coreDeviceInfoPlist(),
 ): Promise<AppleUtilsResult<string | null>> {
   try {
     await access(path);

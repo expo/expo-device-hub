@@ -19,13 +19,13 @@
 @end
 
 static NSString *const SSStandaloneHEVCFeatures = @"FLS;MS:-1;LF:-1;LTR;CABAC;POS:0;EOD:1;HTS:2;RR:3;AR:16/9,5/8;XR:16/9,5/8;";
-static NSNumber *const SSHEVCPayload = @100;
+static const NSInteger SSHEVCPayload = 100;
 static IMP SSOriginalScreenFeatures;
 
 static NSDictionary *SSScreenDecoderFeatures(id self, SEL selector) {
     NSDictionary *original = ((NSDictionary *(*)(id, SEL))SSOriginalScreenFeatures)(self, selector);
     NSMutableDictionary *features = [original mutableCopy];
-    if (features[SSHEVCPayload]) features[SSHEVCPayload] = SSStandaloneHEVCFeatures;
+    if (features[@(SSHEVCPayload)]) features[@(SSHEVCPayload)] = SSStandaloneHEVCFeatures;
     return features;
 }
 

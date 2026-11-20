@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  deviceEndFrom,
   mjpegStreamUrlFrom,
   streamConfigFrom,
   sameSimulator,
@@ -141,5 +142,24 @@ describe("simulator identity", () => {
     expect(sameSimulator(id.toLowerCase(), id)).toBe(true);
     expect(sameSimulator(id, "11111111-1111-1111-1111-111111111111")).toBe(false);
     expect(sameSimulator(undefined, undefined)).toBe(false);
+  });
+});
+
+describe("deviceEndFrom", () => {
+  test("reads the reason a device's session ended from /api/events", () => {
+    expect(
+      deviceEndFrom({
+        device: "00008101-0016603236F0801E",
+        ended: { reason: "iPhone disconnected" },
+      }),
+    ).toEqual({ device: "00008101-0016603236F0801E", reason: "iPhone disconnected" });
+  });
+
+  test("is null for a stream config, the empty state, and malformed ends", () => {
+    expect(deviceEndFrom(fullConfig)).toBeNull();
+    expect(deviceEndFrom(null)).toBeNull();
+    expect(deviceEndFrom({ basePath: "", execToken: "tok" })).toBeNull();
+    expect(deviceEndFrom({ device: "A", ended: {} })).toBeNull();
+    expect(deviceEndFrom({ ended: { reason: "iPhone disconnected" } })).toBeNull();
   });
 });

@@ -3,7 +3,11 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readCoreDeviceVersion } from "../core-device-version";
+import {
+  CORE_DEVICE_INFO_PLIST,
+  coreDeviceInfoPlist,
+  readCoreDeviceVersion,
+} from "../core-device-version";
 
 const INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -34,5 +38,20 @@ describe("readCoreDeviceVersion", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+});
+
+describe("coreDeviceInfoPlist", () => {
+  test("is the installed CoreDevice's Info.plist", () => {
+    expect(coreDeviceInfoPlist({})).toBe(CORE_DEVICE_INFO_PLIST);
+    expect(coreDeviceInfoPlist({ SERVE_SIM_COREDEVICE_INFO_PLIST: "" })).toBe(
+      CORE_DEVICE_INFO_PLIST,
+    );
+  });
+
+  test("is the Info.plist that SERVE_SIM_COREDEVICE_INFO_PLIST names, as serve-sim reads it", () => {
+    expect(
+      coreDeviceInfoPlist({ SERVE_SIM_COREDEVICE_INFO_PLIST: "/tmp/CoreDevice-600.plist" }),
+    ).toBe("/tmp/CoreDevice-600.plist");
   });
 });
