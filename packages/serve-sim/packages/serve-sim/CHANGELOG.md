@@ -1,5 +1,17 @@
 # @expo/serve-sim
 
+## 0.14.6
+
+### Patch Changes
+
+- 9f38980: Re-releasing because promotion to `latest` failed.
+
+## 0.14.5
+
+### Patch Changes
+
+- a90df2c: Capture reboots no longer fail when a just-booted simulator is slow to start processes.
+
 ## 0.14.4
 
 ### Patch Changes

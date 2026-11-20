@@ -63,6 +63,9 @@ jobs:
 
   release:
     needs: build-cache
+    concurrency:
+      group: ${{ github.event_name == 'workflow_dispatch' && !inputs.canary && 'release-stable-publish' || format('release-publish-{0}', github.run_id) }}
+      queue: max
     runs-on: ubuntu-latest
     environment: npm-publish
     env:
@@ -91,6 +94,9 @@ jobs:
         with:
           node-version: "24.x"
 
+      - name: Install npm with trusted publishing support for dist-tags
+        run: npm install --global npm@11.21.0
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -111,7 +117,7 @@ jobs:
         run: ./scripts/apply-canary-version.ts
 
       - name: Summarize versions
-        run: ./scripts/summarize-versions.ts
+        run: ./scripts/summarize-versions.ts "$RUNNER_TEMP/release-packages"
 
       # serve-sim must be a remote cache hit: its native build fails on Linux.
       - name: Build packages
@@ -131,13 +137,21 @@ jobs:
         if: ${{ env.IS_CANARY != 'true' }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: bun run changeset:publish
+        run: bun run changeset:publish -- --tag next
 
       - name: Publish canary to npm
         if: ${{ env.IS_CANARY == 'true' }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
         run: bun run changeset:publish -- --tag canary
+
+      - name: Verify published packages are available on npm
+        timeout-minutes: 30
+        run: ./scripts/verify-npm-availability.ts "$RUNNER_TEMP/release-packages"
+
+      - name: Promote verified packages to latest
+        if: ${{ env.IS_CANARY != 'true' }}
+        run: ./scripts/promote-to-latest.ts "$RUNNER_TEMP/release-packages"
 
       - name: Push git tags
         if: ${{ env.IS_CANARY != 'true' }}
