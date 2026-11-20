@@ -10,9 +10,71 @@ import {
   SCREENSHOT_ARTIFACT_ERROR_HEADER,
   SCREENSHOT_ARTIFACT_HEADER,
   saveScreenshotArtifact,
+  type ScreenshotArtifactResult,
   screenshotArtifactHeaders,
 } from "./screenshot-artifacts.ts";
-import type { ScreenshotArtifactReport, ScreenshotBase64Response } from "./shared/api-contracts.ts";
+import { HttpBodyError, readBodyLimited } from "./request-body.ts";
+import {
+  SCREENSHOT_OPTIONS,
+  type ScreenshotArtifactReport,
+  type ScreenshotBase64Response,
+  type ScreenshotCapabilitiesResponse,
+} from "./shared/api-contracts.ts";
+
+/** serve-sim's route takes the same body under the same limit. */
+export const MAX_SCREENSHOT_REQUEST_BYTES = 1024;
+
+/**
+ * Read the optional `{automation}` JSON body before anything is captured. An empty body means a
+ * manual capture. Other fields, other JSON values, and a non-boolean `automation` are rejected,
+ * so a typo cannot fall back to a manual capture that saves an artifact.
+ */
+export async function readScreenshotRequest(
+  request: Request,
+): Promise<{ automation: boolean } | Response> {
+  let body: Uint8Array;
+  try {
+    body = await readBodyLimited(request, MAX_SCREENSHOT_REQUEST_BYTES);
+  } catch (error) {
+    if (error instanceof HttpBodyError && error.status === 413) {
+      return Response.json(
+        { ok: false, error: "Screenshot request is too large" },
+        { status: 413, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    return invalidScreenshotRequest();
+  }
+  if (body.byteLength === 0) return { automation: false };
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+  } catch {
+    return invalidScreenshotRequest();
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return invalidScreenshotRequest();
+  }
+  const fields = value as Record<string, unknown>;
+  if (Object.keys(fields).some((key) => key !== "automation")) return invalidScreenshotRequest();
+  if (fields.automation !== undefined && typeof fields.automation !== "boolean") {
+    return invalidScreenshotRequest();
+  }
+  return { automation: fields.automation === true };
+}
+
+function invalidScreenshotRequest(): Response {
+  return Response.json(
+    { ok: false, error: "Invalid screenshot request" },
+    { status: 400, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
+// @ref LLP 0003#android-screenshot-images -- servers without this answer GET with 405, so a client can tell before its first automated capture.
+/** The `GET /api/screenshot` probe. It reads no device, so it never starts one. */
+export function screenshotCapabilitiesResponse(): Response {
+  const body: ScreenshotCapabilitiesResponse = { ok: true, options: [...SCREENSHOT_OPTIONS] };
+  return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+}
 
 /** Width and height from a PNG's IHDR chunk, or null when the bytes are not a PNG. */
 export function pngSize(png: Uint8Array): { width: number; height: number } | null {
@@ -59,12 +121,19 @@ export async function captureScreenshot(
   return { png, metadata };
 }
 
-// @ref LLP 0003#android-screenshot-images — keep PNG session artifacts for JPEG responses.
+// @ref LLP 0003#android-screenshot-images -- keep PNG session artifacts for JPEG responses; automated captures skip the artifact, as serve-sim's do.
 export async function screenshotResponse(
   capture: () => Promise<{ png: Uint8Array; metadata?: ScreenshotMetadata }>,
   url: URL,
+  request?: Request,
 ): Promise<Response> {
   const started = performance.now();
+  let automation = false;
+  if (request) {
+    const parsed = await readScreenshotRequest(request);
+    if (parsed instanceof Response) return parsed;
+    automation = parsed.automation;
+  }
   const width = url.searchParams.has("maxWidth")
     ? Number(url.searchParams.get("maxWidth"))
     : undefined;
@@ -101,7 +170,9 @@ export async function screenshotResponse(
         : png;
   }
   const encoded = performance.now();
-  const result = await saveScreenshotArtifact(png);
+  const result: ScreenshotArtifactResult = automation
+    ? { status: "disabled" }
+    : await saveScreenshotArtifact(png);
   const saved = performance.now();
   let response: Response;
   if (format === "base64") {

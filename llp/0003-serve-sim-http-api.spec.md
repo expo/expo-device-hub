@@ -5,7 +5,7 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-18 (Android screenshot image options; Codex, directed by Gabe Debes), 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
+**Revised:** 2026-11-20 (Android automated screenshots and the screenshot probe; Claude Code, directed by Gabe Debes), 2026-11-18 (Android screenshot image options; Codex, directed by Gabe Debes), 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -902,8 +902,10 @@ not forwarded. Zero/null values remain unknown and must not become layout sizes.
 [observed: `packages/@expo/hub-client/src/screenshot.ts`, `types.ts`]
 
 Device Hub's authenticated mounts preserve the screenshot PNG, metadata header,
-and CORS exposure from each backend. An unauthenticated request is refused
-before reaching either backend. Hub adds no separate screenshot state.
+and CORS exposure from each backend. They pass the request body through
+unchanged, so an `{"automation": true}` body reaches either backend. An
+unauthenticated request is refused before reaching either backend. Hub adds no
+separate screenshot state.
 [observed: `packages/expo-device-hub/src/server/index.ts`, `serve-sim.ts`,
 `serve-emu.ts`; `__tests__/fixtures/single-device-routes.fixture.ts`]
 
@@ -1043,3 +1045,33 @@ artifacts remain PNG at the requested size. Binary responses declare
 total durations; total includes response construction but excludes delivery [observed:
 `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`, its server,
 middleware, and inspection route callers].
+
+serve-emu's POST screenshot endpoint also takes serve-sim's optional JSON body
+`{"automation": true}` (at most 1 KiB). An empty body or `false` keeps the
+manual behavior. Invalid JSON, a JSON value that is not an object, unknown
+fields, and a non-boolean `automation` return 400; a larger body returns 413.
+Both are checked before the image options and before the capture. An automated
+capture returns the same image, metadata header, and timings, but it does not
+save the session artifact, and `X-Expo-Screenshot-Artifact` (and the base64
+JSON `artifact`) report `disabled`. serve-emu and the Hub record no screenshot
+activity or events, so the artifact is the only thing an automated capture
+skips. Unlike serve-sim, serve-emu does not ask for a separate token for
+automation: when a session token is set, every route already requires it. The
+EAS worker sets `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` for a session and uploads
+the files saved there as session artifacts, so a periodic preview must not save
+one. [observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
+`packages/serve-emu/packages/serve-emu/src/screenshot-artifacts.ts`; no
+screenshot event log in serve-emu or `packages/expo-device-hub/src/server`;
+eas-cli `packages/build-tools/src/steps/utils/deviceSessionHost.ts` and
+`deviceRunSessionScreenshots.ts`]
+
+`GET /api/screenshot` is the capability probe. It returns
+`{"ok": true, "options": ["automation", "maxWidth", "format", "quality"]}` with
+`Cache-Control: no-store`, and it reads no device, so the router answers it
+before it resolves or starts one. Servers without automation answer that `GET`
+with 405 and would save an artifact for an automated `POST`, so a client checks
+`options` before its first automated capture. serve-emu has no action catalog
+like serve-sim's `actions.describe`, and `/api` starts a device session, so the
+probe sits on the screenshot path itself. [observed: `packages/serve-emu/packages/serve-emu/src/middleware.ts`
+`routeRequest`, `packages/serve-emu/packages/serve-emu/src/server.ts`,
+`packages/serve-emu/packages/serve-emu/src/api/routes/inspection.ts`]

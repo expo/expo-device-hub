@@ -871,7 +871,7 @@ describe("createRouter stream mode", () => {
     await router.stopAll();
   });
 
-  test("rejects a screenshot GET before resolving or starting a device", async () => {
+  test("answers the screenshot probe and rejects other non-POST methods before starting a device", async () => {
     const noDevices = {
       devices: [] as Device[],
       avds: [] as string[],
@@ -880,7 +880,15 @@ describe("createRouter stream mode", () => {
       stopped: [] as string[],
     };
     const router = createRouter({}, routerDependencies(noDevices));
-    const response = await router.handleRequest(new Request("http://router.test/api/screenshot"));
+    const probe = await router.handleRequest(new Request("http://router.test/api/screenshot"));
+    expect(probe.status).toBe(200);
+    expect(await probe.json()).toEqual({
+      ok: true,
+      options: ["automation", "maxWidth", "format", "quality"],
+    });
+    const response = await router.handleRequest(
+      new Request("http://router.test/api/screenshot", { method: "PATCH" }),
+    );
     expect(response.status).toBe(405);
     expect(await response.text()).toBe("method not allowed");
     expect(noDevices.created).toEqual([]);
@@ -895,7 +903,11 @@ describe("createRouter stream mode", () => {
     };
     const idleRouter = createRouter({}, routerDependencies(idleDevice));
     const idle = await idleRouter.handleRequest(new Request("http://router.test/api/screenshot"));
-    expect(idle.status).toBe(405);
+    expect(idle.status).toBe(200);
+    const idlePatch = await idleRouter.handleRequest(
+      new Request("http://router.test/api/screenshot", { method: "PATCH" }),
+    );
+    expect(idlePatch.status).toBe(405);
     expect(idleDevice.created).toEqual([]);
     await idleRouter.stopAll();
   });

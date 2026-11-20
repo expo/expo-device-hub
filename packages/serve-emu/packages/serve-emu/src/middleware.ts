@@ -28,7 +28,11 @@ import {
   setUserRotation,
   type NightModeStatus,
 } from "./adb.ts";
-import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
+import {
+  captureScreenshot,
+  screenshotCapabilitiesResponse,
+  screenshotResponse,
+} from "./screenshot-response.ts";
 import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
 import {
@@ -1742,6 +1746,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     }
 
     if (url.pathname === "/api/screenshot") {
+      if (req.method === "GET") return screenshotCapabilitiesResponse();
       if (req.method !== "POST") {
         return new Response("method not allowed", { status: 405 });
       }
@@ -1749,6 +1754,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         return await screenshotResponse(
           () => captureScreenshot(() => screencapPng(opts.serial), deviceState.orientation),
           url,
+          req,
         );
       } catch (err) {
         return Response.json(
@@ -3231,6 +3237,10 @@ export function createRouter(
     }
 
     // Capture has side effects, so the method gate runs before ensure() resolves or starts a device.
+    // The GET probe reads no device either, so it is answered here too.
+    if (url.pathname === "/api/screenshot" && req.method === "GET") {
+      return screenshotCapabilitiesResponse();
+    }
     if (url.pathname === "/api/screenshot" && req.method !== "POST") {
       return new Response("method not allowed", { status: 405 });
     }

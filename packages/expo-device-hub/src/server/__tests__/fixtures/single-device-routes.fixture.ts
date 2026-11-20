@@ -201,6 +201,14 @@ test("the authenticated Hub mount preserves screenshot PNG and metadata headers"
     "X-Expo-Screenshot-Metadata",
   );
   expect(Buffer.from(await response!.arrayBuffer())).toEqual(png);
+  // An automated capture's JSON body must reach the backend unchanged.
+  const automated = await request(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ automation: true }),
+  });
+  expect(automated?.status).toBe(200);
+  expect(await backendRequests.at(-1)!.text()).toBe('{"automation":true}');
   const before = backendRequests.length;
   const refused = await server.default(new Request(`http://localhost${path}`, { method: "POST" }));
   expect(refused?.status).toBe(401);

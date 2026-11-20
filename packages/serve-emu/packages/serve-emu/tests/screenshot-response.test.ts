@@ -326,3 +326,110 @@ test("server total includes base64 response preparation", async () => {
     timer.mockRestore();
   }
 });
+
+async function withArtifactDirectory(run: (directory: string) => Promise<void>): Promise<void> {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const directory = await mkdtemp(join(tmpdir(), "serve-emu-automation-"));
+  const previous = process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+  process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = directory;
+  try {
+    await run(directory);
+  } finally {
+    if (previous === undefined) delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+    else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function screenshotPost(body?: string): Request {
+  return new Request("http://router.test/api/screenshot", {
+    method: "POST",
+    ...(body === undefined ? {} : { body, headers: { "Content-Type": "application/json" } }),
+  });
+}
+
+test("an automated capture returns the image and metadata without saving an artifact", async () => {
+  const { readdir } = await import("node:fs/promises");
+  const png = pngHeader(1080, 2400);
+  const metadata = { width: 1080, height: 2400, displayRotation: "portrait" as const };
+  await withArtifactDirectory(async (directory) => {
+    for (const query of ["", "?format=base64"]) {
+      const response = await screenshotResponse(
+        async () => ({ png, metadata }),
+        new URL(`http://router.test/api/screenshot${query}`),
+        screenshotPost(JSON.stringify({ automation: true })),
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-expo-screenshot-artifact")).toBe("disabled");
+      expect(JSON.parse(response.headers.get("x-expo-screenshot-metadata")!)).toEqual(metadata);
+      if (query) {
+        const body = await response.json();
+        expect(body.artifact).toEqual({ status: "disabled" });
+        expect(Buffer.from(body.data, "base64")).toEqual(Buffer.from(png));
+      } else {
+        expect(response.headers.get("content-type")).toBe("image/png");
+        expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from(png));
+      }
+    }
+    expect(await readdir(directory)).toEqual([]);
+  });
+});
+
+test("a manual capture still saves the artifact", async () => {
+  const { readdir } = await import("node:fs/promises");
+  await withArtifactDirectory(async (directory) => {
+    for (const body of [undefined, "", "{}", JSON.stringify({ automation: false })]) {
+      const response = await screenshotResponse(
+        async () => ({ png: pngHeader(1080, 2400) }),
+        new URL("http://router.test/api/screenshot"),
+        screenshotPost(body),
+      );
+      expect(response.headers.get("x-expo-screenshot-artifact")).toBe("saved");
+    }
+    expect(await readdir(directory)).toHaveLength(4);
+  });
+});
+
+test("rejects an invalid or oversized screenshot request before capturing", async () => {
+  const { readdir } = await import("node:fs/promises");
+  await withArtifactDirectory(async (directory) => {
+    let captures = 0;
+    const cases: Array<[body: string, status: number]> = [
+      [JSON.stringify({ automation: "true" }), 400],
+      [JSON.stringify({ automation: 1 }), 400],
+      [JSON.stringify({ automation: null }), 400],
+      [JSON.stringify({ automation: true, extra: 1 }), 400],
+      ["null", 400],
+      ["[]", 400],
+      ["true", 400],
+      ["{", 400],
+      [JSON.stringify({ automation: true, padding: "x".repeat(2048) }), 413],
+    ];
+    for (const [body, status] of cases) {
+      const response = await screenshotResponse(
+        async () => {
+          captures++;
+          return { png: pngHeader(1, 1) };
+        },
+        new URL("http://router.test/api/screenshot"),
+        screenshotPost(body),
+      );
+      expect(response.status, body).toBe(status);
+      expect((await response.json()).ok).toBe(false);
+    }
+    expect(captures).toBe(0);
+    expect(await readdir(directory)).toEqual([]);
+  });
+});
+
+test("the GET probe lists automation and the image options", async () => {
+  const { screenshotCapabilitiesResponse } = await import("../src/screenshot-response.ts");
+  const { API_SUCCESS_PARSERS } = await import("../src/shared/api-contracts.ts");
+  const response = screenshotCapabilitiesResponse();
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  const body = API_SUCCESS_PARSERS["/api/screenshot"].GET(await response.json());
+  expect(body).toEqual({ ok: true, options: ["automation", "maxWidth", "format", "quality"] });
+});

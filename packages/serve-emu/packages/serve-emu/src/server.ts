@@ -9,7 +9,11 @@ import {
   handleCameraRequest,
   readCameraWiring,
 } from "./camera.ts";
-import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
+import {
+  captureScreenshot,
+  screenshotCapabilitiesResponse,
+  screenshotResponse,
+} from "./screenshot-response.ts";
 import { getExecSnapshot } from "./exec.ts";
 import { applyFoldRequest, getFoldStatus } from "./fold.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
@@ -2526,6 +2530,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       }
 
       if (url.pathname === "/api/screenshot") {
+        if (req.method === "GET") return screenshotCapabilitiesResponse();
         if (req.method !== "POST") {
           return new Response("method not allowed", { status: 405 });
         }
@@ -2539,6 +2544,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
                 ),
               ),
             url,
+            req,
           );
         } catch (err) {
           return errorResponse(err);

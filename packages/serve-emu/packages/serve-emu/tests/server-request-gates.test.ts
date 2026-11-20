@@ -510,6 +510,26 @@ describe("server request gates", () => {
 });
 
 describe("server HTTP and WebSocket boundaries", () => {
+  test("answers the screenshot probe and validates automation before capture", async () => {
+    const harness = await createHarness();
+    const probe = await response(harness.request("/api/screenshot"));
+    expect(probe.status).toBe(200);
+    expect(await probe.json()).toEqual({
+      ok: true,
+      options: ["automation", "maxWidth", "format", "quality"],
+    });
+    // A capture would run adb; a 400 shows the body reached the parser before it.
+    const invalid = await response(
+      harness.request("/api/screenshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ automation: "yes" }),
+      }),
+    );
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({ ok: false, error: "Invalid screenshot request" });
+  });
+
   test("enforces route-specific methods across the public HTTP surface", async () => {
     const harness = await createHarness();
     const mismatches: Array<[method: string, path: string]> = [
@@ -525,7 +545,7 @@ describe("server HTTP and WebSocket boundaries", () => {
       ["PATCH", "/api/software-keyboard"],
       ["POST", "/api/logcat"],
       ["POST", "/api/metrics"],
-      ["GET", "/api/screenshot"],
+      ["PUT", "/api/screenshot"],
       ["PATCH", "/api/screenshot"],
       ["POST", "/api/foreground"],
       ["POST", "/api/accessibility"],
