@@ -1129,6 +1129,7 @@ export interface DeviceClient {
 
   /** Backend feature availability. Presentation uses this to omit unsupported UI. */
   capabilities: DeviceCapabilities;
+  unavailableReasons?: Readonly<Partial<Record<keyof DeviceCapabilities, string>>>;
   /**
    * The app currently in the foreground, or `null` while unknown. serve-sim
    * pushes changes over its `{base}/appstate` SSE (SpringBoard log driven,

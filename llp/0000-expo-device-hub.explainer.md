@@ -178,14 +178,23 @@ and only change their value or lock]
   capability the device does not report says that it is not available, in place of its
   controls. Current app and Logs do so too, from the `foregroundApp` and `logs` capabilities,
   which count as present until the device reports otherwise, as a physical iPhone does. For
-  these two the device's latest report counts, not the first
+  these two, and for any capability that the device's backend explains as missing in the
+  client's `unavailableReasons`, the device's latest report counts, not the first
   ([LLP 0027](0027-physical-iphones.explainer.md#feature-gate)).
-  [observed: `PLATFORM_SECTIONS` in `InspectorSections.tsx`]
+  [observed: `PLATFORM_SECTIONS` in `InspectorSections.tsx`; `latestReportCounts` in
+  `useSteadyClient.ts`]
 - **Rows.** Device options has one fixed list of rows per platform. A row that the device
   cannot change now is locked: while the settings load, without a reason; while the Hub
   cannot read them, or on a device that does not have the setting, with the reason in a
-  tooltip. A select whose value is not known shows a placeholder.
-  [observed: `SELECT_SETTINGS`, `SWITCH_SETTINGS` and `lockReason` in `DeviceOptionsSection.tsx`]
+  tooltip. A select whose value is not known shows a placeholder. A device whose backend
+  explains why it lacks a capability, in the client's `unavailableReasons`, locks the rows of
+  that capability with that reason, also while the settings load: a physical iPhone locks
+  every settings row and the keyboard toggles with the reason for `deviceSettings`, and
+  Orientation and the toolbar's Rotate with the reason for `orientation`. Device options stays
+  a section with rows, not a "not available" section, because its viewer-local rows, such as
+  Show device shape, still work ([LLP 0027](0027-physical-iphones.explainer.md#feature-gate)).
+  [observed: `SELECT_SETTINGS`, `SWITCH_SETTINGS` and `lockReason` in `DeviceOptionsSection.tsx`;
+  `rotateNotAvailableText` in `rotation-availability.ts`]
   Stream options has a fixed list of rows per platform too: Transport, the two codec rows,
   Max size, Video FPS and Video bitrate; on iOS also MJPEG FPS and MJPEG quality; on Android
   also Source. A row that the server or the device has nothing for is locked with a reason: a

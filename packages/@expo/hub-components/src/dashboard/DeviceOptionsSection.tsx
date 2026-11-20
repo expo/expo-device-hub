@@ -5,7 +5,7 @@ import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { type Platform } from "./data";
 import { recordingLockText } from "./recording-lock";
-import { rotationUnavailableText } from "./rotation-availability";
+import { rotateNotAvailableText, rotationUnavailableText } from "./rotation-availability";
 import { FoldSettings, ModelPreviewSettings, type FoldPreviewOption } from "./FoldSettings";
 import { KeyboardSection } from "./KeyboardSection";
 import { SidebarActionButton } from "./SidebarActionButton";
@@ -202,6 +202,9 @@ export function DeviceOptionsSection({
   const onscreenKeyboardDescriptionId = useId();
   const orientationErrorId = useId();
   const settings = client?.deviceSettings ?? null;
+  const settingsNotAvailable = client?.capabilities.deviceSettings
+    ? undefined
+    : client?.unavailableReasons?.deviceSettings;
   // The Hub can read and write the settings now. A kept copy of them is not enough.
   const settingsLive =
     !!client?.capabilities.deviceSettings &&
@@ -227,6 +230,7 @@ export function DeviceOptionsSection({
   // @ref LLP 0000#steady-inspector — an unsupported setting keeps its row and locks; the website hides it
   /** Why the setting's control is locked, or undefined when it is locked without a reason or free. */
   function lockReason(key: DeviceSettingKey): string | undefined {
+    if (settingsNotAvailable) return settingsNotAvailable;
     if (settingsLoading) return undefined;
     if (!settingsLive) return SETTINGS_UNAVAILABLE_REASON;
     return value(key) === undefined ? SETTING_UNSUPPORTED_REASON : undefined;
@@ -249,10 +253,12 @@ export function DeviceOptionsSection({
   // The select shows the last pick at once, then the device's report. Rotate works before that.
   const currentOrientation = client?.orientation ?? null;
   const rotationUnavailable = rotationUnavailableText(client?.orientationUnavailable ?? null);
+  const rotateNotAvailable = client ? rotateNotAvailableText(client) : undefined;
   const orientationLockReason =
-    orientationOptions.length === 0 || currentOrientation === null || stale.has("orientation")
+    rotateNotAvailable ??
+    (orientationOptions.length === 0 || currentOrientation === null || stale.has("orientation")
       ? ORIENTATION_UNKNOWN_REASON
-      : rotationUnavailable;
+      : rotationUnavailable);
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
@@ -347,7 +353,7 @@ export function DeviceOptionsSection({
           <Select
             ariaLabel="Orientation"
             ariaDescribedBy={client.orientationError ? orientationErrorId : undefined}
-            options={orientationOptions}
+            options={rotateNotAvailable ? ORIENTATION_OPTIONS : orientationOptions}
             value={currentOrientation ?? ""}
             disabled={orientationLockReason !== undefined}
             disabledReason={orientationLockReason}
@@ -374,7 +380,9 @@ export function DeviceOptionsSection({
         </SidebarRow>
       )}
 
-      {client && platform === "ios" && <KeyboardSection client={client} />}
+      {client && platform === "ios" && (
+        <KeyboardSection client={client} disabledReason={settingsNotAvailable} />
+      )}
 
       {client && platform === "android" && (
         <>

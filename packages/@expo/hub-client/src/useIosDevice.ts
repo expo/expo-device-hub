@@ -480,6 +480,29 @@ function connectionKey(baseUrl: string, device: string | null, token: string | n
 
 const NO_UNAVAILABLE_FEATURES: ResolvedConfig["unavailableFeatures"] = {};
 
+const CAPABILITY_FEATURES: ReadonlyArray<[keyof DeviceCapabilities, IosDeviceFeature]> = [
+  ["deviceSettings", "deviceSettings"],
+  ["orientation", "rotate"],
+  ["fold", "hinge"],
+  ["logs", "logs"],
+  ["foregroundApp", "foregroundApp"],
+  ["location", "location"],
+  ["accessibility", "accessibility"],
+  ["activity", "activity"],
+  ["clipboard", "clipboard"],
+];
+
+function capabilityReasons(
+  unavailableFeatures: ResolvedConfig["unavailableFeatures"],
+): NonNullable<DeviceClient["unavailableReasons"]> {
+  const reasons: Partial<Record<keyof DeviceCapabilities, string>> = {};
+  for (const [capability, feature] of CAPABILITY_FEATURES) {
+    const reason = unavailableFeatures[feature];
+    if (reason !== undefined) reasons[capability] = reason;
+  }
+  return reasons;
+}
+
 function configKey(config: ResolvedConfig): string {
   const settings = config.initialStreamSettings as PreviewApi["streamSettings"];
   return JSON.stringify({
@@ -3091,6 +3114,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const streamSettingsAvailable = !!streamSettingsUrl;
   const clipboardPaste = config?.inputPaste ?? false;
   const clipboardCopy = config?.inputCopy ?? false;
+  const unavailableReasons = useMemo(
+    () => capabilityReasons(unavailableFeatures),
+    [unavailableFeatures],
+  );
   const capabilities = useMemo<DeviceCapabilities>(
     () => ({
       deviceSettings: deviceSettingsAvailable,
@@ -3218,6 +3245,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     webRtcCodec,
     setWebRtcCodec,
     capabilities,
+    unavailableReasons,
     foregroundApp,
     videoKind,
     attachVideo,

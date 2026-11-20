@@ -36,6 +36,20 @@ describe("StreamControls", () => {
       }
     },
   );
+  test("locks Rotate with the reason of a device that cannot turn, over an input lock", () => {
+    const reason = "Rotate is not available on a physical device.";
+    const markup = renderToStaticMarkup(
+      <StreamControls
+        onRotate={() => {}}
+        orientationUnavailable="input-unavailable"
+        rotateNotAvailable={reason}
+      />,
+    );
+    const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate device"'));
+    expect(rotate).toContain('aria-disabled="true"');
+    expect(rotate).toContain(`aria-description="${reason}"`);
+  });
+
   test("leaves Rotate enabled while orientation is available", () => {
     const markup = renderToStaticMarkup(
       <StreamControls onRotate={() => {}} orientationUnavailable={null} />,
@@ -248,6 +262,13 @@ describe("StreamPanel", () => {
     expect(rotate({ orientationUnavailable: "input-unavailable" })).toContain(
       'aria-disabled="true"',
     );
+    const reason = "Rotate is not available on a physical device.";
+    const phone = rotate({
+      capabilities: { clipboard: false, orientation: false } as DeviceClient["capabilities"],
+      unavailableReasons: { orientation: reason },
+    });
+    expect(phone).toContain('aria-disabled="true"');
+    expect(phone).toContain(`aria-description="${reason}"`);
   });
 
   test("offers the clipboard actions of its client and blocks Copy while an action is pending", async () => {

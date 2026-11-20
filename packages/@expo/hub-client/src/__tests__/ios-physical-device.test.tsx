@@ -166,6 +166,22 @@ test("a physical iPhone reports every simulator feature as unavailable", async (
   expect(client().capabilities.events).toBe(true);
 });
 
+test("a physical iPhone gives serve-sim's reason for each capability it lacks", async () => {
+  const client = await renderClient(PHONE, PHONE_UNAVAILABLE);
+
+  expect(client().unavailableReasons).toEqual({
+    deviceSettings: PHONE_UNAVAILABLE.deviceSettings,
+    orientation: PHONE_UNAVAILABLE.rotate,
+    fold: PHONE_UNAVAILABLE.hinge,
+    logs: PHONE_UNAVAILABLE.logs,
+    foregroundApp: PHONE_UNAVAILABLE.foregroundApp,
+    location: PHONE_UNAVAILABLE.location,
+    accessibility: PHONE_UNAVAILABLE.accessibility,
+    activity: PHONE_UNAVAILABLE.activity,
+    clipboard: PHONE_UNAVAILABLE.clipboard,
+  });
+});
+
 test("a simulator keeps its features when the server reports none unavailable", async () => {
   const client = await renderClient(SIMULATOR, {});
 
@@ -177,6 +193,7 @@ test("a simulator keeps its features when the server reports none unavailable", 
     logs: true,
     foregroundApp: true,
   });
+  expect(client().unavailableReasons).toEqual({});
 });
 
 test("an older server without the field leaves every feature in place", async () => {

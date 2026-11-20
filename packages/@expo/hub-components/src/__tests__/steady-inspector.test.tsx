@@ -141,6 +141,8 @@ describe("useSteadyClient", () => {
         data-location={JSON.stringify(steady?.client.capabilities.location)}
         data-logs={JSON.stringify(steady?.client.capabilities.logs)}
         data-foreground-app={JSON.stringify(steady?.client.capabilities.foregroundApp)}
+        data-orientation={JSON.stringify(steady?.client.capabilities.orientation)}
+        data-device-settings={JSON.stringify(steady?.client.capabilities.deviceSettings)}
         data-stale={[...(steady?.stale ?? [])].sort().join(",")}
       />
     );
@@ -266,6 +268,27 @@ describe("useSteadyClient", () => {
     await act(async () => renderer!.update(<Probe client={without} device={phone} />));
     expect(probe()["data-logs"]).toBe("false");
     expect(probe()["data-foreground-app"]).toBe("false");
+  });
+
+  test("a capability that the device explains as missing goes, though it reported it before", async () => {
+    const phone: Device = { ...IPHONE, id: "phone", physical: true };
+    await act(async () => {
+      renderer = create(<Probe client={STREAMING} device={phone} />);
+    });
+    expect(probe()["data-device-settings"]).toBe("true");
+
+    const gated = {
+      ...STREAMING,
+      capabilities: { ...STREAMING.capabilities, deviceSettings: false, orientation: false },
+      unavailableReasons: {
+        deviceSettings: "Simulator settings are not available on a physical device.",
+        orientation: "Rotate is not available on a physical device.",
+      },
+    } as unknown as DeviceClient;
+    await act(async () => renderer!.update(<Probe client={gated} device={phone} />));
+    expect(probe()["data-device-settings"]).toBe("false");
+    expect(probe()["data-orientation"]).toBe("false");
+    expect(JSON.parse(probe()["data-location"])).toEqual({ clear: true });
   });
 
   test("settles when a client builds an equal object again on each render", async () => {

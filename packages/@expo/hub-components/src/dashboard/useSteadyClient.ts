@@ -82,6 +82,12 @@ const PRESENT_UNTIL_REPORTED: ReadonlySet<keyof DeviceCapabilities> = new Set([
   "foregroundApp",
 ]);
 
+type UnavailableReasons = DeviceClient["unavailableReasons"];
+
+function latestReportCounts(key: keyof DeviceCapabilities, reasons: UnavailableReasons) {
+  return PRESENT_UNTIL_REPORTED.has(key) || reasons?.[key] !== undefined;
+}
+
 /**
  * The capabilities of `first`, with each one that it lacks from `second`. It
  * is `first` itself when `second` adds nothing.
@@ -89,12 +95,13 @@ const PRESENT_UNTIL_REPORTED: ReadonlySet<keyof DeviceCapabilities> = new Set([
 function withCapabilities(
   first: DeviceCapabilities,
   second: DeviceCapabilities | undefined,
+  reasons: UnavailableReasons,
 ): DeviceCapabilities {
   if (!second) return first;
   const merged = { ...first } as Record<keyof DeviceCapabilities, unknown>;
   let changed = false;
   for (const key of Object.keys(second) as (keyof DeviceCapabilities)[]) {
-    const value = PRESENT_UNTIL_REPORTED.has(key) ? first[key] : first[key] || second[key];
+    const value = latestReportCounts(key, reasons) ? first[key] : first[key] || second[key];
     if (!sameData(value, first[key])) {
       changed = true;
       merged[key] = value;
@@ -103,16 +110,17 @@ function withCapabilities(
   return changed ? (merged as DeviceCapabilities) : first;
 }
 
-/** Each capability that the device reported once stays, with its last value, except logs and the foreground app. */
+/** Each capability that the device reported once stays, with its last value, except those whose latest report counts. */
 function keepCapabilities(
   previous: DeviceCapabilities | undefined,
   live: DeviceCapabilities,
+  reasons: UnavailableReasons,
 ): DeviceCapabilities {
   if (!previous) return live;
   const merged = { ...previous } as Record<keyof DeviceCapabilities, unknown>;
   let changed = false;
   for (const key of Object.keys(live) as (keyof DeviceCapabilities)[]) {
-    const value = PRESENT_UNTIL_REPORTED.has(key) ? live[key] : live[key] || previous[key];
+    const value = latestReportCounts(key, reasons) ? live[key] : live[key] || previous[key];
     if (!sameData(value, previous[key])) {
       changed = true;
       merged[key] = value;
@@ -123,7 +131,13 @@ function keepCapabilities(
 
 /** The device's own reports after this one. It is `previous` itself while the client reports the same data. */
 function keep(previous: Kept | undefined, client: DeviceClient): Kept {
-  const next = { capabilities: keepCapabilities(previous?.capabilities, client.capabilities) } as {
+  const next = {
+    capabilities: keepCapabilities(
+      previous?.capabilities,
+      client.capabilities,
+      client.unavailableReasons,
+    ),
+  } as {
     -readonly [Field in keyof Kept]: Kept[Field];
   };
   let changed = !previous || next.capabilities !== previous.capabilities;
@@ -202,14 +216,16 @@ export function useSteadyClient(
   const guess = guessing ? kindGuess : undefined;
   const ownCapabilities = kept?.capabilities;
   const guessCapabilities = guess?.capabilities;
+  const reasons = client && reporting ? client.unavailableReasons : undefined;
   const capabilities = useMemo(
     () =>
       // A fold belongs to one device and is not passed on.
       withCapabilities(
         ownCapabilities ?? NO_CAPABILITIES,
         guessCapabilities && { ...guessCapabilities, fold: false },
+        reasons,
       ),
-    [ownCapabilities, guessCapabilities],
+    [ownCapabilities, guessCapabilities, reasons],
   );
   const streamCapabilities = kept?.streamCapabilities ?? guess?.streamCapabilities ?? null;
   // What this device shows is the guess for the next device of its kind. Only a
