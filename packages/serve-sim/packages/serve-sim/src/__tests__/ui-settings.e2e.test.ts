@@ -82,6 +82,25 @@ function simctlUi(subcommand: string): string {
   }).trim();
 }
 
+/**
+ * launchd environment variable inside the simulator, or null when unset.
+ * `launchctl unsetenv` leaves `getenv` reporting either an error or an empty
+ * string depending on the runtime; both mean "no override".
+ */
+function simEnv(name: string): string | null {
+  try {
+    return (
+      execFileSync("xcrun", ["simctl", "getenv", udid!, name], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: EXEC_TIMEOUT_MS,
+      }).trim() || null
+    );
+  } catch {
+    return null;
+  }
+}
+
 describeIfSim("serve-sim ui (simulator-wide options)", () => {
   afterAll(() => {
     // Leave the simulator in stock state for whatever runs next.
@@ -95,12 +114,14 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
       ["show-borders", "off"],
       ["reduce-transparency", "off"],
       ["voiceover", "off"],
+      ["time-zone", "host"],
     ] as const) {
       try {
         cli(option, value);
       } catch {}
     }
-  });
+    // Ten CLI children at about a second each run past bun's 5s default.
+  }, 30_000);
 
   test("appearance switches dark and back", () => {
     cli("appearance", "dark");
@@ -115,7 +136,8 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
     expect(cli("liquid-glass")).toBe("tinted");
     cli("liquid-glass", "clear");
     expect(simDefault("com.apple.UIKit", "UIViewGlassLegibilitySetting")).toBe("0");
-  });
+    // Five simctl children at ~1s each sits on bun's 5s default.
+  }, 15_000);
 
   test("color filters set the media-accessibility display filter", () => {
     const cases = [
@@ -188,7 +210,20 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
       "reduce-transparency",
       "show-borders",
       "text-size",
+      "time-zone",
       "voiceover",
     ]);
+  });
+
+  // `simctl getenv` reads the launchd_sim store new processes inherit from.
+  test("time zone sets and clears TZ on the simulator's launchd", () => {
+    cli("time-zone", "Asia/Tokyo");
+    expect(simEnv("TZ")).toBe("Asia/Tokyo");
+    expect(cli("time-zone")).toBe("Asia/Tokyo");
+    cli("time-zone", "europe/berlin");
+    expect(simEnv("TZ")).toBe("Europe/Berlin");
+    cli("time-zone", "host");
+    expect(simEnv("TZ")).toBeNull();
+    expect(cli("time-zone")).toBe("host");
   });
 });
