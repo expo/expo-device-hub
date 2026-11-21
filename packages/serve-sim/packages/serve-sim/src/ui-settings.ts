@@ -667,7 +667,8 @@ export async function getUiStatus(udid: string): Promise<Record<string, string>>
       .catch(() => ({}) as Record<string, string>),
     ...nonAxOptions.map(([option]) => getUiOption(udid, option).catch(() => "unsupported")),
   ]);
-  const status: Record<string, string> = {};
+  // Read-only metadata: keep the host setting distinct from its resolved zone for browser DST.
+  const status: Record<string, string> = { "host-time-zone": macZone() };
   for (const [option, spec] of Object.entries(UI_OPTIONS)) {
     if (spec.via === "ax") status[option] = axStatus[option] ?? "unsupported";
   }

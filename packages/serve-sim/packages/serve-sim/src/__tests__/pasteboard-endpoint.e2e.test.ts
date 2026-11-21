@@ -453,6 +453,20 @@ for (const app of PASTEBOARD_TEST_APPS) {
       writeTestPasteboard(bootedUdid!, probe);
       await waitForHostPasteboard(bootedUdid!, probe);
       const res = await middleware(pasteboardRequest(`?device=${encodeURIComponent(bootedUdid!)}`));
+      if (res?.status !== 200) {
+        const body = await res
+          ?.clone()
+          .json()
+          .catch(() => null);
+        // Keep known reader failures visible without printing arbitrary clipboard contents.
+        const reason = [
+          "Could not read the simulator clipboard. Open the app you copied from and retry.",
+          "Clipboard reader is unavailable. Start a session with clipboard enabled and retry.",
+          "Clipboard is unavailable in this app. Open another app and retry.",
+          "Could not read this app's clipboard. Restart the app and retry.",
+        ].find((message) => body?.error === message);
+        throw new Error(`Clipboard endpoint returned ${res?.status}: ${reason ?? "body omitted"}`);
+      }
       expect(res?.status).toBe(200);
       expect(res?.headers.get("content-type")).toBe("application/json");
       expect(res?.headers.get("access-control-allow-origin")).toBe(PREVIEW_ORIGIN);
