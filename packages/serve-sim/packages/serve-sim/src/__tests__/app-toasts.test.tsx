@@ -1,13 +1,146 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import {
   ClipboardToastContent,
   pasteFieldHint,
   ShareLinkToastContent,
   UploadToastContent,
 } from "../client/components/app-toasts";
+import { APP_FOLDER_GUIDANCE, APP_FOLDER_UNREADABLE } from "../client/utils/app-drop-folder";
 
 describe("UploadToastContent", () => {
+  test("labels a queued folder without showing upload progress", () => {
+    const html = renderToStaticMarkup(
+      <UploadToastContent
+        toast={{ id: "q", name: "Two.app", kind: "app", status: "queued", progress: 0 }}
+      />,
+    );
+    expect(html).toContain("Waiting to upload Two.app…");
+    expect(html).not.toContain("0%");
+    expect(html).not.toContain("serve-sim-toast-indeterminate");
+    // Red marks errors only.
+    expect(html).not.toContain("#f87171");
+  });
+
+  test("titles guidance with the file name and keeps an accessible dismissal", () => {
+    const html = renderToStaticMarkup(
+      <UploadToastContent
+        toast={{
+          id: "e",
+          name: "Photos",
+          kind: "app",
+          status: "error",
+          progress: null,
+          message: APP_FOLDER_GUIDANCE,
+        }}
+        onDismiss={() => {}}
+      />,
+    );
+    expect(html).toContain('font-medium">Photos</span> is not a Simulator app');
+    expect(html).toContain("Drop a Simulator .app folder or a .tar.gz archive.");
+    expect(html).toContain('aria-label="Dismiss upload error"');
+    expect(html).not.toContain("text-ellipsis");
+    expect(html).not.toContain("Details");
+  });
+
+  test("keeps a multi-line host error under Details with a Copy button", () => {
+    const html = renderToStaticMarkup(
+      <UploadToastContent
+        toast={{
+          id: "f",
+          name: "App.app",
+          kind: "app",
+          status: "error",
+          progress: null,
+          message: "install failed\nsecond line",
+        }}
+      />,
+    );
+    expect(html).toContain("Could not install");
+    expect(html).toContain("line-clamp-2");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("Copy</button>");
+    expect(html).toMatch(/<pre[^>]*hidden=""[^>]*>install failed\nsecond line<\/pre>/);
+    // The package avoids low-opacity icons: dismiss, Details and Copy icons use full white.
+    const icons = [...html.matchAll(/<svg[^>]*class="([^"]*)"/g)].map(([, cls]) => cls!);
+    expect(
+      icons.filter(
+        (cls) =>
+          cls.includes("lucide-x") || cls.includes("lucide-chevron") || cls.includes("lucide-copy"),
+      ),
+    ).toHaveLength(3);
+    expect(html).not.toMatch(/Dismiss upload error"[^>]*text-white\//);
+    for (const cls of icons.filter((c) => !c.includes("lucide-circle-alert")))
+      if (!cls.includes("lucide-x")) expect(cls).toContain("text-white");
+  });
+
+  test("shows open Details and does not clamp fixed advice", () => {
+    const error = {
+      id: "o",
+      name: "App.app",
+      kind: "app",
+      status: "error",
+      progress: null,
+    } as const;
+    const open = renderToStaticMarkup(
+      <UploadToastContent toast={{ ...error, message: "failed\nline two", detailsOpen: true }} />,
+    );
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).not.toContain('hidden=""');
+    const unreadable = renderToStaticMarkup(
+      <UploadToastContent
+        toast={{ ...error, message: `${APP_FOLDER_UNREADABLE}\naccess denied.` }}
+      />,
+    );
+    expect(unreadable).toContain("Details");
+    expect(unreadable).not.toContain("line-clamp-2");
+  });
+
+  test("Details and a failed Copy both ask to open the full error", async () => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    let toggles = 0;
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <UploadToastContent
+          toast={{
+            id: "c",
+            name: "App.app",
+            kind: "app",
+            status: "error",
+            progress: null,
+            message: "install failed\nsecond line",
+          }}
+          onToggleDetails={() => toggles++}
+        />,
+      );
+    });
+    const click = (label: string) =>
+      act(async () => {
+        renderer.root
+          .find((node) => node.type === "button" && node.children.includes(label))
+          .props.onClick();
+        await Bun.sleep(0);
+      });
+    await click("Details");
+    // Bun has no clipboard and no DOM, so Copy opens the details for a manual copy.
+    await click("Copy");
+    expect(toggles).toBe(2);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async () => {} },
+    });
+    try {
+      await click("Copy");
+      expect(toggles).toBe(2);
+      expect(JSON.stringify(renderer.toJSON())).toContain("Copied");
+    } finally {
+      delete (navigator as { clipboard?: unknown }).clipboard;
+      await act(async () => renderer.unmount());
+    }
+  });
+
   test("renders determinate upload progress", () => {
     const html = renderToStaticMarkup(
       <UploadToastContent
