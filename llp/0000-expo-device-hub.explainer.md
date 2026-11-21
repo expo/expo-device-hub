@@ -6,7 +6,7 @@
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
-**Revised:** 2026-11-16 (sidebar support warning, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
+**Revised:** 2026-11-20 (tablet page height, Claude Code); 2026-11-16 (sidebar support warning, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
 
 ## Summary
 
@@ -122,6 +122,13 @@ padding. The shared toolbar and sidebar changes are described below. [observed: 
 [confirmed: Billy Roh, 2026-10-29, requested the Keyboard toggle in the Clipboard pill and
 the top-right Full screen button; since the toolbar became one bar
 ([Hub toolbar](#hub-toolbar)), the toggle keeps its place next to the Clipboard menu]
+
+Tablet and desktop size the dashboard, its sidebar, and the server connection overlay to `100dvh`, the visible
+page height. Tablet browsers make `100vh` the height with their toolbar hidden, so a `100vh` dashboard put the
+end of the sidebar and the device controls below the bottom edge. In desktop Chrome, `100dvh` and `100vh` have
+the same value. [observed 2026-11-20: iPad (A16) simulator, iOS 27 Safari, full-screen window: `innerHeight`
+and `100dvh` 1048px, `100vh` 1123px; Pixel Tablet emulator, Android 16 Chrome, landscape: `innerHeight` and
+`100dvh` 648px, `100vh` 744px; headless desktop Chrome, 1440×900 window: both 813px]
 
 ### Hub sidebar
 
