@@ -44,6 +44,7 @@ import {
   type ServeSimDeviceState,
   type StreamSettings,
   type WebRtcIceServer,
+  ensureStateDir,
 } from "./state";
 import { textToKeyEvents, UnsupportedCharacterError, sendKeyEventsToWs } from "./text-to-keys";
 import { logBufferCache } from "./log-buffer";
@@ -166,10 +167,6 @@ async function replaceHelper(state: ServerState): Promise<void> {
 }
 
 type StreamRuntimeOptions = StreamSettings;
-function ensureStateDir() {
-  mkdirSync(stateDir(), { recursive: true });
-}
-
 function readState(udid?: string): ServerState | null {
   if (udid) {
     return readStateFile(stateFileForDevice(udid));
@@ -1255,7 +1252,8 @@ function recordInjectedBundle(udid: string, bundleId: string, helperPid: number)
   const existing = readInjectedBundles(udid);
   const bundleIds = existing.includes(bundleId) ? existing : [...existing, bundleId];
   const next = { helperPid, bundleIds };
-  mkdirSync(simcamStateDir(), { recursive: true });
+  ensureStateDir();
+  mkdirSync(simcamStateDir(), { recursive: true, mode: 0o700 });
   writeFileSync(helperBundlesFile(udid), JSON.stringify(next));
 }
 
@@ -1276,7 +1274,8 @@ function spawnCameraHelper(args: {
   height?: number;
 }): number {
   const camDir = simcamStateDir();
-  mkdirSync(camDir, { recursive: true });
+  ensureStateDir();
+  mkdirSync(camDir, { recursive: true, mode: 0o700 });
   const logPath = join(camDir, `${args.udid}.log`);
   const out = openSync(logPath, "a");
   const argv = ["--shm", args.shmName, "--socket", args.socketPath, "--source", args.source];

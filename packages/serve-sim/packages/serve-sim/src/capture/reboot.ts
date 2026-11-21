@@ -1,9 +1,9 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { bootDevice, shutdownDevice } from "../device";
 import { devicesArmedHere, rearmCapabilityLoader } from "../launch-manager";
-import { stateDir } from "../state";
+import { ensureStateDir, stateDir } from "../state";
 import { CaptureEnableError, captureRuntime, type CaptureRuntime } from "./runtime";
 import { type CaptureField } from "./fields";
 import { type CaptureMeta } from "./store";
@@ -46,7 +46,7 @@ function writeRebootRecord(udid: string, record: RebootRecord): void {
   const file = rebootRecordFile(udid);
   const tmp = `${file}.${process.pid}.tmp`;
   try {
-    mkdirSync(stateDir(), { recursive: true });
+    ensureStateDir();
     writeFileSync(tmp, JSON.stringify(record));
     renameSync(tmp, file);
   } catch {}
