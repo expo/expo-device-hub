@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-10-27
-**Revised:** 2026-11-04
+**Revised:** 2026-11-08
 **Related:** LLP 0007, LLP 0010
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -47,8 +47,17 @@ The dylib loads on the app's main queue after launch. A read in `application(_:d
 
 The capability is on by default for user apps. Without a built dylib it declines, so a session still starts, and keychain commands report the capability as unavailable. A `com.apple.` bundle ID is refused at once, because the loader never reaches a system app [observed: `runKeychainOperations` in `src/sim-keychain.ts`].
 
+## Formats and the CLI
+
+`serve-sim keychain set|delete|list` (`src/keychain-cli.ts`) maps string keys and values to attributes in `src/keychain.ts`. JSON file input validates own entries without rebuilding an object, so credential names such as `__proto__` survive and every non-string value is refused before publication [observed: `parseKeychainEntries` in `src/keychain-cli.ts`]:
+
+- `expo-secure-store` (default) writes service `<keychainService>:no-auth`, with account and generic as the key's bytes, and `whenUnlocked`, as SecureStore does. Like SecureStore's `setItemAsync`, a successful `set` then removes the `:auth` and legacy items, so `getItemAsync` cannot return an older copy. `delete` removes all three services SecureStore reads.
+- `generic-password` writes the key as a string account in a given service, for other libraries.
+
+A closed app gets the request queued at once instead of after a wait. `--relaunch` stops the app, publishes the request, starts the app, and waits for the helper's answer. If publishing fails after the app stops, serve-sim attempts to restart it and reports the publication failure; if restarting also fails, it reports both errors. It does not order the write before an early native launch callback; an app that cached an earlier read needs another restart after acknowledgement. An unanswered request that the app has not claimed is withdrawn and the command fails; a lost answer after the app claimed it leaves the result uncertain [observed: `runKeychainOperations` and `requestKeychainUnlocked` in `src/sim-keychain.ts`]. Deleting a key that does not exist succeeds.
+
 ## Not there yet
 
-- No CLI, host action, or UI yet.
+- No host action or UI yet.
 - Items protected by biometrics (`kSecAttrAccessControl`) are not written.
 - A queued request stays in the app's `tmp` folder until the app next starts in a serve-sim session or the host sends the app another keychain request, even after it expired.

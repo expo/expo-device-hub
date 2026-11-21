@@ -21,6 +21,7 @@ import {
   capabilityConfigPath,
   renderCapabilityConfig,
   launchApp,
+  isRunning,
 } from "../launch-manager";
 import { registerCapability, clearRegisteredCapabilities } from "../capabilities";
 import { launchAppAsync } from "../launch-app";
@@ -714,5 +715,31 @@ describe("childLaunchEnv", () => {
     expect(childLaunchEnv("/opt/injector.dylib", { SIMCAM_SHM_NAME: "/shm" })).toMatchObject({
       SIMCTL_CHILD_SIMCAM_SHM_NAME: "/shm",
     });
+  });
+});
+
+describe("isRunning", () => {
+  const list = (labels: string[]) => `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[3] === 'launchctl' && args[4] === 'list') {
+  console.log(${JSON.stringify(labels.map((label) => `123\t0\t${label}`).join("\n"))});
+} else process.exit(1);
+`;
+
+  test("matches the exact bundle id, not one that starts with it", async () => {
+    await withShimsAsync(
+      { xcrun: list(["UIKitApplication:com.example.app.dev[1a2b][rb-legacy]"]) },
+      async () => expect(await isRunning(UDID, "com.example.app")).toBe(false),
+    );
+    await withShimsAsync(
+      { xcrun: list(["UIKitApplication:com.example.app[1a2b][rb-legacy]"]) },
+      async () => expect(await isRunning(UDID, "com.example.app")).toBe(true),
+    );
+  });
+
+  test("is null when launchd cannot be asked", async () => {
+    await withShimsAsync({ xcrun: "#!/bin/sh\nexit 1\n" }, async () =>
+      expect(await isRunning(UDID, "com.example.app")).toBeNull(),
+    );
   });
 });

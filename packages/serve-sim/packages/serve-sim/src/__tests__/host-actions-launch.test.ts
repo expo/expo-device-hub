@@ -205,7 +205,7 @@ if (args[1] === '${stage}') {
 if (args[1] === 'spawn' && args[3] === 'launchctl') {
   const [operation, name, value] = args.slice(4);
   if (operation === 'getenv') console.log(held.values[name] || '');
-  if (operation === 'list') console.log('UIKitApplication:com.example.next');
+  if (operation === 'list') console.log('UIKitApplication:com.example.next[1a2b][rb-legacy]');
   if (operation === 'setenv' || operation === 'unsetenv') {
     if (operation === 'setenv') held.values[name] = value;
     else delete held.values[name];
@@ -456,7 +456,7 @@ if (args[1] === 'terminate') {
   fs.writeFileSync(${JSON.stringify(count)}, String(n));
   if (n === 1) setTimeout(() => {}, 30_000);
 } else if (args[3] === 'launchctl' && args[4] === 'list') {
-  console.log('UIKitApplication:com.example.app');
+  console.log('UIKitApplication:com.example.app[1a2b][rb-legacy]');
 }
 `,
   });
