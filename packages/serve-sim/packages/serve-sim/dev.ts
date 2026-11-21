@@ -273,9 +273,11 @@ async function devMiddleware(request: Request): Promise<Response | undefined> {
   const url = new URL(request.url);
   const path = url.pathname;
 
-  if (path === "/app-drop-worker.js") {
+  if (path === "/app-drop-worker.js" || path === "/app-drop-client.js") {
     const result = await Bun.build({
-      entrypoints: [resolve(import.meta.dir, "src/client/utils/app-drop-worker.ts")],
+      entrypoints: [
+        resolve(import.meta.dir, "src/client/utils", path.slice(1).replace(/\.js$/, ".ts")),
+      ],
       target: "browser",
       format: "esm",
     });
