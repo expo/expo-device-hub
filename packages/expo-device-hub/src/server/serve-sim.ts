@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 // @ts-ignore vendored module, absent until `bun run build:vendor`
 import { simMiddleware } from "../../vendor/serve-sim/dist/middleware.js";
 
+import { defaultBootAdmission } from "./boot-admission";
 import { MOUNT_PATH } from "./mount";
 import {
   readStandaloneServeSimOptions,
@@ -67,7 +68,12 @@ export async function handleSimRequest(request: Request): Promise<Response | nul
   const url = new URL(request.url);
   const isPreviewRoot =
     request.method === "GET" && (url.pathname === SIM_PREFIX || url.pathname === `${SIM_PREFIX}/`);
-  if (isPreviewRoot && !SERVER_SINGLE_DEVICE) ensureHelperSpawned();
+  // The detached helper may boot a default simulator it picks itself, which admission cannot name,
+  // so a host with a capacity policy streams through the gated in-process `grid/api/start` instead.
+  // @ref LLP 0018#gated-routes — the preview root spawns no helper under a policy
+  if (isPreviewRoot && !SERVER_SINGLE_DEVICE && !(await defaultBootAdmission.constrained())) {
+    ensureHelperSpawned();
+  }
 
   const response = await middleware(
     new Request(`${url.origin}${MOUNT_PATH}${url.pathname}${url.search}`, request),
