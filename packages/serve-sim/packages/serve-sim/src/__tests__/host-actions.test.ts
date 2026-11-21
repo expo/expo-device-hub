@@ -58,6 +58,11 @@ describe("runHostActionAsync validation", () => {
         runHostActionAsync({ action: "timeZone.set", params: { udid: "U", value } }, BIN),
       ).rejects.toThrow(/^timeZone\.set: value /);
     }
+    for (const value of ["tomorrow", "--help", "2030-02-30T09:00"]) {
+      await expect(
+        runHostActionAsync({ action: "clock.set", params: { udid: "U", value } }, BIN),
+      ).rejects.toThrow(/^clock\.set: value /);
+    }
     await expect(
       runHostActionAsync({ action: "hinge.set", params: { udid: "U", value: 181 } }, BIN),
     ).rejects.toThrow(/^hinge\.set: value /);

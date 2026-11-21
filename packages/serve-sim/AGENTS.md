@@ -122,6 +122,14 @@ through `serve-sim` subcommands against a running server:
   session before opening the app, or relaunch it. The status bar clock keeps
   the old zone until the `springboard.restart` action. Verify with
   `simctl getenv <udid> TZ`. The override lasts until the simulator reboots.
+- `serve-sim ui clock <date and time | host>` shifts the wall clock of apps
+  through the clock capability, so it needs a serve-sim session that owns the
+  device. A time without a zone (`2030-01-01T09:00`) is in the simulator's
+  zone; `Z` or an offset makes it absolute. The time keeps ticking, and
+  timed waits keep their real length. Only apps that carry the capability
+  loader see it, and the status bar clock keeps the Mac's time. When the
+  session ends, apps go back to the Mac's time. Verify with
+  `serve-sim ui clock -d <udid>`.
 - `xcrun simctl openurl booted <url>` — deep-link into apps (faster than
   tapping through Expo Go's recent-projects list).
 

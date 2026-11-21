@@ -1,43 +1,25 @@
-import { existsSync, mkdirSync, renameSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync } from "fs";
+import { join } from "path";
 import type { CapabilityDefinition } from "./capabilities";
+import {
+  capabilityFileDir,
+  deviceSessionPid,
+  withCapabilityFileLock,
+  writeCapabilityFile,
+} from "./capability-files";
 import { capabilityLoaderDir, configureCapability } from "./launch-manager";
-import { readLaunchState } from "./launch-state";
-import { stateDir } from "./state";
-import { withStateLock } from "./state-lock";
 
-const deviceDir = (udid: string) => join(stateDir(), `time-zone-${encodeURIComponent(udid)}`);
-
-/**
- * The dylib watches this file: the loader never reloads a dylib, so the zone cannot travel
- * in the capability config. One directory per device, so other devices' writes do not wake it.
- */
+/** The zone the dylib follows: an IANA name, or "host". */
 export function timeZoneFile(udid: string): string {
-  return join(deviceDir(udid), "zone");
+  return join(capabilityFileDir("time-zone", udid), "zone");
 }
 
-/** Atomic, because the dylib may read at any moment. */
 export function writeTimeZoneFile(udid: string, zone: string): void {
-  const file = timeZoneFile(udid);
-  mkdirSync(dirname(file), { recursive: true });
-  const temp = `${file}.${process.pid}.tmp`;
-  writeFileSync(temp, `${zone}\n`);
-  renameSync(temp, file);
+  writeCapabilityFile(timeZoneFile(udid), zone);
 }
 
-/** One zone change at a time per device. Outside the watched directory, so it does not wake the dylib. */
 export function withTimeZoneLock<T>(udid: string, fn: () => Promise<T>): Promise<T> {
-  const path = `${deviceDir(udid)}.lock`;
-  return withStateLock(
-    path,
-    30_000,
-    () =>
-      new Error(
-        `Timed out waiting to change the time zone of ${udid}. Another serve-sim command is holding ${path}. ` +
-          "Wait for it to finish, or remove that file if nothing is running.",
-      ),
-    fn,
-  );
+  return withCapabilityFileLock("time-zone", udid, "time zone", fn);
 }
 
 export function timeZoneDylib(): string {
@@ -62,20 +44,6 @@ const timeZoneCapability: CapabilityDefinition = {
     return { dylib, env: { SERVE_SIM_TIME_ZONE_FILE: timeZoneFile(udid) } };
   },
 };
-
-/**
- * A live process that already owns the device's loader state, so it removes the insert when it
- * exits (LLP 0007), or null. Never a detached stream helper: those do not arm the loader.
- */
-export function deviceSessionPid(udid: string): number | null {
-  const state = readLaunchState(udid);
-  if (!state) return null;
-  const owners = [
-    ...(state.sessionPids ?? []),
-    ...Object.values(state.capabilities).map((record) => record.ownerPid),
-  ];
-  return owners.find((pid) => pid !== null) ?? null;
-}
 
 /**
  * Owned by the device's session, like any capability, so it ends with that session. With no

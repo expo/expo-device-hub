@@ -1,6 +1,6 @@
 import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, describe, expect, test } from "bun:test";
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { capabilityConfigPath } from "../capability-config";
@@ -204,6 +204,7 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
     const status = JSON.parse(cli("status", "--json")) as Record<string, string>;
     expect(Object.keys(status).sort()).toEqual([
       "appearance",
+      "clock",
       "color-filter",
       "hardware-keyboard",
       "increase-contrast",
@@ -215,6 +216,20 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
       "time-zone",
       "voiceover",
     ]);
+  });
+
+  // Only the clock capability's dylib can shift an app's clock, and no session owns this device.
+  test("clock refuses a time without a session and stays on the host time", () => {
+    const refused = spawnSync("node", [CLI, "ui", "clock", "2030-01-01T09:00", "-d", udid!], {
+      encoding: "utf-8",
+      timeout: EXEC_TIMEOUT_MS,
+    });
+    expect(refused.status).toBe(1);
+    // The message alone, not a stack trace into the bundle.
+    expect(refused.stderr.trim()).toMatch(/^Setting the clock of \S+ needs a serve-sim session/);
+    expect(refused.stderr.trim().split("\n")).toHaveLength(1);
+    expect(cli("clock")).toBe("host");
+    expect(() => cli("clock", "tomorrow")).toThrow(/2030-01-01T09:00/);
   });
 
   // `simctl getenv` reads the launchd_sim store new processes inherit from.
