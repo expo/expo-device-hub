@@ -7,6 +7,7 @@ import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSyn
 import { join } from "path";
 
 import { capabilityLoaderPath, enableCapabilities, releaseSessionSync } from "../launch-manager";
+import { runHostActionAsync } from "../host-actions";
 import {
   KEYCHAIN_CAPABILITY,
   locateKeychainDylib,
@@ -340,4 +341,38 @@ describeOrSkip("keychain round trip", () => {
     });
     await waitForLastSeen("status=-25300");
   }, 30_000);
+
+  test("host actions set, list, and delete values the app reads", async () => {
+    terminate();
+    launch();
+    const value = `host-action-${Date.now()}`;
+    const params = { udid: udid!, bundleId: APP };
+    const written = await runHostActionAsync(
+      { action: "keychain.set", params: { ...params, values: { [KEY]: value } } },
+      "unused",
+    );
+    expect(written.exitCode).toBe(0);
+    expect(JSON.parse(written.stdout)).toMatchObject({
+      applied: true,
+      keys: [{ key: KEY, ok: true }],
+    });
+    expect(written.stdout).not.toContain(value);
+    await waitForLastSeen(`value=${value}`);
+
+    const listed = await runHostActionAsync({ action: "keychain.list", params }, "unused");
+    expect(listed.exitCode).toBe(0);
+    expect(JSON.parse(listed.stdout).keys).toContain(KEY);
+    expect(listed.stdout).not.toContain(value);
+
+    const removed = await runHostActionAsync(
+      { action: "keychain.delete", params: { ...params, keys: [KEY] } },
+      "unused",
+    );
+    expect(removed.exitCode).toBe(0);
+    expect(JSON.parse(removed.stdout)).toMatchObject({
+      applied: true,
+      keys: [{ key: KEY, ok: true }],
+    });
+    await waitForLastSeen("status=-25300");
+  }, 60_000);
 });
