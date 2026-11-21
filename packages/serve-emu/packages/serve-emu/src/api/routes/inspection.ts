@@ -5,10 +5,15 @@ import type { ContractApiRoute } from "./types.ts";
 import { downstream, parseInput, readObject, shouldRecord } from "./route-helpers.ts";
 
 export function inspectionRoutes(): ContractApiRoute<ApiDependencies>[] {
-  const screenshot: ContractApiRoute<ApiDependencies>["handler"] = async ({ url, deps }) => {
+  const screenshot: ContractApiRoute<ApiDependencies>["handler"] = async ({
+    request,
+    url,
+    deps,
+  }) => {
     return screenshotResponse(
       async () => ({ png: await downstream("capture screenshot", deps.takeScreenshot) }),
       url,
+      request,
     );
   };
 

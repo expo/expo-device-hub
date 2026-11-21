@@ -326,3 +326,86 @@ test("server total includes base64 response preparation", async () => {
     timer.mockRestore();
   }
 });
+
+async function withArtifactDirectory(run: (directory: string) => Promise<void>): Promise<void> {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const directory = await mkdtemp(join(tmpdir(), "serve-emu-automation-"));
+  const previous = process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+  process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = directory;
+  try {
+    await run(directory);
+  } finally {
+    if (previous === undefined) delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+    else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function screenshotRequest(body?: string, query = ""): [URL, Request] {
+  const url = new URL(`http://router.test/api/screenshot${query}`);
+  return [url, new Request(url, { method: "POST", body })];
+}
+
+test("an automated capture skips the artifact and keeps the image and metadata", async () => {
+  const { readdir } = await import("node:fs/promises");
+  const png = pngHeader(1080, 2400);
+  const metadata = { width: 1080, height: 2400, displayRotation: "portrait" as const };
+  await withArtifactDirectory(async (directory) => {
+    for (const query of ["", "?format=base64"]) {
+      const response = await screenshotResponse(
+        async () => ({ png, metadata }),
+        ...screenshotRequest(JSON.stringify({ automation: true }), query),
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-expo-screenshot-artifact")).toBe("disabled");
+      expect(JSON.parse(response.headers.get("x-expo-screenshot-metadata")!)).toEqual(metadata);
+    }
+    expect(await readdir(directory)).toEqual([]);
+  });
+});
+
+test("a capture without automation still saves the artifact", async () => {
+  const { readdir } = await import("node:fs/promises");
+  await withArtifactDirectory(async (directory) => {
+    for (const body of [undefined, "", "{}", JSON.stringify({ automation: false })]) {
+      const response = await screenshotResponse(
+        async () => ({ png: pngHeader(1080, 2400) }),
+        ...screenshotRequest(body),
+      );
+      expect(response.headers.get("x-expo-screenshot-artifact")).toBe("saved");
+    }
+    // A caller that passes no request, as before, also saves.
+    await screenshotResponse(
+      async () => ({ png: pngHeader(1080, 2400) }),
+      new URL("http://router.test/api/screenshot"),
+    );
+    expect(await readdir(directory)).toHaveLength(5);
+  });
+});
+
+test("rejects an invalid screenshot request body before capturing", async () => {
+  let captures = 0;
+  const capture = async () => {
+    captures++;
+    return { png: pngHeader(1080, 2400) };
+  };
+  for (const body of [
+    "not json",
+    "[]",
+    "null",
+    JSON.stringify({ automation: "true" }),
+    JSON.stringify({ automation: true, record: false }),
+  ]) {
+    const response = await screenshotResponse(capture, ...screenshotRequest(body));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ ok: false, error: "Invalid screenshot request" });
+  }
+  const large = await screenshotResponse(
+    capture,
+    ...screenshotRequest(JSON.stringify({ automation: true, padding: "x".repeat(2048) })),
+  );
+  expect(large.status).toBe(413);
+  expect(captures).toBe(0);
+});

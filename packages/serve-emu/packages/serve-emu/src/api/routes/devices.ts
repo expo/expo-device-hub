@@ -11,6 +11,7 @@ import {
   parseStreamModeRequest,
 } from "../../shared/api-contracts.ts";
 import { parseStreamEncoderSettingsPatch } from "../../stream-settings.ts";
+import { SCREENSHOT_CAPABILITIES } from "../../screenshot-response.ts";
 import { downstream, invalid, parseInput, readObject, requiredString } from "./route-helpers.ts";
 
 export function deviceRoutes(): ContractApiRoute<ApiDependencies>[] {
@@ -18,7 +19,8 @@ export function deviceRoutes(): ContractApiRoute<ApiDependencies>[] {
     {
       method: "GET",
       path: "/api",
-      handler: ({ deps }) => Response.json(deps.getInfo()),
+      handler: ({ deps }) =>
+        Response.json({ ...deps.getInfo(), screenshot: SCREENSHOT_CAPABILITIES }),
     },
     {
       method: "GET",

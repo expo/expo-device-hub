@@ -9,7 +9,11 @@ import {
   handleCameraRequest,
   readCameraWiring,
 } from "./camera.ts";
-import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
+import {
+  captureScreenshot,
+  SCREENSHOT_CAPABILITIES,
+  screenshotResponse,
+} from "./screenshot-response.ts";
 import { getExecSnapshot } from "./exec.ts";
 import { applyFoldRequest, getFoldStatus } from "./fold.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
@@ -1854,6 +1858,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               streamSettings,
               requestContext.stream.meta.codecId,
             ),
+            screenshot: SCREENSHOT_CAPABILITIES,
           },
           { headers: { "Cache-Control": "no-store" } },
         );
@@ -2539,6 +2544,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
                 ),
               ),
             url,
+            req,
           );
         } catch (err) {
           return errorResponse(err);

@@ -6,6 +6,8 @@ import {
   type ScreenshotMetadata,
 } from "./screenshot-metadata.ts";
 import { Buffer } from "node:buffer";
+import { ApiError } from "./api/api-error.ts";
+import { readBodyBytes } from "./api/body.ts";
 import {
   SCREENSHOT_ARTIFACT_ERROR_HEADER,
   SCREENSHOT_ARTIFACT_HEADER,
@@ -59,10 +61,55 @@ export async function captureScreenshot(
   return { png, metadata };
 }
 
+const MAX_SCREENSHOT_REQUEST_BYTES = 1024;
+
+/** What `GET /api` reports, so a client can tell this server accepts `{ "automation": true }`. */
+export const SCREENSHOT_CAPABILITIES = { automation: true } as const;
+
+/**
+ * Read the optional `{ "automation": true }` body. An empty body is a manual capture. Anything
+ * else is an error response, returned before the capture starts.
+ */
+async function readAutomation(request: Request | undefined): Promise<boolean | Response> {
+  if (!request) return false;
+  let bytes: Uint8Array;
+  try {
+    bytes = await readBodyBytes(request, MAX_SCREENSHOT_REQUEST_BYTES);
+  } catch (error) {
+    const tooLarge = error instanceof ApiError && error.status === 413;
+    return Response.json(
+      {
+        ok: false,
+        error: tooLarge ? "Screenshot request is too large" : "Invalid screenshot request",
+      },
+      { status: tooLarge ? 413 : 400 },
+    );
+  }
+  if (bytes.byteLength === 0) return false;
+  try {
+    const body: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      !Array.isArray(body) &&
+      Object.keys(body).every((key) => key === "automation") &&
+      ["boolean", "undefined"].includes(typeof (body as { automation?: unknown }).automation)
+    ) {
+      return (body as { automation?: boolean }).automation === true;
+    }
+  } catch {}
+  return Response.json({ ok: false, error: "Invalid screenshot request" }, { status: 400 });
+}
+
 // @ref LLP 0003#android-screenshot-images — keep PNG session artifacts for JPEG responses.
+/**
+ * Answer `POST /api/screenshot`. With `request`, its optional JSON body may set
+ * `automation: true`, which skips the session artifact, as serve-sim's does.
+ */
 export async function screenshotResponse(
   capture: () => Promise<{ png: Uint8Array; metadata?: ScreenshotMetadata }>,
   url: URL,
+  request?: Request,
 ): Promise<Response> {
   const started = performance.now();
   const width = url.searchParams.has("maxWidth")
@@ -79,6 +126,8 @@ export async function screenshotResponse(
   ) {
     return Response.json({ ok: false, error: "Invalid screenshot image options" }, { status: 400 });
   }
+  const automation = await readAutomation(request);
+  if (automation instanceof Response) return automation;
   let { png, metadata = screenshotMetadata() } = await capture();
   const captured = performance.now();
   let image = png;
@@ -101,7 +150,8 @@ export async function screenshotResponse(
         : png;
   }
   const encoded = performance.now();
-  const result = await saveScreenshotArtifact(png);
+  // @ref LLP 0003#android-screenshot-images — automated captures, such as session previews, are not user screenshots.
+  const result = automation ? { status: "disabled" as const } : await saveScreenshotArtifact(png);
   const saved = performance.now();
   let response: Response;
   if (format === "base64") {
