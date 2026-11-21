@@ -849,13 +849,15 @@ static int OpenShm(const char *name) {
     memset(map, 0, size);
     if (!CreateSurfaces()) { close(fd); return -1; }
     gHeader->magic = SIMCAM_SHM_MAGIC;
-    gHeader->version = 2;
+    gHeader->version = 3;
+    gHeader->ownerPid = (uint32_t)getpid();
     gHeader->width = gWidth;
     gHeader->height = gHeight;
     gHeader->pixelFormat = SIMCAM_PIXEL_BGRA;
     gHeader->bytesPerRow = (uint32_t)IOSurfaceGetBytesPerRow(gSurfaces[0]);
     gHeader->pixelByteSize = (uint64_t)gWidth * gHeight * 4;
     gHeader->mirrorMode = SIMCAM_MIRROR_UNSET; // dylib falls back to env
+    atomic_store_explicit(&gHeader->active, 1, memory_order_release);
     return fd;
 }
 
@@ -920,19 +922,19 @@ int main(int argc, const char *argv[]) {
                 initialSource.UTF8String);
             k = SimCamSourcePlaceholder;
         }
-        NSString *err = nil;
-        if (!SwitchSource(k, initialArg, &err)) {
-            fprintf(stderr, "[serve-sim-camera] initial source failed: %s — falling back to placeholder\n",
-                err.UTF8String ?: "?");
-            (void)SwitchSource(SimCamSourcePlaceholder, nil, NULL);
-        }
-
         if (socketPath) {
             if (OpenControlSocket(socketPath) < 0) {
                 fprintf(stderr, "[serve-sim-camera] control socket open failed: %s\n", socketPath);
             } else {
                 fprintf(stderr, "[serve-sim-camera] control socket %s\n", socketPath);
             }
+        }
+
+        NSString *err = nil;
+        if (!SwitchSource(k, initialArg, &err)) {
+            fprintf(stderr, "[serve-sim-camera] initial source failed: %s — falling back to placeholder\n",
+                err.UTF8String ?: "?");
+            (void)SwitchSource(SimCamSourcePlaceholder, nil, NULL);
         }
 
         signal(SIGINT, HandleSig);
@@ -942,6 +944,7 @@ int main(int argc, const char *argv[]) {
         while (!gShouldExit) {
             [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
         }
+        atomic_store_explicit(&gHeader->active, 0, memory_order_release);
         if (gAcceptSource) dispatch_source_cancel(gAcceptSource);
         if (gControlListenFd >= 0) { close(gControlListenFd); if (socketPath) unlink(socketPath); }
         StopPlaceholderSource();

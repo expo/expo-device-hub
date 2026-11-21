@@ -127,7 +127,7 @@ test("initial defaults publish one owned session and retain a fresh foreign inse
       "clipboard",
     ]);
     expect(readLaunchState(UDID)?.sessionPids).toEqual([process.pid]);
-    expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPid).toBe(process.pid);
+    expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPids).toEqual([process.pid]);
     expect(env().DYLD_INSERT_LIBRARIES?.split(":")).toEqual([
       "/other.dylib",
       "/late.dylib",
@@ -198,7 +198,7 @@ test("initial defaults release only their own ownership", async () => {
   );
   await applyDefaultCapabilities(UDID, null, {}, { armSession: true });
   releaseSessionSync(UDID, process.pid, () => {});
-  expect(readLaunchState(UDID)?.capabilities.foreign?.ownerPid).toBeNull();
+  expect(readLaunchState(UDID)?.capabilities.foreign?.ownerPids).toEqual([]);
   expect(env().DYLD_INSERT_LIBRARIES).toContain(capabilityLoaderPath());
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain("/foreign.dylib");
 });
@@ -583,7 +583,7 @@ test("a failed capability restores the owner it replaced", async () => {
       },
     ),
   ).rejects.toThrow("proxy exited");
-  expect(readLaunchState(UDID)?.capabilities.shared?.ownerPid).toBe(process.ppid);
+  expect(readLaunchState(UDID)?.capabilities.shared?.ownerPids).toEqual([process.ppid]);
   expect(env().DYLD_INSERT_LIBRARIES).toContain(dylib);
 });
 
@@ -607,6 +607,7 @@ test("failed capability removal keeps resources alive for a retry", async () => 
   expect(env().DYLD_INSERT_LIBRARIES).toContain(dylib);
   await configureCapability(UDID, definition, { enabled: false });
   expect(stopped).toBe(true);
+  expect(env().DYLD_INSERT_LIBRARIES ?? "").not.toContain(capabilityLoaderPath());
 });
 
 test("registry capture prepares, publishes, reuses, and removes the same runtime session", async () => {

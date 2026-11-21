@@ -10,6 +10,7 @@
             queue:(dispatch_queue_t)queue;
 - (void)removeOutput:(AVCaptureVideoDataOutput *)out;
 - (void)addPreviewLayer:(AVCaptureVideoPreviewLayer *)layer;
+- (void)removePreviewLayer:(AVCaptureVideoPreviewLayer *)layer;
 - (void)reapplyMirrorToLayers;
 
 - (CVPixelBufferRef)currentPixelBuffer CF_RETURNS_RETAINED;
@@ -20,7 +21,9 @@
 - (void)stopPumping;
 @end
 
-void SimCamFrameSourceLoadImage(void);
 void SimCamFrameSourceOpenShmIfRequested(void);
 
 BOOL SimCamFrameSourceIsShmAttached(void);
+
+BOOL SimCamDeviceIsConnected(void);
+void SimCamStartDeviceMonitor(void);

@@ -38,7 +38,7 @@ async function withReader(
               scope: "allApps",
               dylib: "/reader.dylib",
               bundleId: null,
-              ownerPid: process.pid,
+              ownerPids: [process.pid],
             },
           },
   });

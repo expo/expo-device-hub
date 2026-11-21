@@ -4,9 +4,11 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
+import { cameraHelperPidFile } from "../camera-helper";
+import { launchApp, removeCapabilityLoaderSync } from "../launch-manager";
 import { readLaunchState } from "../launch-state";
 import { parseDetachState } from "./detach-state";
-import { freePortAsync, killHelpersForDevice } from "./helpers";
+import { freePortAsync, killHelpersForDevice, useTempStateDir } from "./helpers";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
 
 const PKG_DIR = join(import.meta.dir, "../..");
@@ -108,6 +110,8 @@ describe.skipIf(!ready)("serve-sim launch flags", () => {
         "--port",
         String(port),
         "--no-preview",
+        "--enable",
+        "camera",
         "--install-app-path",
         FIXTURE,
         "--launch-app-identifier",
@@ -141,6 +145,8 @@ describe.skipIf(!ready)("serve-sim launch flags", () => {
       ),
       `no URL recorded. serve-sim output:\n${output}`,
     ).toBe(true);
+
+    expect(fixtureLines().filter((line) => line.startsWith("start\t"))).toHaveLength(1);
 
     // Whether serve-sim stays up or returns straight away depends on whether a
     // helper was already streaming this device, so only the teardown is asserted.
@@ -222,6 +228,67 @@ describe.skipIf(!ready)("serve-sim launch flags", () => {
     },
     180_000,
   );
+
+  test("exiting a session disconnects its default camera and stops its helper", async () => {
+    const temp = useTempStateDir();
+    const port = await freePortAsync();
+    const alive = (pid: number): boolean => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    let output = "";
+    try {
+      await launchApp(udid!, { bundleId: APP });
+      const startsBefore = fixtureLines().filter((line) => line.startsWith("start\t"));
+      server = spawn(
+        "node",
+        [CLI, udid!, "--port", String(port), "--enable", "camera", "--quiet"],
+        {
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      server.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
+      server.stderr?.on("data", (chunk: Buffer) => (output += chunk.toString()));
+      expect(
+        await waitFor(
+          () =>
+            !!readLaunchState(udid!)?.capabilities.camera?.ownerPids.includes(server?.pid ?? -1) &&
+            existsSync(cameraHelperPidFile(udid!)) &&
+            output.includes('"url"'),
+          60_000,
+        ),
+        output,
+      ).toBe(true);
+      expect(fixtureLines().filter((line) => line.startsWith("start\t"))).toEqual(startsBefore);
+      const helperPid = Number(readFileSync(cameraHelperPidFile(udid!), "utf-8"));
+      expect(alive(helperPid)).toBe(true);
+      server.kill("SIGTERM");
+      expect(
+        await waitFor(() => server?.exitCode !== null || server?.signalCode !== null, 30_000),
+        output,
+      ).toBe(true);
+      expect(await waitFor(() => !alive(helperPid), 10_000), output).toBe(true);
+      expect(existsSync(cameraHelperPidFile(udid!))).toBe(false);
+      expect(readInsert(udid!)).toBe("");
+    } finally {
+      if (server?.exitCode === null && server.signalCode === null) server.kill("SIGKILL");
+      try {
+        execFileSync("node", [CLI, "camera", "disable", "-d", udid!, "--quiet"], {
+          // Bun's execFileSync ignores later process.env changes.
+          stdio: "ignore",
+          timeout: 60_000,
+          env: process.env,
+        });
+      } finally {
+        removeCapabilityLoaderSync(udid!);
+        temp.restore();
+      }
+    }
+  }, 150_000);
 
   test("a launch that fails does not leave the capability loader inserted", async () => {
     const port = await freePortAsync();
