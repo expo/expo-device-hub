@@ -26,6 +26,7 @@ const ARM64_MACH_O_ARTIFACTS = [
   "dist/simax/serve-sim-ax-settings",
   "dist/simpb/libSimPasteboardReader.dylib",
   "dist/simpb/serve-sim-pasteboard",
+  "dist/simkc/libSimKeychain.dylib",
   "dist/capability-loader/libServeSimCapabilityLoader.dylib",
 ] as const;
 
