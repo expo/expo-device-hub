@@ -36,8 +36,10 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
   let root: string;
   let env: NodeJS.ProcessEnv;
   let browser: Awaited<ReturnType<typeof startTestBrowser>>;
+  let previewUrl: string;
   const sent: Array<{ id: number; action: string; params: Record<string, unknown> }> = [];
   const replies = new Map<number, { exitCode?: number; stderr?: string }>();
+  const workers: string[] = [];
 
   function simctl(...args: string[]): string {
     return execFileSync("xcrun", ["simctl", ...args], {
@@ -84,23 +86,35 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
     await dropPaths(paths);
   }
 
-  async function dropPaths(paths: string[]) {
+  /** Drops on the stream. With `frame`, the preview is in that iframe session of the page. */
+  async function dropPaths(paths: string[], frame?: string) {
     // Errors now remain until dismissed; each scenario starts with a clear drop target.
     await browser.cdp.evaluate(
       "document.querySelectorAll('[aria-label=\"Dismiss upload error\"]').forEach(button => button.click())",
+      frame,
     );
     sent.length = 0;
     replies.clear();
-    const point = await browser.cdp.evaluate<{ x: number; y: number }>(`(() => {
+    const point = await browser.cdp.evaluate<{ x: number; y: number }>(
+      `(() => {
       const layer = [...document.querySelectorAll('div')].find(el => el.style.touchAction === 'none' && el.getBoundingClientRect().width > 100);
       if (!layer) throw new Error('No simulator stream');
       const r = layer.getBoundingClientRect();
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-    })()`);
+    })()`,
+      frame,
+    );
+    // The page gets the drag, as from Finder, and Chrome routes it into the frame.
+    const offset = frame
+      ? await browser.cdp.evaluate<{ x: number; y: number }>(
+          "(() => { const r = document.querySelector('iframe').getBoundingClientRect(); return { x: r.x, y: r.y }; })()",
+        )
+      : { x: 0, y: 0 };
     for (const type of ["dragEnter", "dragOver", "drop"]) {
       await browser.cdp.send("Input.dispatchDragEvent", {
         type,
-        ...point,
+        x: point.x + offset.x,
+        y: point.y + offset.y,
         data: { items: [], files: paths, dragOperationsMask: 1 },
       });
       if (type === "dragOver") {
@@ -108,6 +122,7 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
           () =>
             browser.cdp.evaluate<boolean>(
               "document.body.textContent.includes('Drop media or a Simulator app')",
+              frame,
             ),
           "Preview did not show the Simulator app drop label",
         );
@@ -133,6 +148,64 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
       /serve-sim-(upload|install)-/.test(String(name)),
     );
     expect(files).toEqual([]);
+  }
+
+  // A 91–100 byte archive path exercises macOS tar's PAX-header prefix.
+  const ASSET = `assets/${"x".repeat(72)}.txt`;
+
+  /** A signed copy of the fixture app, with an asset, that is not installed yet. */
+  function appBundle(folder: string): string {
+    try {
+      simctl("uninstall", udid!, APP);
+    } catch {
+      /* It may not be installed. */
+    }
+    const bundle = join(root, folder);
+    cpSync(FIXTURE, bundle, { recursive: true });
+    mkdirSync(join(bundle, "assets"), { recursive: true });
+    writeFileSync(join(bundle, ASSET), "archive asset");
+    execFileSync("plutil", [
+      "-replace",
+      "CFBundleIdentifier",
+      "-string",
+      APP,
+      join(bundle, "Info.plist"),
+    ]);
+    execFileSync("codesign", ["--force", "--sign", "-", "--timestamp=none", bundle], {
+      stdio: "pipe",
+    });
+    return bundle;
+  }
+
+  /** Checks the install reply, the success toast, the installed files and a launch. */
+  async function expectInstalled(name: string, frame?: string) {
+    await until(
+      () => sent.some(({ id, action }) => action === "app.install" && replies.has(id)),
+      "Archive drop did not reach app.install",
+    );
+    const request = sent.find((message) => message.action === "app.install")!;
+    expect(replies.get(request.id)?.exitCode, replies.get(request.id)?.stderr).toBe(0);
+    await until(
+      () =>
+        browser.cdp.evaluate<boolean>(
+          `document.body.textContent.includes(${JSON.stringify("Installed ")} + ${JSON.stringify(name)})`,
+          frame,
+        ),
+      "Preview did not report installation",
+    );
+    await removedUpload();
+    const installed = simctl("get_app_container", udid!, APP, "app").trim();
+    expect(readFileSync(join(installed, ASSET), "utf8")).toBe("archive asset");
+    const container = simctl("get_app_container", udid!, APP, "data").trim();
+    simctl("launch", udid!, APP, "-DropE2E", name);
+    await until(() => {
+      try {
+        return readFileSync(join(container, "Documents/launches.tsv"), "utf8").includes(name);
+      } catch {
+        return false;
+      }
+    }, "Installed app did not launch with the test argument");
+    simctl("terminate", udid!, APP);
   }
 
   beforeAll(async () => {
@@ -171,8 +244,14 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
     });
     if (started.status !== 0) throw new Error(`Preview startup failed: ${started.stderr}`);
     const state = parseDetachState<ServeSimDeviceState>(started.stdout);
+    previewUrl = state.url;
     browser = await startTestBrowser();
     browser.cdp.onEvent = (method, params) => {
+      if (method === "Target.attachedToTarget") {
+        const target = params.targetInfo as { type: string; url: string };
+        if (target.type === "worker") workers.push(target.url);
+        return;
+      }
       if (method !== "Network.webSocketFrameSent" && method !== "Network.webSocketFrameReceived")
         return;
       const response = params.response as { payloadData: string; opcode: number };
@@ -313,28 +392,8 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
   test.skipIf(!fixtureReady).each(["browser-app.tar.gz", "browser-app.tgz", "Browser.app"])(
     "%s installs and launches the app through the preview",
     async (name) => {
-      try {
-        simctl("uninstall", udid!, APP);
-      } catch {
-        /* It may not be installed. */
-      }
       const folder = name.endsWith(".tgz") ? "Café.app" : "Browser.app";
-      const bundle = join(root, folder);
-      cpSync(FIXTURE, bundle, { recursive: true });
-      // A 91–100 byte archive path exercises macOS tar's PAX-header prefix.
-      const asset = `assets/${"x".repeat(72)}.txt`;
-      mkdirSync(join(bundle, "assets"), { recursive: true });
-      writeFileSync(join(bundle, asset), "archive asset");
-      execFileSync("plutil", [
-        "-replace",
-        "CFBundleIdentifier",
-        "-string",
-        APP,
-        join(bundle, "Info.plist"),
-      ]);
-      execFileSync("codesign", ["--force", "--sign", "-", "--timestamp=none", bundle], {
-        stdio: "pipe",
-      });
+      const bundle = appBundle(folder);
       if (name.endsWith(".app")) {
         await dropPaths([bundle]);
       } else {
@@ -347,33 +406,71 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
         }
         await drop([{ name, bytes: readFileSync(archive) }]);
       }
-      await until(
-        () => sent.some(({ id, action }) => action === "app.install" && replies.has(id)),
-        "Archive drop did not reach app.install",
-      );
-      const request = sent.find((message) => message.action === "app.install")!;
-      expect(replies.get(request.id)?.exitCode, replies.get(request.id)?.stderr).toBe(0);
-      await until(
-        () =>
-          browser.cdp.evaluate<boolean>(
-            `document.body.textContent.includes(${JSON.stringify("Installed ")} + ${JSON.stringify(name)})`,
-          ),
-        "Preview did not report installation",
-      );
-      await removedUpload();
-      const installed = simctl("get_app_container", udid!, APP, "app").trim();
-      expect(readFileSync(join(installed, asset), "utf8")).toBe("archive asset");
-      const container = simctl("get_app_container", udid!, APP, "data").trim();
-      simctl("launch", udid!, APP, "-DropE2E", name);
-      await until(() => {
-        try {
-          return readFileSync(join(container, "Documents/launches.tsv"), "utf8").includes(name);
-        } catch {
-          return false;
-        }
-      }, "Installed app did not launch with the test argument");
-      simctl("terminate", udid!, APP);
+      await expectInstalled(name);
     },
     90000,
+  );
+
+  // expo.dev frames the preview from another site, with these iframe attributes.
+  test.skipIf(!fixtureReady)(
+    "an .app folder dropped on a preview framed by another site installs through the Worker",
+    async () => {
+      const bundle = appBundle("Framed.app");
+      // localhost and 127.0.0.1 are different sites, so Chrome runs the frame in its own process.
+      const preview = new URL(previewUrl);
+      preview.hostname = "localhost";
+      const parent = Bun.serve({
+        port: 0,
+        hostname: "127.0.0.1",
+        fetch: () =>
+          new Response(
+            `<!doctype html><body style="margin:0"><iframe src="${preview.href}" title="Expo Simulators preview" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads" allow="clipboard-write; fullscreen" style="display:block;width:100vw;height:100vh;border:0"></iframe></body>`,
+            { headers: { "content-type": "text/html" } },
+          ),
+      });
+      try {
+        const { cdp } = browser;
+        await cdp.send("Target.setAutoAttach", {
+          autoAttach: true,
+          waitForDebuggerOnStart: true,
+          flatten: true,
+        });
+        const framesBefore = cdp.frameSessions.length;
+        await cdp.send("Page.navigate", { url: `http://127.0.0.1:${parent.port}/` });
+        await until(
+          () => cdp.frameSessions.length > framesBefore,
+          "Chrome did not attach to the cross-site preview frame",
+        );
+        const frame = cdp.frameSessions.at(-1)!;
+        // The frame waits for the debugger, so these also see its first socket and its Worker.
+        await cdp.send("Network.enable", {}, frame);
+        await cdp.send(
+          "Target.setAutoAttach",
+          { autoAttach: true, waitForDebuggerOnStart: false, flatten: true },
+          frame,
+        );
+        await cdp.send("Runtime.runIfWaitingForDebugger", {}, frame);
+        await until(
+          () =>
+            cdp.evaluate<boolean>(
+              `document.querySelector('[aria-label="Rotate device"]')?.disabled === false`,
+              frame,
+            ),
+          "Framed preview did not enable streamed-device controls",
+          60000,
+        );
+        workers.length = 0;
+        await dropPaths([bundle], frame);
+        await expectInstalled("Framed.app", frame);
+        // The packer ran as a Worker from a blob: URL with the frame's own origin.
+        expect(
+          workers.some((url) => url.startsWith(`blob:${preview.origin}/`)),
+          JSON.stringify(workers),
+        ).toBe(true);
+      } finally {
+        parent.stop(true);
+      }
+    },
+    120000,
   );
 });
