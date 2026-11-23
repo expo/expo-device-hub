@@ -91,7 +91,11 @@ struct Gfxstream {
   unsigned (*getGlobalTexName)(unsigned localName) = nullptr;
 
   bool gpuEntryPointsAvailable() const {
+#if defined(EXPO_EMULATOR_CAPTURE_NVIDIA)
+    return nvidiaEntryPointsAvailable();
+#else
     return gpuContextEntryPointsAvailable() && colorBufferGl && borrowedImageInfo && waitSync;
+#endif
   }
   bool nvidiaEntryPointsAvailable() const {
     return gpuContextEntryPointsAvailable() && borrowColorBufferForDisplay;

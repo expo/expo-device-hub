@@ -71,7 +71,8 @@ int main() {
   Gfxstream linuxRenderer;
   assert(resolveGfxstream(&module, linuxRenderer).empty());
   assert(linuxRenderer.nvidiaEntryPointsAvailable());
-  assert(!linuxRenderer.gpuEntryPointsAvailable());
+  assert(linuxRenderer.gpuEntryPointsAvailable());  // Also advertised in the socket hello.
+  assert(!linuxRenderer.colorBufferGl);
   missingDisplayBorrower = true;
   Gfxstream unsupportedLinuxRenderer;
   assert(resolveGfxstream(&module, unsupportedLinuxRenderer).find("borrowColorBufferForDisplay") !=
