@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { CapabilityLoadPhase, CapabilityScope } from "./capabilities";
-import { stateDir, stateFileForDevice } from "./state";
+import { ensureStateDir, stateDir, stateFileForDevice } from "./state";
 
 function isCapabilityScope(value: unknown): value is CapabilityScope {
   return value === "userApps" || value === "allApps";
@@ -136,7 +136,7 @@ export function clearLaunchState(udid: string): void {
 }
 
 export function writeLaunchState(udid: string, state: LaunchState): void {
-  if (!existsSync(stateDir())) mkdirSync(stateDir(), { recursive: true });
+  ensureStateDir();
   const target = stateFile(udid);
   const temp = `${target}.${process.pid}.tmp`;
   writeFileSync(temp, JSON.stringify(state));

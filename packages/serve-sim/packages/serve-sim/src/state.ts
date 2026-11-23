@@ -1,6 +1,15 @@
 import { tmpdir } from "os";
 import { join } from "path";
-import { readdirSync, writeFileSync, renameSync, readFileSync, unlinkSync } from "fs";
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  writeFileSync,
+  renameSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+} from "fs";
 import type { StreamSettings } from "./stream-settings";
 import { ownerIsGone, readLaunchState } from "./launch-state";
 import { LOCK_POLL_MS, withLaunchStateLockSync } from "./launch-state-lock";
@@ -14,6 +23,21 @@ export type {
 /** Directory where serve-sim stores runtime state. Override with `SERVE_SIM_STATE_DIR`. */
 export function stateDir(): string {
   return process.env.SERVE_SIM_STATE_DIR || join(tmpdir(), "serve-sim");
+}
+
+/**
+ * Create the state directory readable only by this user. It holds session tokens and
+ * capability config. A directory chosen with `SERVE_SIM_STATE_DIR` keeps its permissions;
+ * the default directory left by an older release is made private.
+ */
+export function ensureStateDir(): string {
+  const dir = stateDir();
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (!process.env.SERVE_SIM_STATE_DIR) {
+    const info = statSync(dir);
+    if (info.uid === process.getuid?.() && (info.mode & 0o077) !== 0) chmodSync(dir, 0o700);
+  }
+  return dir;
 }
 
 export function stateFileForDevice(udid: string): string {
@@ -106,6 +130,7 @@ export function serverBaseUrl(
  *  Writes atomically (temp file + rename) so a concurrent reader never observes
  *  a truncated or partially-written file. */
 export function writeServeSimState(state: ServeSimDeviceState): void {
+  ensureStateDir();
   // One poll reclaims stale locks without waiting on another process's native work.
   withLaunchStateLockSync(
     state.device,

@@ -5,7 +5,6 @@ import {
   constants,
   fstatSync,
   lstatSync,
-  mkdirSync,
   mkdtempSync,
   openSync,
   readFileSync,
@@ -24,6 +23,7 @@ import {
   stateDir,
   stateFileForDevice,
   type ServeSimDeviceState,
+  ensureStateDir,
 } from "./state";
 import { isLoopbackHost } from "./middleware-utils";
 
@@ -226,7 +226,7 @@ export async function startSessionOwner(
     const { chmodSync } = await import("fs");
     chmodSync(socketPath, 0o600);
     server.on("error", close);
-    mkdirSync(stateDir(), { recursive: true });
+    ensureStateDir();
     const temporary = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
     writeFileSync(temporary, metadata, { mode: 0o600, flag: "wx" });
     renameSync(temporary, file);

@@ -27,7 +27,8 @@ export async function withStateLock<T>(
   timeoutError: () => Error,
   fn: () => Promise<T>,
 ): Promise<T> {
-  mkdirSync(dirname(path), { recursive: true });
+  // Lock directories hold serve-sim state; keep any directory created here private.
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const deadline = Date.now() + timeoutMs;
   let fd: number | undefined;
   while (fd === undefined) {
@@ -61,7 +62,8 @@ export function withStateLockSync<T>(
   reentrantError: () => Error,
   fn: () => T,
 ): T {
-  mkdirSync(dirname(path), { recursive: true });
+  // Lock directories hold serve-sim state; keep any directory created here private.
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const deadline = Date.now() + timeoutMs;
   const sleeper = new Int32Array(new SharedArrayBuffer(4));
   let fd: number;
