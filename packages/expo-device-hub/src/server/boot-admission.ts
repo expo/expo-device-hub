@@ -11,7 +11,7 @@
  * device shows up natively and an emulator that is still starting or never
  * came online.
  *
- * @ref LLP 0018#contract — what counts, what frees a slot, and why
+ * @ref LLP 0020#contract — what counts, what frees a slot, and why
  */
 
 import { randomUUID } from "node:crypto";
@@ -204,7 +204,7 @@ const NO_OP_TICKET: BootTicket = {
  * with a per-environment `HOME` must still find, and cannot move, the
  * account's one policy.
  *
- * @ref LLP 0018#host-policy — host-owned, no override
+ * @ref LLP 0020#host-policy — host-owned, no override
  */
 export function defaultBootAdmissionPaths(): { policyFile: string; stateDir: string } {
   const base = join(userInfo().homedir, ".expo", "device-hub");
@@ -325,7 +325,7 @@ export function createBootAdmission({
    * it finishes meanwhile, and a record loaded as over (finished, or its Hub
    * dead) is judged against a snapshot taken after it ended.
    *
-   * @ref LLP 0018#absence — why the records are read first
+   * @ref LLP 0020#absence — why the records are read first
    */
   async function decide(
     request: AdmissionRequest,
@@ -464,7 +464,7 @@ export function createBootAdmission({
    * - A holder whose pid no process has is gone without a table read.
    * - A process table that cannot be read throws, which refuses the boot.
    *
-   * @ref LLP 0018#lock — why a deleted lock is never restored
+   * @ref LLP 0020#lock — why a deleted lock is never restored
    */
   async function acquireLock(): Promise<LockOwner> {
     const owner = { ...(await self()), token: randomUUID() };
@@ -688,7 +688,7 @@ function recordTicket(path: string, initial: AttemptRecord, host: BootAdmissionH
  * gone. Missing data never confirms it: an Android record without a serial
  * or an emulator pid may have started any emulator of its AVD.
  *
- * @ref LLP 0018#absence — when a record is deleted
+ * @ref LLP 0020#absence — when a record is deleted
  */
 function isGone(record: AttemptRecord, native: Workload[], processes: HostProcess[]): boolean {
   if (record.platform === "ios") {
@@ -715,7 +715,7 @@ function isGone(record: AttemptRecord, native: Workload[], processes: HostProces
  * Whether a native device is the one a record started: the same UDID, or the
  * same adb serial; a record without a serial joins an emulator of its AVD.
  *
- * @ref LLP 0018#android-identity — a record joins one native device; native devices never merge
+ * @ref LLP 0020#android-identity — a record joins one native device; native devices never merge
  */
 function recordMatchesDevice(record: AttemptRecord, device: Workload): boolean {
   if (device.platform !== record.platform) return false;
@@ -746,7 +746,7 @@ function atSerial(device: Workload, serial: string, avdName: string | undefined)
  * `emulator-<P>`. A process without a port joins an adb emulator of its AVD
  * that no process has joined yet. Two instances never merge by AVD name.
  *
- * @ref LLP 0018#android-identity — every emulator instance counts on its own
+ * @ref LLP 0020#android-identity — every emulator instance counts on its own
  */
 function nativeWorkloads(occupancy: NativeOccupancy, processes: HostProcess[]): Workload[] {
   const simulators = occupancy.simulators
@@ -793,7 +793,7 @@ function nativeWorkloads(occupancy: NativeOccupancy, processes: HostProcess[]): 
  * Ported instances come first, so they join their adb serials before portless
  * ones join by AVD name.
  *
- * @ref LLP 0018#android-identity — processes merge only on port or parentage
+ * @ref LLP 0020#android-identity — processes merge only on port or parentage
  */
 function emulatorProcesses(processes: HostProcess[]): EmulatorProcess[] {
   const emulators = new Map<number, EmulatorProcess & { ppid: number }>();

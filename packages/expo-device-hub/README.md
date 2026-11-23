@@ -146,7 +146,7 @@ that cannot be read or parsed, or a `maxVirtualDevices` that is not an integer o
 more, refuses every boot with an error that names the file. `0` allows no new boots. A host
 whose `ps` cannot be run refuses every boot too. The Hub
 keeps its lock and boot records in `~/.expo/device-hub/boot-admission/`.
-[LLP 0018](../../llp/0018-hub-boot-admission.decision.md) describes the design.
+[LLP 0020](../../llp/0020-hub-boot-admission.decision.md) describes the design.
 
 ### Record an Android session
 

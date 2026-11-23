@@ -3,7 +3,7 @@
  * command line. Boot admission uses them to tell a live process from a dead
  * one whose pid was reused, and to see emulators adb does not list.
  *
- * @ref LLP 0018#process-identity — a process is its pid plus its start time
+ * @ref LLP 0020#process-identity — a process is its pid plus its start time
  */
 
 import { execFile } from "node:child_process";

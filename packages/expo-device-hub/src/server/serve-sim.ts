@@ -70,7 +70,7 @@ export async function handleSimRequest(request: Request): Promise<Response | nul
     request.method === "GET" && (url.pathname === SIM_PREFIX || url.pathname === `${SIM_PREFIX}/`);
   // The detached helper may boot a default simulator it picks itself, which admission cannot name,
   // so a host with a capacity policy streams through the gated in-process `grid/api/start` instead.
-  // @ref LLP 0018#gated-routes — the preview root spawns no helper under a policy
+  // @ref LLP 0020#gated-routes — the preview root spawns no helper under a policy
   if (isPreviewRoot && !SERVER_SINGLE_DEVICE && !(await defaultBootAdmission.constrained())) {
     ensureHelperSpawned();
   }

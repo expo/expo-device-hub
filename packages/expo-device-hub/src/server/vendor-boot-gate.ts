@@ -9,7 +9,7 @@
  * The Hub admits these requests before it forwards them, so a Hub-mounted
  * server cannot boot past the host policy.
  *
- * @ref LLP 0018#gated-routes — the routes that boot a device, and which are gated
+ * @ref LLP 0020#gated-routes — the routes that boot a device, and which are gated
  */
 
 import {

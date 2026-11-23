@@ -1,4 +1,4 @@
-# LLP 0018: Hub boot admission
+# LLP 0020: Hub boot admission
 
 **Type:** Decision
 **Status:** Draft

@@ -316,7 +316,7 @@ export async function createHubDevice(
  * exist. Once one was spawned, every outcome finishes it: an emulator that
  * failed to come online may still be running.
  *
- * @ref LLP 0018#rollback — only a proven-unused attempt frees its slot at once
+ * @ref LLP 0020#rollback — only a proven-unused attempt frees its slot at once
  */
 async function bootAndroidHubDevice(
   avdName: string,
