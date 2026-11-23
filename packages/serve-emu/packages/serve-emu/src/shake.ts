@@ -212,7 +212,7 @@ export class ShakeRequestError extends Error {
   }
 }
 
-const MAX_SHAKE_BODY_BYTES = 1024;
+export const MAX_SHAKE_BODY_BYTES = 1024;
 
 /** What a `POST /api/shake` asks for. */
 export type ShakeRequest = {
@@ -227,7 +227,11 @@ export type ShakeRequest = {
  * by default, as REST actions do; `{ "record": false }` leaves it out.
  */
 export async function readShakeRequest(request: Request): Promise<ShakeRequest> {
-  const bytes = await readBodyLimited(request, MAX_SHAKE_BODY_BYTES);
+  return parseShakeRequest(await readBodyLimited(request, MAX_SHAKE_BODY_BYTES));
+}
+
+/** Parse the bytes of a `POST /api/shake` body, as {@link readShakeRequest} describes. */
+export function parseShakeRequest(bytes: Uint8Array): ShakeRequest {
   if (bytes.byteLength === 0) return { hold: null, record: true };
   let body: unknown;
   try {

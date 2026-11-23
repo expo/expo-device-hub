@@ -141,7 +141,13 @@ test("holding shake on iOS sends one shake, and the release sends nothing", asyn
   const socket = await admit();
 
   await act(async () => client().startShake());
+  // A start during the hold sends nothing.
+  await act(async () => client().startShake());
   await act(async () => client().stopShake());
-
   expect(tags(socket)).toEqual([0x14]);
+
+  // The next hold shakes again.
+  await act(async () => client().startShake());
+  await act(async () => client().stopShake());
+  expect(tags(socket)).toEqual([0x14, 0x14]);
 });

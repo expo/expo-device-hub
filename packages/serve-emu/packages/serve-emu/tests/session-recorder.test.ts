@@ -416,6 +416,78 @@ describe("shake events", () => {
     expect(recorder.summary().droppedEvents).toBe(before + 1);
     expect(recorder.snapshot().events).toMatchObject([{ kind: "shake", durationMs: 2_000 }]);
   });
+
+  test("a running shake at the event limit costs no older event when it fails", () => {
+    const recorder = new SessionRecorder({ now: clock(0, 10), maxEvents: 2 });
+    recordTaps(recorder, 2);
+
+    const failed = recorder.recordShake("rest:shake")!;
+    expect(recorder.summary()).toMatchObject({ eventCount: 3, droppedEvents: 0 });
+    recorder.discard(failed);
+    expect(recorder.export().events.map((event) => event.id)).toEqual([1, 2]);
+    expect(recorder.summary().droppedEvents).toBe(0);
+
+    const shook = recorder.recordShake("rest:shake")!;
+    recorder.setShakeDuration(shook, 1_000);
+    const events = recorder.export().events;
+    expect(events.map((event) => event.id)).toEqual([2, shook]);
+    expect(recorder.summary().droppedEvents).toBe(1);
+    expect(recorder.summary().retainedBytes).toBe(arrayBytes(events));
+  });
+
+  test("input during a running shake drops older input behind the shake and keeps its time", () => {
+    let now = 0;
+    const recorder = new SessionRecorder({ now: () => now, maxEvents: 1 });
+    const shake = recorder.recordShake("rest:shake")!;
+    now = 100;
+    recorder.recordGesture({ type: "back" }, "test");
+    now = 250;
+    recorder.recordGesture({ type: "recents" }, "test");
+
+    let events = recorder.export().events;
+    expect(events.map((event) => [event.kind, event.delayMs])).toEqual([
+      ["shake", 0],
+      ["gesture", 250],
+    ]);
+    expect(recorder.summary().retainedBytes).toBe(arrayBytes(events));
+
+    recorder.setShakeDuration(shake, 50);
+    events = recorder.export().events;
+    expect(events).toMatchObject([{ kind: "gesture", gesture: { type: "recents" } }]);
+    expect(recorder.summary().droppedEvents).toBe(2);
+    expect(recorder.summary().retainedBytes).toBe(arrayBytes(events));
+  });
+
+  test("the time a replayed shake took comes off the waits for the next events", async () => {
+    let now = 0;
+    const recorder = new SessionRecorder({
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+    });
+    const shake = recorder.recordShake("rest:shake")!;
+    now = 1_000; // during the shake
+    recorder.recordGesture({ type: "home" }, "test");
+    now = 4_000; // after the shake settled
+    recorder.recordGesture({ type: "back" }, "test");
+    recorder.setShakeDuration(shake, 3_000);
+
+    const start = now;
+    const dispatched: number[] = [];
+    const run = recorder.startReplay({
+      dispatchGesture: () => {
+        dispatched.push(now - start);
+      },
+      setLocation: () => {},
+      shake: () => {
+        now += 3_500;
+      },
+    });
+    await run.completion;
+
+    expect(dispatched).toEqual([3_500, 4_000]);
+  });
 });
 
 describe("discarding a failed action", () => {

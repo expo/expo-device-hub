@@ -193,11 +193,28 @@ test("Shake starts the shake on press and stops it on release, and tells the das
   await act(async () => button().props.onPointerDown({ ...pointer, button: 2 }));
   expect(calls).toEqual([]);
 
-  const key = (key: string, repeat = false) => ({ key, repeat, preventDefault() {} });
-  await act(async () => button().props.onKeyDown(key(" ")));
-  await act(async () => button().props.onKeyDown(key(" ", true)));
-  await act(async () => button().props.onKeyUp(key(" ")));
-  expect(calls).toEqual(["client.startShake", "onShake", "client.stopShake", "onShakeEnd"]);
+  let prevented = 0;
+  const key = (key: string, repeat = false) => ({
+    key,
+    repeat,
+    preventDefault: () => {
+      prevented++;
+    },
+  });
+  // The button sends no click for the keys, so a repeat of a held key cannot end the hold.
+  for (const name of [" ", "Enter"]) {
+    calls.length = 0;
+    prevented = 0;
+    await act(async () => button().props.onKeyDown(key(name)));
+    await act(async () => button().props.onKeyDown(key(name, true)));
+    await act(async () => button().props.onKeyDown(key(name, true)));
+    expect(calls).toEqual(["client.startShake", "onShake"]);
+    await act(async () => button().props.onKeyUp(key(name)));
+    expect(calls).toEqual(["client.startShake", "onShake", "client.stopShake", "onShakeEnd"]);
+    expect(prevented).toBe(4);
+  }
+  await act(async () => button().props.onKeyDown(key("Tab")));
+  expect(prevented).toBe(4);
 
   calls.length = 0;
   await act(async () => button().props.onKeyDown(key("Enter")));
@@ -327,18 +344,26 @@ test("a Shake press ends when the window loses focus, and a click alone is a sho
   const button = () => shakeButton();
 
   // Enter goes down, then the window loses focus and the key-up never comes.
-  await act(async () => button().props.onKeyDown({ key: "Enter", repeat: false }));
+  await act(async () =>
+    button().props.onKeyDown({ key: "Enter", repeat: false, preventDefault() {} }),
+  );
   expect(listeners.get("blur")?.size).toBe(1);
   await act(async () => [...listeners.get("blur")!].forEach((listener) => listener()));
   expect(calls).toEqual(["start", "stop"]);
   expect(listeners.get("blur")?.size).toBe(0);
-  // The click that followed the key press does not shake again.
-  await act(async () => button().props.onClick());
-  expect(calls).toEqual(["start", "stop"]);
 
-  // Clicks with no pointer or key press before them, as a screen reader sends, each shake.
+  // Clicks with no pointer press before them, as a screen reader sends, each shake.
+  calls.length = 0;
   await act(async () => button().props.onClick());
   await act(async () => button().props.onClick());
-  expect(calls).toEqual(["start", "stop", "start", "stop", "start", "stop"]);
+  expect(calls).toEqual(["start", "stop", "start", "stop"]);
+
+  // A canceled pointer sends no click, so the click after it is a short shake of its own.
+  calls.length = 0;
+  const pointer = { button: 0, pointerId: 1, currentTarget: { setPointerCapture() {} } };
+  await act(async () => button().props.onPointerDown(pointer));
+  await act(async () => button().props.onPointerCancel(pointer));
+  await act(async () => button().props.onClick());
+  expect(calls).toEqual(["start", "stop", "start", "stop"]);
   expect(calls).not.toContain("client.shake");
 });

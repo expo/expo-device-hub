@@ -56,12 +56,12 @@ export function SidebarActionButton({
  * Pointer and keyboard handlers for a button that acts while it is held. A press starts on a
  * primary pointer down or on Enter or Space, and ends once: on release, cancel, lost capture,
  * blur, unmount, or when the window loses focus or the page hides, because a release outside the
- * window never reaches the button. A click without a pointer or key press before it, as a screen
- * reader sends, is a short press.
+ * window never reaches the button. Enter and Space hold the button themselves, so they send no
+ * click. A click without a pointer press before it, as a screen reader sends, is a short press.
  */
 function useHoldPress(onPressStart?: () => void, onPressEnd?: () => void) {
   const pressed = useRef(false);
-  // Set by a pointer or key press, so the click that follows it does not press again.
+  // Set by a pointer press, so the click that follows it does not press again.
   const pressedBeforeClick = useRef(false);
   const end = useRef(onPressEnd);
   end.current = onPressEnd;
@@ -75,7 +75,6 @@ function useHoldPress(onPressStart?: () => void, onPressEnd?: () => void) {
   const start = () => {
     if (pressed.current) return;
     pressed.current = true;
-    pressedBeforeClick.current = true;
     onPressStart?.();
     const onVisibility = () => {
       if (globalThis.document?.visibilityState === "hidden") finish();
@@ -93,6 +92,7 @@ function useHoldPress(onPressStart?: () => void, onPressEnd?: () => void) {
   return {
     onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
       if (event.button !== 0) return;
+      pressedBeforeClick.current = true;
       start();
       // Capture keeps the release on this button when the pointer leaves it while held.
       try {
@@ -100,15 +100,23 @@ function useHoldPress(onPressStart?: () => void, onPressEnd?: () => void) {
       } catch {}
     },
     onPointerUp: finish,
-    onPointerCancel: finish,
+    onPointerCancel: () => {
+      // A canceled pointer sends no click.
+      pressedBeforeClick.current = false;
+      finish();
+    },
     onLostPointerCapture: finish,
     onBlur: finish,
     onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
-      if (event.repeat || (event.key !== "Enter" && event.key !== " ")) return;
-      start();
+      if (event.key !== "Enter" && event.key !== " ") return;
+      // No click for the key, also not for each repeat of a held Enter, which would end the hold.
+      event.preventDefault();
+      if (!event.repeat) start();
     },
     onKeyUp: (event: KeyboardEvent<HTMLButtonElement>) => {
-      if (event.key === "Enter" || event.key === " ") finish();
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      finish();
     },
     onClick: () => {
       if (pressedBeforeClick.current) {
@@ -117,8 +125,6 @@ function useHoldPress(onPressStart?: () => void, onPressEnd?: () => void) {
       }
       start();
       finish();
-      // This click was the whole press, so no click follows it.
-      pressedBeforeClick.current = false;
     },
   };
 }

@@ -403,9 +403,13 @@ The body is optional:
 
 A shake records into the session as a `shake` event before its first swing, so
 input sent during the shake replays after it. When the shake ends, the event gets
-`durationMs`, the time it swung, and a replay swings as long. A request that
-arrives during a running shake joins it, including whether its first request
-recorded it. A failed shake leaves no event. Send `{"record":false}` to leave it
+`durationMs`, the time it swung, and a replay swings as long. The time a
+replayed shake takes comes off the waits for the next events, so they replay at
+their recorded times, or right after the shake when they arrived during it. A
+request that arrives during a running shake joins it, including whether its
+first request recorded it. A failed shake leaves no event, and until a shake
+ends, its event does not count against the session limits, so a failed shake
+costs no older event. Send `{"record":false}` to leave it
 out of the session. A body larger than 1 KiB gets `413`. A physical device gets
 `400` with `ok: false`. When the server stops during a shake, it stops swinging
 and waits until the device is back.

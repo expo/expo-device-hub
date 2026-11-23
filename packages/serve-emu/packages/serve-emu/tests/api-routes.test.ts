@@ -12,7 +12,11 @@ import {
 } from "../src/api/router.ts";
 import { createApiRoutes } from "../src/api/routes/index.ts";
 import { placeholderCameraImage } from "../src/camera.ts";
-import { SHAKE_EMULATOR_ONLY_MESSAGE, ShakeUnsupportedError } from "../src/shake.ts";
+import {
+  SHAKE_EMULATOR_ONLY_MESSAGE,
+  ShakeUnsupportedError,
+  type ShakeRequest,
+} from "../src/shake.ts";
 import {
   MAX_APK_MULTIPART_BYTES,
   MAX_MEDIA_MULTIPART_BYTES,
@@ -738,20 +742,39 @@ describe("domain API failures", () => {
     await expectFailure(response, 409, "conflict", "Device switch in progress");
   });
 
-  test("shakes without a body and maps a physical device to 400", async () => {
+  test("shakes without a body, passes a hold, and maps a physical device to 400", async () => {
     const router = createApiRouter(createApiRoutes(), { logger: silentLogger });
-    let shakes = 0;
+    const requests: ShakeRequest[] = [];
+    const recording = fakeDependencies({
+      shake: async (request) => {
+        requests.push(request);
+      },
+    });
     const ok = await router.handle(
       new Request(`${BASE_URL}/api/shake`, { method: "POST" }),
-      fakeDependencies({
-        shake: async () => {
-          shakes += 1;
-        },
-      }),
+      recording,
     );
     expect(ok?.status).toBe(200);
     expect(await ok?.json()).toEqual({ ok: true });
-    expect(shakes).toBe(1);
+    const held = await router.handle(
+      new Request(`${BASE_URL}/api/shake`, {
+        method: "POST",
+        body: JSON.stringify({ hold: true, record: false }),
+      }),
+      recording,
+    );
+    expect(held?.status).toBe(200);
+    expect(requests).toEqual([
+      { hold: null, record: true },
+      { hold: true, record: false },
+    ]);
+
+    const malformed = await router.handle(
+      new Request(`${BASE_URL}/api/shake`, { method: "POST", body: '{"hold":"yes"}' }),
+      recording,
+    );
+    await expectFailure(malformed, 400, "invalid_request", "hold must be a boolean");
+    expect(requests).toHaveLength(2);
 
     const physical = await router.handle(
       new Request(`${BASE_URL}/api/shake`, { method: "POST" }),

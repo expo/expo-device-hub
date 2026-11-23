@@ -1191,8 +1191,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       fail();
     }
   }, [sendWs, shakeSupported]);
-  // UIKit's shake is one motion event, so holding the button sends one shake.
-  const stopShake = useCallback(() => {}, []);
+  // UIKit's shake is one motion event, so holding the button sends one shake, and starts during
+  // the hold send nothing.
+  const shakeHeld = useRef(false);
+  const startShake = useCallback(() => {
+    if (!shakeSupported || shakeHeld.current) return;
+    shakeHeld.current = true;
+    shake();
+  }, [shake, shakeSupported]);
+  const stopShake = useCallback(() => {
+    shakeHeld.current = false;
+  }, []);
 
   // Reload the RN/Expo bundle by injecting ⌘R over the helper's key channel
   // (tag 0x06 → HID keystroke) — RN registers ⌘R as its reload shortcut. Mirrors
@@ -3203,7 +3212,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     pressButton,
     reload,
     shake,
-    startShake: shake,
+    startShake,
     stopShake,
     shakeError,
     rotate,

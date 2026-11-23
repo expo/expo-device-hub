@@ -186,6 +186,8 @@ export class SessionRecorder {
   #events: RecordedEvent[] = [];
   #retainedBytes = EMPTY_ARRAY_BYTES;
   #droppedEvents = 0;
+  /** Shakes that have not ended yet. They do not count against the limits until they end. */
+  #pendingShakes = new Set<number>();
   #maxEvents: number;
   #maxBytes: number;
   #nextId = 1;
@@ -247,18 +249,24 @@ export class SessionRecorder {
     this.#record({ kind: "location", location, source });
   }
 
-  /** Record a shake when its burst starts. Returns the event ID, or null when nothing was recorded. */
+  /**
+   * Record a shake when its burst starts. Returns the event ID, or null when nothing was recorded.
+   * Until {@link setShakeDuration} or {@link discard} ends it, the shake does not count against
+   * the limits, so a shake that fails costs no older event.
+   */
   recordShake(source: string): number | null {
     return this.#record({ kind: "shake", source });
   }
 
   /** Give a recorded shake the time it swung, once it ends. */
   setShakeDuration(id: number, durationMs: number): void {
+    this.#pendingShakes.delete(id);
     const event = this.#events.find((candidate) => candidate.id === id);
-    if (event?.kind !== "shake" || !Number.isFinite(durationMs)) return;
-    const before = eventBytes(event);
-    event.durationMs = Math.max(0, Math.round(durationMs));
-    this.#retainedBytes += eventBytes(event) - before;
+    if (event?.kind === "shake" && Number.isFinite(durationMs)) {
+      const before = eventBytes(event);
+      event.durationMs = Math.max(0, Math.round(durationMs));
+      this.#retainedBytes += eventBytes(event) - before;
+    }
     this.#trim();
   }
 
@@ -267,12 +275,18 @@ export class SessionRecorder {
    * so replay keeps the timing of the events around it.
    */
   discard(id: number): void {
+    this.#pendingShakes.delete(id);
     const index = this.#events.findIndex((event) => event.id === id);
-    if (index === -1) return;
+    if (index !== -1) this.#removeAt(index, true);
+  }
+
+  /** Remove the event at `index`. With `keepGap`, the next event takes its time gap. */
+  #removeAt(index: number, keepGap: boolean): void {
     const removed = this.#events.splice(index, 1)[0]!;
     this.#retainedBytes -= eventBytes(removed) + (this.#events.length > 0 ? 1 : 0);
     const next = this.#events[index];
     if (next) {
+      if (!keepGap) return;
       const before = eventBytes(next);
       next.delayMs += removed.delayMs;
       this.#retainedBytes += eventBytes(next) - before;
@@ -291,6 +305,7 @@ export class SessionRecorder {
     }
     this.#admissionEpoch++;
     this.#events = [];
+    this.#pendingShakes.clear();
     this.#retainedBytes = EMPTY_ARRAY_BYTES;
     this.#droppedEvents = 0;
     this.#lastEventMs = null;
@@ -474,17 +489,24 @@ export class SessionRecorder {
     multiplier: number,
   ): Promise<SessionSnapshot> {
     let outcome: "completed" | "cancelled" | "error" = "completed";
+    // A shake is recorded when it starts, so the gap to the next event includes the time it
+    // shook. The time a replayed shake took comes off the next waits.
+    let behindMs = 0;
     try {
       for (const event of events) {
         this.#assertReplayActive(replay);
-        await this.#clock.delay(Math.max(0, event.delayMs / multiplier), replay.controller.signal);
+        const gapMs = Math.max(0, event.delayMs / multiplier);
+        await this.#clock.delay(Math.max(0, gapMs - behindMs), replay.controller.signal);
+        behindMs = Math.max(0, behindMs - gapMs);
         this.#assertReplayActive(replay);
         if (event.kind === "gesture") {
           await handlers.dispatchGesture(event.gesture, replay.controller.signal);
         } else if (event.kind === "location") {
           await handlers.setLocation(event.location, replay.controller.signal);
         } else {
+          const startedAt = this.#clock.now();
           await handlers.shake(replay.controller.signal, event.durationMs);
+          behindMs += Math.max(0, this.#clock.now() - startedAt);
         }
         this.#assertReplayActive(replay);
       }
@@ -554,16 +576,35 @@ export class SessionRecorder {
     }
     this.#events.push(recorded);
     this.#retainedBytes += bytes + (this.#events.length > 1 ? 1 : 0);
+    if (recorded.kind === "shake") this.#pendingShakes.add(recorded.id);
     this.#trim();
     return recorded.id;
   }
 
-  /** Drop the oldest events until the session fits its limits. */
+  /**
+   * Drop the oldest events until the session fits its limits. A shake that has not ended stays
+   * and does not count, so its failure cannot cost an older event.
+   */
   #trim(): void {
-    while (this.#events.length > this.#maxEvents || this.#retainedBytes > this.#maxBytes) {
-      const removed = this.#events.shift()!;
-      this.#retainedBytes -= eventBytes(removed) + (this.#events.length > 0 ? 1 : 0);
+    while (this.#overLimit()) {
+      const index = this.#events.findIndex((event) => !this.#pendingShakes.has(event.id));
+      if (index === -1) return;
+      // Behind a running shake, the next event takes the dropped event's gap to keep its time.
+      this.#removeAt(index, index > 0);
       this.#droppedEvents++;
     }
+  }
+
+  #overLimit(): boolean {
+    let count = this.#events.length;
+    let bytes = this.#retainedBytes;
+    if (this.#pendingShakes.size > 0) {
+      for (const event of this.#events) {
+        if (!this.#pendingShakes.has(event.id)) continue;
+        count--;
+        bytes -= eventBytes(event) + 1;
+      }
+    }
+    return count > this.#maxEvents || bytes > this.#maxBytes;
   }
 }

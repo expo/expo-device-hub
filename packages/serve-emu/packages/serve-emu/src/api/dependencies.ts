@@ -41,6 +41,7 @@ import type {
   StreamEncoderSettingsResponse,
 } from "../shared/api-contracts.ts";
 import type { StreamEncoderSettingsPatch } from "../stream-settings.ts";
+import type { ShakeRequest } from "../shake.ts";
 
 export type { NightMode, OrientationMode } from "../shared/api-contracts.ts";
 export type RouteControlAction = ApiRequest<"/api/route/control", "POST">["action"];
@@ -99,8 +100,8 @@ export type ApiDependencies = {
   ) => Promise<AccessibilityTapResponse>;
 
   dispatchGesture: (gesture: Gesture, source: string, record: boolean) => Promise<void>;
-  /** Shake an emulator with a short accelerometer burst. Rejects a physical device. */
-  shake: () => Promise<void>;
+  /** Do what a `POST /api/shake` asked for: a click, a hold, or a release. Rejects a physical device. */
+  shake: (request: ShakeRequest) => Promise<void>;
 
   getSession: () => SessionSnapshot;
   clearSession: () => SessionSnapshot;
