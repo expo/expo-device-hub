@@ -231,7 +231,10 @@ async function routeRequest(request: Request): Promise<Response | null> {
   }
 
   if (pathname === DEVICES_ROUTE) {
-    const devices = await listDevices(SERVER_PLATFORM_FILTER);
+    const includeUnusedIos =
+      searchParams.get("includeUnusedIos") === "true" ||
+      searchParams.get("includeUnusedIos") === "1";
+    const devices = await listDevices(SERVER_PLATFORM_FILTER, { includeUnusedIos });
     const bootedOnly = searchParams.get("booted") === "true" || searchParams.get("booted") === "1";
     return jsonResponse(bootedOnly ? filterBooted(devices) : devices);
   }
