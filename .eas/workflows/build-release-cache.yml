@@ -84,7 +84,7 @@ jobs:
       - name: Install the x264 build 165 header
         run: |
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libx264-dev
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libx264-dev clang make pkg-config
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

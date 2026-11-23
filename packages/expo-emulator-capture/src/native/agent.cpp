@@ -461,7 +461,7 @@ void Agent::onPost(uint32_t handle, bool needLockAndBind) {
 ReadMode Agent::effectiveReadMode() const {
   ReadMode mode = readMode_.load(std::memory_order_relaxed);
   if (mode != ReadMode::Auto) return mode;
-#if defined(__linux__)
+#if defined(__linux__) && !defined(EXPO_EMULATOR_CAPTURE_NVIDIA)
   // @ref LLP 0021#frame-path — on Linux, the render thread does not wait for the read
   // The read of this post's frame waits for the renderer to finish it, and the copy takes
   // several ms. The frame of the post before is finished, so the capture thread reads it.

@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
-#if defined(__APPLE__)
+#if defined(__APPLE__) && !defined(EXPO_EMULATOR_CAPTURE_NVIDIA)
 #include <CoreVideo/CoreVideo.h>
 #endif
 
@@ -13,7 +13,7 @@ namespace expo_capture {
 enum class FramePath { Gpu, Cpu };
 inline const char* framePathName(FramePath path) { return path == FramePath::Gpu ? "gpu" : "cpu"; }
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) && !defined(EXPO_EMULATOR_CAPTURE_NVIDIA)
 // An owned reference to a 32BGRA, IOSurface-backed pixel buffer. A copy retains the same buffer,
 // so the stream and the recording share one captured frame; both only read it.
 class FramePixels {
@@ -52,6 +52,10 @@ class FramePixels {
  private:
   CVPixelBufferRef buffer_ = nullptr;
 };
+#elif defined(EXPO_EMULATOR_CAPTURE_NVIDIA)
+// Opaque owned CUDA snapshot; stream and recording share its immutable device pixels.
+struct CudaFrame;
+using FramePixels = std::shared_ptr<CudaFrame>;
 #else
 // Tightly packed RGBA rows, top row first, as the renderer reads them back.
 struct RgbaImage {

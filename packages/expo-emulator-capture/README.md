@@ -229,3 +229,12 @@ Frida Gum (wxWindows 3.1, an LGPL-2.0+ license with a binary exception) and GLib
 (LGPL-2.1+). [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) lists every component,
 with the license texts in `LICENSES/`. The Linux agent loads x264 (GPL-2.0-or-later) from
 the host system; the package does not contain it.
+
+### NVIDIA Linux hosts (experimental)
+
+Set `EXPO_EMULATOR_CAPTURE_BACKEND=nvidia` before starting the Hub with
+`--experimental-emulator-capture`. It selects the CUDA/NVENC agent and host GL; x264
+is not required in this mode. NVIDIA driver 570+ with CUDA and NVENC, a compute 7.5+ GPU,
+and compatible gfxstream GL exports are required. Hardware validation is pending.
+See [NVIDIA capture](../../llp/0021-emulator-capture-linux.explainer.md#nvidia-capture)
+for the frame path, build instructions and staging verification scope.

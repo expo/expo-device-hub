@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { lstat, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { EMULATOR_CAPTURE_PACKAGE, installEmulatorCapture } from "./emulator-capture-install";
 
 /** Turns the experimental emulator capture on: `1`. The CLI flag sets it too. */
@@ -10,6 +10,15 @@ export const EMULATOR_CAPTURE_ENV = "EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTU
 /** The absolute path of a locally built agent library, used instead of the installed package. */
 export const EMULATOR_CAPTURE_LIBRARY_ENV = "EXPO_DEVICE_HUB_EMULATOR_CAPTURE_LIBRARY";
 export const EMULATOR_CAPTURE_FLAG = "--experimental-emulator-capture";
+/** Opt-in Linux NVIDIA agent. Unset keeps the existing x264 software path. */
+export const EMULATOR_CAPTURE_BACKEND_ENV = "EXPO_EMULATOR_CAPTURE_BACKEND";
+
+function nvidiaRequested(env: NodeJS.ProcessEnv): boolean {
+  const value = env[EMULATOR_CAPTURE_BACKEND_ENV]?.trim();
+  if (value && value !== "nvidia")
+    throw new Error(`${EMULATOR_CAPTURE_BACKEND_ENV} must be nvidia or unset`);
+  return value === "nvidia";
+}
 
 /** Experimental capture for the emulators the Hub boots (macOS on Apple silicon, Linux x86-64). */
 export type EmulatorCapture = {
@@ -82,6 +91,8 @@ export function emulatorCaptureEncoderProblem(
   loaderCache: () => string | null = readLoaderCache,
 ): string | null {
   if (platform !== "linux") return null;
+  // @ref LLP 0021#nvidia-integration — NVENC does not load x264; driver checks belong to the agent
+  if (nvidiaRequested(env)) return null;
   const directories = [
     ...(env.LD_LIBRARY_PATH ?? "").split(":").filter(isAbsolute),
     ...LIBRARY_DIRECTORIES,
@@ -137,6 +148,9 @@ export function readEmulatorCapture(
     console.warn(`[emulator capture] ${emulatorCaptureOffReason(platform, arch)}`);
     return null;
   }
+  const nvidia = nvidiaRequested(env);
+  if (nvidia && host !== "linux")
+    throw new Error(`${EMULATOR_CAPTURE_BACKEND_ENV}=nvidia requires Linux x86-64`);
   const localLibrary = env[EMULATOR_CAPTURE_LIBRARY_ENV]?.trim() || undefined;
   if (localLibrary !== undefined && (!isAbsolute(localLibrary) || !existsSync(localLibrary))) {
     throw new Error(
@@ -147,21 +161,28 @@ export function readEmulatorCapture(
   let problem: string | null = null;
   /** Installs the package once; after a failure, the next call tries again. */
   const installed = (): Promise<string> => {
-    pending ??= install().then(
-      (path) => {
-        problem = null;
-        return path;
-      },
-      (error: unknown) => {
-        // The install error names the package and npm's reason.
-        problem =
-          error instanceof Error
-            ? error.message
-            : `Installing ${EMULATOR_CAPTURE_PACKAGE} failed: ${String(error)}`;
-        pending = null; // The next boot tries again.
-        throw error;
-      },
-    );
+    pending ??= install()
+      .then((path) => {
+        if (!nvidia) return path;
+        const library = join(dirname(path), "libexpo_emulator_capture_nvidia.so");
+        if (!existsSync(library)) throw new Error(`NVIDIA capture agent is missing: ${library}`);
+        return library;
+      })
+      .then(
+        (path) => {
+          problem = null;
+          return path;
+        },
+        (error: unknown) => {
+          // The install error names the package and npm's reason.
+          problem =
+            error instanceof Error
+              ? error.message
+              : `Installing ${EMULATOR_CAPTURE_PACKAGE} failed: ${String(error)}`;
+          pending = null; // The next boot tries again.
+          throw error;
+        },
+      );
     return pending;
   };
   const library = (): Promise<string> => {
@@ -256,7 +277,12 @@ export function emulatorCaptureMissingAgentReason(
  * agent cannot load, so the renderer does not depend on the install.
  * EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS comes later and can still override them.
  */
-export function emulatorCaptureArgs(platform: EmulatorCapture["platform"]): string[] {
+export function emulatorCaptureArgs(
+  platform: EmulatorCapture["platform"],
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  // @ref LLP 0021#nvidia-integration — CUDA interoperability needs NVIDIA host GL textures
+  if (platform === "linux" && nvidiaRequested(env)) return ["-gpu", "host", "-feature", "-Vulkan"];
   return platform === "darwin"
     ? // @ref LLP 0020#frame-paths — the GPU frame path needs host rendering
       // `-gpu auto` picks a software renderer on a headless Mac.
