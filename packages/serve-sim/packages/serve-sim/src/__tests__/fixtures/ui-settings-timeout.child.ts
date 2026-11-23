@@ -75,6 +75,8 @@ const WRITES: Record<string, string> = {
   appearance: "dark",
   "reduce-motion": "on",
   "time-zone": "UTC",
+  // Without a zone, so the write reads the simulator's zone first.
+  clock: "2030-01-01T09:00:00",
 };
 
 test.each(Object.keys(WRITES))("bounds the %s write", async (option) => {

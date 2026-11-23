@@ -26,6 +26,16 @@ xcrun clang \
 
 "$OUT_DIR/capability-loader-test"
 
+xcrun clang \
+    -std=c11 -g -O1 \
+    -Wall -Wextra -Werror -Wconversion -Wshadow \
+    -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all \
+    -Wl,-U,_serve_sim_startup \
+    -o "$OUT_DIR/clock-capability-test" \
+    "$HERE/../../ServeSimClock/tests/clock-capability-test.c"
+
+"$OUT_DIR/clock-capability-test"
+
 # clang --analyze exits 0 even when it reports, and -Werror does not change that,
 # so the findings themselves are the signal.
 ANALYSIS="$OUT_DIR/analysis.txt"

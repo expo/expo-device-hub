@@ -480,6 +480,7 @@ describe("serve-sim-backed actions", () => {
       ["textSize", "text-size", "extra-large"],
       ["showBorders", "show-borders", "on"],
       ["timeZone", "time-zone", "Asia/Tokyo"],
+      ["clock", "clock", "2030-01-01T09:00"],
     ] as const;
     for (const [name, option, value] of settings) {
       expect(await argv(`${name}.get`, { udid: UDID })).toEqual([

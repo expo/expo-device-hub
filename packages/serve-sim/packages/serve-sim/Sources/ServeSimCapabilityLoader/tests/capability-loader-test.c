@@ -47,6 +47,8 @@ static void free_load(struct Load *load) {
   free(load);
 }
 
+#include <errno.h>
+#include <pthread.h>
 #include <sys/stat.h>
 
 static int failures = 0;
@@ -386,6 +388,171 @@ static void test_startup_registration(void) {
   free(saved_tmp); free(saved_config);
 }
 
+static uint64_t elapsed_ms(uint64_t start_ns) {
+  return (clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - start_ns) / NSEC_PER_MSEC;
+}
+
+// A deadline built from the shifted clock must expire after its real duration, not hang
+// (a later time) or pass at once (an earlier one).
+static void check_deadlines(int64_t offset_ns, const char *what) {
+  serve_sim_set_wall_clock_offset(offset_ns);
+  char label[160];
+
+  static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+  static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+  struct timespec deadline;
+  shifted_clock_gettime(CLOCK_REALTIME, &deadline);
+  deadline.tv_nsec += 200 * NSEC_PER_MSEC;
+  if (deadline.tv_nsec >= (long)NSEC_PER_SEC) {
+    deadline.tv_sec += 1;
+    deadline.tv_nsec -= (long)NSEC_PER_SEC;
+  }
+  // A watchdog, so a deadline that never expires fails the test instead of hanging it.
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * (int64_t)NSEC_PER_SEC),
+                 dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+                   pthread_mutex_lock(&mutex);
+                   pthread_cond_signal(&cond);
+                   pthread_mutex_unlock(&mutex);
+                 });
+  pthread_mutex_lock(&mutex);
+  uint64_t start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  int result = shifted_pthread_cond_timedwait(&cond, &mutex, &deadline);
+  uint64_t waited = elapsed_ms(start);
+  pthread_mutex_unlock(&mutex);
+  snprintf(label, sizeof label, "a condition deadline takes its real time (%s, %llu ms)", what,
+           (unsigned long long)waited);
+  CHECK(result == ETIMEDOUT && waited >= 150 && waited < 1500, label);
+
+  dispatch_semaphore_t fired = dispatch_semaphore_create(0);
+  struct timespec now;
+  shifted_clock_gettime(CLOCK_REALTIME, &now);
+  start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+  dispatch_after(shifted_dispatch_walltime(&now, 200 * (int64_t)NSEC_PER_MSEC),
+                 dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+                   dispatch_semaphore_signal(fired);
+                 });
+  long timedOut =
+      dispatch_semaphore_wait(fired, dispatch_time(DISPATCH_TIME_NOW, 3 * (int64_t)NSEC_PER_SEC));
+  waited = elapsed_ms(start);
+  snprintf(label, sizeof label, "a dispatch wall deadline takes its real time (%s, %llu ms)", what,
+           (unsigned long long)waited);
+  CHECK(timedOut == 0 && waited >= 150 && waited < 1500, label);
+  serve_sim_set_wall_clock_offset(0);
+}
+
+// The wrappers are reached directly: dyld does not interpose for an executable.
+static void test_wall_clock(void) {
+  struct timespec time = {10, 200000000};
+  shift_wall_clock(&time, -1500000000LL);
+  CHECK(time.tv_sec == 8 && time.tv_nsec == 700000000, "a negative offset borrows a second");
+  time = (struct timespec){0, 0};
+  shift_wall_clock(&time, -1);
+  CHECK(time.tv_sec == -1 && time.tv_nsec == 999999999, "the nanoseconds stay positive");
+  // "Wait forever" deadlines stay as they are, instead of wrapping into the past.
+  time = (struct timespec){LONG_MAX, 0};
+  shift_wall_clock(&time, -31536000LL * (int64_t)NSEC_PER_SEC);
+  CHECK(time.tv_sec > LONG_MAX / 2, "a forever deadline moved back stays far in the future");
+  time = (struct timespec){LONG_MAX, 999999999};
+  shift_wall_clock(&time, 31536000LL * (int64_t)NSEC_PER_SEC);
+  CHECK(time.tv_sec == LONG_MAX, "a forever deadline moved forward stays forever");
+  time = (struct timespec){LONG_MIN, 0};
+  shift_wall_clock(&time, -1);
+  CHECK(time.tv_sec == LONG_MIN && time.tv_nsec == 0,
+        "a lower-bound overflow leaves the whole time unchanged");
+  time = (struct timespec){LONG_MAX, 999999999};
+  shift_wall_clock(&time, 1);
+  CHECK(time.tv_sec == LONG_MAX && time.tv_nsec == 999999999,
+        "a nanosecond carry at the upper bound leaves the whole time unchanged");
+  // Exercise both ends of the accepted 200-year range with subsecond carries.
+  const int64_t large = 6300000000000LL * (int64_t)NSEC_PER_MSEC;
+  for (int sign = -1; sign <= 1; sign += 2) {
+    time = (struct timespec){2000000000, 999999999};
+    shift_wall_clock(&time, sign * large + sign);
+    CHECK(time.tv_sec == 2000000000 + sign * 6300000000LL + (sign > 0 ? 1 : 0),
+          "a maximum supported offset normalizes seconds");
+    CHECK(time.tv_nsec == (sign > 0 ? 0 : 999999998),
+          "a maximum supported offset normalizes nanoseconds");
+  }
+
+  const int64_t year = 31536000LL * (int64_t)NSEC_PER_SEC;
+  struct timespec real, shifted, monotonic, shifted_monotonic;
+  CHECK(shifted_clock_gettime(CLOCK_REALTIME, &shifted) == 0, "no offset reads the clock");
+  clock_gettime(CLOCK_REALTIME, &real);
+  CHECK(llabs((long long)(real.tv_sec - shifted.tv_sec)) <= 1, "no offset passes straight through");
+
+  serve_sim_set_wall_clock_offset(year);
+  shifted_clock_gettime(CLOCK_REALTIME, &shifted);
+  clock_gettime(CLOCK_REALTIME, &real);
+  CHECK(shifted.tv_sec - real.tv_sec >= 31535999 && shifted.tv_sec - real.tv_sec <= 31536000,
+        "clock_gettime shifts the wall clock");
+  struct timeval day;
+  shifted_gettimeofday(&day, NULL);
+  CHECK(day.tv_sec - real.tv_sec >= 31535999 && day.tv_sec - real.tv_sec <= 31536001,
+        "gettimeofday shifts the wall clock");
+  CHECK(shifted_time(NULL) - real.tv_sec >= 31535999 && shifted_time(NULL) - real.tv_sec <= 31536001,
+        "time shifts the wall clock");
+  uint64_t ns = shifted_clock_gettime_nsec_np(CLOCK_REALTIME) / NSEC_PER_SEC;
+  CHECK(ns >= (uint64_t)real.tv_sec + 31535999 && ns <= (uint64_t)real.tv_sec + 31536001,
+        "clock_gettime_nsec_np shifts the wall clock");
+  struct timespec utc;
+  CHECK(shifted_timespec_get(&utc, TIME_UTC) == TIME_UTC, "timespec_get reads the clock");
+  CHECK(utc.tv_sec - real.tv_sec >= 31535999 && utc.tv_sec - real.tv_sec <= 31536001,
+        "timespec_get shifts the wall clock");
+  clock_gettime(CLOCK_MONOTONIC, &monotonic);
+  shifted_clock_gettime(CLOCK_MONOTONIC, &shifted_monotonic);
+  CHECK(llabs((long long)(shifted_monotonic.tv_sec - monotonic.tv_sec)) <= 1,
+        "the monotonic clock stays real");
+  const clockid_t unshifted_clocks[] = {CLOCK_MONOTONIC, CLOCK_MONOTONIC_RAW,
+                                      CLOCK_MONOTONIC_RAW_APPROX, CLOCK_UPTIME_RAW,
+                                      CLOCK_UPTIME_RAW_APPROX, CLOCK_PROCESS_CPUTIME_ID,
+                                      CLOCK_THREAD_CPUTIME_ID};
+  for (size_t i = 0; i < sizeof unshifted_clocks / sizeof unshifted_clocks[0]; i++) {
+    uint64_t before = clock_gettime_nsec_np(unshifted_clocks[i]);
+    uint64_t after = shifted_clock_gettime_nsec_np(unshifted_clocks[i]);
+    CHECK(after >= before && after - before < NSEC_PER_SEC,
+          "non-realtime nanosecond clocks remain unshifted");
+  }
+  time_t out;
+  time_t returned = shifted_time(&out);
+  CHECK(returned == out, "time writes the same shifted value it returns");
+  struct timespec invalid = {123, 456};
+  CHECK(shifted_timespec_get(&invalid, -1) == 0 && invalid.tv_sec == 123 && invalid.tv_nsec == 456,
+        "an unsupported timespec_get base preserves its result and output");
+  errno = 0;
+  CHECK(shifted_clock_gettime((clockid_t)-1, &invalid) == -1 && errno == EINVAL &&
+            invalid.tv_sec == 123 && invalid.tv_nsec == 456,
+        "an invalid clock preserves its error and output");
+  CHECK(shifted_clock_gettime_nsec_np((clockid_t)-1) == 0,
+        "an invalid nanosecond clock stays zero");
+
+  serve_sim_set_wall_clock_offset(-year);
+  shifted_clock_gettime(CLOCK_REALTIME, &shifted);
+  clock_gettime(CLOCK_REALTIME, &real);
+  CHECK(real.tv_sec - shifted.tv_sec >= 31535999 && real.tv_sec - shifted.tv_sec <= 31536000,
+        "a negative offset moves the clock back");
+  serve_sim_set_wall_clock_offset(0);
+
+  serve_sim_set_wall_clock_offset(year);
+  // dispatch_time: AddressSanitizer replaces dispatch_async and others with its own.
+  CHECK(offset_for((const void *)dispatch_time) == 0, "libdispatch reads the real clock");
+  CHECK(offset_for((const void *)test_wall_clock) == year, "everything else reads the shifted clock");
+  serve_sim_set_wall_clock_offset(0);
+
+  check_deadlines(0, "no offset");
+  check_deadlines(year, "a year later");
+  check_deadlines(-year, "a year earlier");
+
+  // A NULL dispatch base means the real current time, independent of the override.
+  serve_sim_set_wall_clock_offset(year);
+  uint64_t before = dispatch_walltime(NULL, 500 * (int64_t)NSEC_PER_MSEC);
+  uint64_t after = shifted_dispatch_walltime(NULL, 500 * (int64_t)NSEC_PER_MSEC);
+  CHECK(before >= after && before - after < NSEC_PER_SEC,
+        "dispatch deadlines relative to now keep the real clock");
+  CHECK(shifted_dispatch_walltime(&(struct timespec){LONG_MAX, 0}, 0) == DISPATCH_TIME_FOREVER,
+        "an explicit forever dispatch deadline stays forever");
+  serve_sim_set_wall_clock_offset(0);
+}
+
 int main(void) {
   test_read_config();
   test_capability_applies();
@@ -393,6 +560,7 @@ int main(void) {
   test_load_capabilities();
   test_delayed_reload();
   test_startup_registration();
+  test_wall_clock();
   remove_temps();
   if (failures == 0) fprintf(stdout, "ok\n");
   return failures == 0 ? 0 : 1;

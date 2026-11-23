@@ -8,7 +8,17 @@ import { setHardwareKeyboard } from "./native";
 import { dirnameOf } from "./runtime";
 import { stateDir } from "./state";
 import { withStateLock } from "./state-lock";
+import { HOST_CLOCK, clockNeedsZone, clockTarget, clockValue, normalizeClock } from "./clock";
+import {
+  MAX_CLOCK_OFFSET_MS,
+  clockCapabilityEnabled,
+  readClockOffset,
+  setClockCapability,
+  withClockLock,
+  writeClockOffset,
+} from "./clock-capability";
 import { HOST_TIME_ZONE, normalizeTimeZone } from "./time-zone";
+import { UiInputError } from "./ui-input-error";
 import { setTimeZoneCapability, withTimeZoneLock, writeTimeZoneFile } from "./time-zone-capability";
 
 // Bun's bundler inlines a bare `__dirname` as the build machine's source
@@ -63,9 +73,9 @@ interface UiOptionSpec {
   /**
    * `simctl ui` subcommand, "ax" for the in-sim helper, "device" for a
    * host-side CoreSimulator device setting driven through the native addon,
-   * or "tz" for launchd's TZ.
+   * "tz" for launchd's TZ, or "clock" for the clock capability.
    */
-  via: "appearance" | "increase_contrast" | "content_size" | "ax" | "device" | "tz";
+  via: "appearance" | "increase_contrast" | "content_size" | "ax" | "device" | "tz" | "clock";
   /** Closed value set; open-ended options carry `normalize` and `accepted` instead. */
   values?: readonly string[];
   /** Extra accepted set-values that aren't reported by `get` (text-size). */
@@ -97,6 +107,12 @@ export const UI_OPTIONS: Record<string, UiOptionSpec> = {
     via: "tz",
     normalize: normalizeTimeZone,
     accepted: "host | UTC | any IANA zone, e.g. Europe/Berlin",
+  },
+  clock: {
+    via: "clock",
+    normalize: normalizeClock,
+    accepted:
+      "host | a date and time, e.g. 2030-01-01T09:00 (simulator's zone) or 2030-01-01T09:00Z",
   },
 };
 
@@ -418,6 +434,112 @@ export async function writeTimeZone(
   });
 }
 
+// ─── Clock ───
+// Nothing outside an app shifts the simulator's clock: the clock capability's dylib shifts
+// each app's wall clock by an offset, so the chosen time keeps ticking.
+
+export interface ClockDeps {
+  now?: () => number;
+  readZone?: (udid: string) => Promise<string>;
+  hostZone?: () => string;
+  readOffset?: (udid: string) => number;
+  clockEnabled?: (udid: string) => boolean;
+  writeOffset?: (udid: string, offsetMs: number) => void;
+  setCapability?: (udid: string, enabled: boolean) => Promise<void>;
+}
+
+const macZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/** The zone the simulator's clock shows: its own, or the Mac's, which serve-sim runs in. */
+async function simulatorZone(
+  udid: string,
+  readZone: (udid: string) => Promise<string>,
+  hostZone: () => string,
+): Promise<string> {
+  const zone = await readZone(udid);
+  return zone === HOST_TIME_ZONE ? hostZone() : zone;
+}
+
+export async function readClock(
+  udid: string,
+  {
+    readOffset = readClockOffset,
+    now = Date.now,
+    readZone = readTimeZone,
+    hostZone = macZone,
+    clockEnabled = clockCapabilityEnabled,
+  }: ClockDeps = {},
+): Promise<string> {
+  const offset = clockEnabled(udid) ? readOffset(udid) : 0;
+  if (offset === 0) return HOST_CLOCK;
+  const at = now();
+  try {
+    return clockValue(offset, at, await simulatorZone(udid, readZone, hostZone));
+  } catch {
+    // Still a time, so it can be reset: UTC when the zone cannot be read or is not one.
+    return clockValue(offset, at, "UTC");
+  }
+}
+
+/**
+ * The offset goes first, so a dylib that loads when the capability turns on finds its directory;
+ * a failed capability change restores the previous offset. `host` writes no offset before it
+ * disables the capability, because a loaded dylib stays loaded.
+ */
+export async function writeClock(
+  udid: string,
+  value: string,
+  {
+    now = Date.now,
+    readZone = readTimeZone,
+    hostZone = macZone,
+    readOffset = readClockOffset,
+    writeOffset = writeClockOffset,
+    setCapability = setClockCapability,
+  }: ClockDeps = {},
+): Promise<void> {
+  await withClockLock(udid, async () => {
+    if (value === HOST_CLOCK) {
+      const previous = readOffset(udid);
+      writeOffset(udid, 0);
+      try {
+        await setCapability(udid, false);
+      } catch (e) {
+        try {
+          writeOffset(udid, previous);
+        } catch {}
+        throw e;
+      }
+      return;
+    }
+    const setting = clockNeedsZone(value) ? await readZone(udid) : "UTC";
+    const zone = setting === HOST_TIME_ZONE ? hostZone() : setting;
+    const target = clockTarget(value, zone);
+    if (target === null) {
+      // The reason can go to a remote caller, so it does not name the host's zone.
+      const where = setting === HOST_TIME_ZONE ? "the host's zone" : zone;
+      throw new UiInputError(
+        `${value} does not exist in ${where}: daylight saving time skips it. Choose another time.`,
+      );
+    }
+    if (target < 0) throw new UiInputError(`${value} is before 1970; choose a later time.`);
+    const offset = Math.round(target - now());
+    if (Math.abs(offset) > MAX_CLOCK_OFFSET_MS) {
+      throw new UiInputError(`${value} is more than about 200 years away; choose a closer time.`);
+    }
+    const previous = readOffset(udid);
+    writeOffset(udid, offset);
+    try {
+      await setCapability(udid, true);
+    } catch (e) {
+      try {
+        writeOffset(udid, previous);
+      } catch {}
+      throw e;
+    }
+  });
+}
+
 function toToggle(simctlValue: string): string {
   return simctlValue === "enabled" ? "on" : "off";
 }
@@ -434,6 +556,7 @@ export async function getUiOption(udid: string, option: string): Promise<string>
   }
   if (spec.via === "ax") return axRun(udid, "get", option);
   if (spec.via === "tz") return readTimeZone(udid);
+  if (spec.via === "clock") return readClock(udid);
   // simctl's casing is inconsistent (`content_size` prints "Small" but
   // "large") — values are canonically lowercase everywhere here.
   const raw = (await simctlUi(udid, spec.via)).toLowerCase();
@@ -472,6 +595,10 @@ export async function setUiOption(
   }
   if (spec.via === "tz") {
     await writeTimeZone(udid, value);
+    return;
+  }
+  if (spec.via === "clock") {
+    await writeClock(udid, value);
     return;
   }
   await simctlUi(udid, spec.via, spec.toggle ? fromToggle(value) : value);
@@ -570,7 +697,10 @@ Simulator-wide UI options:
   voiceover            on | off
   hardware-keyboard    on | off
   time-zone            host | UTC | <IANA zone, e.g. Europe/Berlin>
-                       (running apps switch while a serve-sim session owns the device; a reboot returns to the host zone)`;
+                       (running apps switch while a serve-sim session owns the device; a reboot returns to the host zone)
+  clock                host | <date and time, e.g. 2030-01-01T09:00 or 2030-01-01T09:00Z>
+                       (needs a serve-sim session that owns the device; a time without a zone is the simulator's;
+                       the time keeps ticking; the status bar clock keeps the Mac's time)`;
 
 export async function uiSettings(args: string[]): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {
@@ -590,6 +720,16 @@ export async function uiSettings(args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  // The message only: an uncaught error would print a line of the bundle instead.
+  try {
+    await runUiCommand(udid, parsed);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
+async function runUiCommand(udid: string, parsed: UiArgs): Promise<void> {
   if (parsed.command === "status") {
     const status = await getUiStatus(udid);
     if (parsed.json) {
