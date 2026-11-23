@@ -6,9 +6,12 @@ import { simAuthHeaders, simEndpoint } from "./sim-endpoint";
 export async function packAppInWorker(
   entry: AppFolderEntry,
   onProgress: (progress: number) => void,
+  asset?: { url: string; headers: Record<string, string> },
 ) {
   const folder = await readAppFolder(entry);
-  const response = await fetch(simEndpoint("app-drop-worker.js"), { headers: simAuthHeaders() });
+  const response = await fetch(asset?.url ?? simEndpoint("app-drop-worker.js"), {
+    headers: asset?.headers ?? simAuthHeaders(),
+  });
   if (!response.ok) throw new Error(`Could not load app packer (${response.status})`);
   const url = URL.createObjectURL(await response.blob());
   let worker: Worker;
