@@ -136,6 +136,16 @@ function eventBytes(event: RecordedEvent): number {
   return Buffer.byteLength(JSON.stringify(event), "utf8");
 }
 
+/** Keep `held` naming the touch pointers and keys that are down after `gesture`. */
+function trackHeldInput(held: Set<string>, gesture: Gesture): void {
+  let id: string;
+  if (gesture.type === "touch") id = `touch:${gesture.pointerId ?? 0}`;
+  else if (gesture.type === "key" && gesture.action) id = `key:${gesture.keycode}`;
+  else return;
+  if (gesture.action === "up") held.delete(id);
+  else held.add(id);
+}
+
 function cloneGesture(gesture: Gesture): Gesture {
   return gesture.type === "text"
     ? { type: "text", text: normalizeTextForControl(gesture.text) }
@@ -186,6 +196,7 @@ export class SessionRecorder {
   #events: RecordedEvent[] = [];
   #retainedBytes = EMPTY_ARRAY_BYTES;
   #droppedEvents = 0;
+  // @ref LLP 0013#shake — a shake is recorded before it is known to succeed, so a failed one must not evict history
   /** Shakes that have not ended yet. They do not count against the limits until they end. */
   #pendingShakes = new Set<number>();
   #maxEvents: number;
@@ -277,7 +288,10 @@ export class SessionRecorder {
   discard(id: number): void {
     this.#pendingShakes.delete(id);
     const index = this.#events.findIndex((event) => event.id === id);
-    if (index !== -1) this.#removeAt(index, true);
+    if (index === -1) return;
+    this.#removeAt(index, true);
+    // The next event's longer gap can take more bytes.
+    this.#trim();
   }
 
   /** Remove the event at `index`. With `keepGap`, the next event takes its time gap. */
@@ -490,16 +504,20 @@ export class SessionRecorder {
   ): Promise<SessionSnapshot> {
     let outcome: "completed" | "cancelled" | "error" = "completed";
     // A shake is recorded when it starts, so the gap to the next event includes the time it
-    // shook. The time a replayed shake took comes off the next waits.
+    // shook. The time a replayed shake took comes off the next waits, except while a touch or a
+    // key is down, so a long press that fell within the shake keeps its length.
     let behindMs = 0;
+    const held = new Set<string>();
     try {
       for (const event of events) {
         this.#assertReplayActive(replay);
         const gapMs = Math.max(0, event.delayMs / multiplier);
-        await this.#clock.delay(Math.max(0, gapMs - behindMs), replay.controller.signal);
-        behindMs = Math.max(0, behindMs - gapMs);
+        const catchUpMs = held.size === 0 ? Math.min(behindMs, gapMs) : 0;
+        await this.#clock.delay(gapMs - catchUpMs, replay.controller.signal);
+        behindMs -= catchUpMs;
         this.#assertReplayActive(replay);
         if (event.kind === "gesture") {
+          trackHeldInput(held, event.gesture);
           await handlers.dispatchGesture(event.gesture, replay.controller.signal);
         } else if (event.kind === "location") {
           await handlers.setLocation(event.location, replay.controller.signal);

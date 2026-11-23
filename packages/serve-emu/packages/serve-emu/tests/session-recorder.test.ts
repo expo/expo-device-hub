@@ -488,6 +488,69 @@ describe("shake events", () => {
 
     expect(dispatched).toEqual([3_500, 4_000]);
   });
+
+  test("a long press within a replayed shake keeps its length", async () => {
+    let now = 0;
+    const recorder = new SessionRecorder({
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+    });
+    const shake = recorder.recordShake("rest:shake")!;
+    now = 1_000;
+    recorder.recordGesture({ type: "touch", action: "down", x: 0.5, y: 0.5 }, "test");
+    now = 1_800;
+    recorder.recordGesture({ type: "touch", action: "up", x: 0.5, y: 0.5 }, "test");
+    now = 4_000;
+    recorder.recordGesture({ type: "home" }, "test");
+    recorder.setShakeDuration(shake, 3_000);
+
+    const start = now;
+    const dispatched: Array<[string, number]> = [];
+    const run = recorder.startReplay({
+      dispatchGesture: (gesture) => {
+        dispatched.push([gesture.type === "touch" ? gesture.action : gesture.type, now - start]);
+      },
+      setLocation: () => {},
+      shake: () => {
+        now += 3_500;
+      },
+    });
+    await run.completion;
+
+    // The press starts after the shake and lasts its 800 ms; the time left to catch up comes off
+    // the wait before Home.
+    expect(dispatched).toEqual([
+      ["down", 3_500],
+      ["up", 4_300],
+      ["home", 4_300],
+    ]);
+  });
+
+  test("a discard that lengthens the next event's gap keeps the byte limit", () => {
+    const probe = new SessionRecorder({ now: clock(0, 7) });
+    probe.recordGesture({ type: "home" }, "test");
+    probe.recordGesture({ type: "back" }, "test");
+    const maxBytes = probe.summary().retainedBytes;
+
+    let now = 0;
+    const recorder = new SessionRecorder({ now: () => now, maxBytes });
+    recorder.recordGesture({ type: "home" }, "test");
+    now = 5;
+    const shake = recorder.recordShake("rest:shake")!;
+    now = 12;
+    recorder.recordGesture({ type: "back" }, "test");
+    expect(recorder.summary().droppedEvents).toBe(0);
+
+    // The gap of Back grows from 7 to 12 ms, one byte more than the limit.
+    recorder.discard(shake);
+    const events = recorder.export().events;
+    expect(events).toMatchObject([{ gesture: { type: "back" }, delayMs: 12 }]);
+    expect(recorder.summary().droppedEvents).toBe(1);
+    expect(recorder.summary().retainedBytes).toBe(arrayBytes(events));
+    expect(recorder.summary().retainedBytes).toBeLessThanOrEqual(maxBytes);
+  });
 });
 
 describe("discarding a failed action", () => {

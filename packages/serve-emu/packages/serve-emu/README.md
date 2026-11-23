@@ -407,7 +407,9 @@ A shake records into the session as a `shake` event before its first swing, so
 input sent during the shake replays after it. When the shake ends, the event gets
 `durationMs`, the time it swung, and a replay swings as long. The time a
 replayed shake takes comes off the waits for the next events, so they replay at
-their recorded times, or right after the shake when they arrived during it. A
+their recorded times, or right after the shake when they arrived during it.
+While a touch or a key is down, the full wait stays, so a long press keeps its
+length. A
 request that arrives during a running shake joins it, including whether its
 first request recorded it. A failed shake leaves no event, and until a shake
 ends, its event does not count against the session limits, so a failed shake
