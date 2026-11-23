@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (added startup installation to the detached-mode restrictions and linked the startup explainer)
+**Revised:** 2026-10-23 (Claude Code, directed by Jan Horák: how the camera injector serves a session that never starts); 2026-10-06 (added startup installation to the detached-mode restrictions and linked the startup explainer)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -180,7 +180,14 @@ forgotten:
   loading path rather than two.
 - `+[AVCaptureDevice defaultDeviceWithMediaType:]` is not swizzled, only the
   `deviceType:mediaType:position:` form, so an app using the older API sees no
-  camera.
+  camera. expo-camera's session manager checks that API before it starts its
+  session, so in the Simulator it never calls `startRunning`. The injector
+  therefore feeds the preview layer and delivers barcodes to an
+  `AVCaptureMetadataOutput` whether or not the session runs; the output's
+  connection (`enabled`) is what stops delivery [observed: `hasAvailableCameraDevice`
+  and `BarcodeScanner.setConnection` in expo-camera 57; no `startRunning` from an
+  expo-camera 58 app in the injector's log; `Sources/SimCameraInjector/SimCamMetadata.m`
+  `SimCamMetadataSampleFrame`].
 
 ## Startup capabilities
 

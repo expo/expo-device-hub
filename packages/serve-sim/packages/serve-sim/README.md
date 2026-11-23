@@ -314,6 +314,8 @@ Sources:
 - **file** — image (PNG/JPEG/HEIC/…) or video (mp4/mov/m4v/webm/…). The CLI sniffs the kind from the extension and falls back to magic bytes for files without an extension.
 - **webcam** — live `AVCaptureDevice` (built-in, Continuity, external).
 
+Barcode scanners built on `AVCaptureMetadataOutput`, such as expo-camera's `onBarcodeScanned`, receive the codes in the injected frames: QR, EAN, UPC-E, Code 128 and the other types the output lists as available. The injector finds them with Vision a few times a second.
+
 ## Network capture
 
 Decrypts HTTPS from third-party apps on a simulator (local mitmproxy + trusted CA). Apple system apps such as Safari are left unproxied. Certificate-pinned apps will fail while capture is on. Apps already running when capture starts may miss requests or need a relaunch if they keep using existing network sessions.
