@@ -14,6 +14,7 @@ describe("capability loader C", () => {
     ]);
 
     expect(`${stdout}${stderr}`).not.toContain("FAIL ");
+    expect(`${stdout}${stderr}`).not.toContain("unknown scope 'process'");
     expect(code).toBe(0);
     expect(stdout).toContain("analyzer clean");
   }, 120_000);
