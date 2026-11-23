@@ -32,6 +32,8 @@ function executable(name) {
   throw new Error(`${name} not found on PATH`);
 }
 
+const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+
 function fixture(run) {
   const root = mkdtempSync(join(tmpdir(), "ffmpeg-source-"));
   const archive = join(root, "out/source.tar.gz");
@@ -68,7 +70,20 @@ test("source packaging and validation need no standalone compressor", () =>
   fixture(({ root, source, archive, initial }) => {
     const tools = join(root, "tools");
     mkdirSync(tools);
-    for (const tool of ["git", "tar"]) symlinkSync(executable(tool), join(tools, tool));
+    symlinkSync(executable("tar"), join(tools, "tar"));
+    // Emulate Git < 2.38 even when the host has a built-in gzip writer.
+    writeFileSync(
+      join(tools, "git"),
+      `#!/bin/sh
+for argument do
+  case "$argument" in
+    --format=tar.gz|--format=tgz) printf 'external gzip unavailable' >&2; exit 128 ;;
+  esac
+done
+exec ${quote(executable("git"))} "$@"
+`,
+      { mode: 0o755 },
+    );
     const module = new URL("../scripts/ffmpeg-source.mjs", import.meta.url).href;
     const code = `import {createFfmpegSourceArchive,validateFfmpegSourceArchive} from ${JSON.stringify(module)};
     createFfmpegSourceArchive(${JSON.stringify(source)},${JSON.stringify(archive)},${JSON.stringify(initial)});
@@ -102,7 +117,6 @@ test("a failing archive command discards partial output after valid commit resol
     const tools = join(root, "failing-git");
     const marker = join(root, "archive-attempted");
     mkdirSync(tools);
-    const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
     writeFileSync(
       join(tools, "git"),
       `#!/bin/sh
