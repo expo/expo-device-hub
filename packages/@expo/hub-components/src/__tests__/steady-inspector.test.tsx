@@ -54,6 +54,7 @@ const NO_CAPABILITIES = {
   clipboard: false,
   orientation: false,
   fold: false,
+  shake: false,
 } satisfies DeviceClient["capabilities"];
 
 /** A client that has reported nothing yet: what a device shows while it connects. */

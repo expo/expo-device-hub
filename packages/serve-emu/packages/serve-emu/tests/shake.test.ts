@@ -24,7 +24,12 @@ const REST = [0.25, 0, -0.5];
  * waits. `fail` can refuse a read or a set, by its number (1 is the first) or its position.
  */
 function fakeEmulator(
-  fail: { read?: boolean; set?: (index: number, data: readonly number[]) => boolean } = {},
+  fail: {
+    read?: boolean;
+    /** The emulator answers the read with no position model. */
+    noPosition?: boolean;
+    set?: (index: number, data: readonly number[]) => boolean;
+  } = {},
 ) {
   const positions: number[][] = [];
   const waits: number[] = [];
@@ -36,6 +41,7 @@ function fakeEmulator(
     async getPhysicalModel(target) {
       expect(target).toBe(0);
       if (fail.read) throw new Error("getPhysicalModel: grpc-status 14");
+      if (fail.noPosition) return null;
       return [...REST];
     },
     async setPhysicalModel(target, data) {
@@ -166,6 +172,16 @@ describe("shakeEmulator", () => {
 
     await expect(shakeEmulator("emulator-5562", click, emulator.dependencies)).rejects.toThrow(
       "Emulator position read failed: getPhysicalModel: grpc-status 14",
+    );
+    expect(emulator.positions).toEqual([]);
+    expect(emulator.closed).toBe(1);
+  });
+
+  test("an emulator with no position model moves nothing and says so", async () => {
+    const emulator = fakeEmulator({ noPosition: true });
+
+    await expect(shakeEmulator("emulator-5563", click, emulator.dependencies)).rejects.toThrow(
+      "Emulator position read failed: the emulator reports no position model",
     );
     expect(emulator.positions).toEqual([]);
     expect(emulator.closed).toBe(1);

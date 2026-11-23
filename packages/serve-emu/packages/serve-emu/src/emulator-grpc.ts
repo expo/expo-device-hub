@@ -620,31 +620,6 @@ export function encodePhysicalModelValue(target: number, data?: readonly number[
   return Buffer.from(output);
 }
 
-/** Decode a `PhysicalModelValue` reply: its status (0 is OK) and its values. */
-export function decodePhysicalModelValue(buffer: Buffer): { status: number; data: number[] } {
-  let status = 0;
-  const data: number[] = [];
-  const float = new DataView(new ArrayBuffer(4));
-  for (const field of protoFields(buffer)) {
-    if (field.fieldNo === 2 && field.wire === 0) {
-      status = Number(BigInt.asIntN(32, field.varint));
-    } else if (field.fieldNo === 3 && field.wire === 2) {
-      for (const value of protoFields(field.bytes)) {
-        if (value.fieldNo !== 1) continue;
-        if (value.wire === 2) {
-          for (let offset = 0; offset + 4 <= value.bytes.length; offset += 4) {
-            data.push(value.bytes.readFloatLE(offset));
-          }
-        } else if (value.wire === 5) {
-          float.setUint32(0, value.fixed32, true);
-          data.push(float.getFloat32(0, true));
-        }
-      }
-    }
-  }
-  return { status, data };
-}
-
 function grpcFrame(message: Buffer): Buffer {
   const output = Buffer.allocUnsafe(5 + message.length);
   output.writeUInt8(0, 0);
@@ -1293,18 +1268,6 @@ export class EmulatorGrpcClient {
       signal,
       maxMessageBytes: 1024,
     });
-  }
-
-  /** Read a physical model value, such as the device position. */
-  async getPhysicalModel(target: number, signal?: AbortSignal): Promise<number[]> {
-    const [message] = await this.#request("getPhysicalModel", encodePhysicalModelValue(target), {
-      timeoutMs: this.#unaryTimeoutMs,
-      signal,
-      maxMessageBytes: 1024,
-    });
-    const value = decodePhysicalModelValue(message ?? Buffer.alloc(0));
-    if (value.status !== 0) throw new Error(`getPhysicalModel: status ${value.status}`);
-    return value.data;
   }
 
   /** Move a physical model value, such as the device position, smoothly to `data`. */

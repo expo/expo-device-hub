@@ -18,6 +18,12 @@ afterEach(async () => {
   restoreGlobals();
 });
 
+/** The Shake button. `Button` wraps its label in a span, so the button is the span's parent. */
+function shakeButton() {
+  return renderer!.root.find((node) => node.type === "span" && node.props.children === "Shake")
+    .parent!;
+}
+
 test("a pick in the Orientation select calls client.setOrientation", async () => {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   // Radix Select checks for a form in an effect; the test renderer has no DOM.
@@ -138,6 +144,8 @@ test("the Orientation row follows the client's pose, not the frame, and locks wi
 test("Shake starts the shake on press and stops it on release, and tells the dashboard both", async () => {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("HTMLFormElement", class {});
+  // The tooltip of a locked control listens for the pointer on the document.
+  stubGlobal("document", { addEventListener() {}, removeEventListener() {} });
   stubGlobal("window", {
     addEventListener() {},
     removeEventListener() {},
@@ -163,14 +171,13 @@ test("Shake starts the shake on press and stops it on release, and tells the das
     renderer = create(
       <DeviceOptionsSection
         client={client}
-        showDeviceSettings={false}
+        platform="android"
         onShake={() => calls.push("onShake")}
         onShakeEnd={() => calls.push("onShakeEnd")}
       />,
     );
   });
-  const button = () =>
-    renderer!.root.find((node) => node.type === "button" && node.props.children === "Shake");
+  const button = () => shakeButton();
   const pointer = { button: 0, pointerId: 1, currentTarget: { setPointerCapture() {} } };
 
   await act(async () => button().props.onPointerDown(pointer));
@@ -202,6 +209,8 @@ test("Shake starts the shake on press and stops it on release, and tells the das
 test("a failed shake shows its error under the Shake row", async () => {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("HTMLFormElement", class {});
+  // The tooltip of a locked control listens for the pointer on the document.
+  stubGlobal("document", { addEventListener() {}, removeEventListener() {} });
   stubGlobal("window", {
     addEventListener() {},
     removeEventListener() {},
@@ -224,21 +233,21 @@ test("a failed shake shows its error under the Shake row", async () => {
     deviceSettingsPending: new Set(),
   } as unknown as DeviceClient;
   await act(async () => {
-    renderer = create(<DeviceOptionsSection client={client} showDeviceSettings={false} />);
+    renderer = create(<DeviceOptionsSection client={client} platform="android" />);
   });
   const row = renderer!.root.find(
     (node) => node.props.label === "Shake device" && "description" in node.props,
   );
   expect(row.props.description).toBe("Emulator shake failed: setPhysicalModel: grpc-status 14");
-  const button = renderer!.root.find(
-    (node) => node.type === "button" && node.props.children === "Shake",
-  );
+  const button = shakeButton();
   expect(button.props["aria-describedby"]).toBe(row.props.descriptionId);
 });
 
 test("an Android Shake row says to hold for a longer shake; an iOS row, whose shake is one event, does not", async () => {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("HTMLFormElement", class {});
+  // The tooltip of a locked control listens for the pointer on the document.
+  stubGlobal("document", { addEventListener() {}, removeEventListener() {} });
   stubGlobal("window", {
     addEventListener() {},
     removeEventListener() {},
@@ -265,19 +274,16 @@ test("an Android Shake row says to hold for a longer shake; an iOS row, whose sh
     renderer!.root.find(
       (node) => node.props.label === "Shake device" && "description" in node.props,
     );
-  const button = () =>
-    renderer!.root.find((node) => node.type === "button" && node.props.children === "Shake");
+  const button = () => shakeButton();
 
   await act(async () => {
-    renderer = create(
-      <DeviceOptionsSection client={client("android")} showDeviceSettings={false} />,
-    );
+    renderer = create(<DeviceOptionsSection client={client("android")} platform="android" />);
   });
   expect(shakeRow().props.description).toBe(SHAKE_HOLD_DESCRIPTION);
   expect(button().props["aria-describedby"]).toBe(shakeRow().props.descriptionId);
 
   await act(async () => {
-    renderer!.update(<DeviceOptionsSection client={client("ios")} showDeviceSettings={false} />);
+    renderer!.update(<DeviceOptionsSection client={client("ios")} platform="ios" />);
   });
   expect(shakeRow().props.description).toBeUndefined();
   expect(button().props["aria-describedby"]).toBeUndefined();
@@ -287,6 +293,8 @@ test("a Shake press ends when the window loses focus, and a click alone is a sho
   const listeners = new Map<string, Set<() => void>>();
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("HTMLFormElement", class {});
+  // The tooltip of a locked control listens for the pointer on the document.
+  stubGlobal("document", { addEventListener() {}, removeEventListener() {} });
   stubGlobal("window", {
     addEventListener(type: string, listener: () => void) {
       if (!listeners.has(type)) listeners.set(type, new Set());
@@ -314,10 +322,9 @@ test("a Shake press ends when the window loses focus, and a click alone is a sho
     deviceSettingsPending: new Set(),
   } as unknown as DeviceClient;
   await act(async () => {
-    renderer = create(<DeviceOptionsSection client={client} showDeviceSettings={false} />);
+    renderer = create(<DeviceOptionsSection client={client} platform="android" />);
   });
-  const button = () =>
-    renderer!.root.find((node) => node.type === "button" && node.props.children === "Shake");
+  const button = () => shakeButton();
 
   // Enter goes down, then the window loses focus and the key-up never comes.
   await act(async () => button().props.onKeyDown({ key: "Enter", repeat: false }));

@@ -263,7 +263,8 @@ export function runShakeRequest(
 
 /** The part of the emulator gRPC client a shake uses. */
 export type PhysicalModelClient = {
-  getPhysicalModel(target: number): Promise<number[]>;
+  /** Null when the emulator has no such model running. */
+  getPhysicalModel(target: number): Promise<number[] | null>;
   setPhysicalModel(target: number, data: readonly number[]): Promise<void>;
   close(): void;
 };
@@ -368,7 +369,9 @@ async function runShake(
   try {
     let rest: number[];
     try {
-      const [x = 0, y = 0, z = 0] = await client.getPhysicalModel(PHYSICAL_MODEL_POSITION);
+      const position = await client.getPhysicalModel(PHYSICAL_MODEL_POSITION);
+      if (!position) throw new Error("the emulator reports no position model");
+      const [x = 0, y = 0, z = 0] = position;
       rest = [x, y, z];
     } catch (error) {
       throw new Error(`Emulator position read failed: ${message(error)}`);
