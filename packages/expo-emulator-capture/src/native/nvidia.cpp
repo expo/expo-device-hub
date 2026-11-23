@@ -4,6 +4,7 @@
 #include "encoder.h"
 #include "frame-source.h"
 #include "protocol.h"
+#include "nvidia-probe.h"
 #include "nvidia-ptx.h"
 #include <dlfcn.h>
 #include <algorithm>
@@ -444,17 +445,13 @@ std::string h264EncoderProblem() {
     static bool verified = false;
     std::lock_guard<std::mutex> guard(mutex);
     if (verified) return {};
-    std::string error;
+    std::string cleanupError;
     // Exercise the same NVENC and PTX setup as a real session. Loading driver
     // libraries alone misses incompatible PTX and GPUs with no NVENC engine.
-    NvidiaEncoder probe([](EncodedPacket&&) {}, [&](const std::string& message) { error = message; });
-    EncoderConfig config;
-    config.width = config.height = 128;
-    config.fps = 30;
-    config.bitRate = 1'000'000;
-    if (!probe.configure(config, error)) return error;
-    probe.invalidate();
+    NvidiaEncoder probe([](EncodedPacket&&) {}, [&](const std::string& message) { cleanupError = message; });
+    std::string error = probeNvidiaEncoder(probe);
     if (!error.empty()) return error;
+    if (!cleanupError.empty()) return cleanupError;
     verified = true;  // Failed probes remain retryable on the next connection.
     return {};
   } catch (const std::exception& e) { return e.what(); }
