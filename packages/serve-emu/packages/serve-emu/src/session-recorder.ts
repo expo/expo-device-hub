@@ -495,25 +495,32 @@ export class SessionRecorder {
     let outcome: "completed" | "cancelled" | "error" = "completed";
     // @ref LLP 0013#shake — a replayed shake swings while the replay goes on, as it did while recording
     // A shake is recorded when it starts, and the input after it was sent while it swung or after
-    // it, so the replay does not wait for a shake: each input replays at its recorded time. The
-    // replay ends when its last shake has ended, and a shake ends before the next one starts.
+    // it, so the replay does not wait for a shake: each input replays at its recorded time. A
+    // shake starts once the one before it has ended, and the replay ends when its last shake has
+    // ended. A failed shake ends the replay at its next step, as a failed input does.
     let shaking: Promise<void> | null = null;
+    // Set in a callback, which TypeScript does not follow, so the type is given here.
+    let shakeFailure = null as { error: unknown } | null;
     try {
       for (const event of events) {
         this.#assertReplayActive(replay);
         await this.#clock.delay(Math.max(0, event.delayMs / multiplier), replay.controller.signal);
         this.#assertReplayActive(replay);
+        if (shakeFailure) throw shakeFailure.error;
         if (event.kind === "gesture") {
           await handlers.dispatchGesture(event.gesture, replay.controller.signal);
         } else if (event.kind === "location") {
           await handlers.setLocation(event.location, replay.controller.signal);
         } else {
-          if (shaking) await shaking;
-          this.#assertReplayActive(replay);
-          // Starts the shake now; a throw becomes a rejection.
-          const shake = (async () => handlers.shake(replay.controller.signal, event.durationMs))();
-          // A failure is reported when the replay waits for the shake.
-          shake.catch(() => {});
+          const previous = shaking;
+          // With no shake before it, this calls the handler now; a throw becomes a rejection.
+          const shake = (async () => {
+            if (previous) await previous;
+            await handlers.shake(replay.controller.signal, event.durationMs);
+          })();
+          shake.catch((error: unknown) => {
+            shakeFailure ??= { error };
+          });
           shaking = shake;
         }
         this.#assertReplayActive(replay);

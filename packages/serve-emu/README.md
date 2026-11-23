@@ -406,6 +406,8 @@ input sent during the shake comes after it in the session. When the shake ends,
 the event gets `durationMs`, the time it swung, and a replay swings as long. A
 replayed shake swings while the replay goes on, as it did while recording, so
 each input replays at its recorded time, also input sent during the shake. A
+shake starts once the one before it has ended, and a failed shake ends the
+replay. A
 request that arrives during a running shake joins it, including whether its
 first request recorded it. A failed shake leaves no event. Until a shake ends,
 its event does not count against the session limits, so a failed shake does not

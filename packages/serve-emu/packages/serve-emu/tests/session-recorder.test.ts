@@ -514,7 +514,7 @@ describe("shake events", () => {
     expect((await run.completion).replayStatus).toBe("completed");
   });
 
-  test("a replayed shake that fails ends the replay with its error", async () => {
+  test("a replayed shake that fails ends the replay with its error before the next input", async () => {
     const recorder = new SessionRecorder({ now: clock(0, 10), sleep: async () => {} });
     recorder.recordShake("rest:shake");
     recorder.recordGesture({ type: "home" }, "test");
@@ -533,6 +533,54 @@ describe("shake events", () => {
 
     expect(finished.replayStatus).toBe("error");
     expect(recorder.summary().lastError).toBe("setPhysicalModel failed");
+    expect(gestures).toEqual([]);
+  });
+
+  test("a shake that the replay reaches early waits for the one before it, and input keeps its time", async () => {
+    let now = 0;
+    const recorder = new SessionRecorder({
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+    });
+    recorder.recordShake("rest:shake");
+    now = 1_000;
+    recorder.recordShake("rest:shake");
+    now = 1_500;
+    recorder.recordGesture({ type: "home" }, "test");
+
+    const start = now;
+    const replayed: Array<[string, number]> = [];
+    const settles: Array<() => void> = [];
+    const run = recorder.startReplay(
+      {
+        dispatchGesture: (gesture) => {
+          replayed.push([gesture.type, now - start]);
+        },
+        setLocation: () => {},
+        shake: () => {
+          replayed.push(["shake", now - start]);
+          return new Promise<void>((resolve) => {
+            settles.push(resolve);
+          });
+        },
+      },
+      2,
+    );
+
+    // At 2x the second shake is due at 500 ms, while the first still swings.
+    while (replayed.length < 2) await Bun.sleep(1);
+    expect(replayed).toEqual([
+      ["shake", 0],
+      ["home", 750],
+    ]);
+    settles[0]!();
+    while (replayed.length < 3) await Bun.sleep(1);
+    expect(replayed[2]).toEqual(["shake", 750]);
+    expect(recorder.summary().replaying).toBe(true);
+    settles[1]!();
+    expect((await run.completion).replayStatus).toBe("completed");
   });
 
   test("a discard that lengthens the next event's gap keeps the byte limit", () => {
