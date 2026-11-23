@@ -26,6 +26,7 @@ import {
   MOBILE_CORNER_BUTTON_TOP,
   MOBILE_SIDEBAR_TOP_INSET,
   ResizeHandle,
+  SHAKE_WOBBLE_MS,
   ServerConnectionOverlay,
   Sidebar,
   StreamPanel,
@@ -167,6 +168,16 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       ? clipboardFallback.request
       : null;
   useEffect(() => setClipboardFallback(null), [selectedId]);
+  // Counts the Shake presses; each new count wobbles the device in the stream panel once. While
+  // an Android shake is held, the count keeps going up, so the device keeps wobbling.
+  const [shakeNonce, setShakeNonce] = useState(0);
+  const [shakeHeld, setShakeHeld] = useState(false);
+  useEffect(() => {
+    if (!shakeHeld) return;
+    const timer = setInterval(() => setShakeNonce((count) => count + 1), SHAKE_WOBBLE_MS + 20);
+    return () => clearInterval(timer);
+  }, [shakeHeld]);
+  useEffect(() => setShakeHeld(false), [selectedId]);
   const handleClipboardFallback = (request: ClipboardRequest) => {
     if (selectedId !== useDashboardStore.getState().selectedDeviceId) return;
     setClipboardFallback({ deviceId: selectedId, request });
@@ -277,6 +288,12 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       onRemove={!singleDevice && selected ? () => remove(selected) : undefined}
       clipboardRequest={clipboardRequest}
       onClipboardRequestHandled={() => setClipboardFallback(null)}
+      onShake={() => {
+        setShakeNonce((count) => count + 1);
+        // iOS has one shake event, so a hold there shakes once.
+        if (client?.platform === "android") setShakeHeld(true);
+      }}
+      onShakeEnd={() => setShakeHeld(false)}
     />
   );
 
@@ -379,6 +396,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           deviceModelAssets={DEVICE_MODEL_ASSETS}
           screenShape={screenShape}
           onClipboardFallback={handleClipboardFallback}
+          shakeNonce={shakeNonce}
         />
       ) : (
         <EmptyState platform={platform} framed={framed} singleDevice={!!singleDevice} />

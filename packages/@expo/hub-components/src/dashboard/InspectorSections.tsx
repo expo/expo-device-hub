@@ -48,6 +48,10 @@ export type InspectorSectionsProps = {
   onShutdown?: () => void;
   /** Remove/delete the selected device on the host. Ignored for physical devices. */
   onRemove?: () => void;
+  /** Called when Device options' Shake press starts a shake, so the stream can wobble. */
+  onShake?: () => void;
+  /** Called when that Shake press ends. */
+  onShakeEnd?: () => void;
   /** A toolbar Paste or Copy that the browser clipboard stopped, for the Clipboard section to finish. */
   clipboardRequest?: ClipboardRequest | null;
   /** The Clipboard section took over `clipboardRequest`. */
@@ -117,6 +121,8 @@ export function InspectorSections({
   onHttpCodecChange,
   onShutdown,
   onRemove,
+  onShake,
+  onShakeEnd,
   clipboardRequest,
   onClipboardRequestHandled,
   foldPreview,
@@ -151,6 +157,7 @@ export function InspectorSections({
         client?.capabilities.deviceSettings ||
         client?.capabilities.fold ||
         client?.platform === "android" ||
+        client?.capabilities.shake ||
         (client && (onShutdown || onRemoveDevice))) && (
         <DeviceOptionsSection
           client={client}
@@ -160,6 +167,8 @@ export function InspectorSections({
           foldPreview={foldPreview}
           onShutdown={onShutdown}
           onRemove={onRemoveDevice}
+          onShake={onShake}
+          onShakeEnd={onShakeEnd}
         />
       )}
       {client && (device || client.streamCapabilities) && (

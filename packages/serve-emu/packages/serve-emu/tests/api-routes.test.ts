@@ -13,6 +13,11 @@ import {
 import { createApiRoutes } from "../src/api/routes/index.ts";
 import { placeholderCameraImage } from "../src/camera.ts";
 import {
+  SHAKE_EMULATOR_ONLY_MESSAGE,
+  ShakeUnsupportedError,
+  type ShakeRequest,
+} from "../src/shake.ts";
+import {
   MAX_APK_MULTIPART_BYTES,
   MAX_MEDIA_MULTIPART_BYTES,
   readMultipartFormData,
@@ -63,6 +68,7 @@ const EXPECTED_ROUTES = [
   ["POST", "/api/swipe"],
   ["POST", "/api/text"],
   ["POST", "/api/key"],
+  ["POST", "/api/shake"],
   ["POST", "/api/apps/install"],
   ["POST", "/api/files/import"],
   ["POST", "/api/apps/launch"],
@@ -371,6 +377,7 @@ function fakeDependencies(overrides: Partial<ApiDependencies> = {}): ApiDependen
     }),
 
     dispatchGesture: async () => {},
+    shake: async () => {},
 
     getSession: () => sessionSnapshot,
     clearSession: () => sessionSnapshot,
@@ -518,14 +525,14 @@ const silentLogger: ApiLogger = {
 };
 
 describe("domain API route table", () => {
-  test("registers the exact 64 method/path pairs across 46 paths", () => {
+  test("registers the exact 65 method/path pairs across 47 paths", () => {
     const routes = createApiRoutes();
 
     expect(routes.map(({ method, path }) => [method, path])).toEqual(
       EXPECTED_ROUTES.map(([method, path]) => [method, path]),
     );
-    expect(routes).toHaveLength(64);
-    expect(new Set(routes.map((route) => route.path)).size).toBe(46);
+    expect(routes).toHaveLength(65);
+    expect(new Set(routes.map((route) => route.path)).size).toBe(47);
     const contractPairs = Object.entries(API_SUCCESS_PARSERS).flatMap(([path, methods]) =>
       Object.keys(methods).map((method) => `${method} ${path}`),
     );
@@ -553,12 +560,12 @@ describe("domain API route table", () => {
     expect(invoked).toEqual(EXPECTED_ROUTES.map(([method, path]) => `${method} ${path}`));
   });
 
-  test("returns structured OPTIONS 405 with exact Allow for all 46 paths", async () => {
+  test("returns structured OPTIONS 405 with exact Allow for all 47 paths", async () => {
     const router = createApiRouter(createApiRoutes());
     const deps = fakeDependencies();
     const paths = [...new Set(EXPECTED_ROUTES.map((route) => route[1]))];
 
-    expect(paths).toHaveLength(46);
+    expect(paths).toHaveLength(47);
     for (const path of paths) {
       const response = await router.handle(
         new Request(`${BASE_URL}${path}`, { method: "OPTIONS" }),
@@ -733,6 +740,61 @@ describe("domain API failures", () => {
     );
 
     await expectFailure(response, 409, "conflict", "Device switch in progress");
+  });
+
+  test("shakes without a body, passes a hold, and maps a physical device to 400", async () => {
+    const router = createApiRouter(createApiRoutes(), { logger: silentLogger });
+    const requests: ShakeRequest[] = [];
+    const recording = fakeDependencies({
+      shake: async (request) => {
+        requests.push(request);
+      },
+    });
+    const ok = await router.handle(
+      new Request(`${BASE_URL}/api/shake`, { method: "POST" }),
+      recording,
+    );
+    expect(ok?.status).toBe(200);
+    expect(await ok?.json()).toEqual({ ok: true });
+    const held = await router.handle(
+      new Request(`${BASE_URL}/api/shake`, {
+        method: "POST",
+        body: JSON.stringify({ hold: true, record: false }),
+      }),
+      recording,
+    );
+    expect(held?.status).toBe(200);
+    expect(requests).toEqual([
+      { hold: null, record: true },
+      { hold: true, record: false },
+    ]);
+
+    const malformed = await router.handle(
+      new Request(`${BASE_URL}/api/shake`, { method: "POST", body: '{"hold":"yes"}' }),
+      recording,
+    );
+    await expectFailure(malformed, 400, "invalid_request", "hold must be a boolean");
+    expect(requests).toHaveLength(2);
+
+    const physical = await router.handle(
+      new Request(`${BASE_URL}/api/shake`, { method: "POST" }),
+      fakeDependencies({
+        shake: async () => {
+          throw new ShakeUnsupportedError();
+        },
+      }),
+    );
+    await expectFailure(physical, 400, "invalid_request", SHAKE_EMULATOR_ONLY_MESSAGE);
+
+    const failed = await router.handle(
+      new Request(`${BASE_URL}/api/shake`, { method: "POST" }),
+      fakeDependencies({
+        shake: async () => {
+          throw new Error("console gone");
+        },
+      }),
+    );
+    await expectFailure(failed, 502, "downstream_failure", "shake device failed");
   });
 
   test("rejects oversized JSON as 413 before invoking the dependency", async () => {

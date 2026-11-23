@@ -17,6 +17,15 @@ export type RecordedEvent =
       source: string;
       kind: "location";
       location: GeoFix;
+    }
+  | {
+      id: number;
+      at: string;
+      delayMs: number;
+      source: string;
+      kind: "shake";
+      /** How long the shake swung, in ms. A replay swings as long; without it, a click. */
+      durationMs?: number;
     };
 
 export type SessionSnapshot = {
@@ -69,6 +78,7 @@ export type ReplayHandlers = {
   finish?: (signal: AbortSignal) => Promise<void> | void;
   dispatchGesture: (gesture: Gesture, signal: AbortSignal) => Promise<void> | void;
   setLocation: (fix: GeoFix, signal: AbortSignal) => Promise<void> | void;
+  shake: (signal: AbortSignal, durationMs?: number) => Promise<void> | void;
 };
 
 export type SessionReplayClock = {
@@ -122,6 +132,10 @@ type ActiveReplay = {
 
 const EMPTY_ARRAY_BYTES = 2;
 
+function eventBytes(event: RecordedEvent): number {
+  return Buffer.byteLength(JSON.stringify(event), "utf8");
+}
+
 function cloneGesture(gesture: Gesture): Gesture {
   return gesture.type === "text"
     ? { type: "text", text: normalizeTextForControl(gesture.text) }
@@ -129,9 +143,9 @@ function cloneGesture(gesture: Gesture): Gesture {
 }
 
 function cloneEvent(event: RecordedEvent): RecordedEvent {
-  return event.kind === "gesture"
-    ? { ...event, gesture: cloneGesture(event.gesture) }
-    : { ...event, location: { ...event.location } };
+  if (event.kind === "gesture") return { ...event, gesture: cloneGesture(event.gesture) };
+  if (event.kind === "location") return { ...event, location: { ...event.location } };
+  return { ...event };
 }
 
 function abortReason(signal: AbortSignal): Error {
@@ -172,6 +186,9 @@ export class SessionRecorder {
   #events: RecordedEvent[] = [];
   #retainedBytes = EMPTY_ARRAY_BYTES;
   #droppedEvents = 0;
+  // @ref LLP 0013#shake — a shake is recorded before it is known to succeed, so a failed one must not evict history
+  /** Shakes that have not ended yet. They do not count against the limits until they end. */
+  #pendingShakes = new Set<number>();
   #maxEvents: number;
   #maxBytes: number;
   #nextId = 1;
@@ -233,6 +250,56 @@ export class SessionRecorder {
     this.#record({ kind: "location", location, source });
   }
 
+  /**
+   * Record a shake when its burst starts. Returns the event ID, or null when nothing was recorded.
+   * Until {@link setShakeDuration} or {@link discard} ends it, the shake does not count against
+   * the limits, so a shake that fails costs no older event.
+   */
+  recordShake(source: string): number | null {
+    return this.#record({ kind: "shake", source });
+  }
+
+  /** Give a recorded shake the time it swung, once it ends. */
+  setShakeDuration(id: number, durationMs: number): void {
+    this.#pendingShakes.delete(id);
+    const event = this.#events.find((candidate) => candidate.id === id);
+    if (event?.kind === "shake" && Number.isFinite(durationMs)) {
+      const before = eventBytes(event);
+      event.durationMs = Math.max(0, Math.round(durationMs));
+      this.#retainedBytes += eventBytes(event) - before;
+    }
+    this.#trim();
+  }
+
+  /**
+   * Remove an event whose action failed after it was recorded. The next event takes its time gap,
+   * so replay keeps the timing of the events around it.
+   */
+  discard(id: number): void {
+    this.#pendingShakes.delete(id);
+    const index = this.#events.findIndex((event) => event.id === id);
+    if (index === -1) return;
+    this.#removeAt(index, true);
+    // The next event's longer gap can take more bytes.
+    this.#trim();
+  }
+
+  /** Remove the event at `index`. With `keepGap`, the next event takes its time gap. */
+  #removeAt(index: number, keepGap: boolean): void {
+    const removed = this.#events.splice(index, 1)[0]!;
+    this.#retainedBytes -= eventBytes(removed) + (this.#events.length > 0 ? 1 : 0);
+    const next = this.#events[index];
+    if (next) {
+      if (!keepGap) return;
+      const before = eventBytes(next);
+      next.delayMs += removed.delayMs;
+      this.#retainedBytes += eventBytes(next) - before;
+    } else {
+      const previous = this.#events[index - 1];
+      this.#lastEventMs = previous ? Date.parse(previous.at) : null;
+    }
+  }
+
   clear(): SessionSummary {
     if (this.#closed) {
       throw new SessionReplayConflictError("session recorder is closed");
@@ -242,6 +309,7 @@ export class SessionRecorder {
     }
     this.#admissionEpoch++;
     this.#events = [];
+    this.#pendingShakes.clear();
     this.#retainedBytes = EMPTY_ARRAY_BYTES;
     this.#droppedEvents = 0;
     this.#lastEventMs = null;
@@ -337,6 +405,7 @@ export class SessionRecorder {
     handlers: {
       dispatchGesture: (gesture: Gesture) => Promise<void> | void;
       setLocation: (fix: GeoFix) => Promise<void> | void;
+      shake?: (durationMs?: number) => Promise<void> | void;
     },
     multiplier = 1,
   ): Promise<SessionSummary> {
@@ -362,8 +431,10 @@ export class SessionRecorder {
         if (this.#legacyStopReplay) break;
         if (event.kind === "gesture") {
           await handlers.dispatchGesture(cloneGesture(event.gesture));
-        } else {
+        } else if (event.kind === "location") {
           await handlers.setLocation({ ...event.location });
+        } else {
+          await handlers.shake?.(event.durationMs);
         }
       }
       this.#replayCompletedAt = new Date(this.#clock.now()).toISOString();
@@ -422,18 +493,39 @@ export class SessionRecorder {
     multiplier: number,
   ): Promise<SessionSnapshot> {
     let outcome: "completed" | "cancelled" | "error" = "completed";
+    // @ref LLP 0013#shake — a replayed shake swings while the replay goes on, as it did while recording
+    // A shake is recorded when it starts, and the input after it was sent while it swung or after
+    // it, so the replay does not wait for a shake: each input replays at its recorded time. A
+    // shake starts once the one before it has ended, and the replay ends when its last shake has
+    // ended. A failed shake ends the replay at its next step, as a failed input does.
+    let shaking: Promise<void> | null = null;
+    // Set in a callback, which TypeScript does not follow, so the type is given here.
+    let shakeFailure = null as { error: unknown } | null;
     try {
       for (const event of events) {
         this.#assertReplayActive(replay);
         await this.#clock.delay(Math.max(0, event.delayMs / multiplier), replay.controller.signal);
         this.#assertReplayActive(replay);
+        if (shakeFailure) throw shakeFailure.error;
         if (event.kind === "gesture") {
           await handlers.dispatchGesture(event.gesture, replay.controller.signal);
-        } else {
+        } else if (event.kind === "location") {
           await handlers.setLocation(event.location, replay.controller.signal);
+        } else {
+          const previous = shaking;
+          // With no shake before it, this calls the handler now; a throw becomes a rejection.
+          const shake = (async () => {
+            if (previous) await previous;
+            await handlers.shake(replay.controller.signal, event.durationMs);
+          })();
+          shake.catch((error: unknown) => {
+            shakeFailure ??= { error };
+          });
+          shaking = shake;
         }
         this.#assertReplayActive(replay);
       }
+      if (shaking) await shaking;
     } catch (err) {
       if (replay.controller.signal.aborted || this.#activeReplay?.id !== replay.id) {
         outcome = "cancelled";
@@ -442,6 +534,8 @@ export class SessionRecorder {
         this.#lastError = err instanceof Error ? err.message : String(err);
       }
     } finally {
+      // A stopped replay stops its shake after the current swing; wait until the device is back.
+      await shaking?.catch(() => {});
       // A bounded recording may end mid-gesture. Finish its input ownership
       // without marking a successfully completed replay as aborted.
       try {
@@ -474,9 +568,10 @@ export class SessionRecorder {
   #record(
     event:
       | { kind: "gesture"; gesture: Gesture; source: string }
-      | { kind: "location"; location: GeoFix; source: string },
-  ): void {
-    if (this.#closed || !this.#recording || this.#replaying) return;
+      | { kind: "location"; location: GeoFix; source: string }
+      | { kind: "shake"; source: string },
+  ): number | null {
+    if (this.#closed || !this.#recording || this.#replaying) return null;
     const now = this.#clock.now();
     const delayMs = this.#lastEventMs !== null ? Math.max(0, now - this.#lastEventMs) : 0;
     this.#lastEventMs = now;
@@ -489,19 +584,45 @@ export class SessionRecorder {
     const recorded: RecordedEvent =
       event.kind === "gesture"
         ? { ...base, kind: "gesture", gesture: cloneGesture(event.gesture) }
-        : { ...base, kind: "location", location: { ...event.location } };
-    const bytes = Buffer.byteLength(JSON.stringify(recorded), "utf8");
+        : event.kind === "location"
+          ? { ...base, kind: "location", location: { ...event.location } }
+          : { ...base, kind: "shake" };
+    const bytes = eventBytes(recorded);
     if (EMPTY_ARRAY_BYTES + bytes > this.#maxBytes) {
       this.#droppedEvents++;
-      return;
+      return null;
     }
     this.#events.push(recorded);
     this.#retainedBytes += bytes + (this.#events.length > 1 ? 1 : 0);
-    while (this.#events.length > this.#maxEvents || this.#retainedBytes > this.#maxBytes) {
-      const removed = this.#events.shift()!;
-      this.#retainedBytes -=
-        Buffer.byteLength(JSON.stringify(removed), "utf8") + (this.#events.length > 0 ? 1 : 0);
+    if (recorded.kind === "shake") this.#pendingShakes.add(recorded.id);
+    this.#trim();
+    return recorded.id;
+  }
+
+  /**
+   * Drop the oldest events until the session fits its limits. A shake that has not ended stays
+   * and does not count, so its failure cannot cost an older event.
+   */
+  #trim(): void {
+    while (this.#overLimit()) {
+      const index = this.#events.findIndex((event) => !this.#pendingShakes.has(event.id));
+      if (index === -1) return;
+      // Behind a running shake, the next event takes the dropped event's gap to keep its time.
+      this.#removeAt(index, index > 0);
       this.#droppedEvents++;
     }
+  }
+
+  #overLimit(): boolean {
+    let count = this.#events.length;
+    let bytes = this.#retainedBytes;
+    if (this.#pendingShakes.size > 0) {
+      for (const event of this.#events) {
+        if (!this.#pendingShakes.has(event.id)) continue;
+        count--;
+        bytes -= eventBytes(event) + 1;
+      }
+    }
+    return count > this.#maxEvents || bytes > this.#maxBytes;
   }
 }

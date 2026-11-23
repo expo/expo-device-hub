@@ -278,6 +278,8 @@ function eventMessage(
       return action ? `Rotate ${humanize(action)}` : "Rotate";
     case "memory-warning":
       return "Memory warning";
+    case "shake":
+      return "Shake";
     case "ca-debug":
       return action ? `Core Animation ${humanize(action)}` : "Core Animation setting";
     case "digital-crown":

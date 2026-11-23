@@ -6,7 +6,7 @@ type SessionEvent = {
   at: string;
   delayMs: number;
   source: string;
-  kind: "gesture" | "location";
+  kind: "gesture" | "location" | "shake";
   gesture?: { type: string };
   location?: { latitude: number; longitude: number };
 };
@@ -43,6 +43,7 @@ function labelForEvent(event: SessionEvent): string {
   if (event.kind === "gesture") {
     return `${event.gesture?.type ?? "gesture"} • ${event.source}`;
   }
+  if (event.kind === "shake") return `shake • ${event.source}`;
   const lat = event.location?.latitude.toFixed(5) ?? "?";
   const lng = event.location?.longitude.toFixed(5) ?? "?";
   return `location ${lat}, ${lng}`;

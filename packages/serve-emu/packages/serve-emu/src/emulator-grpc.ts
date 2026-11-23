@@ -600,6 +600,26 @@ export function encodeKeyboardEvent(request: KeyboardEventRequest): Buffer {
   return Buffer.from(output);
 }
 
+/** `PhysicalModelValue.PhysicalType.POSITION`: the device's position, in meters. */
+export const PHYSICAL_MODEL_POSITION = 0;
+
+/**
+ * Encode a `PhysicalModelValue`. With `data` it is a set request that moves the target there
+ * smoothly, as the emulator's Extended Controls do; without it, a get request.
+ */
+export function encodePhysicalModelValue(target: number, data?: readonly number[]): Buffer {
+  const output: number[] = [];
+  varintField(output, 1, target);
+  if (data) {
+    const floats = Buffer.alloc(data.length * 4);
+    data.forEach((value, index) => floats.writeFloatLE(value, index * 4));
+    const parameter: number[] = [];
+    lenField(parameter, 1, floats);
+    messageField(output, 3, parameter);
+  }
+  return Buffer.from(output);
+}
+
 function grpcFrame(message: Buffer): Buffer {
   const output = Buffer.allocUnsafe(5 + message.length);
   output.writeUInt8(0, 0);
@@ -1244,6 +1264,19 @@ export class EmulatorGrpcClient {
 
   async sendKey(event: KeyboardEventRequest, signal?: AbortSignal): Promise<void> {
     await this.#request("sendKey", encodeKeyboardEvent(event), {
+      timeoutMs: this.#unaryTimeoutMs,
+      signal,
+      maxMessageBytes: 1024,
+    });
+  }
+
+  /** Move a physical model value, such as the device position, smoothly to `data`. */
+  async setPhysicalModel(
+    target: number,
+    data: readonly number[],
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.#request("setPhysicalModel", encodePhysicalModelValue(target, data), {
       timeoutMs: this.#unaryTimeoutMs,
       signal,
       maxMessageBytes: 1024,

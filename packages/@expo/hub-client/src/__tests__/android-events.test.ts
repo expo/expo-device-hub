@@ -27,6 +27,29 @@ function gesture(
 }
 
 describe("serve-emu session event mapping", () => {
+  test("shows a recorded shake as Shake, like the iOS event", () => {
+    expect(
+      mapAndroidSessionEvent(
+        {
+          id: 4,
+          at: "2026-11-10T10:00:00.000Z",
+          delayMs: 120,
+          source: "rest:shake",
+          kind: "shake",
+        },
+        "emulator-5554",
+      ),
+    ).toEqual({
+      id: "android:emulator-5554:4",
+      timestamp: "2026-11-10T10:00:00.000Z",
+      source: "rest:shake",
+      kind: "shake",
+      action: "trigger",
+      message: "Shake",
+      details: { delayMs: 120 },
+    });
+  });
+
   test("maps touch samples with stable device-scoped IDs", () => {
     expect(
       mapAndroidSessionEvent(

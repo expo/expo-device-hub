@@ -132,6 +132,8 @@ export const DEVICE_SHAPE_2D_ONLY_DESCRIPTION = "Applies to the 2D view only.";
 export const NO_HARDWARE_KEYBOARD_DESCRIPTION =
   "This device has no hardware keyboard, so the on-screen keyboard always shows.";
 
+export const SHAKE_HOLD_DESCRIPTION = "Hold for a longer shake.";
+
 export const ONSCREEN_KEYBOARD_DESCRIPTION =
   "Keeps the on-screen keyboard visible while a hardware keyboard is attached. A device with no hardware keyboard always shows it.";
 
@@ -146,7 +148,7 @@ export type ScreenShapeOption = {
 /**
  * Device-wide appearance, connectivity, and accessibility settings, plus iOS
  * keyboard controls, the viewer-local screen shape option, and device-level
- * actions (Android Back and Recents keys, shutting down or removing the device).
+ * actions (Shake, Android Back and Recents keys, shutting down or removing the device).
  * A foldable leads with its fold controls, as serve-sim's settings do for the iPhone Duo.
  *
  * The rows of a platform are always there. A row does not come or go while the
@@ -161,6 +163,8 @@ export function DeviceOptionsSection({
   foldPreview,
   onShutdown,
   onRemove,
+  onShake,
+  onShakeEnd,
 }: {
   /** The client to read from. Pass the client of `useSteadyClient` to keep rows over a reconnect. */
   client?: DeviceClient;
@@ -175,6 +179,10 @@ export function DeviceOptionsSection({
   onShutdown?: () => void;
   /** Remove/delete the device on the host. Omit for physical devices. */
   onRemove?: () => void;
+  /** Called when a Shake press starts the shake, so the dashboard can wobble the stream. */
+  onShake?: () => void;
+  /** Called when that Shake press ends. */
+  onShakeEnd?: () => void;
 }) {
   const [open, setOpen] = useState(true);
   // Like serve-sim's settings, a failed fold command opens the section to show its error.
@@ -201,6 +209,7 @@ export function DeviceOptionsSection({
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
   const orientationErrorId = useId();
+  const shakeDescriptionId = useId();
   const settings = client?.deviceSettings ?? null;
   // The Hub can read and write the settings now. A kept copy of them is not enough.
   const settingsLive =
@@ -211,6 +220,9 @@ export function DeviceOptionsSection({
     client?.deviceSettingsStatus === "loading" || client?.deviceSettingsStatus === "idle";
   const noHardwareKeyboard = client?.hardwareKeyboardConnected === false;
   const pending = client?.deviceSettingsPending ?? EMPTY_PENDING_SETTINGS;
+  // An Android shake lasts as long as the press, and an iOS shake is one event.
+  const shakeDescription =
+    client?.shakeError ?? (platform === "android" ? SHAKE_HOLD_DESCRIPTION : undefined);
   const displayWidthDp = client?.displayWidthDp ?? null;
 
   /** Whether a setting has a row. Without a platform, only the settings of both platforms do. */
@@ -394,6 +406,28 @@ export function DeviceOptionsSection({
             </SidebarActionButton>
           </SidebarRow>
         </>
+      )}
+
+      {client?.capabilities.shake && (
+        <SidebarRow
+          label="Shake device"
+          description={shakeDescription}
+          descriptionId={shakeDescription ? shakeDescriptionId : undefined}
+        >
+          <SidebarActionButton
+            descriptionId={shakeDescription ? shakeDescriptionId : undefined}
+            onPressStart={() => {
+              client.startShake();
+              onShake?.();
+            }}
+            onPressEnd={() => {
+              client.stopShake();
+              onShakeEnd?.();
+            }}
+          >
+            Shake
+          </SidebarActionButton>
+        </SidebarRow>
       )}
 
       {client && onShutdown && (

@@ -768,6 +768,33 @@ actor HIDInjector {
         hidLog("[sim] simulateMemoryWarning dispatched")
     }
 
+    /// Shake the device, like Simulator.app's Device → Shake. UIKit in the
+    /// simulated OS observes this Darwin notification and sends the foreground
+    /// app a shake motion event. CoreSimDeviceIO names the device feature
+    /// `com.apple.UIKit.SimulatorShakeDarwinNotification`.
+    func simulateShake() {
+        guard let device = simDevice else {
+            fputs("[sim] simulateShake: no SimDevice\n", stderr)
+            return
+        }
+        let sel = NSSelectorFromString("postDarwinNotification:error:")
+        guard device.responds(to: sel) else {
+            fputs("[sim] simulateShake: selector not available on SimDevice\n", stderr)
+            return
+        }
+        typealias Fn = @convention(c) (
+            AnyObject, Selector, NSString, AutoreleasingUnsafeMutablePointer<NSError?>
+        ) -> ObjCBool
+        let fn = unsafeBitCast(device.method(for: sel), to: Fn.self)
+        var error: NSError?
+        let posted = fn(device, sel, "com.apple.UIKit.SimulatorShake" as NSString, &error)
+        if !posted.boolValue {
+            fputs("[sim] simulateShake: \(error?.localizedDescription ?? "not posted")\n", stderr)
+            return
+        }
+        hidLog("[sim] simulateShake dispatched")
+    }
+
     /// Synthesize a swipe-up-from-bottom gesture (Face ID "go home" gesture).
     /// Uses IndigoHIDEdge.bottom to flag touches as system edge gestures,
     /// which iOS interprets as the home indicator swipe.

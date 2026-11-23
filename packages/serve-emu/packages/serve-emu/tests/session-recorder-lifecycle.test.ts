@@ -12,6 +12,7 @@ import {
 const noopHandlers: ReplayHandlers = {
   dispatchGesture: () => {},
   setLocation: () => {},
+  shake: () => {},
 };
 
 function immediateClock(now: () => number, delays: number[] = []): SessionReplayClock {
@@ -112,6 +113,7 @@ describe("SessionRecorder asynchronous replay lifecycle", () => {
           replayed.latitude = 0;
           now = 1_500;
         },
+        shake: () => {},
       },
       2,
     );
@@ -256,6 +258,7 @@ describe("SessionRecorder asynchronous replay lifecycle", () => {
         throw new Error("gesture failed");
       },
       setLocation: () => {},
+      shake: () => {},
     }).completion;
     expect(first).toMatchObject({
       replayStatus: "error",
@@ -270,6 +273,7 @@ describe("SessionRecorder asynchronous replay lifecycle", () => {
         throw "string failure";
       },
       setLocation: () => {},
+      shake: () => {},
     }).completion;
     expect(second).toMatchObject({
       replayStatus: "error",
@@ -302,6 +306,7 @@ describe("SessionRecorder asynchronous replay lifecycle", () => {
         }
       },
       setLocation: () => {},
+      shake: () => {},
     });
     const cancelled = await run.completion;
 
@@ -427,6 +432,7 @@ test("reports replay input cleanup failure without aborting a completed signal",
   const replay = recorder.startReplay({
     dispatchGesture() {},
     setLocation() {},
+    shake() {},
     finish(signal) {
       expect(signal.aborted).toBe(false);
       finished++;

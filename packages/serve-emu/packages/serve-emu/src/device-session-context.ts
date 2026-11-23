@@ -36,6 +36,7 @@ type DeviceStateDependencies = {
   applyLocation: (serial: string, fix: GeoFix, signal: AbortSignal) => Promise<void>;
   readOrientation: DeviceSessionStateOptions["readOrientation"];
   applyRotation: DeviceSessionStateOptions["applyRotation"];
+  shake?: DeviceSessionStateOptions["shake"];
 };
 
 /**
@@ -137,6 +138,7 @@ export class ActiveDeviceSession<TClient extends SessionClient = SessionClient> 
           applyLocation: opts.applyLocation,
           readOrientation: opts.readOrientation,
           applyRotation: opts.applyRotation,
+          ...(opts.shake ? { shake: opts.shake } : {}),
         });
     if (this.deviceState.serial !== this.serial) {
       throw new Error(

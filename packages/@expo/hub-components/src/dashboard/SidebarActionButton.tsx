@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { useEffect, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 
 import { Button, DisabledControlHint } from "../primitives";
 
@@ -13,6 +13,8 @@ export function SidebarActionButton({
   descriptionId,
   disabledReason,
   onClick,
+  onPressStart,
+  onPressEnd,
 }: {
   children: ReactNode;
   disabled?: boolean;
@@ -20,8 +22,16 @@ export function SidebarActionButton({
   disabledReason?: string;
   /** Color the button as a destructive action (e.g. removing a device). */
   destructive?: boolean;
-  onClick: () => void;
+  onClick?: () => void;
+  /**
+   * A hold action: called when the pointer or Enter or Space goes down on the button. Pair it
+   * with {@link onPressEnd}.
+   */
+  onPressStart?: () => void;
+  /** Called once when that press ends: on release, cancel, blur, or unmount. */
+  onPressEnd?: () => void;
 }) {
+  const press = useHoldPress(onPressStart, onPressEnd);
   return (
     <DisabledControlHint
       reason={disabled ? disabledReason : undefined}
@@ -34,9 +44,87 @@ export function SidebarActionButton({
         aria-describedby={descriptionId}
         onClick={onClick}
         style={{ flexShrink: 0 }}
+        {...(onPressStart ? press : {})}
       >
         {children}
       </Button>
     </DisabledControlHint>
   );
+}
+
+/**
+ * Pointer and keyboard handlers for a button that acts while it is held. A press starts on a
+ * primary pointer down or on Enter or Space, and ends once: on release, cancel, lost capture,
+ * blur, unmount, or when the window loses focus or the page hides, because a release outside the
+ * window never reaches the button. Enter and Space hold the button themselves, so they send no
+ * click. A click without a pointer press before it, as a screen reader sends, is a short press.
+ */
+function useHoldPress(onPressStart?: () => void, onPressEnd?: () => void) {
+  const pressed = useRef(false);
+  // Set by a pointer press, so the click that follows it does not press again.
+  const pressedBeforeClick = useRef(false);
+  const end = useRef(onPressEnd);
+  end.current = onPressEnd;
+  const stopWatching = useRef(() => {});
+  const finish = () => {
+    if (!pressed.current) return;
+    pressed.current = false;
+    stopWatching.current();
+    end.current?.();
+  };
+  const start = () => {
+    if (pressed.current) return;
+    pressed.current = true;
+    onPressStart?.();
+    const onVisibility = () => {
+      if (globalThis.document?.visibilityState === "hidden") finish();
+    };
+    globalThis.window?.addEventListener?.("blur", finish);
+    globalThis.window?.addEventListener?.("pagehide", finish);
+    globalThis.document?.addEventListener?.("visibilitychange", onVisibility);
+    stopWatching.current = () => {
+      globalThis.window?.removeEventListener?.("blur", finish);
+      globalThis.window?.removeEventListener?.("pagehide", finish);
+      globalThis.document?.removeEventListener?.("visibilitychange", onVisibility);
+    };
+  };
+  useEffect(() => () => finish(), []);
+  return {
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+      if (event.button !== 0) return;
+      pressedBeforeClick.current = true;
+      start();
+      // Capture keeps the release on this button when the pointer leaves it while held.
+      try {
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+      } catch {}
+    },
+    onPointerUp: finish,
+    onPointerCancel: () => {
+      // A canceled pointer sends no click.
+      pressedBeforeClick.current = false;
+      finish();
+    },
+    onLostPointerCapture: finish,
+    onBlur: finish,
+    onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      // No click for the key, also not for each repeat of a held Enter, which would end the hold.
+      event.preventDefault();
+      if (!event.repeat) start();
+    },
+    onKeyUp: (event: KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      finish();
+    },
+    onClick: () => {
+      if (pressedBeforeClick.current) {
+        pressedBeforeClick.current = false;
+        return;
+      }
+      start();
+      finish();
+    },
+  };
 }

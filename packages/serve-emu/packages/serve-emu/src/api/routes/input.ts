@@ -1,5 +1,12 @@
+import {
+  MAX_SHAKE_BODY_BYTES,
+  parseShakeRequest,
+  ShakeRequestError,
+  ShakeUnsupportedError,
+  type ShakeRequest,
+} from "../../shake.ts";
 import { parseGesture, type Gesture } from "../../shared/control-contracts.ts";
-import { readJsonBody } from "../body.ts";
+import { readBodyBytes, readJsonBody } from "../body.ts";
 import type { ApiDependencies } from "../dependencies.ts";
 import type { ContractApiRoute } from "./types.ts";
 import { downstream, invalid, isRecord, parseInput, shouldRecord } from "./route-helpers.ts";
@@ -44,6 +51,28 @@ export function inputRoutes(): ContractApiRoute<ApiDependencies>[] {
         await downstream("dispatch key", () =>
           deps.dispatchGesture(gesture, "rest:key", shouldRecord(payload)),
         );
+        return Response.json({ ok: true });
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/shake",
+      handler: async ({ request, deps }) => {
+        let shake: ShakeRequest;
+        try {
+          shake = parseShakeRequest(await readBodyBytes(request, MAX_SHAKE_BODY_BYTES));
+        } catch (error) {
+          if (error instanceof ShakeRequestError) invalid(error.message, error);
+          throw error;
+        }
+        await downstream("shake device", async () => {
+          try {
+            await deps.shake(shake);
+          } catch (error) {
+            if (error instanceof ShakeUnsupportedError) invalid(error.message, error);
+            throw error;
+          }
+        });
         return Response.json({ ok: true });
       },
     },

@@ -51,6 +51,7 @@ const NO_CAPABILITIES: DeviceCapabilities = {
   clipboard: false,
   orientation: false,
   fold: false,
+  shake: false,
 };
 
 /**
