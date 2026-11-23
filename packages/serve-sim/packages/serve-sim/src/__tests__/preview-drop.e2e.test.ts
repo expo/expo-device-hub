@@ -85,6 +85,10 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
   }
 
   async function dropPaths(paths: string[]) {
+    // Errors now remain until dismissed; each scenario starts with a clear drop target.
+    await browser.cdp.evaluate(
+      "document.querySelectorAll('[aria-label=\"Dismiss upload error\"]').forEach(button => button.click())",
+    );
     sent.length = 0;
     replies.clear();
     const point = await browser.cdp.evaluate<{ x: number; y: number }>(`(() => {
@@ -231,16 +235,33 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
     await until(
       () =>
         browser.cdp.evaluate<boolean>(
-          "[...document.querySelectorAll('[data-testid=upload-toast]')].some(el => el.textContent.includes('device-build.ipa:'))",
+          "[...document.querySelectorAll('[data-testid=upload-toast]')].some(el => el.textContent.includes('Cannot install device-build.ipa'))",
         ),
       "Preview did not report the unsupported IPA",
     );
     const message = await browser.cdp.evaluate<string>(
-      "[...document.querySelectorAll('[data-testid=upload-toast]')].find(el => el.textContent.includes('device-build.ipa:'))?.textContent ?? ''",
+      "[...document.querySelectorAll('[data-testid=upload-toast]')].find(el => el.textContent.includes('Cannot install device-build.ipa'))?.textContent ?? ''",
     );
-    expect(message).toContain("Simulator .app bundle or .tar.gz/.tgz archive");
-    expect(message).toContain("Device .ipa builds and .zip archives are not supported");
+    expect(message).toContain(
+      "This is a device build. Drop a Simulator .app folder or a .tar.gz archive.",
+    );
     expect(sent).toEqual([]);
+    const errorStyle = await browser.cdp.evaluate<string>(
+      "getComputedStyle(document.querySelector('[data-testid=upload-toast] p')).whiteSpace",
+    );
+    expect(errorStyle).toBe("normal");
+    // The guidance must still be readable after the old three-second dismissal.
+    await Bun.sleep(3200);
+    expect(
+      await browser.cdp.evaluate<boolean>(
+        "!!document.querySelector('[aria-label=\"Dismiss upload error\"]')",
+      ),
+    ).toBe(true);
+    const screenshot = process.env.SERVE_SIM_DROP_ERROR_SCREENSHOT;
+    if (screenshot) {
+      const result = await browser.cdp.send("Page.captureScreenshot", { format: "png" });
+      writeFileSync(screenshot, Buffer.from(result.data as string, "base64"));
+    }
   }, 60000);
 
   test("a PNG reaches Photos and its staged upload is removed", async () => {
@@ -280,7 +301,7 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
     await until(
       () =>
         browser.cdp.evaluate<boolean>(
-          "[...document.querySelectorAll('[data-testid=upload-toast]')].some(el => el.textContent.includes('invalid-photo.png:'))",
+          "[...document.querySelectorAll('[data-testid=upload-toast]')].some(el => el.textContent.includes('Could not add invalid-photo.png to Photos'))",
         ),
       "Preview hid the media error",
     );
