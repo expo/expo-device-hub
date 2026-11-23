@@ -72,7 +72,9 @@ const CONTROLS: Array<[string, (client: DeviceClient) => void, string]> = [
   ],
 ];
 
-async function mount(initialRecording: { status: string } | null | "unanswered") {
+type Recording = { status: string; followsFold?: boolean };
+
+async function mount(initialRecording: Recording | null | "unanswered") {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("window", {
     addEventListener() {},
@@ -113,6 +115,13 @@ async function mount(initialRecording: { status: string } | null | "unanswered")
       const orientation = JSON.parse(init?.body as string).orientation;
       return Response.json({ ok: true, orientation: { pose: orientation } });
     }
+    if (path === "/api/fold") {
+      const hingeAngle = method === "GET" ? 180 : JSON.parse(init?.body as string).hingeAngle;
+      return Response.json({
+        ok: true,
+        fold: { supported: true, posture: null, hingeAngle, hingeRange: { min: 0, max: 180 } },
+      });
+    }
     return Response.json({}, { status: 404 });
   });
   let client!: DeviceClient;
@@ -140,7 +149,7 @@ async function mount(initialRecording: { status: string } | null | "unanswered")
       while (heldWrites.length) heldWrites.shift()!();
       await settle();
     },
-    record: async (next: { status: string } | null) => {
+    record: async (next: Recording | null) => {
       recording = next;
       await act(async () => {
         for (const poll of metadataPolls) poll();
@@ -237,4 +246,35 @@ test("Android drops a queued orientation without an error when a recording start
   expect(harness.client().orientationError).toBeNull();
   expect(harness.client().orientationPending).toBe(false);
   expect(harness.client().orientation).toBe("portrait");
+});
+
+test("Android folds during a recording that reports that it follows folds", async () => {
+  const harness = await mount({ status: "recording", followsFold: true });
+  expect(harness.client().recordingLock).toBe("recording");
+  expect(harness.client().orientationUnavailable).toBe("recording");
+  expect(harness.client().fold?.unavailable).toBeUndefined();
+  await use(harness, (client) => client.fold!.setControl({ control: "pose", value: "closed" }));
+  expect(harness.writes).toEqual(['POST /api/fold {"hingeAngle":0}']);
+  expect(harness.client().fold?.error).toBeNull();
+});
+
+test.each([[{ status: "recording" }], ["unanswered" as const]])(
+  "Android locks fold while the recording status is %p",
+  async (recording) => {
+    const harness = await mount(recording);
+    expect(harness.client().fold?.unavailable).toBe(
+      recording === "unanswered" ? "status-unknown" : "recording",
+    );
+    await use(harness, (client) => client.fold?.setControl({ control: "pose", value: "closed" }));
+    expect(harness.writes).toEqual([]);
+  },
+);
+
+test("Android locks fold again when the recording no longer follows folds", async () => {
+  const harness = await mount({ status: "recording", followsFold: true });
+  expect(harness.client().fold?.unavailable).toBeUndefined();
+  await harness.record({ status: "recording" });
+  expect(harness.client().fold?.unavailable).toBe("recording");
+  await harness.record(null);
+  expect(harness.client().fold?.unavailable).toBeUndefined();
 });

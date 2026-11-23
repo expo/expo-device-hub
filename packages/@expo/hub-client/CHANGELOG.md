@@ -1,5 +1,46 @@
 # @expo/hub-client
 
+## 1.14.1
+
+### Patch Changes
+
+- 9f38980: Re-releasing because promotion to `latest` failed.
+
+## 1.14.0
+
+### Minor Changes
+
+- e48ed23: On Android, a view that replaces the stream canvas, such as a switch between 2D and 3D, keeps showing the screen: the last frame is copied into the new canvas, and the MSE fallback draws into the current canvas.
+- bf99156: `@expo/hub-client/models` shows a device as its 3D model with the live screen: `DeviceModelScreen` takes the place of `DeviceScreen` for the iPhone Duo, the iPhone 18 Pro, the Pixel 9 Pro, and the Pixel 9 Pro Fold. `@expo/hub-client/models/catalog` tells which devices have a model without loading three.js, and its `useDeviceModelScreenClient` reads the part of the client that the 3D screen needs, as `useDeviceScreenClient` does for the flat screen, and the package has each model's GLB file as `@expo/hub-client/models/<file>.glb`. The entry needs `three` 0.186 or later and `three-mesh-bvh`, which are optional peer dependencies. An app that does not import it bundles neither three.js nor the models.
+- a104279: Add optional width, format, and JPEG quality controls to `client.screenshot()`. Calling it without options keeps native-resolution PNG. Image options require backend support.
+
+### Patch Changes
+
+- e48ed23: On Android, `client.fold` reads the hinge again as soon as the stream switches displays, instead of waiting up to 5 seconds for the next poll.
+
+## 1.13.0
+
+### Minor Changes
+
+- 3df743a: Android screen recordings of a foldable emulator now survive folding and unfolding. With gRPC capture, the Hub records a foldable on one fixed canvas that fits both displays and centers the shown display on it. `session.json` then has a `deviceStates` timeline, in the format of serve-sim's iPhone Duo recordings: at each change, the display (`inner` or `outer`), its native size, its place on the canvas (`contentRect`), the hinge angle, and the UI `orientation`. The hinge is read over the emulator's gRPC controller every 100 ms and at once when the emulator reports a posture change, and the recording has a keyframe at least once a second, as serve-sim's recordings. The recording status from `/api` has `followsFold: true` for such a recording, and `POST /api/fold` answers 409 while a recording that cannot follow a fold runs. In hub-client, `DeviceFold` has an optional `unavailable` reason. On Android, it is the recording lock only while the recording does not follow folds, so fold commands and the Hub's Fold settings stay available during a recording that does. Rotation and stream changes stay locked while a recording runs.
+
+## 1.12.2
+
+### Patch Changes
+
+- 1e5f890: Show the foreground app's name on Android. serve-emu now reads the label with
+  `aapt2 dump badging` from the APK it already pulls for the icon, and returns it as
+  `label` from `GET /api/apps/icon`. Before, it searched `dumpsys package` output,
+  which has no label, so the name was always missing. The Android client keeps the
+  label and the icon across foreground polls of the same build, reads them again
+  after a reinstall with a new version or build, and retries a failed read.
+- 8c9c786: Use observed device pose separately from app orientation on ordinary iOS Simulators. Keep video, touch mapping, and home gestures aligned when an app stays portrait on a landscape device.
+
+  Fix repeated rotations on iPhone Duo when the foreground app stays portrait.
+  Keep the Duo model aligned with rotations made by other controllers.
+
+- e169141: Show the name of the foreground iOS app on hosts where the simulator runtime is mounted outside serve-sim's allowed paths, for example Safari and Settings in an EAS simulator session. serve-sim now sends `label` with each `/appstate` event. It reads the name from the bundle path that simctl reports, so the client no longer needs `app.infoPlist` for the name. hub-client uses that label, and a bundle read that finds no name no longer clears it.
+
 ## 1.12.1
 
 ### Patch Changes

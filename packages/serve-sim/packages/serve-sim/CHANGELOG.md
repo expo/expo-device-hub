@@ -1,5 +1,31 @@
 # @expo/serve-sim
 
+## 0.14.6
+
+### Patch Changes
+
+- 9f38980: Re-releasing because promotion to `latest` failed.
+
+## 0.14.5
+
+### Patch Changes
+
+- a90df2c: Capture reboots no longer fail when a just-booted simulator is slow to start processes.
+
+## 0.14.4
+
+### Patch Changes
+
+- 8e6fc4e: Follow each exec-ws binary screenshot with a `{id, screenshotMetadata}` JSON frame, with the same metadata as the HTTP `X-Expo-Screenshot-Metadata` header for that request. `actions.describe` advertises it with `binaryMetadataFrame: true` on the `output` property.
+- 8ceda40: Show SpringBoard with its name, default icon, and app installation guidance. Replace raw app metadata errors with “Unable to read app details”.
+
+## 0.14.3
+
+### Patch Changes
+
+- e169141: Show the name of the foreground iOS app on hosts where the simulator runtime is mounted outside serve-sim's allowed paths, for example Safari and Settings in an EAS simulator session. serve-sim now sends `label` with each `/appstate` event. It reads the name from the bundle path that simctl reports, so the client no longer needs `app.infoPlist` for the name. hub-client uses that label, and a bundle read that finds no name no longer clears it.
+- 913e47c: Report physical device pose separately from app orientation so clients can follow external turns on supported iOS runtimes. Support physical rotations on iPhone Duo independently of the active panel; temporary screenshot captures do not start pose observation.
+
 ## 0.14.2
 
 ### Patch Changes

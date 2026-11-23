@@ -10,6 +10,7 @@ import {
   font,
   heading,
   icon,
+  layer,
   radius,
   shadow,
   text,
@@ -97,14 +98,14 @@ export function ServerConnectionOverlay({ status, onReload }: ServerConnectionOv
       style={{
         position: "fixed",
         inset: 0,
-        // Above the shared dialog/select portal stack, which tops out at 605.
-        zIndex: 610,
+        // Above the shared dialog/select portal stack.
+        zIndex: layer.top,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         boxSizing: "border-box",
         minWidth: 0,
-        minHeight: "100vh",
+        minHeight: "100dvh",
         padding: 24,
         backgroundColor: `color-mix(in srgb, ${bg.screen} 68%, transparent)`,
         backdropFilter: "blur(12px)",

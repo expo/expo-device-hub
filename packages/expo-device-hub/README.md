@@ -28,6 +28,13 @@ with it, and manage which devices are running from one place.
 > iOS simulators require macOS with Xcode. Android emulators require the Android SDK
 > (`emulator`, `adb`).
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/expo/expo-device-hub/main/assets/expo-device-hub-dashboard-dark-2x.png">
+    <img alt="The Expo Device Hub dashboard with the device lists, the current app, and an iPhone Duo that is partially open in the 3D preview" src="https://raw.githubusercontent.com/expo/expo-device-hub/main/assets/expo-device-hub-dashboard-light-2x.png" width="838">
+  </picture>
+</p>
+
 ## Installation
 
 > Using the Hub inside an Expo app requires **Expo SDK 57** or newer.
@@ -170,6 +177,16 @@ for every request when the variable is unset. Three variables override the limit
 value stops the Hub at startup with the variable name in the error.
 On success, `recordings.json` in the output directory lists a subdirectory containing
 `recording.mp4` and `session.json`. Failed recordings leave the manifest empty.
+
+A foldable emulator, such as the Pixel 9 Pro Fold, can fold and unfold while it records with
+the default gRPC capture. The Hub records it on one fixed canvas that fits both displays and
+centers the shown display on it. `session.json` then has a `deviceStates` timeline with the
+display (`inner` or `outer`), its place on the canvas, the hinge angle, and the UI orientation at
+each change, and the video has a keyframe at least once a second. The Hub reads the hinge over the
+emulator's gRPC controller every 100 ms. The recording status that `/api` reports has
+`followsFold: true`. With scrcpy capture,
+a fold still ends the recording, and the Hub refuses fold commands while it records. LLP 0018
+in the repository's `llp/` folder describes the canvas and the timeline.
 
 Keep the emulator's orientation and capture settings unchanged during recording.
 Rotation invalidates the recording. A capture failure does not: the Hub restarts the

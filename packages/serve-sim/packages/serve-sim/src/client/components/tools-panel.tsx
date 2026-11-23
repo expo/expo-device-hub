@@ -29,6 +29,7 @@ export function ToolsPanel({
   udid,
   deviceRuntime,
   currentApp,
+  isRunningOnEAS,
   eventLogEventsEndpoint,
   metricsEndpoint,
   crashesEndpoint,
@@ -55,6 +56,7 @@ export function ToolsPanel({
   udid: string;
   deviceRuntime: string | null;
   currentApp: { bundleId: string; isReactNative: boolean; pid?: number } | null;
+  isRunningOnEAS?: boolean;
   eventLogEventsEndpoint?: string;
   metricsEndpoint?: string;
   crashesEndpoint?: string;
@@ -85,7 +87,7 @@ export function ToolsPanel({
 
       {open && (
         <div className="p-3.5 overflow-y-auto flex-1 flex flex-col gap-3">
-          <AppDetectionTool udid={udid} currentApp={currentApp} />
+          <AppDetectionTool udid={udid} currentApp={currentApp} isRunningOnEAS={isRunningOnEAS} />
           <MetricsTool
             udid={udid}
             currentAppBundleId={currentApp?.bundleId ?? null}

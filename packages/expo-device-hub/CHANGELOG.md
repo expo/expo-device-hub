@@ -1,5 +1,55 @@
 # expo-device-hub
 
+## 0.26.1
+
+### Patch Changes
+
+- 9f38980: Re-releasing because promotion to `latest` failed.
+
+## 0.26.0
+
+### Minor Changes
+
+- 6133f01: Add optional screenshot width limits and JPEG output, while preserving native PNG and legacy base64 PNG responses. Screenshot responses report capture, encoding, and artifact timings.
+- e48ed23: The 3D preview now uses Expo's own device models, and it also shows the iPhone 18 Pro, the Pixel 9 Pro, and the Pixel 9 Pro Fold with the live screen. Other devices keep the flat preview.
+
+## 0.25.0
+
+### Minor Changes
+
+- bce1c89: Adding a device now has two steps. The + button of the simulator or emulator list opens a menu of the recent devices, each with its OS version; a click boots the device. The last row of the menu, "Create new simulator" or "Create new emulator", opens a new modal with the name, the OS version, and the model of the device. A boot that fails opens a dialog with the reason from the host.
+- e2b8525: The device screen loads like the screen on the Expo website. A selected device shows its shape at once, in its real proportions. Until the stream connects, the black screen shows a glow that moves around its edge, and the first frame fades in above it. A session that fails before its first frame says why on the screen. The dot of the status pill pulses while the status is Loading, Reconnecting, or Live.
+- ab70b74: The sidebar now has the look of the website's preview settings: sections with a hairline and a title row that takes a fill under the pointer, select boxes of one width, switches that turn blue when on, and pill buttons. The simulator and emulator lists show the platform's mark before each device name, the OS version at the right, and the selected device on a blue surface. The current app is in a card with its icon, name, and app ID.
+
+  The inspector no longer adds and removes sections and options while a device connects or reconnects. A selected device always has the sections and options of its platform. An option that cannot change now keeps its last value and is locked, and a tooltip gives the reason. An option whose value is not known shows a dash.
+
+- 2a32592: The toolbar under the device now has the look of the website's device controls: one rounded bar of round icon buttons, with a dark tooltip above each button that says what it does. An Android device also has Back, Recents, and Dismiss keyboard in the toolbar, next to Home. Take screenshot and the Clipboard menu show a spinner while their action runs. The buttons have new accessible names, such as "Go to home screen", "Take screenshot", "Reload app", and "Rotate device".
+
+### Patch Changes
+
+- 1cfe87e: Show the Android launcher icon of apps whose adaptive icon bitmaps carry an API level in their resource config, such as `xxxhdpi-v26`. This affects apps with a minSdk below 26, for example Expo Go, which showed the placeholder icon before.
+- c1c62d7: Dashboard controls now share one hover, press, and keyboard focus behavior. Buttons, selects, switches, text fields, and device rows show the same blue focus outline for keyboard focus. A hover fill no longer stays on a control after a touch, and a locked control no longer reacts to the pointer. The toolbar tooltips and the hints of disabled controls use the same tooltip.
+- c2eefa5: Make the sidebar's unsupported-device warning open explanatory details without selecting the device.
+
+## 0.24.0
+
+### Minor Changes
+
+- 3df743a: Android screen recordings of a foldable emulator now survive folding and unfolding. With gRPC capture, the Hub records a foldable on one fixed canvas that fits both displays and centers the shown display on it. `session.json` then has a `deviceStates` timeline, in the format of serve-sim's iPhone Duo recordings: at each change, the display (`inner` or `outer`), its native size, its place on the canvas (`contentRect`), the hinge angle, and the UI `orientation`. The hinge is read over the emulator's gRPC controller every 100 ms and at once when the emulator reports a posture change, and the recording has a keyframe at least once a second, as serve-sim's recordings. The recording status from `/api` has `followsFold: true` for such a recording, and `POST /api/fold` answers 409 while a recording that cannot follow a fold runs. In hub-client, `DeviceFold` has an optional `unavailable` reason. On Android, it is the recording lock only while the recording does not follow folds, so fold commands and the Hub's Fold settings stay available during a recording that does. Rotation and stream changes stay locked while a recording runs.
+
+## 0.23.2
+
+### Patch Changes
+
+- 1e5f890: Show the foreground app's name on Android. serve-emu now reads the label with
+  `aapt2 dump badging` from the APK it already pulls for the icon, and returns it as
+  `label` from `GET /api/apps/icon`. Before, it searched `dumpsys package` output,
+  which has no label, so the name was always missing. The Android client keeps the
+  label and the icon across foreground polls of the same build, reads them again
+  after a reinstall with a new version or build, and retries a failed read.
+- 9ea899f: Android boots no longer reuse the console port of an emulator that is still booting or offline, and a boot that finds a different AVD on its allocated serial now fails, and stops the emulator it spawned, instead of returning that other emulator.
+- ab2ba42: Android: one device that fails its check no longer hides the other devices. An emulator whose `adb emu avd name` fails, such as one connected over the network, now shows by its serial.
+
 ## 0.23.1
 
 ### Patch Changes

@@ -399,8 +399,10 @@ test("an app that imports only the main entry bundles no shape table or shape co
   });
   expect(result.success).toBe(true);
   const output = await result.outputs[0]!.text();
-  expect(output).toContain("DeviceScreen");
-  for (const marker of ["iPhone 17 Pro", "pixel_9", "superellipse", "clipPath:"]) {
+  // The bundle holds the main entry's code, not only its export names.
+  expect(output).toContain("function DeviceScreen");
+  // `DeviceScreen` has its own `superellipse(…)` corner style, so that word is no marker.
+  for (const marker of ["iPhone 17 Pro", "pixel_9", "screenShapeClipPath", "clipPath:"]) {
     expect(output).not.toContain(marker);
   }
 });

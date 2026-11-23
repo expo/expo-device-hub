@@ -11,29 +11,7 @@ import {
   type Platform,
 } from "./data";
 
-/**
- * Left column: simulators + emulators lists, then `children` below them. The
- * dashboard passes the device inspector as `children`, so it scrolls with the lists.
- * The header, the lists and the inspector sections share {@link SIDEBAR_SECTION_INSET}.
- */
-export function Sidebar({
-  simulators,
-  emulators,
-  recentSimulators,
-  recentEmulators,
-  simulatorOptions,
-  emulatorOptions,
-  agentDeviceIds = [],
-  selectedId,
-  onSelect,
-  onAddDevice,
-  onToggle,
-  toggleIcon = "sidebar",
-  topInset = 32,
-  platform,
-  width = 320,
-  children,
-}: {
+export type SidebarProps = {
   /** Simulators to list — real iOS devices from the plugin server. */
   simulators: Device[];
   /** Emulators to list. */
@@ -64,7 +42,31 @@ export function Sidebar({
   width?: number;
   /** Rendered below the device lists, edge to edge, in the same scrolling area. */
   children?: ReactNode;
-}) {
+};
+
+/**
+ * Left column: simulators + emulators lists, then `children` below them. The
+ * dashboard passes the device inspector as `children`, so it scrolls with the lists.
+ * The header, the lists and the inspector sections share {@link SIDEBAR_SECTION_INSET}.
+ */
+export function Sidebar({
+  simulators,
+  emulators,
+  recentSimulators,
+  recentEmulators,
+  simulatorOptions,
+  emulatorOptions,
+  agentDeviceIds = [],
+  selectedId,
+  onSelect,
+  onAddDevice,
+  onToggle,
+  toggleIcon = "sidebar",
+  topInset = 32,
+  platform,
+  width = 320,
+  children,
+}: SidebarProps) {
   return (
     <aside
       style={{
@@ -72,7 +74,7 @@ export function Sidebar({
         flexDirection: "column",
         width: `min(${width}px, 100vw)`,
         flexShrink: 0,
-        height: "var(--hub-viewport-height, 100vh)",
+        height: "var(--hub-viewport-height, 100dvh)",
         boxSizing: "border-box",
         padding: `${topInset}px 0 0`,
         backgroundColor: bg.default,
@@ -85,7 +87,7 @@ export function Sidebar({
           alignItems: "center",
           justifyContent: "space-between",
           gap: 8,
-          padding: `0 ${SIDEBAR_SECTION_INSET}px 32px`,
+          padding: `0 ${SIDEBAR_SECTION_INSET}px 24px`,
         }}
       >
         <Logo />
@@ -101,14 +103,7 @@ export function Sidebar({
           overflowY: "auto",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 32,
-            padding: `0 ${SIDEBAR_SECTION_INSET}px ${SIDEBAR_SECTION_INSET}px`,
-          }}
-        >
+        <div style={{ display: "flex", flexDirection: "column" }}>
           {platform !== "android" && (
             <DeviceSection
               title="Simulators"

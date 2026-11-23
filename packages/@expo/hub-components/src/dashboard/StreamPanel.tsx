@@ -1,4 +1,4 @@
-import { type ComponentType, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ComponentType, useEffect, useRef, useState } from "react";
 
 import {
   KeyboardCapture,
@@ -8,16 +8,18 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
-import type { DeviceShapeProps } from "@expo/hub-client/shapes";
-import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
+import type { DeviceModelScreenProps } from "@expo/hub-client/models";
+import { type DeviceModelAssets } from "@expo/hub-client/models/catalog";
+import type { DeviceShapeProps, ScreenShape } from "@expo/hub-client/shapes";
 import {
   bg,
   border,
-  FloatingIconButton,
-  FullScreenIcon,
   CloseIcon,
-  text,
+  FullScreenIcon,
+  IconButton,
+  layer,
   textSize,
+  tone,
 } from "../primitives";
 import { MOBILE_CORNER_BUTTON_TOP } from "./cornerButtons";
 import { type Device } from "./data";
@@ -25,8 +27,11 @@ import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
 import { deviceScreenLoading } from "./DeviceScreenStatus";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
 import { PhoneFrame, type PhoneFrameFoldPreview } from "./PhoneFrame";
+import { useModelUnavailableToast } from "./ModelPreviewToast";
 import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
+import { useElementHeight } from "./useElementHeight";
+import { useInertSiblings } from "./useInertSiblings";
 
 /** Space between the title pill and the top of the device frame. */
 const TITLE_GAP = 32;
@@ -48,12 +53,14 @@ export function StreamPanel({
   client,
   agentInteraction,
   DeviceScreen,
-  FoldableDeviceScreen,
+  DeviceModelScreen,
   DeviceShape,
   foldPreview,
   displayScreen,
   framed = true,
   showScreenShape = true,
+  deviceModelAssets,
+  screenShape,
   onClipboardFallback,
 }: {
   device: Device;
@@ -61,8 +68,8 @@ export function StreamPanel({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
-  /** iPhone Duo 3D renderer from `@expo/hub-components/foldable`; without it the Duo stays flat. */
-  FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  /** 3D renderer from `@expo/hub-client/models`; without it every device stays flat. */
+  DeviceModelScreen?: ComponentType<DeviceModelScreenProps>;
   /** Screen shape clip from `@expo/hub-client/shapes`; without it the screen keeps generic corners. */
   DeviceShape?: ComponentType<DeviceShapeProps>;
   foldPreview?: PhoneFrameFoldPreview;
@@ -75,6 +82,10 @@ export function StreamPanel({
   framed?: boolean;
   /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
   showScreenShape?: boolean;
+  /** Consumer-owned 3D model files; a device whose model has no URL stays flat. */
+  deviceModelAssets?: DeviceModelAssets;
+  /** The device's screen shape from `useScreenShape`: the frame's proportions before the stream connects. */
+  screenShape?: ScreenShape | null;
   /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
   onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
@@ -94,29 +105,8 @@ export function StreamPanel({
     }
     wasTyping.current = typing;
   }, [typing]);
-  useLayoutEffect(() => {
-    if (!presenting) return;
-    const panel = panelRef.current;
-    const parent = panel?.parentElement;
-    if (!parent) return;
-    const previous = new Map<HTMLElement, boolean>();
-    const protectSiblings = () => {
-      for (const node of parent.children) {
-        if (node === panel || !(node instanceof HTMLElement) || previous.has(node)) continue;
-        previous.set(node, node.inert);
-        node.inert = true;
-      }
-    };
-    protectSiblings();
-    const observer = new MutationObserver(protectSiblings);
-    observer.observe(parent, { childList: true });
-    return () => {
-      observer.disconnect();
-      previous.forEach((inert, node) => {
-        node.inert = inert;
-      });
-    };
-  }, [presenting]);
+  // A full-screen stream covers the sidebars, so they must not take focus or clicks.
+  useInertSiblings(panelRef, presenting);
   useEffect(() => {
     if (!viewport.mobile) {
       setPresentation(false);
@@ -150,20 +140,26 @@ export function StreamPanel({
       setKeyboardOpen(true);
     }
   };
+  // The desktop toolbar can wrap to more rows, and the frame keeps clear of its real height.
   const controlsRef = useRef<HTMLDivElement>(null);
-  const [controlsHeight, setControlsHeight] = useState(STREAM_CONTROLS_HEIGHT);
-  useLayoutEffect(() => {
-    const element = controlsRef.current;
-    if (viewport.mobile || !element || typeof ResizeObserver === "undefined") return;
-    const measure = () => setControlsHeight(element.getBoundingClientRect().height);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [viewport.mobile]);
+  const controlsHeight = useElementHeight(controlsRef, STREAM_CONTROLS_HEIGHT, !viewport.mobile);
   // PhoneFrame also knows whether the 3D model is loaded; until then the pill says Loading too.
   const [screenLoading, setScreenLoading] = useState(() => deviceScreenLoading(client));
   const captureScreenshot = useScreenshotToast(client, device.name);
+  // A consumer that handles a failed 3D model shows 2D from then on, so a notice
+  // that leaves by itself tells why. Without a handler the model keeps its own notice.
+  const notifyModelUnavailable = useModelUnavailableToast(device.id);
+  const onModelUnavailable = foldPreview?.onUnavailable;
+  const framePreview =
+    foldPreview && onModelUnavailable
+      ? {
+          ...foldPreview,
+          onUnavailable: () => {
+            notifyModelUnavailable();
+            onModelUnavailable();
+          },
+        }
+      : foldPreview;
   // Leave presentation in the same update that opens the inspector, restoring its
   // sibling interactivity before the Clipboard section can take focus.
   const clipboard = useClipboardToast(
@@ -179,13 +175,29 @@ export function StreamPanel({
   // Command+V in the device screen reports through the clipboard toasts, as in serve-sim.
   const screenClient: DeviceClient = { ...client, pasteText: clipboard.pasteText };
 
+  const [savingScreenshot, setSavingScreenshot] = useState(false);
+  const saveScreenshot = async () => {
+    setSavingScreenshot(true);
+    try {
+      await captureScreenshot();
+    } finally {
+      setSavingScreenshot(false);
+    }
+  };
+  // Android has its own navigation buttons; iOS has only Home.
+  const android = client.platform === "android";
+
   const controls = (
     <StreamControls
       orientationUnavailable={client.orientationUnavailable}
+      onBack={android ? () => client.pressButton("back") : undefined}
       onHome={() => client.pressButton("home")}
+      onRecents={android ? () => client.pressButton("recents") : undefined}
+      onDismissKeyboard={android ? () => client.pressButton("hideKeyboard") : undefined}
       onReload={() => client.reload()}
       onRotate={() => client.rotate()}
-      onSave={captureScreenshot}
+      onSave={() => void saveScreenshot()}
+      saving={savingScreenshot}
       clipboard={client.capabilities.clipboard}
       clipboardPending={client.clipboardPending}
       onPaste={() => void clipboard.pasteFromDevice()}
@@ -202,7 +214,7 @@ export function StreamPanel({
       role="alert"
       style={{
         ...textSize.xs,
-        color: text.danger,
+        color: tone.danger.text,
         textAlign: "center",
         maxWidth: "min(280px, 100cqw)",
         margin: "8px auto 0",
@@ -236,7 +248,7 @@ export function StreamPanel({
               left: viewport.left,
               width: viewport.width,
               height: viewport.height,
-              zIndex: 20,
+              zIndex: layer.presentation,
             } as const)
           : {}),
         boxSizing: "border-box",
@@ -257,8 +269,8 @@ export function StreamPanel({
           )}
           {!typing && (
             <div
-              // Pinned to the top-right corner, opposite the sidebar toggle. Its z-index stays
-              // below the sidebar overlay (backdrop 12, panel 13), whose close button can share the corner.
+              // Pinned to the top-right corner, opposite the sidebar toggle. Its layer stays
+              // below the sidebar overlay, whose close button can share the corner.
               onMouseDownCapture={(event) => {
                 if (typing || keyboardOpen) event.preventDefault();
               }}
@@ -266,10 +278,10 @@ export function StreamPanel({
                 position: "absolute",
                 top: `calc(${MOBILE_CORNER_BUTTON_TOP}px + env(safe-area-inset-top, 0px))`,
                 right: 24,
-                zIndex: 3,
+                zIndex: layer.cornerButton,
               }}
             >
-              <FloatingIconButton
+              <IconButton
                 ref={fullScreenRef}
                 icon={presenting ? <CloseIcon size={20} /> : <FullScreenIcon />}
                 label={presenting ? "Exit full screen" : "Full screen"}
@@ -318,11 +330,13 @@ export function StreamPanel({
               if (!client.clipboardPending) await clipboard.copyFromSimulator();
             }}
             DeviceScreen={DeviceScreen}
-            FoldableDeviceScreen={FoldableDeviceScreen}
+            DeviceModelScreen={DeviceModelScreen}
             DeviceShape={DeviceShape}
-            foldPreview={foldPreview}
+            foldPreview={framePreview}
             displayScreen={displayScreen}
             showScreenShape={showScreenShape}
+            deviceModelAssets={deviceModelAssets}
+            screenShape={screenShape}
             onLoadingChange={setScreenLoading}
           />
           {!viewport.mobile && (

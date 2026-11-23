@@ -397,6 +397,19 @@ curl -N "$BASE/api/logcat?package=com.example.app&search=error"
 curl -N "$BASE/api/metrics"
 ```
 
+Screenshot requests also accept `maxWidth` (integer 1–8192, no upscaling),
+`format=jpeg`, and JPEG `quality` (integer 1–100, default 80). Omitted options
+preserve the native PNG bytes. Legacy `format=base64` still returns a JSON PNG;
+it can also use `maxWidth`. JPEG is lossy; session artifacts remain PNG at the
+requested size. Resizing/JPEG conversion runs on the host after `adb screencap`.
+
+Responses report `Server-Timing` for capture, encoding, artifact saving, and
+server total. Total includes response construction and excludes transfer. Benchmark a running local session
+with `node scripts/benchmark-screenshots.mjs http://127.0.0.1:3300`; set
+`SERVE_EMU_TOKEN` for authenticated sessions. The command reports seven samples
+per image mode after warmup, payload bytes, socket reuse, and stage timings.
+No Android device latency improvement is claimed without a baseline/device run.
+
 Logcat subscriptions share one `adb logcat` child for the active device.
 New children start at the live tail instead of replaying the device's buffered
 history. Matching lines are delivered in short `logs` SSE batches; each
@@ -654,12 +667,16 @@ curl -X POST "$BASE/api/files/import" \
 curl "$BASE/api/apps/icon?packageName=com.example.app"
 ```
 
-`GET /api/apps/icon` returns the package's launcher bitmap as
-`{"ok":true,"packageName":"…","icon":{"mimeType":"image/png","data":"<base64>"}}`.
+`GET /api/apps/icon` returns the package's launcher bitmap and its user-visible
+name as
+`{"ok":true,"packageName":"…","icon":{"mimeType":"image/png","data":"<base64>"},"label":"Settings"}`.
 It pulls the base APK and reads it with `aapt2` from the Android SDK build-tools,
 resolving an adaptive icon down to its foreground bitmap. `icon` is `null` when the
-package exposes no extractable bitmap, for example a vector-only launcher icon. The
-result is cached per device, package, and installed APK path.
+package exposes no extractable bitmap, for example a vector-only launcher icon.
+`label` is the default-locale `android:label`, or `null` when the APK declares none.
+The device stores only the label's resource id, so `GET /api/foreground` always
+reports `label: null`; read the name here. The result is cached per device, package,
+and installed APK path.
 
 Uploads stream to private asynchronous temporary files and are removed after
 ADB completes. Actual bytes are enforced even without `Content-Length`; a

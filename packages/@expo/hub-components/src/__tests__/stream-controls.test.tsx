@@ -10,6 +10,9 @@ function buttonTags(markup: string) {
   return [...markup.matchAll(/<button[^>]*>/g)].map((match) => match[0]);
 }
 
+const labels = (markup: string) =>
+  buttonTags(markup).map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1]);
+
 describe("StreamControls", () => {
   test.each([
     ["recording-status-unknown", "Rotation is unavailable until recording status is known."],
@@ -22,11 +25,14 @@ describe("StreamControls", () => {
         <StreamControls onRotate={() => {}} orientationUnavailable={orientationUnavailable} />,
       );
       const buttons = buttonTags(markup);
-      const rotate = buttons.find((tag) => tag.includes('aria-label="Rotate"'));
+      const rotate = buttons.find((tag) => tag.includes('aria-label="Rotate device"'));
       expect(rotate).toContain('aria-disabled="true"');
       expect(rotate).toContain(`aria-description="${reason}"`);
-      for (const tag of buttons.filter((tag) => !tag.includes('aria-label="Rotate"'))) {
+      // A locked control is dimmed like the website's disabled controls.
+      expect(rotate).toContain("opacity:0.4");
+      for (const tag of buttons.filter((tag) => !tag.includes('aria-label="Rotate device"'))) {
         expect(tag).not.toContain("disabled");
+        expect(tag).toContain("opacity:1");
       }
     },
   );
@@ -34,66 +40,72 @@ describe("StreamControls", () => {
     const markup = renderToStaticMarkup(
       <StreamControls onRotate={() => {}} orientationUnavailable={null} />,
     );
-    const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
+    const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate device"'));
     expect(rotate).not.toContain("aria-disabled");
     expect(rotate).not.toContain("Rotation is unavailable");
   });
-  test("groups Save, Home, and Reload in one pill and keeps Rotate separate", () => {
+  test("puts every control in one bar and names it by what it does", () => {
     const markup = renderToStaticMarkup(<StreamControls orientationUnavailable={null} />);
-    const buttons = buttonTags(markup);
 
-    expect(buttons.map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1])).toEqual([
-      "Save",
-      "Home",
-      "Reload",
-      "Rotate",
+    expect(labels(markup)).toEqual([
+      "Go to home screen",
+      "Take screenshot",
+      "Reload app",
+      "Rotate device",
     ]);
-    expect(markup).toContain('role="toolbar"');
     expect(markup).not.toContain("More");
     expect(markup).not.toContain("Shutdown");
     expect(markup).not.toContain("Remove");
 
-    const groups = [
-      ...markup.matchAll(/<div style="[^"]*border-radius:var\(--expo-radius-xl\)[^"]*"/g),
-    ];
-    expect(groups).toHaveLength(2);
-    expect(markup.indexOf('aria-label="Rotate"')).toBeGreaterThan(
-      markup.lastIndexOf("border-radius:var(--expo-radius-xl)"),
-    );
+    // One bar holds all buttons: the toolbar element itself is the rounded surface.
+    const bar = markup.match(/^<div role="toolbar" aria-label="Device controls" style="([^"]+)"/);
+    expect(bar?.[1]).toContain("border-radius:var(--expo-radius-2xl)");
+    expect(bar?.[1]).toContain("background-color:var(--expo-theme-background-element)");
+    expect(bar?.[1]).toContain("gap:4px");
+    expect(bar?.[1]).toContain("padding:8px");
+    expect(bar?.[1]).toContain("flex-wrap:wrap");
+    expect(markup.match(/<div /g)).toHaveLength(1);
   });
 
-  test("spaces the pills 16px apart, across and down", () => {
-    const markup = renderToStaticMarkup(<StreamControls orientationUnavailable={null} />);
+  test("leads an Android toolbar with its navigation buttons, in the order of its navigation bar", () => {
+    const markup = renderToStaticMarkup(
+      <StreamControls
+        orientationUnavailable={null}
+        onBack={() => {}}
+        onRecents={() => {}}
+        onDismissKeyboard={() => {}}
+      />,
+    );
 
-    expect(markup).toContain("column-gap:16px");
-    expect(markup).toContain("row-gap:16px");
+    expect(labels(markup)).toEqual([
+      "Go back",
+      "Go to home screen",
+      "Show recent apps",
+      "Dismiss keyboard",
+      "Take screenshot",
+      "Reload app",
+      "Rotate device",
+    ]);
   });
 
   test("shows one Clipboard menu before Rotate when the device offers either action", () => {
-    const labels = (clipboard: { paste: boolean; copy: boolean } | false) =>
-      buttonTags(
+    const toolbar = (clipboard: { paste: boolean; copy: boolean } | false) =>
+      labels(
         renderToStaticMarkup(
           <StreamControls orientationUnavailable={null} clipboard={clipboard} />,
         ),
-      ).map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1]);
-    const base = ["Save", "Home", "Reload"];
+      );
+    const base = ["Go to home screen", "Take screenshot", "Reload app"];
 
-    expect(labels({ paste: true, copy: true })).toEqual([...base, "Clipboard", "Rotate"]);
-    expect(labels({ paste: true, copy: false })).toEqual([...base, "Clipboard", "Rotate"]);
-    expect(labels({ paste: false, copy: true })).toEqual([...base, "Clipboard", "Rotate"]);
-    expect(labels({ paste: false, copy: false })).toEqual([...base, "Rotate"]);
-    expect(labels(false)).toEqual([...base, "Rotate"]);
-
-    const markup = renderToStaticMarkup(
-      <StreamControls orientationUnavailable={null} clipboard={{ paste: true, copy: true }} />,
-    );
-    expect([
-      ...markup.matchAll(/<div style="[^"]*border-radius:var\(--expo-radius-xl\)[^"]*"/g),
-    ]).toHaveLength(3);
+    expect(toolbar({ paste: true, copy: true })).toEqual([...base, "Clipboard", "Rotate device"]);
+    expect(toolbar({ paste: true, copy: false })).toEqual([...base, "Clipboard", "Rotate device"]);
+    expect(toolbar({ paste: false, copy: true })).toEqual([...base, "Clipboard", "Rotate device"]);
+    expect(toolbar({ paste: false, copy: false })).toEqual([...base, "Rotate device"]);
+    expect(toolbar(false)).toEqual([...base, "Rotate device"]);
   });
 
   test.each(["paste", "copy"] as const)(
-    "disables the Clipboard menu while %s is pending",
+    "disables the Clipboard menu and shows a spinner while %s is pending",
     (pending) => {
       const markup = renderToStaticMarkup(
         <StreamControls
@@ -105,50 +117,60 @@ describe("StreamControls", () => {
       for (const tag of buttonTags(markup)) {
         if (tag.includes('aria-label="Clipboard"')) {
           expect(tag).toContain('disabled=""');
-          expect(tag).toContain("cursor:not-allowed");
-          expect(tag).toContain("color:var(--expo-theme-text-tertiary)");
+          expect(tag).toContain('aria-busy="true"');
+          // A control that works on its action keeps full opacity, as on the website.
+          expect(tag).toContain("opacity:1");
         } else {
           expect(tag).not.toContain("disabled");
+          expect(tag).not.toContain("aria-busy");
         }
       }
+      const clipboard = markup.slice(
+        markup.indexOf('aria-label="Clipboard"'),
+        markup.indexOf('aria-label="Rotate device"'),
+      );
+      expect(clipboard).toContain('role="status"');
     },
   );
 
-  test("shows every label as a tooltip above its button and exposes Keyboard as a switch", () => {
+  test("shows a spinner in Take screenshot while a screenshot is in flight", () => {
+    const tag = (saving: boolean) =>
+      buttonTags(
+        renderToStaticMarkup(<StreamControls orientationUnavailable={null} saving={saving} />),
+      ).find((button) => button.includes('aria-label="Take screenshot"'));
+
+    expect(tag(false)).not.toContain("aria-busy");
+    expect(tag(true)).toContain('aria-busy="true"');
+    expect(tag(true)).toContain('aria-disabled="true"');
+    expect(tag(true)).not.toContain('disabled=""');
+  });
+
+  test("keeps tooltips closed at rest, sizes every button alike, and exposes Keyboard as a switch", () => {
     const markup = renderToStaticMarkup(
       <StreamControls
         orientationUnavailable={null}
         keyboard={{ open: true, onToggle: () => {} }}
       />,
     );
-    const tooltips = [...markup.matchAll(/<span role="tooltip"[^>]*>([^<]+)<\/span>/g)];
 
-    expect(tooltips.map((match) => match[1])).toEqual([
-      "Save",
-      "Home",
-      "Reload",
-      "Keyboard",
-      "Rotate",
-    ]);
-    for (const match of tooltips) {
-      expect(match[0]).toContain("bottom:calc(100% + 8px)");
-      expect(match[0]).toContain("opacity:0");
-    }
+    // The label is the accessible name. The tooltip repeats it only while the
+    // pointer is over the button or it has keyboard focus, so no tooltip renders at rest.
+    expect(markup).not.toContain('role="tooltip"');
     const keyboard = buttonTags(markup).find((tag) => tag.includes('aria-label="Keyboard"'));
     expect(keyboard).toContain('role="switch"');
     expect(keyboard).toContain('aria-checked="true"');
     for (const tag of buttonTags(markup)) {
-      expect(tag).toContain("width:44px");
-      expect(tag).toContain("height:44px");
+      expect(tag).toContain('class="hub-pressable"');
+      expect(tag).toContain("width:36px");
+      expect(tag).toContain("height:36px");
+      expect(tag).toContain("border-radius:var(--expo-radius-full)");
     }
   });
 
   describe("Keyboard toggle", () => {
-    const labels = (markup: string) =>
-      buttonTags(markup).map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1]);
     const keyboard = { open: false, onToggle: () => {} };
 
-    test("joins the Clipboard pill, after Clipboard", () => {
+    test("sits after Clipboard and before Rotate", () => {
       const markup = renderToStaticMarkup(
         <StreamControls
           orientationUnavailable={null}
@@ -157,27 +179,28 @@ describe("StreamControls", () => {
         />,
       );
 
-      expect(labels(markup)).toEqual(["Save", "Home", "Reload", "Clipboard", "Keyboard", "Rotate"]);
-      // Pill count is unchanged from the Clipboard-only toolbar: three.
-      expect([
-        ...markup.matchAll(/<div style="[^"]*border-radius:var\(--expo-radius-xl\)[^"]*"/g),
-      ]).toHaveLength(3);
-      const pill = markup.slice(
-        markup.indexOf('aria-label="Clipboard"'),
-        markup.indexOf('aria-label="Rotate"'),
-      );
-      expect(pill).toContain('aria-label="Keyboard"');
+      expect(labels(markup)).toEqual([
+        "Go to home screen",
+        "Take screenshot",
+        "Reload app",
+        "Clipboard",
+        "Keyboard",
+        "Rotate device",
+      ]);
     });
 
-    test("gets its own pill when the device has no clipboard actions", () => {
+    test("keeps its place when the device has no clipboard actions", () => {
       const markup = renderToStaticMarkup(
         <StreamControls orientationUnavailable={null} keyboard={keyboard} />,
       );
 
-      expect(labels(markup)).toEqual(["Save", "Home", "Reload", "Keyboard", "Rotate"]);
-      expect([
-        ...markup.matchAll(/<div style="[^"]*border-radius:var\(--expo-radius-xl\)[^"]*"/g),
-      ]).toHaveLength(3);
+      expect(labels(markup)).toEqual([
+        "Go to home screen",
+        "Take screenshot",
+        "Reload app",
+        "Keyboard",
+        "Rotate device",
+      ]);
     });
 
     test("is absent unless the viewer passes it", () => {
@@ -219,7 +242,7 @@ describe("StreamPanel", () => {
             displayScreen={() => null}
           />,
         ),
-      ).find((tag) => tag.includes('aria-label="Rotate"'));
+      ).find((tag) => tag.includes('aria-label="Rotate device"'));
     expect(rotate({})).not.toContain("aria-disabled");
     expect(rotate({ orientationUnavailable: "recording" })).toContain('aria-disabled="true"');
     expect(rotate({ orientationUnavailable: "input-unavailable" })).toContain(

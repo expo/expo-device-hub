@@ -2,7 +2,10 @@ import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { type DeviceClient, type DeviceOrientation } from "@expo/hub-client";
-import { DeviceOptionsSection } from "../dashboard/DeviceOptionsSection";
+import {
+  DeviceOptionsSection,
+  ORIENTATION_UNKNOWN_REASON,
+} from "../dashboard/DeviceOptionsSection";
 import { createGlobalStubs } from "./test-globals";
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
@@ -51,9 +54,11 @@ test("a pick in the Orientation select calls client.setOrientation", async () =>
   expect(picks).toEqual(["landscape_left"]);
 });
 
-test("the Orientation row follows the client's pose, not the frame, and goes with the capability", async () => {
+test("the Orientation row follows the client's pose, not the frame, and locks without the capability", async () => {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("HTMLFormElement", class {});
+  // The tooltip of a locked control listens for the pointer on the document.
+  stubGlobal("document", { addEventListener() {}, removeEventListener() {} });
   stubGlobal("window", {
     addEventListener() {},
     removeEventListener() {},
@@ -75,8 +80,10 @@ test("the Orientation row follows the client's pose, not the frame, and goes wit
     deviceSettingsPending: new Set(),
   };
   const client = (overrides: object) => ({ ...base, ...overrides }) as unknown as DeviceClient;
-  const hasRow = () =>
-    renderer!.root.findAll((node) => node.props.ariaLabel === "Orientation").length > 0;
+  const rows = () => renderer!.root.findAll((node) => node.props.ariaLabel === "Orientation");
+  const hasRow = () => rows().length > 0;
+  const select = () =>
+    rows()[0]!.props as { value: string; disabled: boolean; disabledReason?: string };
   await act(async () => {
     renderer = create(
       <DeviceOptionsSection
@@ -88,6 +95,7 @@ test("the Orientation row follows the client's pose, not the frame, and goes wit
     );
   });
   expect(hasRow()).toBe(true);
+  expect(select()).toMatchObject({ value: "portrait", disabled: false });
   // The frame turned before the pose report: the client drops `screen.orientation` for a moment.
   await act(async () => {
     renderer!.update(
@@ -108,5 +116,20 @@ test("the Orientation row follows the client's pose, not the frame, and goes wit
       />,
     );
   });
-  expect(hasRow()).toBe(false);
+  // A device that offers no poses keeps the row, so the section does not change its rows. The
+  // select locks and says why.
+  expect(hasRow()).toBe(true);
+  expect(select()).toMatchObject({
+    disabled: true,
+    disabledReason: ORIENTATION_UNKNOWN_REASON,
+  });
+  // Before the first pose report, the row is there too, locked, with the placeholder.
+  await act(async () => {
+    renderer!.update(<DeviceOptionsSection client={client({ orientation: null })} />);
+  });
+  expect(select()).toMatchObject({
+    value: "",
+    disabled: true,
+    disabledReason: ORIENTATION_UNKNOWN_REASON,
+  });
 });

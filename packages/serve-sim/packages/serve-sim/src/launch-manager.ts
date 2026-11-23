@@ -62,6 +62,8 @@ const CAPABILITY_LOADER_NAME = "libServeSimCapabilityLoader.dylib";
 const INSERT = "DYLD_INSERT_LIBRARIES";
 const CONFIG_VAR = "SERVE_SIM_CAPABILITIES_CONFIG";
 const TERMINATE_TIMEOUT_MS = 15_000;
+// @ref LLP 0011#boot-is-a-readiness-barrier — a just-booted iOS 27 simulator can take more than 15 s per spawn.
+const ARMING_TIMEOUT_MS = 30_000;
 
 function releaseLaunchStateUnlocked(
   udid: string,
@@ -234,8 +236,8 @@ function withoutOurs(current: string, startupDylibs: string[] = []): string[] {
     );
 }
 
-async function readInsert(udid: string): Promise<string> {
-  return simctl(["spawn", udid, "launchctl", "getenv", INSERT], 15_000);
+async function readInsert(udid: string, timeout = 15_000): Promise<string> {
+  return simctl(["spawn", udid, "launchctl", "getenv", INSERT], timeout);
 }
 
 function startupDylibs(capabilities: Record<string, Capability>): string[] {
@@ -256,7 +258,7 @@ async function armInsert(
 ): Promise<void> {
   const desired = startupDylibs(capabilities);
   // Read the insert fresh: another tool may have changed it since any earlier snapshot.
-  const insert = await readInsert(udid);
+  const insert = await readInsert(udid, ARMING_TIMEOUT_MS);
   const retained = withoutOurs(insert, previousStartup);
   const next = [...new Set([...retained, dylib, ...desired, ...additionalDylibs()])].join(":");
   writeManagedStartupDylibs(udid, [...previousStartup, ...desired]);
@@ -264,10 +266,11 @@ async function armInsert(
   if (configPath !== capabilityConfigPath(udid)) {
     await simctl(
       ["spawn", udid, "launchctl", "setenv", CONFIG_VAR, capabilityConfigPath(udid)],
-      15_000,
+      ARMING_TIMEOUT_MS,
     );
   }
-  if (insert !== next) await simctl(["spawn", udid, "launchctl", "setenv", INSERT, next], 15_000);
+  if (insert !== next)
+    await simctl(["spawn", udid, "launchctl", "setenv", INSERT, next], ARMING_TIMEOUT_MS);
   writeManagedStartupDylibs(udid, desired);
   armedHere.add(udid);
 }
@@ -289,16 +292,16 @@ async function snapshotCapabilityLaunch(udid: string): Promise<CapabilityLaunchS
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const startupDylibs = managedStartupDylibs(udid);
-  const insert = await readInsert(udid);
+  const insert = await readInsert(udid, ARMING_TIMEOUT_MS);
   const configPath = (
-    await simctl(["spawn", udid, "launchctl", "getenv", CONFIG_VAR], 15_000)
+    await simctl(["spawn", udid, "launchctl", "getenv", CONFIG_VAR], ARMING_TIMEOUT_MS)
   ).trim();
   return { config, configPath, insert, startupDylibs };
 }
 
 async function restoreLaunchEnvironment(udid: string, name: string, value: string): Promise<void> {
   const update = value ? ["setenv", name, value] : ["unsetenv", name];
-  await simctl(["spawn", udid, "launchctl", ...update], 15_000);
+  await simctl(["spawn", udid, "launchctl", ...update], ARMING_TIMEOUT_MS);
 }
 
 async function restoreCapabilityLaunch(

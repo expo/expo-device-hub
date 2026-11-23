@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  applyIosAppState,
   type ExecResult,
   fetchIosAppDetails,
   fetchIosAppIcon,
   getIosAppDetails,
+  mergeIosAppDetails,
 } from "../ios-app-details";
 import { type HostActionParams } from "../exec-ws";
 
@@ -284,5 +286,114 @@ describe("fetchIosAppIcon", () => {
     controller.abort();
     await expect(pending).rejects.toThrow();
     expect(urls.length).toBe(1);
+  });
+});
+
+describe("applyIosAppState", () => {
+  test("takes the label from the event", () => {
+    expect(
+      applyIosAppState(null, {
+        bundleId: "com.apple.mobilesafari",
+        pid: 6582,
+        isReactNative: false,
+        label: "Safari",
+      }),
+    ).toEqual({ id: "com.apple.mobilesafari", pid: 6582, isReactNative: false, label: "Safari" });
+  });
+
+  test("reads an event from an older serve-sim, without a label, as no label", () => {
+    expect(applyIosAppState(null, { bundleId: "com.apple.mobilesafari", pid: 1 })).toEqual({
+      id: "com.apple.mobilesafari",
+      pid: 1,
+      isReactNative: undefined,
+    });
+    expect(
+      applyIosAppState(null, { bundleId: "com.apple.mobilesafari", pid: 1, label: null }),
+    ).not.toHaveProperty("label");
+  });
+
+  test("returns the same object for a repeat event", () => {
+    const prev = { id: "com.apple.mobilesafari", pid: 1, isReactNative: false, label: "Safari" };
+
+    expect(
+      applyIosAppState(prev, {
+        bundleId: "com.apple.mobilesafari",
+        pid: 1,
+        isReactNative: false,
+        label: "Safari",
+      }),
+    ).toBe(prev);
+    expect(
+      applyIosAppState(prev, { bundleId: "com.apple.mobilesafari", pid: 1, isReactNative: false }),
+    ).toBe(prev);
+  });
+
+  test("adds a label that a later event for the same app carries", () => {
+    // serve-sim reports Expo Go at once, then sends its label in a second event.
+    const prev = { id: "host.exp.Exponent", pid: 7, isReactNative: true };
+
+    expect(
+      applyIosAppState(prev, {
+        bundleId: "host.exp.Exponent",
+        pid: 7,
+        isReactNative: true,
+        label: "Expo Go",
+      }),
+    ).toEqual({ ...prev, label: "Expo Go" });
+  });
+
+  test("keeps the bundle details on a relaunch with a new pid", () => {
+    const prev = { id: "com.example.foo", pid: 1, label: "Foo", version: "1.2.3" };
+
+    expect(applyIosAppState(prev, { bundleId: "com.example.foo", pid: 2 })).toEqual({
+      ...prev,
+      pid: 2,
+      isReactNative: undefined,
+    });
+  });
+
+  test("drops the old app's details when another app comes to the foreground", () => {
+    const prev = { id: "com.example.foo", pid: 1, label: "Foo", version: "1.2.3" };
+
+    expect(applyIosAppState(prev, { bundleId: "com.apple.Preferences", pid: 9 })).toEqual({
+      id: "com.apple.Preferences",
+      pid: 9,
+      isReactNative: undefined,
+    });
+  });
+
+  test("ignores an event without a bundle id", () => {
+    const prev = { id: "com.example.foo" };
+
+    expect(applyIosAppState(prev, { pid: 3 })).toBe(prev);
+  });
+});
+
+describe("mergeIosAppDetails", () => {
+  test("keeps the event label when app.infoPlist refuses the runtime path", async () => {
+    // What a cloud worker answers for Safari: simctl finds the bundle under the cryptex mount, and
+    // app.infoPlist refuses that path, which runHostAction reports as exit code 1.
+    const { run } = fakeRun({
+      container: ok("/private/var/run/com.apple.security.cryptexd/mnt/X/MobileSafari.app\n"),
+      plist: fail("app.infoPlist: path is outside the paths this preview may read"),
+    });
+    const details = await fetchIosAppDetails(run, "UDID", "com.apple.mobilesafari", {
+      includeIcon: false,
+    });
+    const prev = { id: "com.apple.mobilesafari", pid: 6582, label: "Safari" };
+
+    expect(details?.label).toBeUndefined();
+    expect(mergeIosAppDetails(prev, details!)).toMatchObject({
+      id: "com.apple.mobilesafari",
+      label: "Safari",
+    });
+  });
+
+  test("takes the other bundle fields when the read succeeds", () => {
+    const prev = { id: "com.example.foo", pid: 1, label: "Foo" };
+
+    expect(
+      mergeIosAppDetails(prev, { appPath: APP_PATH, label: "Foo", version: "1.2.3", build: "456" }),
+    ).toEqual({ ...prev, appPath: APP_PATH, version: "1.2.3", build: "456" });
   });
 });

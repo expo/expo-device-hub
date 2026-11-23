@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type DeviceFold, type DeviceFoldCapabilities } from "@expo/hub-client";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import {
-  FoldSettings,
-  type FoldPreviewOption,
-  MODEL_UNAVAILABLE_DESCRIPTION,
-} from "../dashboard/FoldSettings";
+import { FoldSettings, type FoldPreviewOption } from "../dashboard/FoldSettings";
 import { DUO_FOLD_CONTROLS } from "./duo-fixtures";
 
 type FoldControls = Exclude<DeviceFoldCapabilities, false>;
@@ -199,9 +195,11 @@ describe("FoldSettings", () => {
     expect(failed).toContain("Simulator could not change the device pose.");
   });
 
-  test("explains an unavailable model next to the preview choice", () => {
-    const markup = settings({}, preview({ unavailable: true }));
-    expect(markup).toContain(MODEL_UNAVAILABLE_DESCRIPTION);
+  test("shows a failed model as a choice of 2D, with no text of its own", () => {
+    // The consumer passes `2d` for a failed model; the notice over the preview tells why.
+    const markup = settings({}, preview({ mode: "2d" }));
     expect(markup).toContain(">2D<");
+    expect(markup).not.toContain("unavailable");
+    expect(markup).not.toContain("Preview size");
   });
 });

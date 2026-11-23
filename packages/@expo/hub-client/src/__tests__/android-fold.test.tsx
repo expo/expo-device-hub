@@ -88,12 +88,14 @@ async function mount() {
     url = "https://hub.test/api/fold?device=one",
     token = false,
     locked = false,
+    shape = "2076x2152",
   }: {
     url?: string | null;
     token?: boolean;
     locked?: boolean;
+    shape?: string | null;
   }) {
-    result = useAndroidFold(url, token ? nextFetch : fetchImpl, locked);
+    result = useAndroidFold(url, token ? nextFetch : fetchImpl, locked ? "recording" : null, shape);
     return null;
   }
   await act(async () => {
@@ -207,9 +209,12 @@ test("surfaces write failures and rejects changes while recording is locked", as
   expect(h.result().fold?.pending).toBe(false);
   expect(h.result().fold?.error).toBe("Fold failed");
   await h.update({ locked: true });
+  expect(h.result().fold?.unavailable).toBe("recording");
   await h.choose("closed");
   expect(h.writes).toHaveLength(1);
   expect(h.result().fold?.error).toContain("recording");
+  await h.update({ locked: false });
+  expect(h.result().fold?.unavailable).toBeUndefined();
 });
 
 test("a queued choice is rejected if recording locks before its turn", async () => {
@@ -337,7 +342,7 @@ for (const stage of ["headers", "body"] as const) {
       );
     };
     function Harness() {
-      result = useAndroidFold("https://hub.test/api/fold?device=one", fetchImpl, false);
+      result = useAndroidFold("https://hub.test/api/fold?device=one", fetchImpl, null);
       return null;
     }
     try {
@@ -362,3 +367,27 @@ for (const stage of ["headers", "body"] as const) {
     }
   });
 }
+
+test("reads the hinge at once when the stream changes shape, as when Android switches displays", async () => {
+  const h = await mount();
+  expect(h.result().fold?.angle).toBe(180);
+  const before = h.readSignals.length;
+  // Another viewer folds the device: the stream turns to the cover before the next poll.
+  h.status(payload("closed", 0));
+  await h.update({ shape: "1080x2424" });
+  expect(h.readSignals.length).toBe(before + 1);
+  expect(h.result().fold?.angle).toBe(0);
+  // The same shape reads nothing more.
+  await h.update({ shape: "1080x2424" });
+  expect(h.readSignals.length).toBe(before + 1);
+  // A change during a read is followed by one more read.
+  h.holdRead(true);
+  h.status(payload("opened", 180));
+  await h.update({ shape: "2076x2152" });
+  await h.update({ shape: "1080x2424" });
+  h.holdRead(false);
+  await act(async () => {
+    for (const resolve of h.reads.splice(0)) resolve();
+  });
+  expect(h.readSignals.length).toBe(before + 3);
+});

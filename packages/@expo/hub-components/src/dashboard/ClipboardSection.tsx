@@ -1,7 +1,17 @@
-import { forwardRef, useEffect, useRef, useState } from "react";
+import { type Ref, useEffect, useRef, useState } from "react";
 
 import { type DeviceClient, type DeviceClipboardAction } from "@expo/hub-client";
-import { Button, bg, border, font, isFocusVisible, radius, text, textSize } from "../primitives";
+import {
+  Button,
+  PRESSABLE_CLASS,
+  bg,
+  border,
+  font,
+  pressableStyle,
+  radius,
+  text,
+  textSize,
+} from "../primitives";
 import { copyFieldSelection, errorMessage, writeBrowserClipboard } from "./browserClipboard";
 import { CLIPBOARD_TEXT, type ClipboardRequest, HARDWARE_KEYBOARD_NOTE } from "./ClipboardToast";
 import { CollapsibleSection, SECTION_TRANSITION_MS } from "./CollapsibleSection";
@@ -181,23 +191,24 @@ const GROUP_STYLE = {
   padding: "4px 0 12px",
 } as const;
 
-const ClipboardTextField = forwardRef<
-  HTMLTextAreaElement,
-  {
-    ariaLabel: string;
-    placeholder?: string;
-    value: string;
-    readOnly?: boolean;
-    onChange?: (value: string) => void;
-    /** Command+Enter or Control+Enter in the field. */
-    onSubmit?: () => void;
-  }
->(function ClipboardTextField(
-  { ariaLabel, placeholder, value, readOnly = false, onChange, onSubmit },
+function ClipboardTextField({
+  ariaLabel,
+  placeholder,
+  value,
+  readOnly = false,
+  onChange,
+  onSubmit,
   ref,
-) {
-  const [focused, setFocused] = useState(false);
-
+}: {
+  ariaLabel: string;
+  placeholder?: string;
+  value: string;
+  readOnly?: boolean;
+  onChange?: (value: string) => void;
+  /** Command+Enter or Control+Enter in the field. */
+  onSubmit?: () => void;
+  ref?: Ref<HTMLTextAreaElement>;
+}) {
   return (
     <textarea
       ref={ref}
@@ -209,22 +220,20 @@ const ClipboardTextField = forwardRef<
       autoComplete="off"
       spellCheck={false}
       onChange={(event) => onChange?.(event.currentTarget.value)}
-      onFocus={(event) => setFocused(isFocusVisible(event))}
-      onBlur={() => setFocused(false)}
       onKeyDown={(event) => {
         if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) onSubmit?.();
       }}
+      // The class draws the focus ring. A text field keeps one fill and does not scale.
+      className={PRESSABLE_CLASS}
       style={{
         ...textSize.sm,
+        ...pressableStyle({ background: bg.element, pressScale: 1 }),
         display: "block",
         width: "100%",
         boxSizing: "border-box",
         padding: "6px 10px",
         border: `1px solid ${border.default}`,
         borderRadius: radius.lg,
-        outline: "none",
-        backgroundColor: bg.element,
-        boxShadow: focused ? `0 0 0 2px ${border.secondary}` : "none",
         color: text.default,
         caretColor: text.default,
         fontFamily: font.mono,
@@ -232,4 +241,4 @@ const ClipboardTextField = forwardRef<
       }}
     />
   );
-});
+}

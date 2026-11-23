@@ -409,11 +409,12 @@ function App() {
         } else if (window.__SIM_PREVIEW__) {
           // Keep the minimal injection: the empty state still routes through
           // simEndpoint (basePath) and authenticates /exec (execToken).
-          const { basePath, execToken, singleDevice } = window.__SIM_PREVIEW__;
+          const { basePath, execToken, singleDevice, isRunningOnEAS } = window.__SIM_PREVIEW__;
           window.__SIM_PREVIEW__ = {
             basePath,
             execToken,
             singleDevice,
+            isRunningOnEAS,
           } as Window["__SIM_PREVIEW__"];
         }
         return next;
@@ -2273,6 +2274,7 @@ function AppWithConfig({
               udid={config.device}
               deviceRuntime={deviceRuntime}
               currentApp={currentApp}
+              isRunningOnEAS={config.isRunningOnEAS}
               eventLogEventsEndpoint={config.eventLogEventsEndpoint}
               metricsEndpoint={config.metricsEndpoint}
               crashesEndpoint={config.crashesEndpoint}

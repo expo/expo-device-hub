@@ -39,12 +39,8 @@ test("disables the shape option in the 3D view, where the model draws its own de
   expect(html).toContain(DEVICE_SHAPE_2D_ONLY_DESCRIPTION);
 });
 
-test("enables the shape option in the 2D view, and when the 3D model could not load", () => {
-  for (const foldPreview of [
-    undefined,
-    preview({ mode: "2d" }),
-    preview({ mode: "3d", unavailable: true }),
-  ]) {
+test("enables the shape option in the 2D view, which a failed 3D model also shows", () => {
+  for (const foldPreview of [undefined, preview({ mode: "2d" })]) {
     const { html, tag } = shapeSwitch(true, foldPreview);
     expect(tag).not.toContain("disabled");
     expect(html).not.toContain(DEVICE_SHAPE_2D_ONLY_DESCRIPTION);

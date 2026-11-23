@@ -122,7 +122,7 @@ export function applicationRoutes(): ContractApiRoute<ApiDependencies>[] {
         return Response.json({
           ok: true,
           packageName: pkg,
-          icon: await downstream("read app icon", () => deps.readAppIcon(pkg)),
+          ...(await downstream("read app details", () => deps.readAppDetails(pkg))),
         });
       },
     },

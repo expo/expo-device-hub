@@ -202,6 +202,117 @@ The clip keeps the corners right for the shape's own proportions, so give the bo
 proportions, or pass the box's `aspectRatio` to `DeviceShape`.
 `screenShapeClipPath` returns the CSS `clip-path` for an element that you cannot wrap.
 
+### Show the device as a 3D model
+
+Import `DeviceModelScreen` from `@expo/hub-client/models` to show the device as its 3D
+model, with the live screen on its display. It takes the place of `DeviceScreen`: touch,
+scroll, and keyboard input work on the model, and a foldable folds with the device and
+has handles on its edges that move the hinge. The iPhone Duo, the iPhone 18 Pro, the
+Pixel 9 Pro, and the Pixel 9 Pro Fold have a model.
+
+The entry needs three.js. Install the two optional peer dependencies:
+
+```sh
+npm install three three-mesh-bvh
+```
+
+The scene is tested with `three` 0.186 and `three-mesh-bvh` 0.9.18. three.js changes
+its API between minor versions, so the peer range of `three` is `>=0.186.0`. npm stops
+the install of hub-client (`ERESOLVE`) in an app that has an older `three`, also when
+the app does not import this entry.
+
+Apps that do not import `@expo/hub-client/models` do not bundle three.js or the models.
+`@expo/hub-client/models/catalog` has the parts that do not need three.js, so an app can
+check for a model first and load the 3D screen only when it shows one:
+
+```tsx
+import { DeviceScreen, useDeviceClientSelector } from "@expo/hub-client";
+import {
+  type DeviceModelAssets,
+  deviceModelStreamable,
+  modelStageMaxSide,
+  resolveDeviceModel,
+  useDeviceModelScreenClient,
+} from "@expo/hub-client/models/catalog";
+import iphoneDuoModel from "@expo/hub-client/models/iphone-duo.glb";
+import pixel9ProFoldModel from "@expo/hub-client/models/pixel-9-pro-fold.glb";
+import { lazy, Suspense, useState } from "react";
+
+const DeviceModelScreen = lazy(() =>
+  import("@expo/hub-client/models").then((entry) => ({ default: entry.DeviceModelScreen })),
+);
+
+// The models this app shows. Another model keeps the flat screen.
+const MODEL_URLS: DeviceModelAssets = {
+  "ios:iphone-duo": iphoneDuoModel,
+  "android:pixel-9-pro-fold": pixel9ProFoldModel,
+};
+
+function ModelScreen({ model: modelName }: { model: string }) {
+  // The part of the client that the 3D screen reads. It also fits `DeviceScreen`.
+  const client = useDeviceModelScreenClient();
+  const platform = useDeviceClientSelector((client) => client.platform);
+  const [unavailable, setUnavailable] = useState(false);
+  // The same names as for `DeviceShape`: "iPhone Duo", "pixel_9_pro_fold", …
+  const model = resolveDeviceModel({ platform, model: modelName });
+  const modelUrl = model ? MODEL_URLS[model.id] : undefined;
+  if (!model || !modelUrl || unavailable || !deviceModelStreamable(model, client)) {
+    return <DeviceScreen client={client} />;
+  }
+  const side = modelStageMaxSide(model, 360);
+  return (
+    <div style={{ position: "relative", width: side, height: side }}>
+      <Suspense fallback={null}>
+        <DeviceModelScreen
+          client={client}
+          model={model}
+          modelUrl={modelUrl}
+          onUnavailable={() => setUnavailable(true)}
+        />
+      </Suspense>
+    </div>
+  );
+}
+```
+
+Show one `ModelScreen` per device, for example with the device ID as its key
+(`<ModelScreen key={device.id} model={device.model} />`): the scene loads its model once,
+and the key also clears the failure of the device before.
+
+The package has one GLB file per model: `@expo/hub-client/models/iphone-duo.glb`,
+`iphone-18-pro.glb`, `pixel-9-pro.glb`, and `pixel-9-pro-fold.glb`, 2 to 6 MB each.
+Import the files of the models you show, so that your bundler emits them and gives you
+their URLs, and pass the URL as `modelUrl`. Your bundler must treat `.glb` as an asset.
+The package types each import as that URL, a string. With a bundler that has no rule for
+`.glb` files, such as Turbopack, take the URL without an import:
+
+```ts
+const iphoneDuoModel = new URL("@expo/hub-client/models/iphone-duo.glb", import.meta.url).href;
+```
+
+The model loads only when `DeviceModelScreen` mounts. When the model or WebGL is not
+available, `onUnavailable` runs: show the flat `DeviceScreen` then.
+
+The iPhone Duo's model needs `client.fold` and `client.displays`, which
+`deviceModelStreamable` checks. The other models show the flat stream on their display.
+
+`useDeviceModelScreenClient` is to `DeviceModelScreen` what `useDeviceScreenClient` is to
+`DeviceScreen`: it gives the screen inputs, the displays, and the orientation, and it does
+not update for metrics, FPS, or logs. `DeviceModelScreen` takes this type,
+`DeviceModelScreenClient`, so it cannot read another property of the client. A full
+`DeviceClient` also fits.
+
+Do not hide the element around `DeviceModelScreen` with `visibility: hidden`, for example
+while your own loading UI shows. The browser then presents no video frames, so the model
+never gets its first frame and stays hidden. Use `opacity: 0`.
+
+A page with a Content Security Policy must allow two things for the models:
+
+- `blob:` in `connect-src`. three.js fetches the textures inside a model file from blob
+  URLs that it makes.
+- `'wasm-unsafe-eval'` in `script-src`. The model files are compressed with Meshopt, and
+  three.js decodes them with WebAssembly.
+
 ### Fold a foldable device
 
 `client.fold` has the fold state of a foldable device, such as the iPhone Duo, and is
@@ -240,6 +351,10 @@ function FoldButtons() {
   );
 }
 ```
+
+While `fold.unavailable` is set, the device does not accept fold commands, so disable your
+fold controls. An Android recording sets it to its recording lock reason, unless the recording
+reports that it follows folds; serve-emu does that for a foldable with gRPC capture.
 
 `fold.tableMode` and `fold.physical` are present only on a device that has them. The
 poses share one vocabulary, `FOLD_POSES`: `closed`, `open`, `laptop`, `book`, and
@@ -381,7 +496,7 @@ client.setOrientation("landscape_left");
 // framesUpright means the backend already sends upright frames (serve-emu).
 // While an Android recording could break, client.recordingLock is "status-unknown" or
 // "recording" and rotate, setOrientation and the stream setters are silently ignored. Disable
-// those controls from it. client.orientationUnavailable gives the reason orientation cannot
+// those controls from it. Fold has its own reason, client.fold.unavailable. client.orientationUnavailable gives the reason orientation cannot
 // change now, also while the iOS input socket cannot take input.
 client.reload(); // reload the running React Native bundle
 client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance
@@ -394,6 +509,10 @@ client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appe
 const capture = await client.screenshot();
 if (capture?.artifact?.status === "failed")
   console.warn("not saved to session artifacts", capture.artifact.error);
+
+// Optional smaller JPEG (requires a backend that supports image options).
+// Check blob.type: older servers may ignore the requested options.
+const smaller = await client.screenshot({ maxWidth: 402, format: "jpeg", quality: 80 });
 
 // Input is normalized to 0..1 of the screen, so it works for every device size.
 client.sendTouch({ phase: "begin", x: 0.5, y: 0.5 });

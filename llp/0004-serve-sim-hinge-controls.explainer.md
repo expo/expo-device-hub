@@ -5,8 +5,8 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient, HubComponents
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-11 (pose observation pauses during capture reboots, Claude Code, directed by Gabe Debes); 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
-**Related:** LLP 0001, LLP 0016
+**Revised:** 2026-11-17 (the 3D preview moves into `@expo/hub-client/models`, LLP 0019; Claude Code, directed by Krystof Woldrich); 2026-11-17 (the iPhone Duo's matte black borders reflect less; Claude Code, directed by Krystof Woldrich); 2026-11-17 (the model frames an observed physical pose as the flat view does, a press keeps an open mobile keyboard, camera glass is transparent instead of transmissive, and hit tests use a triangle index; Claude Code, directed by Krystof Woldrich); 2026-11-12 (the black glass around a display reflects a quarter of the room; Claude Code, directed by Krystof Woldrich); 2026-11-12 (the reboot pause is not shown to fix the Xcode 27 reboot failure); 2026-11-11 (pose observation pauses during capture reboots, Claude Code, directed by Gabe Debes); 2026-11-06 (the rendered fold settles on its target, a bend error falls back to the flat view, and the scene skips an unchanged Android canvas and ignores a non-finite view; Claude Code, directed by Krystof Woldrich); 2026-11-05 (an emulator without profile metadata gets no 3D model; Claude Code, directed by Krystof Woldrich); 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (the foldables bend with the models repository's tighter-fold runtimes, which keep the display's spacing over the hinge; Claude Code, directed by Krystof Woldrich); 2026-11-04 (the 3D scene draws an MJPEG `<img>` on every frame; Claude Code, directed by Krystof Woldrich); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-03 (the 3D scene turns its environment so that a device facing the camera does not mirror its brightest panel; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub draws Expo's device models instead of Xcode's, also for the iPhone 18 Pro, Pixel 9 Pro, and Pixel 9 Pro Fold; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Related:** LLP 0001, LLP 0016, LLP 0019
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -70,11 +70,16 @@ pauses observation again, so after a failed reboot it stays paused until a captu
 starts. The pause does not wait for a registration RPC that ignores cancellation;
 the next producer waits for it [observed: `suspendDeviceStateObservation` and
 `resetForNewCapture` in `CoreDeviceBridge.swift`, `suspendForReboot` and
-`resumeAfterReboot` in `CaptureEngine.swift`]. Before this pause, the
-capture-reboot e2e test on the Xcode 27 runtime failed in 4 of 5 CI runs: the
-first `simctl spawn` after boot failed while the observer retried CoreDevice.
-Without the observer, 1 of 48 runs failed the same way [observed: EAS job
-"Xcode 26 build on Xcode 27 runtime (1/2)", 2026-11-09 to 2026-11-11].
+`resumeAfterReboot` in `CaptureEngine.swift`]. The pause was added because the
+capture-reboot e2e test on the Xcode 27 runtime failed in 4 of 5 CI runs before
+it. Later data does not show that the observer causes that failure. The first
+`simctl spawn` after an iOS 27 boot is slow with or without the observer, and the
+failure is more frequent on smaller runners
+([LLP 0011](0011-serve-sim-session-startup.explainer.md#boot-is-a-readiness-barrier)).
+In one diagnostic run with the pause, a spawn timed out in 1 of 24 reboots with
+the observer off and in 0 of 30 with it on [observed: EAS diagnostic run
+`01a1cdae`, 2026-11-12]. No run compared the observer with and without the pause
+on one runner class, so it is not known whether the pause is still necessary.
 
 Ordinary iOS devices use `DisplayInfoProtocol.displayInfoUpdates`, whose parent
 orientation describes physical pose independently of each display's interface
@@ -592,13 +597,19 @@ when a command timeout causes the final JSON report to record a timeout.
 
 ## 3D preview in the Hub
 
-The Hub shows the same 3D preview as serve-sim. `@expo/hub-client` supplies
-only the device controls and streams, and the 3D renderer in
-`@expo/hub-components/foldable` is a consumer of them [confirmed] (Krystof
-Woldrich, 2026-10-21). hub-client does not depend on three.js, and a consumer
-that does not import the `foldable` entry does not load it [observed:
-`packages/@expo/hub-client/package.json`, `exports` in
-`packages/@expo/hub-components/package.json`].
+The Hub shows the iPhone Duo as serve-sim's 3D preview does, with Expo's own
+model instead of Xcode's, and it also shows the iPhone 18 Pro, the Pixel 9 Pro,
+and the Pixel 9 Pro Fold in 3D (see [Device models](#device-models)).
+serve-sim's own preview keeps Xcode's model. The main `@expo/hub-client`
+entry supplies only the device controls and streams, and the 3D renderer is a
+consumer of them [confirmed] (Krystof Woldrich, 2026-10-21). The renderer is
+the `@expo/hub-client/models` entry, moved there from
+`@expo/hub-components/foldable` so that the expo.dev website can use it
+[confirmed] (Krystof Woldrich, 2026-11-17). three.js is an optional peer
+dependency of hub-client, and a consumer that does not import the `models`
+entry does not load it [observed: `exports` and `peerDependenciesMeta` in
+`packages/@expo/hub-client/package.json`].
+[LLP 0019](0019-hub-client-device-models.spec.md) specifies the entry.
 
 The contract [observed: `DeviceFold`, `DeviceDisplay`, and `DeviceClient` in
 `packages/@expo/hub-client/src/types.ts`]. [LLP 0016](0016-hub-client-foldable-devices.spec.md)
@@ -628,7 +639,9 @@ specifies its platform-neutral parts and how serve-sim and serve-emu map onto th
   end.
 - `DeviceClient.deviceModelUrl` is the `grid/api/devicekit-model` route with
   the connection's base path, proxy mapping, and session token, which only the
-  client knows.
+  client knows. The Hub no longer reads it: the model comes from the device's
+  identity and the package's model files [observed: `deviceModelPreview` in
+  `packages/@expo/hub-client/src/models/device-models.ts`].
 
 The 3D component keeps the presentation state that serve-sim's client keeps
 beside its hinge state: the model's framing, the framing restored after a
@@ -638,15 +651,199 @@ the model the same way whether it comes from Fold settings or from a keyboard
 shortcut on the model. It takes each preset's hinge angle from
 `capabilities.fold.poses` and keeps serve-sim's display IDs (1 and 3) for its
 own geometry only [observed: `useDuoFraming.ts`, `duo-displays.ts`, and
-`FoldableDeviceScreen.tsx` in `packages/@expo/hub-components/src/foldable`].
+`DeviceModelScreen.tsx` in `packages/@expo/hub-client/src/models`].
 A physical pose that another client or the Simulator selects frames the model as
 a local preset does. The client reports it only after a local Rotate has landed. The framing reads the
 client's fold state, so it follows the native observation [observed:
 `useDuoFraming.ts`].
 
+### Device models
+
+Expo authored the models in expo/expo-simulators-3d-models, and hub-client
+ships them as GLB files, which the Hub bundles with its dashboard. Krystof Woldrich asked for them to replace
+Xcode's model and to cover the iPhone 18 Pro, the Pixel 9 Pro, and the Pixel 9
+Pro Fold [confirmed] (Krystof Woldrich, 2026-11-03, in the agent brief). The
+files, their source commit, and their sizes are in
+`packages/@expo/hub-client/models/README.md`.
+
+- **Description.** A model description names the GLB nodes that show each
+  display, each display's framebuffer size and mount on its glass, the texture
+  size, and for a foldable the two leaves and the bend [observed: `DEVICE_MODELS`
+  in `device-models.ts`]. The scene keeps serve-sim's panel IDs: 3 for a phone's
+  display or a foldable's inner display, 1 for a cover. The descriptions do not
+  import three.js, so the frame reads them without loading the scene.
+- **Selection.** The Hub server sets each device's `deviceModel` from the
+  simulator's device type identifier or the emulator's hardware profile (a
+  physical device's product model), next to the `model` that picks the
+  screen shape (LLP 0017). An emulator
+  without profile metadata gets no model, because its AVD name is the user's
+  and can name another device. A device without a model keeps the flat
+  preview, and only a device with a model shows the 2D/3D
+  choice [observed: `appleDevice3DModel` and `androidDevice3DModel` in
+  `packages/expo-device-hub/src/server/device-support.ts`, `modelAvailable` in
+  `Dashboard.tsx`]. The consumer passes each model's URL as `deviceModelAssets`;
+  the Hub imports the GLBs from `@expo/hub-client/models` as Metro assets, so
+  `expo export` copies them into `dist/client`, and the standalone CLI serves
+  them from there [observed: `DEVICE_MODEL_ASSETS` in `Dashboard.tsx`,
+  `metro.config.js`]. Another consumer looks the model up by the device's
+  hardware name (LLP 0019 [Model names](0019-hub-client-device-models.spec.md#model-names)).
+- **Hinge.** The GLBs are in meters, and the scene scales them to the
+  centimeters of Xcode's model, which its camera and framing assume. A
+  foldable's left leaf, which holds the cover, turns with the scene's left fold;
+  the GLB's hinge animation, whose time is the hinge angle, places the right
+  leaf; and the flexible meshes bend by calculation, ported from the models
+  repository. The body is centered on the middle of its two leaves, as Xcode's
+  model was [observed: `rigDeviceModel` in `device-model-rig.ts`,
+  `device-model-bend.ts`].
+- **Bend.** The scene maps the stream once, flat over the open display, and the
+  bend then moves the display's points. So a bend must keep the spacing of
+  those points, or the stream stretches. The first port, of the models
+  repository at `644e92e4`, put the points on the right curve but not evenly:
+  at 96°, a step in the middle of the Duo's hinge became 1.43 times as long,
+  and a step 2.9 mm to each side 0.72 times, so letters near the hinge grew wide
+  or disappeared [observed: a row of the Duo's inner display, measured
+  2026-11-04]. Krystof Woldrich saw it in the Hub and updated the models
+  repository [confirmed] (Krystof Woldrich, 2026-11-04). The scene now ports
+  that repository's tighter-fold runtimes at `319fd4bf`, in which flat X is arc
+  length along the bend. The GLB files did not change. A step keeps its length
+  within 0.5% on the Duo and 2% on the Pixel 9 Pro Fold, whose least spacing is
+  near closed [observed: `device-model-bend.ts` and its tests].
+  The bend runs on every change of the rendered angle, about 8.5 ms for the
+  Duo and 2.6 ms for the Pixel 9 Pro Fold, so the rendered fold settles on its
+  target once the rest of its spring is invisible, after about 70 frames
+  instead of 170. A bend that throws falls back to the flat view, as a
+  rendering error does [observed: `stepDuoFold` in `duo-pose.ts`, the render
+  loop in `duo-scene.ts`; times measured with Bun in a review of this change].
+- **Depth.** A display lies 2 to 4 micrometers in front of its glass and body.
+  The camera's near and far planes (8 and 64 cm) keep the depth buffer fine
+  enough to separate them; with the old 0.1 cm near plane, the closed Duo's cover
+  showed bands of the glass behind it [observed: the camera in `duo-scene.ts`;
+  the bands seen in the Hub on 2026-11-03].
+- **Lighting.** Krystof Woldrich asked for less reflection when a device faces
+  the camera [confirmed] (Krystof Woldrich, 2026-11-03, feedback on #559). The
+  glare came from the scene's environment, three.js's RoomEnvironment, whose
+  brightest wall panel lay behind the camera, where a face toward the camera
+  mirrors it. The iPhone 18 Pro's Dynamic Island and top bezel showed almost
+  white. Without that panel, the glare was gone; without the directional
+  lights, the hemisphere light, or the clearcoat, or at a lower exposure, it
+  stayed [observed: renders of the four models with one part changed at a
+  time, 2026-11-03]. So the scene turns the environment half a turn about the
+  vertical axis, and the panel lies behind the model. No model needs its own
+  material change. The displays use an unlit material, so no light or
+  reflection changes the stream [observed: `createSurface` and the environment
+  in `duo-scene.ts`]. Krystof Woldrich then found the black bezels too gray
+  beside the stream [confirmed] (Krystof Woldrich, 2026-11-12). The bezel
+  materials are black in the models, with a base color of about 0.002; the
+  gray was the room that their glossy glass mirrors. In a front render, the
+  bezels of the Pixel 9 Pro Fold, the iPhone 18 Pro, and the Pixel 9 Pro had a
+  median of 32 to 37 of 255, 1 to 4 without the environment, and 26 to 31
+  without the lights, while the stream's black stayed 0 [observed: renders
+  with one part changed at a time, 2026-11-12]. So each model description
+  names its bezel materials, and the scene gives them a quarter of the room's
+  reflection, which puts them at about 10; Krystof Woldrich chose a quarter
+  over a tenth [confirmed] (Krystof Woldrich, 2026-11-12). The materials get
+  their own environment map, turned as the scene's is: three.js r186 ignored
+  their `envMapIntensity` with only `scene.environment`, and an unturned map
+  brought the glare back [observed: the same renders; `bezelMaterials` in
+  `device-models.ts`, `BEZEL_REFLECTION` in `duo-scene.ts`]. The iPhone Duo
+  has no glass bezel: its inner display's border is a matte rubber seal, and
+  its cover display's rim is matte anodized metal, and the direct lights
+  brighten both as much as the room does. Krystof Woldrich asked for its
+  borders to be as black as the iPhone 18 Pro's [confirmed] (Krystof Woldrich,
+  2026-11-17). Both rendered at a median of 56, and a quarter of the room's
+  reflection left them at about 40. A standard material has no control of its
+  reflectance other than its metalness: at 0 it reflects 4% of the lights and
+  the room, and toward 1 its own near-black color. So the rig sets the
+  metalness of a model's matte border materials to 0.85, which puts the seal at
+  10 and the rim at 12, beside 10 for the iPhone 18 Pro's bezel [observed:
+  front renders of the open and the closed Duo with one value changed at a
+  time, 2026-11-17; `matteBorderMaterials` in `device-models.ts`,
+  `MATTE_BORDER_METALNESS` in `device-model-rig.ts`]. The GLB uses the same
+  two materials for recesses: gaskets, camera barrels, the speaker and
+  microphone cavities, and the inside of the USB-C port. They turn from gray
+  to black as well, which suits a recess, and the USB-C contacts stay visible
+  [observed: close renders of those parts at metalness 0 and 0.85,
+  2026-11-17].
+- **Streams.** The iPhone Duo streams each display on its own, and keeps its
+  fold events, presets, and hinge handles. Every other model shows the flat
+  stream. The frame's shape names the display it shows. The Pixel 9 Pro Fold
+  folds to the angle of hub-client's Android fold (LLP 0016), and its hinge
+  handles move the emulator's hinge; without a fold it shows its cover at 0° or
+  its inner display at 180° [observed: `streamedPanel` in `duo-displays.ts`,
+  `DeviceModelScreen.tsx`]. The scene draws an `<img>` source again on every
+  frame. It skips a video frame that it already drew, and an Android canvas
+  whose frame number from hub-client did not change; a canvas without a number
+  is drawn on every frame. An MJPEG `<img>` keeps its `src` while its frames
+  change (LLP 0015), so serve-sim's check for a new `src` showed only the first
+  frame: the iPhone 18 Pro's 3D view did not change after a tap or Home
+  [observed: `uploadScreen` in `duo-scene.ts`, `canvasFrameNumber` in hub-client;
+  seen in the Hub on 2026-11-04].
+- **Orientation.** A model without fold events turns with
+  `client.orientation`, or the screen's orientation before the client reports
+  one, so a turned device lies on its side. Its glass keeps the hardware's
+  orientation: an upright frame of a turned device, which serve-emu sends, is
+  turned back onto the glass, and a raw frame, which the flat view would rotate,
+  is painted as it is. Input maps back the same way [observed:
+  `modelFrameRotation` in `duo-pose.ts`, `deviceModelView` in `duo-view.ts`].
+  Once serve-sim observes an iPhone's physical pose (`screen.deviceOrientation`,
+  LLP 0013), iOS names `client.orientation` physically, and hub-client's
+  `streamGeometry` frames the flat stream by that pose, also while the interface
+  stays portrait. The model then rolls, and turns the frame onto the glass, by
+  the interface orientation that the pose shows, the opposite landscape as in
+  UIKit, so both views frame the screen alike [observed:
+  `modelFramingOrientation` and `modelRollOrientation` in `duo-pose.ts`,
+  `streamGeometry` in hub-client `orientation.ts`].
+- **GPU time.** Krystof Woldrich saw the iPhone 18 Pro's 3D view drop frames
+  where its 2D view stayed smooth [confirmed] (Krystof Woldrich, 2026-11-17).
+  The main thread was not the cause: each animation frame took about 4 ms of
+  script. The GPU was: three.js draws the whole scene a second time for any
+  transmissive material, into a 4x multisampled target of the canvas's size
+  with mipmaps, and every model authors its camera glass as transmissive. In
+  T3 Code's browser (Electron, Apple M4 Pro, a 2560 x 1600 canvas), a 3D frame
+  took a median of 57 ms of GPU time, and 359 of 360 frames took more than
+  16.7 ms; without transmission it took 2.6 ms, and 4 of 360 did. A transmission
+  target at a quarter of the resolution still took 7.8 ms [observed: WebGL timer
+  queries in the Hub and in a render page, 2026-11-17]. So the rig draws that
+  glass as plain transparency, at a tenth of its near-white color, which keeps
+  the lenses and the flash as the authored glass shows them [observed:
+  `CLEAR_GLASS_OPACITY` in `device-model-rig.ts`; renders of the iPhone 18
+  Pro's back, 2026-11-17].
+- **Hit tests.** After that change, he still saw the 3D view stutter while he
+  used it, where the 2D view stayed smooth [confirmed] (Krystof Woldrich,
+  2026-11-17). A pointer is tested against the whole device, so that the
+  chassis hides a display behind it, and every pointer move ran that test
+  over every triangle: 162,000 for the Pixel 9 Pro and 679,000 for the iPhone
+  Duo, 6 to 30 ms per test. With a dragging pointer on the iPhone 18 Pro, a
+  pointer move took a median of 10.1 ms, and 172 of 480 frames came more than
+  25 ms after the one before; the 2D view had none [observed: timings of the
+  rigs in Bun, and of the Hub in headless Chrome at 1338 x 1570 with a stream
+  that changes on every frame, 2026-11-17]. The loader now builds a triangle
+  index (a bounding volume hierarchy, from three-mesh-bvh) for every mesh, in
+  slices of 8 ms so the page stays responsive; that takes 50 to 330 ms. A test
+  then takes about 0.1 ms, 0.8 ms for the iPhone Duo, and gives the same
+  nearest hit. A pointer that only hovers is tested once per frame, by the
+  loop, and not in its event. A bend moves the flexible meshes, so their index
+  is refit: 4 ms per frame once the fold rests, and at once for a press or a
+  drag; while the fold moves, a hovering pointer keeps its cursor. The same
+  drag then took a median of 0.3 ms per pointer move, with 1 late frame of 480
+  [observed: `indexDeviceModel` and `refitBounds` in `device-model-rig.ts`,
+  `intersectDevice` and the loop in `duo-scene.ts`; the same measurements,
+  2026-11-17]. What remains is MJPEG: the scene draws the stream's `<img>`
+  into its texture, and the browser decodes each new frame for that on the
+  main thread, about 7.5 ms for a full-size iPhone 18 Pro frame with dense
+  content, while the 2D view's decode runs off it. `createImageBitmap` of the
+  `<img>` also decodes on the main thread, so a decode off it needs the
+  frame's bytes from hub-client [observed: the texture upload's time in the
+  same runs; `createImageBitmap` blocked for 40 ms].
+- **Keyboard focus.** A press on the model takes the keyboard focus, as on the
+  flat screen, unless `preserveKeyboardFocus` is set: the Hub sets it while a
+  mobile browser's keyboard is open, so its capture input keeps the focus
+  [observed: `DeviceModelScreen.tsx`, `PhoneFrame.tsx`, `StreamPanel.tsx`].
+
 ### Stage size
 
-In the Hub, the 3D stage is as large as the flat (2D) Duo can be, so that
+In the Hub, the 3D stage is as large as the flat (2D) device can be, the longest
+of its displays for a foldable (the Duo's cover), so that
 in a large window the Duo has about the same size in 2D and 3D, and every
 device fills the stream area by the same rule: a 480 px cap on the device's short side
 [confirmed] (Krystof Woldrich, 2026-10-30, after a review found that the
@@ -659,7 +856,7 @@ space" keeps the 32 px inset, so its limiting side is about the cover's 698 px.
 Below the cap, the stage shrinks to the
 stream area: the space that `StreamPanel` keeps clear of the device title
 above and the controls below, including the fold error line [observed:
-`DUO_STAGE_STYLE` in `PhoneFrame.tsx`, `duoStageMaxSide` in `duo-stage.ts`].
+`modelStageStyle` in `PhoneFrame.tsx`, `modelStageMaxSide` in `duo-stage.ts`].
 There the model keeps the fill inset on its limiting side, so below the cap it
 is 64 px smaller than the flat Duo, which fills the stream area. serve-sim keeps its fixed 580 px 1:1 stage [observed:
 `DUO_STAGE_DEFAULT_WIDTH` in `src/client/client.tsx`]. This difference is
@@ -669,7 +866,7 @@ intended.
   does, so folding, rotating, and changing displays do not resize it; a resize
   then would animate on top of the hinge motion. A window or sidebar resize
   does resize it. While a fold error shows, the stage is shorter by the height
-  of the error line, which can wrap [observed: `DUO_STAGE_STYLE` in
+  of the error line, which can wrap [observed: `modelStageStyle` in
   `PhoneFrame.tsx`, the measured controls block in `StreamPanel.tsx`].
 - The stage can be wider or taller than it is high. The base view spans the
   largest centered square of the stage; on a square stage this is serve-sim's

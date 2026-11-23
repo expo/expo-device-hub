@@ -1,128 +1,78 @@
-import { type ButtonHTMLAttributes, forwardRef, type ReactNode, useState } from "react";
+import { type ButtonHTMLAttributes, type ReactNode, type Ref } from "react";
 
-import { bg, border, icon as iconColor, radius, text, textSize } from "../theme/tokens";
-import { isFocusVisible } from "./focusVisible";
+import { bg, radius } from "../theme/tokens";
+import { ActivityIndicator } from "./ActivityIndicator";
+import { BUTTON_THEME_TOKENS } from "./Button";
+import { IconButton } from "./IconButton";
+import { Tooltip } from "./Tooltip";
 
-export const CONTROL_BUTTON_SIZE = 44;
+/** Width and height of a toolbar button: the website's `size-9`. */
+export const CONTROL_BUTTON_SIZE = 36;
+/** Width and height of a toolbar icon: the website's `icon-md`. */
+export const CONTROL_ICON_SIZE = 20;
 
-/**
- * An icon button in the toolbar under the device stream. The label is the
- * button's accessible name and appears as a tooltip above the button while it
- * is hovered or keyboard-focused; a pointer click leaves no lingering state.
- *
- * Forwards its ref and spreads extra props onto the underlying `<button>`, so
- * it can also serve as a Radix `asChild` trigger.
- */
+/** Opacity of a toolbar button that cannot be used: the website's `opacity-40`. */
+const UNAVAILABLE_OPACITY = 0.4;
+
 export type ControlButtonProps = {
   icon: ReactNode;
+  /** The accessible name, and the tooltip unless `tooltip` replaces it. */
   label: string;
+  /** Replaces the label in the tooltip and describes the button, such as why it is locked. */
   tooltip?: string;
-  /** Touch-only controls already have accessible labels; avoid sticky emulated hover. */
-  hideTooltip?: boolean;
+  /**
+   * The action cannot run now. The button dims and ignores clicks, but it keeps
+   * its tooltip and its place in the tab order, so the reason stays reachable.
+   */
+  unavailable?: boolean;
+  /** The action runs. A spinner replaces the icon and the button ignores clicks. */
+  loading?: boolean;
+  ref?: Ref<HTMLButtonElement>;
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
-export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
-  function ControlButton(
-    {
-      icon,
-      label,
-      tooltip,
-      hideTooltip = false,
-      style,
-      onMouseEnter,
-      onMouseLeave,
-      onMouseDown,
-      onMouseUp,
-      onFocus,
-      onBlur,
-      ...rest
-    },
-    ref,
-  ) {
-    const [hovered, setHovered] = useState(false);
-    const [pressed, setPressed] = useState(false);
-    const [focused, setFocused] = useState(false);
-    const tooltipVisible = !hideTooltip && (hovered || focused);
-
-    return (
-      <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
-        <button
-          ref={ref}
-          type="button"
-          aria-label={label}
-          aria-description={tooltip}
-          onMouseEnter={(event) => {
-            setHovered(true);
-            onMouseEnter?.(event);
-          }}
-          onMouseLeave={(event) => {
-            setHovered(false);
-            setPressed(false);
-            onMouseLeave?.(event);
-          }}
-          onMouseDown={(event) => {
-            setPressed(true);
-            onMouseDown?.(event);
-          }}
-          onMouseUp={(event) => {
-            setPressed(false);
-            onMouseUp?.(event);
-          }}
-          onFocus={(event) => {
-            setFocused(isFocusVisible(event));
-            onFocus?.(event);
-          }}
-          onBlur={(event) => {
-            setFocused(false);
-            onBlur?.(event);
-          }}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: CONTROL_BUTTON_SIZE,
-            height: CONTROL_BUTTON_SIZE,
-            padding: 0,
-            border: "none",
-            // Concentric with the surrounding group (radius.xl minus its padding).
-            borderRadius: `calc(${radius.xl} - 4px)`,
-            outline: "none",
-            backgroundColor: hovered ? bg.hover : "transparent",
-            boxShadow: focused ? `0 0 0 2px ${border.secondary}` : "none",
-            color: iconColor.default,
-            cursor: "pointer",
-            fontFamily: "inherit",
-            transition: "background-color 150ms ease, transform 100ms ease",
-            transform: pressed ? "scale(0.96)" : undefined,
-            ...style,
-          }}
-          {...rest}
-        >
-          {icon}
-        </button>
-        <span
-          role="tooltip"
-          aria-hidden="true"
-          style={{
-            ...textSize.xs,
-            position: "absolute",
-            bottom: "calc(100% + 8px)",
-            left: "50%",
-            zIndex: 1,
-            padding: "3px 8px",
-            borderRadius: radius.md,
-            backgroundColor: text.default,
-            color: bg.default,
-            whiteSpace: "nowrap",
-            pointerEvents: "none",
-            opacity: tooltipVisible ? 1 : 0,
-            transform: "translateX(-50%)",
-            transition: "opacity 120ms ease",
-          }}
-        >
-          {tooltip ?? label}
-        </span>
-      </span>
-    );
-  },
-);
+/**
+ * A round icon button in the toolbar under the device stream, in the look of
+ * the website's device controls: a quaternary button of 36px with a 20px icon.
+ * Its tooltip shows above the button while the pointer is over it or it has
+ * keyboard focus. Extra props go to the `<button>`, so it also works as a
+ * Radix `asChild` trigger.
+ */
+export function ControlButton({
+  icon,
+  label,
+  tooltip,
+  unavailable = false,
+  loading = false,
+  disabled,
+  onClick,
+  style,
+  ...rest
+}: ControlButtonProps) {
+  const blocked = unavailable || loading;
+  return (
+    <Tooltip content={tooltip ?? label}>
+      <IconButton
+        icon={loading ? <ActivityIndicator size={CONTROL_ICON_SIZE} /> : icon}
+        label={label}
+        aria-description={tooltip}
+        aria-disabled={blocked || undefined}
+        aria-busy={loading || undefined}
+        disabled={disabled}
+        size={CONTROL_BUTTON_SIZE}
+        // The website's quaternary hover is the fill of the toolbar itself. The
+        // Hub uses the next surface step, so that the hover shows.
+        hoverBackground={bg.hover}
+        onClick={blocked ? undefined : onClick}
+        style={{
+          borderRadius: radius.full,
+          color: BUTTON_THEME_TOKENS.quaternary.icon,
+          cursor: blocked || disabled ? "default" : "pointer",
+          // A button that works on its action stays at full opacity, as on the website.
+          opacity: !loading && (unavailable || disabled) ? UNAVAILABLE_OPACITY : 1,
+          ...style,
+        }}
+        {...rest}
+      />
+    </Tooltip>
+  );
+}

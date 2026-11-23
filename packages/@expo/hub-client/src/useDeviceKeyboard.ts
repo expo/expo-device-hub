@@ -13,7 +13,7 @@ const isClipboardShortcut = (event: ReactKeyboardEvent, code: "KeyC" | "KeyV") =
 
 /**
  * Physical-keyboard forwarding of {@link DeviceScreen}, for any focusable
- * device surface, such as the iPhone Duo's 3D model in `@expo/hub-components`.
+ * device surface, such as the 3D model in `@expo/hub-client/models`.
  * Spread the returned handlers on the surface. A focused device surface owns
  * keyboard input. The caller releases held keys and resets shortcuts when
  * input is cancelled, so modifiers never stick in the device. On a foldable,

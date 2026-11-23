@@ -1,16 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { type DeviceClient, type DeviceFold } from "@expo/hub-client";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { DeviceOptionsSection } from "../dashboard/DeviceOptionsSection";
-import { LogSidebar } from "../dashboard/LogSidebar";
-import { DuoModelView } from "../foldable/DuoModelView";
-import { FoldableDeviceScreen } from "../foldable/FoldableDeviceScreen";
+import { InspectorSections } from "../dashboard/InspectorSections";
 import { DUO_FOLD_CONTROLS } from "./duo-fixtures";
-import { createGlobalStubs } from "./test-globals";
-
-const { stubGlobal, restoreGlobals } = createGlobalStubs();
 
 const BASE_CLIENT: DeviceClient = {
   platform: "ios",
@@ -142,7 +136,6 @@ function duo(controls: DeviceClient["capabilities"]["fold"]): DeviceClient {
       { id: "cover", active: true, attachVideo: () => {} },
       { id: "inner", active: false, attachVideo: () => {} },
     ],
-    deviceModelUrl: "https://hub.test/grid/api/devicekit-model",
     capabilities: { ...BASE_CLIENT.capabilities, fold: controls },
   };
 }
@@ -157,40 +150,58 @@ describe("fold controls follow capabilities.fold, not the fold state alone", () 
 
   test("the inspector opens Device options for fold commands alone", () => {
     // No device settings, frame option, or device actions: only fold commands open the section.
-    expect(renderToStaticMarkup(<LogSidebar client={duo(false)} />)).not.toContain(
+    expect(renderToStaticMarkup(<InspectorSections client={duo(false)} />)).not.toContain(
       ">Device options<",
     );
-    const markup = renderToStaticMarkup(<LogSidebar client={duo(DUO_FOLD_CONTROLS)} />);
+    const markup = renderToStaticMarkup(<InspectorSections client={duo(DUO_FOLD_CONTROLS)} />);
     expect(markup).toContain(">Device options<");
     expect(markup).toContain('aria-label="Fold settings"');
   });
 });
 
-describe("the 3D model's hinge handles", () => {
-  let renderer: ReactTestRenderer | undefined;
-  beforeEach(() => {
-    stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
-    stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
-  });
-  afterEach(async () => {
-    if (renderer) await act(async () => renderer?.unmount());
-    renderer = undefined;
-    restoreGlobals();
+describe("the 2D/3D choice", () => {
+  const preview = {
+    mode: "3d" as const,
+    onModeChange: () => {},
+    cacheScreenOnFold: false,
+    onCacheScreenOnFoldChange: () => {},
+    sizeMode: "fill" as const,
+    onSizeModeChange: () => {},
+  };
+
+  test("Device options offers it for a device with a model but without fold controls", () => {
+    const markup = renderToStaticMarkup(
+      <DeviceOptionsSection client={BASE_CLIENT} foldPreview={preview} />,
+    );
+    expect(markup).toContain('aria-label="3D preview"');
+    expect(markup).toContain('aria-label="Preview mode"');
+    expect(markup).toContain('aria-label="Preview size"');
+    // Only a device with fold controls caches the display it folds away from.
+    expect(markup).not.toContain("Cache screen on fold");
+    expect(markup).not.toContain('aria-label="Fold settings"');
   });
 
-  async function handleCallback(client: DeviceClient) {
-    // Without host elements the scene does not start, so no WebGL is needed.
-    await act(async () => {
-      if (renderer) renderer.update(<FoldableDeviceScreen client={client} />);
-      else renderer = create(<FoldableDeviceScreen client={client} />);
-    });
-    return renderer!.root.findByType(DuoModelView).props.onHingeAngleChange;
-  }
+  test("a device without a model has no 2D/3D choice", () => {
+    const markup = renderToStaticMarkup(<DeviceOptionsSection client={BASE_CLIENT} />);
+    expect(markup).not.toContain('aria-label="Preview mode"');
+  });
 
-  test("move the hinge only when the device accepts angles", async () => {
-    expect(await handleCallback(duo(DUO_FOLD_CONTROLS))).toBeFunction();
-    expect(await handleCallback(duo({ ...DUO_FOLD_CONTROLS, angle: false }))).toBeUndefined();
-    expect(await handleCallback(duo(false))).toBeUndefined();
+  test("a foldable keeps the choice in Fold settings, with the cache option", () => {
+    const markup = renderToStaticMarkup(
+      <DeviceOptionsSection client={duo(DUO_FOLD_CONTROLS)} foldPreview={preview} />,
+    );
+    expect(markup).toContain('aria-label="Fold settings"');
+    expect(markup).not.toContain('aria-label="3D preview"');
+    expect(markup).toContain("Cache screen on fold");
+  });
+
+  test("a foldable that streams one display, as on Android, has no cache option", () => {
+    const fold = duo(DUO_FOLD_CONTROLS);
+    const markup = renderToStaticMarkup(
+      <DeviceOptionsSection client={{ ...fold, displays: null }} foldPreview={preview} />,
+    );
+    expect(markup).toContain('aria-label="Fold settings"');
+    expect(markup).toContain('aria-label="Preview mode"');
+    expect(markup).not.toContain("Cache screen on fold");
   });
 });

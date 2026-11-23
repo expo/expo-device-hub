@@ -31,7 +31,7 @@ import {
 import { apiUrl, deviceApiUrl } from "./android-api-url";
 import { readAndroidLocation, writeAndroidLocation } from "./android-location";
 import { androidPermissionsBackend } from "./android-permissions";
-import { carryForwardAppIcon, fetchAndroidAppIcon } from "./android-app-icon";
+import { appBuildKey, carryForwardAppDetails, fetchAndroidAppDetails } from "./android-app-icon";
 import {
   type AndroidSessionEvent,
   clearAndroidEventCursor,
@@ -59,6 +59,12 @@ import { androidOrientationBackend, parseAndroidOrientation } from "./android-or
 import { isLandscapeOrientation } from "./orientation";
 import { useDeviceOrientation } from "./useDeviceOrientation";
 import { androidMessageForKeyboardInput } from "./keyboard";
+import {
+  carryCanvasFrame,
+  forgetCanvasFrames,
+  markCanvasFrame,
+  STREAM_CANVAS_CONTEXT,
+} from "./canvas-frames";
 import { MsePlayer } from "./mse-player";
 import {
   isDeliberateServerClose,
@@ -82,6 +88,8 @@ import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
 import {
   parseScreenRecordingStatus,
+  foldRecordingLock,
+  screenRecordingFollowsFold,
   recordingLockReason,
   recordingOrientationUnavailable,
 } from "./screen-recording";
@@ -102,6 +110,7 @@ import {
   type DeviceClient,
   type DeviceCapabilities,
   type ScreenshotCapture,
+  type ScreenshotOptions,
   type DeviceScreenRecordingStatus,
   type DeviceConnectionOptions,
   type DeviceEvent,
@@ -150,6 +159,8 @@ const ANDROID_STREAM_SETTING_CAPABILITIES = {
 } as const satisfies DeviceStreamSettingCapabilities;
 
 const KEYCODE_R = 46;
+/** Waits before each retry of a failed app details read; the read stops after the last. */
+const APP_DETAILS_RETRY_MS = [4_000, 16_000, 64_000];
 /** Field-wise equality so the poll only publishes state when something changed. */
 function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
   return (
@@ -351,6 +362,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   const wsRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // The last canvas that received frames, kept after it detaches so that its
+  // replacement can start from its last frame.
+  const lastCanvasRef = useRef<HTMLCanvasElement | null>(null);
   // Monotonic log id source, persisted across logcat reconnects so ids stay
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
@@ -364,18 +378,23 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [recordingSnapshot, setRecordingSnapshot] = useState<{
     scope: string;
     status: DeviceScreenRecordingStatus | null;
-  }>({ scope: deviceScope, status: initialRecording });
+    followsFold: boolean;
+  }>({ scope: deviceScope, status: initialRecording, followsFold: false });
   if (recordingSnapshot.scope !== deviceScope) {
-    setRecordingSnapshot({ scope: deviceScope, status: initialRecording });
+    setRecordingSnapshot({ scope: deviceScope, status: initialRecording, followsFold: false });
   }
   const screenRecording =
     recordingSnapshot.scope === deviceScope ? recordingSnapshot.status : initialRecording;
+  const recordingFollowsFold =
+    recordingSnapshot.scope === deviceScope && recordingSnapshot.followsFold;
   // @ref LLP 0013#recording-lock — temporary until recordings survive rotation and stream changes
   // Turning the device or changing the stream can end the host recording, so the three places
   // that send those changes (`putStreamMode`, `updateStreamSettings` and the orientation
   // backend) ignore them while it could break.
   const recordingLock = recordingLockReason(screenRecording);
   const recordingControlsLocked = recordingLock !== null;
+  // @ref LLP 0013#recording-lock — a recording that follows folds leaves fold commands free
+  const foldLock = foldRecordingLock(recordingLock, recordingFollowsFold);
   const recordingLockedRef = useRef(recordingControlsLocked);
   useLayoutEffect(() => {
     recordingLockedRef.current = recordingControlsLocked;
@@ -450,7 +469,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   const attachVideo = useCallback(
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
-      canvasRef.current = el?.tagName === "CANVAS" ? (el as HTMLCanvasElement) : null;
+      const canvas = el?.tagName === "CANVAS" ? (el as HTMLCanvasElement) : null;
+      // A view that swaps its canvas, as a switch between 2D and 3D does, shows
+      // the last frame at once: a still Android screen sends no new frame.
+      if (canvas && lastCanvasRef.current && canvas !== lastCanvasRef.current) {
+        carryCanvasFrame(lastCanvasRef.current, canvas);
+      }
+      if (canvas) lastCanvasRef.current = canvas;
+      canvasRef.current = canvas;
       const video = el?.tagName === "VIDEO" ? (el as HTMLVideoElement) : null;
       attachedVideoRef.current = video;
       setWebRtcVideoElement((current) => (current === video ? current : video));
@@ -563,13 +589,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     rotateOrientation(screen && screen.width > screen.height ? "landscape_right" : "portrait");
   }, [rotateOrientation, screen]);
 
-  // serve-emu captures the frame buffer server-side (`adb exec-out screencap
-  // -p`) and returns the PNG bytes; `?device=` selects the serial (omitted →
-  // first available, matching the stream).
-  const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
-    if (!baseUrl) return null;
-    return fetchScreenshot(baseUrl, targetDevice, sessionFetch);
-  }, [baseUrl, targetDevice, sessionFetch]);
+  // Use the same authenticated endpoint for native PNG and optional image controls.
+  const screenshot = useCallback(
+    async (options?: ScreenshotOptions): Promise<ScreenshotCapture | null> => {
+      if (!baseUrl) return null;
+      return fetchScreenshot(baseUrl, targetDevice, sessionFetch, options);
+    },
+    [baseUrl, targetDevice, sessionFetch],
+  );
 
   // Device-wide options use the same GET/POST contracts as serve-emu's own UI.
   // Writes are optimistic and independently serialized by key; a failed write
@@ -1012,10 +1039,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         const next = parseServeEmuStreamSettings(info.stream) ?? { transport: "websocket" };
         const nextViewerTransports = parseServeEmuViewerTransports(info.viewerTransports);
         const recordingStatus = parseScreenRecordingStatus(info.screenRecording);
+        const followsFold = screenRecordingFollowsFold(info.screenRecording);
         setRecordingSnapshot((current) =>
-          current.scope === deviceScope && current.status === recordingStatus
+          current.scope === deviceScope &&
+          current.status === recordingStatus &&
+          current.followsFold === followsFold
             ? current
-            : { scope: deviceScope, status: recordingStatus },
+            : { scope: deviceScope, status: recordingStatus, followsFold },
         );
         setServerStreamSettings((current) =>
           JSON.stringify(current) === JSON.stringify(next) ? current : next,
@@ -1384,6 +1414,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     setStatus("connecting");
     setError(null);
+    // Frames from an earlier session, of another device or token, are not carried
+    // into a replacement canvas.
+    if (lastCanvasRef.current) forgetCanvasFrames(lastCanvasRef.current);
+    if (canvasRef.current) forgetCanvasFrames(canvasRef.current);
 
     let cancelled = false;
     let msePlayer: MsePlayer | null = null;
@@ -1439,7 +1473,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     const paint = (frame: VideoFrame) => {
       const canvas = canvasRef.current;
-      const ctx = canvas?.getContext("2d", { alpha: false, desynchronized: true });
+      const ctx = canvas?.getContext("2d", STREAM_CANVAS_CONTEXT);
       if (!canvas || !ctx) {
         frame.close();
         return;
@@ -1451,6 +1485,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
       ctx.drawImage(frame, 0, 0);
       frame.close();
+      markCanvasFrame(canvas);
+      lastCanvasRef.current = canvas;
 
       markPainted();
       fpsCount++;
@@ -1502,12 +1538,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (useMse) {
         const isKey = packet.isKey ?? scanAU(packet.data).isKey;
         if (!msePlayer) {
-          const canvas = canvasRef.current;
-          if (!canvas) {
+          if (!canvasRef.current) {
             requestKeyframe();
             return;
           }
-          msePlayer = new MsePlayer(canvas, {
+          // The player reads the canvas on every frame, so a replaced canvas keeps receiving frames.
+          msePlayer = new MsePlayer(() => canvasRef.current, {
             onFirstFrame: markPainted,
             onResize: (width, height) => {
               if (!cancelled) setScreen({ width, height });
@@ -2008,9 +2044,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           minSdk: data.app.minSdk ?? undefined,
           debuggable: data.app.debuggable ?? undefined,
         };
-        setForegroundApp((prev) =>
-          prev && sameForegroundApp(prev, next) ? prev : carryForwardAppIcon(prev, next),
-        );
+        setForegroundApp((prev) => {
+          // Compare after the carry-forward, so a poll without the resolved label stays a no-op.
+          const carried = carryForwardAppDetails(prev, next);
+          return prev && sameForegroundApp(prev, carried) ? prev : carried;
+        });
       } catch {
         /* offline / unsupported — keep the last known app */
       }
@@ -2023,22 +2061,46 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [active, baseUrl, targetDevice, sessionFetch]);
 
+  // ── Foreground app details (icon and label) — serve-emu reads both from the
+  //    installed APK with `aapt2`, once per installed build, so this is not
+  //    polled. A failed read retries a few times, because a missing name would
+  //    otherwise stay missing until another app comes to the foreground. ──
   const foregroundAppId = foregroundApp?.id ?? null;
+  const foregroundAppBuild = appBuildKey(foregroundApp);
   useEffect(() => {
     if (!active || !baseUrl || !foregroundAppId) return;
     let cancelled = false;
-    fetchAndroidAppIcon(baseUrl, targetDevice, foregroundAppId, sessionFetch)
-      .then((iconDataUrl) => {
-        if (cancelled || !iconDataUrl) return;
-        setForegroundApp((prev) =>
-          prev && prev.id === foregroundAppId ? { ...prev, iconDataUrl } : prev,
-        );
-      })
-      .catch(() => {});
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const read = (attempt: number) => {
+      fetchAndroidAppDetails(baseUrl, targetDevice, foregroundAppId, sessionFetch)
+        .then(({ iconDataUrl, label }) => {
+          if (cancelled) return;
+          setForegroundApp((prev) => {
+            if (!prev || appBuildKey(prev) !== foregroundAppBuild) return prev;
+            if (
+              prev.iconDataUrl === (iconDataUrl ?? undefined) &&
+              prev.label === (label ?? undefined)
+            ) {
+              return prev;
+            }
+            // A successful read describes this build, so it also clears an icon
+            // or label carried over from the build before a reinstall.
+            const { iconDataUrl: _carriedIcon, label: _carriedLabel, ...app } = prev;
+            return { ...app, ...(iconDataUrl && { iconDataUrl }), ...(label && { label }) };
+          });
+        })
+        .catch(() => {
+          const delay = APP_DETAILS_RETRY_MS[attempt];
+          if (cancelled || delay === undefined) return;
+          retryTimer = setTimeout(() => read(attempt + 1), delay);
+        });
+    };
+    read(0);
     return () => {
       cancelled = true;
+      clearTimeout(retryTimer);
     };
-  }, [active, baseUrl, targetDevice, foregroundAppId, sessionFetch]);
+  }, [active, baseUrl, targetDevice, foregroundAppId, foregroundAppBuild, sessionFetch]);
 
   // ── Device options (best-effort) ──
   // Keep Hub in sync with changes made on-device or through serve-emu's own UI.
@@ -2233,7 +2295,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const { fold, foldCapabilities } = useAndroidFold(
     active && baseUrl ? deviceApiUrl(baseUrl, "/api/fold", targetDevice) : null,
     sessionFetch,
-    recordingControlsLocked,
+    foldLock,
+    screen ? `${screen.width}x${screen.height}` : null,
   );
   const accessibilityAvailable = accessibilityLoader !== null;
   const permissionsAvailable = permissionsBackend !== null;

@@ -12,7 +12,7 @@ import {
   type AndroidSdkLookup,
 } from "./android-sdk.ts";
 import { execBuffer, execText } from "./exec.ts";
-import type { AppIcon, AppIconMimeType } from "./shared/api-contracts.ts";
+import type { AppDetails, AppIcon, AppIconMimeType } from "./shared/api-contracts.ts";
 
 const PULL_TIMEOUT_MS = 60_000;
 const PM_PATH_TIMEOUT_MS = 10_000;
@@ -93,6 +93,30 @@ export function selectIconEntry(badging: string): string | null {
   return best?.entry ?? anyEntry;
 }
 
+/**
+ * `aapt2` prints a label through `ResTable::normalizeForOutput`, which escapes
+ * only `\`, `"`, and a newline. It leaves apostrophes and tabs as they are.
+ */
+function unescapeBadgingValue(value: string): string {
+  return value.replace(/\\([\\"n])/g, (_, char: string) => (char === "n" ? "\n" : char));
+}
+
+/**
+ * The default-locale `application-label:'…'` line, else the `label='…'` of the
+ * `application:` line. Apostrophes are not escaped, so the first form reads to
+ * the end of the line, and the second stops only before the next attribute.
+ */
+export function selectApplicationLabel(badging: string): string | null {
+  let fallback: string | null = null;
+  for (const line of badging.split("\n")) {
+    const trimmed = line.trim();
+    const label = /^application-label:'(.*)'$/.exec(trimmed)?.[1];
+    if (label) return unescapeBadgingValue(label);
+    fallback ??= /^application: label='(.*?)'(?: [a-zA-Z-]+='|$)/.exec(trimmed)?.[1] || null;
+  }
+  return fallback && unescapeBadgingValue(fallback);
+}
+
 export function parseAdaptiveForegroundId(xmltree: string): string | null {
   let foregroundIndent = -1;
   for (const line of xmltree.split("\n")) {
@@ -109,22 +133,80 @@ export function parseAdaptiveForegroundId(xmltree: string): string | null {
   return null;
 }
 
-export function selectResourceFilePath(block: string): string | null {
-  let best: { density: number; path: string } | null = null;
-  let defaultConfig: string | null = null;
+/** What a resource config such as `xxxhdpi-v26` says about one bitmap. */
+export type ResourceConfig = {
+  /**
+   * `density`: names a density (`xxxhdpi`, `420dpi`), maybe with an API level.
+   * `default`: names no density (``, `v26`, `nodpi`, `anydpi`).
+   * `variant`: has any other qualifier (`night`, `round`, a locale…), so it is not the default look.
+   */
+  kind: "density" | "default" | "variant";
+  /** 0 when the config names none. */
+  density: number;
+  /**
+   * The `-vNN` minimum; 0 when absent. An APK whose minSdk is below 26 keeps `-v26` on its
+   * adaptive icon bitmaps, because adaptive icons need API 26.
+   */
+  apiLevel: number;
+};
+
+type BitmapFile = { path: string; config: ResourceConfig };
+
+const NO_DENSITY = new Set(["nodpi", "anydpi"]);
+
+function densityOf(part: string): number | undefined {
+  const numeric = /^(\d+)dpi$/.exec(part)?.[1];
+  return DENSITY_BY_QUALIFIER[part] ?? (numeric ? Number(numeric) : undefined);
+}
+
+export function readResourceConfig(qualifier: string): ResourceConfig {
+  let density: number | undefined;
+  let apiLevel = 0;
+  let isVariant = false;
+  for (const part of qualifier.split("-").filter(Boolean)) {
+    const version = /^v(\d+)$/.exec(part)?.[1];
+    const partDensity = densityOf(part);
+    if (version) apiLevel = Number(version);
+    else if (NO_DENSITY.has(part)) continue;
+    else if (partDensity !== undefined) density = partDensity;
+    else isVariant = true;
+  }
+  const kind = isVariant ? "variant" : density !== undefined ? "density" : "default";
+  return { kind, density: density ?? 0, apiLevel };
+}
+
+/** The `(config) (file) path` lines of an `aapt2 dump resources` block, without XML files. */
+function readBitmapFiles(block: string): BitmapFile[] {
+  const files: BitmapFile[] = [];
   for (const line of block.split("\n")) {
     const match = /^\((.*?)\)\s+\(file\)\s+(\S+)(?:\s+type=(\S+))?/.exec(line.trim());
     if (!match) continue;
     const [, qualifier = "", path = "", type] = match;
     if (type === "XML" || path.endsWith(".xml")) continue;
-    const density = DENSITY_BY_QUALIFIER[qualifier];
-    if (density === undefined) {
-      if (qualifier === "") defaultConfig ??= path;
-      continue;
-    }
-    if (!best || density > best.density) best = { density, path };
+    files.push({ path, config: readResourceConfig(qualifier) });
   }
-  return best?.path ?? defaultConfig;
+  return files;
+}
+
+const KIND_RANK = { density: 0, default: 1, variant: 2 } as const;
+
+/**
+ * Best first. Equal files keep their order, because `Array.prototype.sort` is stable. A current
+ * device shows the newest API level; `aapt2 dump badging` resolves the icon entry for the newest API
+ * too, so both steps agree.
+ */
+function compareBitmapFiles(a: BitmapFile, b: BitmapFile): number {
+  return (
+    KIND_RANK[a.config.kind] - KIND_RANK[b.config.kind] || // 1. the default look before variants
+    b.config.density - a.config.density || // 2. denser first
+    b.config.apiLevel - a.config.apiLevel // 3. newer API level first
+  );
+}
+
+/** The best bitmap of one resource, or null when it has only XML drawables. */
+export function selectResourceFilePath(block: string): string | null {
+  const [best] = readBitmapFiles(block).sort(compareBitmapFiles);
+  return best?.path ?? null;
 }
 
 export function iconMimeType(bytes: Uint8Array): AppIconMimeType | null {
@@ -287,24 +369,37 @@ async function extractIcon(apkPath: string, entry: string): Promise<AppIcon | nu
   return mimeType ? { mimeType, data: unzipped.stdout.toString("base64") } : null;
 }
 
-async function pullAndExtract(serial: string, baseApkPath: string): Promise<AppIcon | null> {
+async function extractBadgingIcon(apkPath: string, badging: string): Promise<AppIcon | null> {
+  const badgingEntry = selectIconEntry(badging);
+  if (!badgingEntry) return null;
+  if (!badgingEntry.endsWith(".xml")) return await extractIcon(apkPath, badgingEntry);
+
+  const foregroundId = parseAdaptiveForegroundId(
+    await aapt2Text(["dump", "xmltree", apkPath, "--file", badgingEntry]),
+  );
+  if (!foregroundId) return null;
+  const block = await readResourceBlock(apkPath, foregroundId);
+  if (!block) return null;
+  const bitmapEntry = selectResourceFilePath(block);
+  return bitmapEntry ? await extractIcon(apkPath, bitmapEntry) : null;
+}
+
+/**
+ * The label and the icon come from one `aapt2 dump badging` run on one pulled
+ * APK. The device keeps only the label's resource id, so `dumpsys package`
+ * cannot report the name.
+ */
+async function pullAndExtract(serial: string, baseApkPath: string): Promise<AppDetails> {
   const workDir = await mkdtemp(join(tmpdir(), "serve-emu-icon-"));
   try {
     const apkPath = join(workDir, "base.apk");
     await adbText(serial, ["pull", baseApkPath, apkPath], PULL_TIMEOUT_MS);
 
-    const badgingEntry = selectIconEntry(await aapt2Text(["dump", "badging", apkPath]));
-    if (!badgingEntry) return null;
-    if (!badgingEntry.endsWith(".xml")) return await extractIcon(apkPath, badgingEntry);
-
-    const foregroundId = parseAdaptiveForegroundId(
-      await aapt2Text(["dump", "xmltree", apkPath, "--file", badgingEntry]),
-    );
-    if (!foregroundId) return null;
-    const block = await readResourceBlock(apkPath, foregroundId);
-    if (!block) return null;
-    const bitmapEntry = selectResourceFilePath(block);
-    return bitmapEntry ? await extractIcon(apkPath, bitmapEntry) : null;
+    const badging = await aapt2Text(["dump", "badging", apkPath]);
+    return {
+      label: selectApplicationLabel(badging),
+      icon: await extractBadgingIcon(apkPath, badging),
+    };
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }
@@ -316,7 +411,7 @@ async function pullAndExtract(serial: string, baseApkPath: string): Promise<AppI
  */
 let extractions: Promise<unknown> = Promise.resolve();
 
-function queueExtraction(serial: string, baseApkPath: string): Promise<AppIcon | null> {
+function queueExtraction(serial: string, baseApkPath: string): Promise<AppDetails> {
   const next = extractions.then(
     () => pullAndExtract(serial, baseApkPath),
     () => pullAndExtract(serial, baseApkPath),
@@ -326,23 +421,23 @@ function queueExtraction(serial: string, baseApkPath: string): Promise<AppIcon |
 }
 
 /** One entry per device and package, so a reinstall replaces rather than adds. */
-interface CachedIcon {
+interface CachedDetails {
   baseApkPath: string;
-  icon: Promise<AppIcon | null>;
+  details: Promise<AppDetails>;
 }
 
 /** A safety net, not a tuning knob. A device holds far fewer apps than this. */
-export const MAX_CACHED_ICONS = 64;
+export const MAX_CACHED_APPS = 64;
 
-const iconCache = new Map<string, CachedIcon>();
+const detailsCache = new Map<string, CachedDetails>();
 
-export function clearAppIconCache(): void {
-  iconCache.clear();
+export function clearAppDetailsCache(): void {
+  detailsCache.clear();
 }
 
-export interface AppIconDependencies {
+export interface AppDetailsDependencies {
   readBaseApkPath?: (serial: string, packageName: string) => Promise<string | null>;
-  extractIcon?: (serial: string, baseApkPath: string) => Promise<AppIcon | null>;
+  extractDetails?: (serial: string, baseApkPath: string) => Promise<AppDetails>;
 }
 
 async function readBaseApkPathFromDevice(
@@ -354,33 +449,34 @@ async function readBaseApkPathFromDevice(
   );
 }
 
-export async function readAppIcon(
+/** Reads the launcher icon and the user-visible label of an installed package. */
+export async function readAppDetails(
   serial: string,
   packageName: string,
-  dependencies: AppIconDependencies = {},
-): Promise<AppIcon | null> {
-  const readPath = dependencies.readBaseApkPath ?? readBaseApkPathFromDevice;
-  const extract = dependencies.extractIcon ?? queueExtraction;
-
+  {
+    readBaseApkPath: readPath = readBaseApkPathFromDevice,
+    extractDetails: extract = queueExtraction,
+  }: AppDetailsDependencies = {},
+): Promise<AppDetails> {
   const baseApkPath = await readPath(serial, packageName);
   if (!baseApkPath) throw new Error(`${packageName} is not installed`);
 
   const key = `${serial}:${packageName}`;
-  const cached = iconCache.get(key);
+  const cached = detailsCache.get(key);
   // Android randomises the APK directory on install, so a changed path means a new build.
-  if (cached && cached.baseApkPath === baseApkPath) return cached.icon;
+  if (cached && cached.baseApkPath === baseApkPath) return cached.details;
 
-  let entry: CachedIcon;
-  const icon = extract(serial, baseApkPath).catch((error: unknown) => {
-    if (iconCache.get(key) === entry) iconCache.delete(key);
+  let entry: CachedDetails;
+  const details = extract(serial, baseApkPath).catch((error: unknown) => {
+    if (detailsCache.get(key) === entry) detailsCache.delete(key);
     throw error;
   });
-  entry = { baseApkPath, icon };
-  iconCache.set(key, entry);
+  entry = { baseApkPath, details };
+  detailsCache.set(key, entry);
 
-  if (iconCache.size > MAX_CACHED_ICONS) {
-    const oldest = iconCache.keys().next();
-    if (!oldest.done) iconCache.delete(oldest.value);
+  if (detailsCache.size > MAX_CACHED_APPS) {
+    const oldest = detailsCache.keys().next();
+    if (!oldest.done) detailsCache.delete(oldest.value);
   }
-  return icon;
+  return details;
 }

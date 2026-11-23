@@ -1,11 +1,11 @@
 import { type DeviceClient } from "@expo/hub-client";
 import { type CSSProperties } from "react";
 
-import { ActivityIndicator, bg, text, textSize } from "../primitives";
+import { ActivityIndicator, layer, textSize, tone } from "../primitives";
 
-// @ref LLP 0015#states — one spinner until the first frame; no spinner while a loaded screen reconnects
+// @ref LLP 0015#states — one loading state until the first frame; none while a loaded screen reconnects
 /**
- * Whether the device screen shows its first-load spinner: the screen session
+ * Whether the device screen is in its first load: the screen session
  * is `connecting`, which means that it has not presented a frame, or it shows
  * frames while the consumer's own preview, such as the 3D model, is not ready.
  */
@@ -20,7 +20,7 @@ export function deviceScreenLoading(
 const LAYER_STYLE: CSSProperties = {
   position: "absolute",
   inset: 0,
-  zIndex: 1,
+  zIndex: layer.screenStatus,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -33,19 +33,21 @@ const NOTICE_STYLE: CSSProperties = {
   bottom: 0,
   left: 0,
   right: 0,
-  zIndex: 1,
+  zIndex: layer.screenStatus,
   // Centered, so a device's rounded screen corners never clip the text.
   padding: "12px 24px",
   textAlign: "center",
-  backgroundColor: bg.danger,
-  color: text.danger,
+  backgroundColor: tone.danger.bg,
+  color: tone.danger.text,
   pointerEvents: "none",
 };
 
 /**
- * The loading and error layer over a device screen, 2D or 3D. It covers
- * nothing while the stream reconnects, so the last frame stays visible. A
- * stream error replaces an input error, which needs a stream to matter.
+ * The spinner and the notices over a device screen: the 3D stage, and a flat
+ * screen that has a frame. A flat screen without a frame draws its own stages
+ * (`DeviceScreenStageLayers`). It covers nothing while the stream reconnects,
+ * so the last frame stays visible. A stream error replaces an input error,
+ * which needs a stream to matter.
  */
 export function DeviceScreenStatus({
   loading,

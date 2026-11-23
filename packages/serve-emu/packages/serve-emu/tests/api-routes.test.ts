@@ -416,7 +416,10 @@ function fakeDependencies(overrides: Partial<ApiDependencies> = {}): ApiDependen
       ok: true,
       output: `reset ${packageName}`,
     }),
-    readAppIcon: async () => ({ mimeType: "image/png", data: "aWNvbg==" }),
+    readAppDetails: async () => ({
+      icon: { mimeType: "image/png", data: "aWNvbg==" },
+      label: "Example",
+    }),
 
     getLocation: () => ({
       serial: "emulator-5554",

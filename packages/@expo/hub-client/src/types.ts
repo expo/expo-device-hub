@@ -220,6 +220,12 @@ export interface DeviceFold {
   pending: boolean;
   /** The last failed fold command, cleared when the next one starts. */
   error: string | null;
+  /**
+   * Why fold commands are unavailable now; absent while they are available. An Android
+   * recording sets it until it reports that it follows folds, and `setControl` then only sets
+   * `error`.
+   */
+  unavailable?: DeviceRecordingLockReason;
   /** Present exactly when `capabilities.fold.tableMode` is true. */
   tableMode?: DeviceFoldTableMode;
   /** Present when the backend reports how the device is held. */
@@ -642,7 +648,7 @@ export type AppPermissionAction = "grant" | "revoke";
 export interface ForegroundApp {
   /** Bundle identifier (iOS) / package name (Android). */
   id: string;
-  /** Human-readable app label (Android `dumpsys`, iOS `CFBundleDisplayName`). */
+  /** Human-readable app label (Android `aapt2 dump badging` of the APK, iOS `CFBundleDisplayName`). */
   label?: string;
   /** Foreground process id, when known. */
   pid?: number;
@@ -850,8 +856,17 @@ export type ScreenshotMetadata = {
   screen?: "inner" | "outer";
 };
 
+/** Optional image controls. Requires backend support; omission keeps native-resolution PNG. */
+export type ScreenshotOptions = {
+  /** Maximum width after rotation, 1–8192 pixels. Never upscales. */
+  maxWidth?: number;
+  format?: "png" | "jpeg";
+  /** JPEG quality from 1–100; defaults to 80. */
+  quality?: number;
+};
+
 /**
- * A still PNG of the device and its session artifact outcome. `artifact` is
+ * A still image of the device and its session artifact outcome. `artifact` is
  * `null` when the backend sent no header, as older serve-sim and serve-emu
  * builds do, or a value this client does not know.
  */
@@ -1199,13 +1214,12 @@ export interface DeviceClient {
    */
   setOrientation: (orientation: DeviceOrientation) => void;
   /**
-   * Capture a still PNG of the device via the backend's `POST /api/screenshot`
-   * (serve-emu `adb screencap` / serve-sim `simctl io screenshot`), resolving
-   * to the PNG and its session artifact outcome, or `null` if capture fails or
-   * nothing is connected. The caller decides what to do with it (e.g. trigger
-   * a file download).
+   * Capture a still image through the backend screenshot endpoint. Omitted options
+   * preserve native-resolution PNG. Resize/JPEG options require backend support;
+   * older servers may ignore them. Inspect `blob.type` for the returned format.
+   * Returns null if capture fails or nothing is connected.
    */
-  screenshot: () => Promise<ScreenshotCapture | null>;
+  screenshot: (options?: ScreenshotOptions) => Promise<ScreenshotCapture | null>;
 
   /**
    * Current device system appearance (dark/light), or `null` while unknown or on

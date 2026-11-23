@@ -6,7 +6,13 @@
  * components are typed against.
  */
 
+import { type DeviceStreamMode } from "@expo/hub-client";
+import { type DeviceModelId } from "@expo/hub-client/models/catalog";
+
 export type Platform = "ios" | "android";
+
+/** Which stream modes can be used: by the browser context, by the backend, or by both. */
+export type StreamModeAvailability = Record<DeviceStreamMode, boolean>;
 
 export type Device = {
   id: string;
@@ -29,6 +35,11 @@ export type Device = {
    * such as for a physical device.
    */
   model?: string | null;
+  /**
+   * The 3D model of this exact device model, or null when the 3D preview has none.
+   * Optional so that a consumer whose devices have no model can leave it out.
+   */
+  deviceModel?: DeviceModelId | null;
   /**
    * Epoch ms the device was last used. Drives the relative "Recents" time in the
    * add-device picker.

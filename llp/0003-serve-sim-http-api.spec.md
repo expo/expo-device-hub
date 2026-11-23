@@ -5,7 +5,7 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
+**Revised:** 2026-11-18 (Android screenshot image options; Codex, directed by Gabe Debes), 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -24,7 +24,7 @@ server's selected device.
 | `/`                                                                                                 | The preview page.                                                                                                                                                                                                                                                                                     |
 | `/api`                                                                                              | Current device and stream state, including `execToken`.                                                                                                                                                                                                                                               |
 | `/api/screenshot`                                                                                   | `POST`. A still image from the active display, or `?display=<screen ID>`. Defaults to native-resolution PNG; optional `maxWidth`, `format`, and JPEG `quality`.                                                                                                                                       |
-| `/api/apps/icon?bundleId=<id>`                                                                      | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`, the same shape as serve-emu's route, with `bundleId` in place of `packageName`. `icon` is null when the app has its icon only in `Assets.car`. 404 when the app is not installed, 503 when `simctl` cannot answer (retry). |
+| `/api/apps/icon?bundleId=<id>`                                                                      | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`: serve-emu's shape, with `bundleId` for `packageName` and no `label` (iOS sends it via `/appstate`). `icon` is null when the icon is only in `Assets.car`. 404 when not installed, 503 when `simctl` cannot answer (retry). |
 | `/api/pasteboard`                                                                                   | `POST` reads the simulator pasteboard as `{ok, text}`; `?copy=1` presses Command+C first; `PUT` with `{"text": …}` writes it. See [Pasteboard](#pasteboard).                                                                                                                                          |
 | `/helper/<udid>/recording/video`                                                                    | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token.                                                                  |
 | `/api/events`, `/api/event-log`, `/api/event-log/events`                                            | Device events and the recorded log.                                                                                                                                                                                                                                                                   |
@@ -38,6 +38,15 @@ server's selected device.
 
 `/metrics`, `/logs`, `/ax`, `/appstate`, `/api/events` and `/grid/api/status/events`
 are server-sent event streams; the rest return JSON.
+
+Each `/appstate` event is `{bundleId, pid, isReactNative, label}`. The server reads
+`label` (`CFBundleDisplayName`, else `CFBundleName`, or `null`) from the bundle path that
+simctl reports (`src/foreground-app-details.ts`). A known React Native shell (Expo Go)
+is reported at once without `label`, so the reload control does not wait for simctl; its
+`label` follows in a second event for the same bundle id and pid. A client cannot read the name with
+`app.infoPlist` everywhere: on an EAS iOS 27.1 worker, simctl reports Apple's apps under
+`/private/var/run/com.apple.security.cryptexd/mnt/…`, outside `ALLOWED_ROOTS`, and
+`app.infoPlist` refuses that path [observed: 2026-11-12, staging session].
 
 ## Recording video
 
@@ -858,11 +867,13 @@ CoreDevice reads, PNG parsing, or file readback. [observed: `Sources/SimNative/F
 `ScreenshotEncoder.swift`, `CaptureEngine.swift`; `src/device-session.ts`]
 
 HTTP `/api/screenshot` retains its PNG body and returns the same metadata in
-`X-Expo-Screenshot-Metadata`, exposed to allowed CORS callers. Binary exec-ws
-framing remains unchanged. serve-sim adds no PNG parsing, file readback,
+`X-Expo-Screenshot-Metadata`, exposed to allowed CORS callers. The binary exec-ws
+frame layout is unchanged; binary replies carry the same metadata in a following
+`{id, screenshotMetadata}` JSON frame (see the exec-ws binary screenshot paragraph).
+serve-sim adds no PNG parsing, file readback,
 sidecars, device queries, or opt-in environment variable for metadata.
 [observed: `src/host-actions.ts`,
-`src/middleware.ts`]
+`src/middleware.ts`, `src/socket/server-control.ts`]
 
 ServeEmu returns the same object in PNG headers and its existing base64 JSON
 response. Both standalone and Hub-mounted routes use the same capture helper.
@@ -878,8 +889,9 @@ or a test tool) that return to the starting pose between the readings are not
 detected.
 Each read is about 90 ms on an emulator. A newer reading also refreshes the
 device-owned cache that `/api` uses.
-Width and height come from the PNG's IHDR, because `screencap` returns the
-display at native size; panel identity remains unknown and `screen` is omitted.
+Width and height come from the returned PNG's IHDR, after any requested resizing;
+rotation is observed around the native capture before resizing. Panel identity
+remains unknown and `screen` is omitted.
 [confirmed: Gabe Debes, 2026-11-11; observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
 `display-orientation.ts`, `middleware.ts`, and `server.ts`]
 
@@ -985,8 +997,24 @@ omitting them preserves native-resolution PNG.
 The first four bytes are the unsigned 32-bit request ID in network byte order;
 the remaining bytes are the requested PNG or JPEG. IDs must be integers from
 0 through 4294967295.
-Failures return the usual JSON `{id, error}` frame. Concurrent replies may arrive
-out of order. This request goes through the HTTP screenshot route, so it shares that route's display selection, including verified cold-session direct capture, its device restrictions, display validation, artifact persistence and error handling. It is also subject to the socket's eight-action admission limit. Device names resolve as for ordinary actions; the
+Directly after the binary frame, the server sends a JSON frame
+`{id, screenshotMetadata}` for the same ID. `screenshotMetadata` is the value of the
+HTTP `X-Expo-Screenshot-Metadata` header for the same request. Binary requests go
+through the HTTP route, so simctl captures, including verified cold-session
+capture, report unknown values as described above. When the header is missing or
+unreadable, the frame reports the unknown values
+`{width: 0, height: 0, displayRotation: null}`. Clients identify the frame by its
+`screenshotMetadata` key. Successful replies to `{id, ui}` requests also have no
+`exitCode`, `stdout` or `error`, so a client must not reuse an ID until the
+metadata frame for it has arrived.
+The binary frame comes first, so a client that does not know this frame has its
+image before the metadata frame arrives.
+`actions.describe` advertises the frame with
+`screenshot.capture.properties.output.binaryMetadataFrame: true`; clients wait for
+the frame only when that flag is present, because older servers do not send it.
+[observed: `server-control.ts`, `screenshotMetadataFromHeaders`, `ScreenshotParams`]
+Failures return the usual JSON `{id, error}` frame and no metadata frame.
+Concurrent replies may arrive out of order. This request goes through the HTTP screenshot route, so it shares that route's display selection, including verified cold-session direct capture, its device restrictions, display validation, artifact persistence and error handling. It is also subject to the socket's eight-action admission limit. Device names resolve as for ordinary actions; the
 single-device policy still applies. `fileName` is only supported in path mode.
 `output` defaults to `"path"`, which still returns a staged path and rejects the
 image options. Output selection is specific to the screenshot action. `actions.describe` advertises the supported
@@ -1002,3 +1030,16 @@ when the active display keeps changing. Private native-startup and simctl
 diagnostics stay in host logs. The `display` query uses CoreSimulator IDs;
 serve-emu's screenshot route has no equivalent query and retains its existing
 device screenshot behavior. [observed: serve-sim and serve-emu `middleware.ts`]
+
+## Android screenshot images
+
+serve-emu's POST screenshot endpoint accepts the same `maxWidth`, `format=png`
+or `format=jpeg`, and `quality` image controls described above. Validation runs
+before capture. Its existing `format=base64` response remains JSON containing PNG,
+and can also use `maxWidth`. Default requests preserve the original PNG bytes.
+Resizing and JPEG conversion use Sharp on the host after `adb screencap`; session
+artifacts remain PNG at the requested size. Binary responses declare
+`Content-Length`. `Server-Timing` exposes capture, encode, artifact, and server
+total durations; total includes response construction but excludes delivery [observed:
+`packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`, its server,
+middleware, and inspection route callers].

@@ -158,13 +158,22 @@ afterAll(async () => {
   else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previousScreenshotDirectory;
 });
 
-function socketRequest(
+type SocketError = { id: number; error: string };
+
+async function socketRequest(payload: Record<string, unknown>): Promise<Buffer | SocketError> {
+  const reply = await socketCapture(payload);
+  return "error" in reply ? reply : reply.image;
+}
+
+/** Resolves once the reply is complete: an error frame, or a binary frame and its metadata frame. */
+function socketCapture(
   payload: Record<string, unknown>,
-): Promise<Buffer | { id: number; error: string }> {
+): Promise<SocketError | { image: Buffer; metadata: unknown }> {
   const handleWebSocket = middleware.handleWebSocket;
   if (!handleWebSocket) throw new Error("Middleware must expose its WebSocket handler");
   return new Promise((resolve, reject) => {
     let receive!: (data: Buffer) => void;
+    let image: Buffer | undefined;
     const timeout = setTimeout(() => reject(Error("No socket reply")), 3000);
     const ws = {
       OPEN: 1,
@@ -174,9 +183,16 @@ function socketRequest(
         if (event === "message") receive = listener;
       },
       send(data: string | Buffer) {
-        if (typeof data === "string" && JSON.parse(data).ready) return;
+        if (Buffer.isBuffer(data)) {
+          image = data;
+          return;
+        }
+        const reply = JSON.parse(data);
+        if (reply.ready) return;
         clearTimeout(timeout);
-        resolve(Buffer.isBuffer(data) ? data : JSON.parse(data));
+        if (!image) return resolve(reply);
+        expect(reply).toEqual({ id: 42, screenshotMetadata: expect.any(Object) });
+        resolve({ image, metadata: reply.screenshotMetadata });
       },
     } as UpgradeHandlerWebSocket;
     void Promise.resolve(
@@ -226,7 +242,11 @@ test("real socket callback returns HTTP PNG bytes and validates device/display i
       "X-Expo-Screenshot-Metadata",
     );
     const http = Buffer.from(await response!.arrayBuffer());
-    const binary = (await socketRequest({ udid: UDID })) as Buffer;
+    const capture = (await socketCapture({ udid: UDID })) as { image: Buffer; metadata: unknown };
+    expect(capture.metadata).toEqual(
+      JSON.parse(response!.headers.get("x-expo-screenshot-metadata")!),
+    );
+    const binary = capture.image;
     expect(binary.readUInt32BE()).toBe(42);
     expect(binary.subarray(4)).toEqual(http);
     expect(http).toEqual(display === 7 ? png : secondPanelPng);

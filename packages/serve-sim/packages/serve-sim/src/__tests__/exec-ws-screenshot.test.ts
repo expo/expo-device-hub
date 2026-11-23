@@ -84,7 +84,9 @@ test("binary is opt-in, action-scoped and advertised without changing default ca
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)["screenshot.capture"]).toMatchObject({
       output: "path",
-      properties: { output: { enum: ["path", "binary"], default: "path" } },
+      properties: {
+        output: { enum: ["path", "binary"], default: "path", binaryMetadataFrame: true },
+      },
     });
   }
   expect(calls).toBe(0);
@@ -120,4 +122,56 @@ test("a screenshot returns one correlated binary PNG, including concurrent out-o
   expect(frames.map((frame) => frame.readUInt32BE())).toEqual([2, 1]);
   expect(frames.map((frame) => frame.subarray(4).toString())).toEqual(["PNG2", "PNG1"]);
   expect(h.pending.size).toBe(0);
+});
+
+test("each binary frame is followed directly by its own metadata frame", async () => {
+  const metadata = { width: 3, height: 2, displayRotation: "landscape-left" };
+  let release!: (response: Response) => void;
+  const slow = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  const h = channel(async (payload) =>
+    (payload as { slow?: boolean }).slow
+      ? slow
+      : new Response("PNG2", {
+          headers: { "X-Expo-Screenshot-Metadata": JSON.stringify(metadata) },
+        }),
+  );
+  h.send({ id: 1, action: "screenshot.capture", params: { output: "binary", slow: true } });
+  h.send({ id: 2, action: "screenshot.capture", params: { output: "binary" } });
+  await new Promise((resolve) => setImmediate(resolve));
+  release(new Response("PNG1"));
+  await Promise.all(h.pending);
+  const unknown = { width: 0, height: 0, displayRotation: null };
+  expect(
+    h.sent
+      .slice(1)
+      .map((frame) => (Buffer.isBuffer(frame) ? frame.readUInt32BE() : JSON.parse(frame))),
+  ).toEqual([
+    2,
+    { id: 2, screenshotMetadata: metadata },
+    1,
+    { id: 1, screenshotMetadata: unknown },
+  ]);
+});
+
+test("an unreadable metadata header reports unknown values and errors send no metadata frame", async () => {
+  const h = channel(async (payload) =>
+    (payload as { fail?: boolean }).fail
+      ? Response.json({ error: "Screenshot failed" }, { status: 500 })
+      : new Response("PNG", { headers: { "X-Expo-Screenshot-Metadata": "{" } }),
+  );
+  h.send({ id: 5, action: "screenshot.capture", params: { output: "binary" } });
+  await Promise.all(h.pending);
+  h.send({ id: 6, action: "screenshot.capture", params: { output: "binary", fail: true } });
+  await Promise.all(h.pending);
+  expect(
+    h.sent
+      .slice(1)
+      .filter((frame): frame is string => !Buffer.isBuffer(frame))
+      .map((frame) => JSON.parse(frame)),
+  ).toEqual([
+    { id: 5, screenshotMetadata: { width: 0, height: 0, displayRotation: null } },
+    { id: 6, error: "Screenshot failed" },
+  ]);
 });

@@ -93,7 +93,7 @@ test("desktop keeps its title and original controls", () => {
   expect(html).toContain("Test phone");
   expect(html).not.toContain('aria-label="Full screen"');
   expect(html).not.toContain('aria-label="Keyboard"');
-  expect(html).toContain('aria-label="Home"');
+  expect(html).toContain('aria-label="Go to home screen"');
   expect(html).not.toContain('aria-label="Toggle inspector"');
 });
 

@@ -13,14 +13,17 @@ const DUO: Device = {
   booted: true,
   physical: false,
   supported: true,
+  deviceModel: "ios:iphone-duo",
 };
 const IPHONE: Device = {
   ...DUO,
+  deviceModel: null,
   id: "iphone",
   name: "iPhone 17 Pro",
 };
 const PIXEL: Device = {
   ...DUO,
+  deviceModel: null,
   id: "pixel",
   name: "Pixel 10 Pro",
   platform: "android",
@@ -41,7 +44,6 @@ function client(
           { id: "inner", active: false, attachVideo: () => {} },
         ]
       : null,
-    deviceModelUrl: model ? "https://hub.test/grid/api/devicekit-model" : null,
   } as unknown as DeviceClient;
 }
 
@@ -144,7 +146,7 @@ test.each(CASES)("the 2D preview keeps its size and layout: $name", (entry) => {
         device={entry.device}
         client={entry.client}
         DeviceScreen={() => <div />}
-        FoldableDeviceScreen={() => <div data-testid="model-screen" />}
+        DeviceModelScreen={() => <div data-testid="model-screen" />}
         foldPreview={{ mode: "2d", sizeMode: "fill" }}
         displayScreen={(screen) => screen ?? null}
       />,
@@ -163,9 +165,10 @@ test("the 3D stage is capped at the flat Duo's size, so both modes fill the stre
           device={DUO}
           client={client(screen, { fold: true, model: true })}
           DeviceScreen={() => <div />}
-          FoldableDeviceScreen={() => <div data-testid="model-screen" />}
+          DeviceModelScreen={() => <div data-testid="model-screen" />}
           foldPreview={{ mode, sizeMode: "fill" }}
           displayScreen={(next) => next ?? null}
+          deviceModelAssets={{ "ios:iphone-duo": "https://hub.test/assets/iphone-duo.glb" }}
         />,
       ),
     ).frame;

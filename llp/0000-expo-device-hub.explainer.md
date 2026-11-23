@@ -6,7 +6,7 @@
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
-**Revised:** 2026-10-03 (reviewed and made Active by Krystof Woldrich)
+**Revised:** 2026-11-20 (tablet page height, Claude Code); 2026-11-16 (sidebar support warning, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
 
 ## Summary
 
@@ -104,7 +104,7 @@ the visual height by its zoom scale so pinch zoom alone does not hide controls. 
 keeps the sidebar reachable, and fits the device above a normal-flow action bar.
 Mobile fitting does not wait for an observer to measure that bar.
 The mobile viewer provides a keyboard toggle when the client supports HID text
-events. It sits in the action bar's Clipboard pill. The action bar is hidden while the
+events. It sits in the action bar directly after the Clipboard menu. The action bar is hidden while the
 keyboard is up and in full screen. With the keyboard up, the sidebar toggle and the
 full-screen button hide too, and the device takes that room; the phone's own keyboard
 controls dismiss the keyboard. An in-page full-screen toggle is pinned to the top-right
@@ -120,7 +120,15 @@ padding. The shared toolbar and sidebar changes are described below. [observed: 
 `StreamPanel.tsx` and `StreamControls.tsx`, HubClient `useMobileViewport.ts`]
 [confirmed: Gabe Debes, 2026-10-26, requested equivalent mobile behavior in Hub]
 [confirmed: Billy Roh, 2026-10-29, requested the Keyboard toggle in the Clipboard pill and
-the top-right Full screen button]
+the top-right Full screen button; since the toolbar became one bar
+([Hub toolbar](#hub-toolbar)), the toggle keeps its place next to the Clipboard menu]
+
+Tablet and desktop size the dashboard, its sidebar, and the server connection overlay to `100dvh`, the visible
+page height. Tablet browsers make `100vh` the height with their toolbar hidden, so a `100vh` dashboard put the
+end of the sidebar and the device controls below the bottom edge. In desktop Chrome, `100dvh` and `100vh` have
+the same value. [observed 2026-11-20: iPad (A16) simulator, iOS 27 Safari, full-screen window: `innerHeight`
+and `100dvh` 1048px, `100vh` 1123px; Pixel Tablet emulator, Android 16 Chrome, landscape: `innerHeight` and
+`100dvh` 648px, `100vh` 744px; headless desktop Chrome, 1440×900 window: both 813px]
 
 ### Hub sidebar
 
@@ -128,9 +136,139 @@ Hub has one sidebar, on the left. It lists the simulators and emulators, then sh
 selected device's inspector below them in the same scrolling column. There is no right
 sidebar, so the stream panel uses the rest of the width. The toolbar has no Theme button;
 the device's appearance is the inspector's Appearance setting. [observed: Hub
-`Dashboard.tsx`; HubComponents `Sidebar.tsx`, `LogSidebar.tsx` (`InspectorSections`),
+`Dashboard.tsx`; HubComponents `Sidebar.tsx`, `InspectorSections.tsx`,
 `StreamControls.tsx`] [confirmed: Billy Roh, 2026-10-29, requested moving the right pane
 into the left pane and removing the Theme button]
+
+#### Sidebar look
+
+The sidebar has the look of the website's preview settings. A hairline separates each section;
+a section's title row is 52px high and takes the subtle surface under the pointer; an option
+is a label with its control at the right, 20px from the next option. A select is a box of
+36px with 8px corners and one shared width, a switch turns blue when on, and a button is a
+pill. [observed: HubComponents `CollapsibleSection.tsx`, `SidebarRow.tsx`, `Select.tsx`,
+`SidebarSwitch.tsx`, `Button.tsx`; universe `SimulatorPreviewSection.tsx`,
+`SimulatorPreviewOptions.tsx`, `ui/components/Select.tsx`, `ui/components/Switch` at
+`d24ccaa940`] [confirmed: Krystof Woldrich, 2026-11-17, requested the website's font, sizes,
+selects, sliders and buttons for the sidebar, with the Hub's own sections and options]
+
+The device lists are the Hub's own, because the website shows one device per preview. A list
+has its title with the add button at the right, and one 36px row per device with the
+platform's mark, the name, and the OS version. The selected row has the info surface and
+border. [observed: HubComponents `DeviceSection.tsx`, `DeviceListItem.tsx`]
+[confirmed: Krystof Woldrich, 2026-11-17, gave the design frames of the lists]
+
+#### Adding a device
+
+The add button of a device list opens a menu of the recent devices of its platform: the
+shut-down devices that the list does not show, the most recently used first, each with its OS
+version. A click boots the device; the menu stays open with a spinner on its row until the
+host answers, and a failed boot opens a dialog with the host's reason. The last row,
+"Create new simulator" or "Create new emulator", opens a modal with the name, the OS version
+and the model of a new device, and one Create button. The modal stays open while the host
+creates and boots the device, and shows a failure above the button. On Android the model
+comes before the OS version, because the model narrows the system images.
+[observed: HubComponents `AddDeviceMenu.tsx`, `NewDeviceModal.tsx`, `DeviceSection.tsx`,
+`Modal.tsx`] [confirmed: Krystof Woldrich, 2026-11-17, gave the design frames of the menu and
+the modal, and asked for the two steps: the recent devices first, the modal only for a new
+device]
+
+#### Steady inspector
+
+The inspector does not add or remove sections and rows while a device connects or
+reconnects. [confirmed: Krystof Woldrich, 2026-11-17, requested that options stay displayed
+and only change their value or lock]
+
+- **Sections.** A selected device always has Current app, Device options, Stream options
+  and Logs, and the sections of its platform: Accessibility, Location, Clipboard and Events
+  on iOS; Camera, Accessibility, Location, Permissions and Events on Android. A section whose
+  capability the device does not report says that it is not available, in place of its
+  controls. [observed: `PLATFORM_SECTIONS` in `InspectorSections.tsx`]
+- **Rows.** Device options has one fixed list of rows per platform. A row that the device
+  cannot change now is locked: while the settings load, without a reason; while the Hub
+  cannot read them, or on a device that does not have the setting, with the reason in a
+  tooltip. A select whose value is not known shows a placeholder.
+  [observed: `SELECT_SETTINGS`, `SWITCH_SETTINGS` and `lockReason` in `DeviceOptionsSection.tsx`]
+  Stream options has a fixed list of rows per platform too: Transport, the two codec rows,
+  Max size, Video FPS and Video bitrate; on iOS also MJPEG FPS and MJPEG quality; on Android
+  also Source. A row that the server or the device has nothing for is locked with a reason: a
+  codec of a transport that the server does not offer, an encoder setting that the client
+  does not report, and the source of a device that has one source. Only the rows of the gRPC
+  source follow a value: they show while that source is selected.
+  [observed: `ENCODER_SETTINGS` and the Source and codec rows in `StreamOptionsSection.tsx`]
+- **Kept values.** A client reports its capabilities, device settings, stream capabilities,
+  stream settings, stream source, orientation and fold as absent while it connects, and again
+  on each reconnect. On iOS the settings are cleared whenever the exec channel's URL or token
+  changes. [observed: the settings effect in HubClient `useIosDevice.ts`] The inspector keeps
+  the last value of those fields for each device and shows it, and locks the rows that hold
+  a kept value until the client reports again. The kept values are only for the layout:
+  commands and the fields that say whether a control can be used are always the live ones.
+  [observed: `useSteadyClient.ts`]
+- **The guess.** A device that has not reported yet starts with the capabilities of the last
+  device of its kind that streamed, so its sections are in place before it connects. A kind
+  is a platform and whether the device is physical: a physical phone does not take what an
+  emulator can do. A client reads some capabilities after its stream starts, and it reports
+  one that it has not read yet like one that the device does not have. So the guess holds
+  for 5 seconds after the device streams. From then on only the device's own reports count,
+  and a control that the device does not have goes. [observed: `GUESS_GRACE_MS` and
+  `deviceKind` in `useSteadyClient.ts`]
+- **A device switch.** In the render that selects another device, the client still holds the
+  reports of the device before, because its adapter clears them in an effect. The inspector
+  does not read the client's reports in that render, so they are not kept under the new
+  device. [observed: `reportingDevice` in `useSteadyClient.ts`; the settings effects in
+  HubClient `useIosDevice.ts` and `useAndroidDevice.ts`]
+
+The website does the same for its fixed set of options: it shows every option of the
+platform while the settings load and disables them.
+[observed: universe `SimulatorPreviewOptions.tsx` at `d24ccaa940`] The Hub differs in one
+point: it does not hide an option that the device reports as unsupported, because a row
+that leaves after the first read is also a change of the list.
+
+#### Device support warning
+
+A device outside Hub's supported/tested set keeps an amber warning triangle in
+its sidebar row. The triangle is a separate button that opens non-modal details:
+it does not select or boot the device, and it is not nested inside the row's
+selection button. Keyboard and touch activation use the same trigger; Escape
+returns focus and outside interaction dismisses the details. The explanation is
+about device-type support and testing: streaming and controls may not work as
+expected, but the device can still be tried. It does not describe rendering or
+GPU performance. The details anchor to the warning trigger and render in a portal
+outside the sidebar's scroll container. Viewport collision handling can flip them
+above the trigger; long content scrolls within the available height. They hide when
+the trigger scrolls out of view. [observed: HubComponents `DeviceListItem.tsx` and
+`UnsupportedDeviceWarning.tsx`]
+
+### Hub toolbar
+
+The toolbar under the device has the look of the website's device controls: one rounded bar
+on the element surface that holds round 36px icon buttons with 20px icons, and a dark tooltip
+that slides in above a button and says what the button does. The glyphs of Back, Home,
+Recents, Dismiss keyboard, Screenshot and Reload are the website's.
+[observed: HubComponents `StreamControls.tsx`, `ControlButton.tsx`, `Tooltip.tsx`, the
+`.hub-tooltip` rules in `theme/theme.css`; universe `SimulatorPreviewControls.tsx` and
+`ui/components/Tooltip` at `d24ccaa940`]
+[confirmed: Krystof Woldrich, 2026-11-17, requested that the controls under the screen look
+and behave like the website's]
+
+The order follows the website: an Android device leads with Back, Home, Recents and Dismiss
+keyboard, in the order of its navigation bar; Screenshot and Reload follow on both
+platforms. The controls that only the Hub has come last: the Clipboard menu, the Keyboard
+toggle of a phone layout, and Rotate. The inspector keeps its rows for the Android buttons.
+[observed: `StreamControls.tsx`, `StreamPanel.tsx`, `DeviceOptionsSection.tsx`]
+
+Three things differ from the website on purpose:
+
+- The Hub's controls do not lock while the stream is not live. The website disables every
+  control until the status is `streaming`. In the Hub, input can work while video fails
+  ([LLP 0013](0013-hub-client-input-and-control.explainer.md#orientation)), so only Rotate
+  locks, from `orientationUnavailable`, and its tooltip gives the reason.
+- A button under the pointer takes the hover surface. The website's quaternary hover color
+  is the color of the bar itself, so its hover does not show.
+  [observed: `--expo-theme-button-quaternary-hover` and `--expo-theme-background-element`
+  are both `slate-3` in `@expo/styleguide` 14.2.0 `expo-theme.css`]
+- Screenshot and the Clipboard menu show a spinner in place of their icon while their action
+  runs. The website does this for Screenshot only; it has no Clipboard menu.
 
 ### DeviceKit hardware artwork
 

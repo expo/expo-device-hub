@@ -37,7 +37,7 @@ const STREAMING_CLIENT = {
 describe("agent device status", () => {
   test("labels active device rows and renders the blue status badge", () => {
     const markup = renderToStaticMarkup(
-      <DeviceListItem name="iPhone 16 Pro" version="iOS 18.6" usedByAgent />,
+      <DeviceListItem platform="ios" name="iPhone 16 Pro" version="iOS 18.6" usedByAgent />,
     );
 
     expect(markup).toContain('aria-label="iPhone 16 Pro, iOS 18.6, used by agent"');
@@ -47,7 +47,9 @@ describe("agent device status", () => {
   });
 
   test("keeps inactive status space reserved without exposing the status", () => {
-    const markup = renderToStaticMarkup(<DeviceListItem name="iPhone 16" version="iOS 26.5" />);
+    const markup = renderToStaticMarkup(
+      <DeviceListItem platform="ios" name="iPhone 16" version="iOS 26.5" />,
+    );
 
     expect(markup).toContain('data-agent-device-status="inactive"');
     expect(markup).toContain("visibility:hidden");
@@ -56,7 +58,12 @@ describe("agent device status", () => {
 
   test("keeps long device rows contained and compacts agent status when needed", () => {
     const markup = renderToStaticMarkup(
-      <DeviceListItem name="Medium_Phone_API_36.1" version="Android 16.0" usedByAgent />,
+      <DeviceListItem
+        platform="ios"
+        name="Medium_Phone_API_36.1"
+        version="Android 16.0"
+        usedByAgent
+      />,
     );
     const buttonTag = markup.slice(0, markup.indexOf(">") + 1);
 
@@ -103,7 +110,13 @@ describe("agent device status", () => {
     expect(visible).toContain("color:rgba(255, 255, 255, 0.7)");
     expect(visible).toContain("Taking over might collide with what the agent is doing.");
     expect(visible).toContain("Take over anyway");
-    expect(visible).toContain("background-color:var(--expo-theme-button-agent-overlay-background)");
+    // The button takes its fill from the pressable rules, which read these properties.
+    expect(visible).toContain(
+      "--hub-pressable-bg:var(--expo-theme-button-agent-overlay-background)",
+    );
+    expect(visible).toContain(
+      "--hub-pressable-bg-hover:var(--expo-theme-button-agent-overlay-hover)",
+    );
     expect(visible).toContain("font-family:inherit");
     expect(visible).toContain(
       '<span style="font-size:12px;font-weight:500;line-height:1.6;letter-spacing:0">Take over anyway</span>',
