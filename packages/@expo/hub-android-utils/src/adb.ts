@@ -47,14 +47,18 @@ export async function runAdbGetprop(
 
 /**
  * Run `adb -s <serial> emu avd name` and return its stdout, or `null` on
- * failure. Only meaningful for emulators. Never throws.
+ * failure. Only meaningful for emulators. `timeoutMs` kills a stalled child
+ * and leaves the failure in `error`. Never throws.
  */
 export async function runAdbEmuAvdName(
   adbPath: string,
   serial: string,
+  { timeoutMs }: { timeoutMs?: number } = {},
 ): Promise<AndroidUtilsResult<string | null>> {
   try {
-    const { stdout } = await execFileAsync(adbPath, ["-s", serial, "emu", "avd", "name"]);
+    const { stdout } = await execFileAsync(adbPath, ["-s", serial, "emu", "avd", "name"], {
+      timeout: timeoutMs,
+    });
     return result(stdout);
   } catch (error) {
     return result(

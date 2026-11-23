@@ -8,6 +8,50 @@ export function emulatorSerial(port: number): string {
   return `emulator-${port}`;
 }
 
+/** Whether an adb serial names an emulator (`emulator-<port>`) rather than physical hardware. */
+export function isEmulatorSerial(serial: string): boolean {
+  return /^emulator-\d+$/.test(serial);
+}
+
+/** An emulator process found by its command line. */
+export interface EmulatorProcess {
+  avdName: string;
+  /** Console port from `-port`; the adb serial is `emulator-<port>`. */
+  port: number | null;
+}
+
+/**
+ * The AVD and console port of an `emulator` or `qemu-system-*` command line,
+ * or `null` for any other process. The AVD is named by `-avd <name>` or
+ * `@<name>`; `-ports <console>,<adb>` names the console port first. `ps`
+ * joins the arguments with spaces, which AVD names never contain.
+ */
+export function parseEmulatorArgs(args: string): EmulatorProcess | null {
+  const tokens = args.split(/\s+/).filter(Boolean);
+  const binary = tokens.findIndex((token) => {
+    const name = token.slice(token.lastIndexOf("/") + 1);
+    return name === "emulator" || name.startsWith("qemu-system-");
+  });
+  if (binary === -1) return null;
+
+  let avdName: string | null = null;
+  let port: number | null = null;
+  for (let index = binary + 1; index < tokens.length; index++) {
+    const token = tokens[index]!;
+    const next = tokens[index + 1];
+    if ((token === "-avd" || token === "--avd") && next) {
+      avdName ??= next;
+      index++;
+    } else if (token.startsWith("@") && token.length > 1) {
+      avdName ??= token.slice(1);
+    } else if ((token === "-port" || token === "-ports") && next && /^\d+(,\d+)?$/.test(next)) {
+      port ??= Number(next.split(",")[0]);
+      index++;
+    }
+  }
+  return avdName ? { avdName, port } : null;
+}
+
 /** Split an environment string into argv without running a shell. */
 function parseExtraArgs(value: string): string[] {
   // Preserve $NAME literally; spawn does not perform shell expansion.

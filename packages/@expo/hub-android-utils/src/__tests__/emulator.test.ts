@@ -6,6 +6,7 @@ import {
   buildEmulatorArgs,
   emulatorSerial,
   formatEmulatorCommand,
+  parseEmulatorArgs,
   spawnEmulator,
 } from "../emulator";
 
@@ -22,6 +23,34 @@ afterEach(() => {
 describe("emulatorSerial", () => {
   test("formats the adb serial from the console port", () => {
     expect(emulatorSerial(5554)).toBe("emulator-5554");
+  });
+});
+
+describe("parseEmulatorArgs", () => {
+  test.each([
+    ["emulator -avd Pixel_9 -no-window -port 5560", { avdName: "Pixel_9", port: 5560 }],
+    ["/sdk/emulator/emulator @Pixel_9 -port 5556", { avdName: "Pixel_9", port: 5556 }],
+    ["/Android Sdk/emulator/emulator -avd Pixel_9", { avdName: "Pixel_9", port: null }],
+    [
+      "/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64 -avd Pixel_9 -ports 5562,5563",
+      { avdName: "Pixel_9", port: 5562 },
+    ],
+    [
+      "/sdk/emulator/qemu/darwin-aarch64/qemu-system-aarch64 @Pixel_8",
+      { avdName: "Pixel_8", port: null },
+    ],
+  ])("%s is an emulator", (args, expected) => {
+    expect(parseEmulatorArgs(args)).toEqual(expected);
+  });
+
+  test.each([
+    "node script.js -avd Pixel_9 -port 5560",
+    "bun emulator.ts -avd Pixel_9",
+    "/sdk/emulator/emulator64-crash-service -avd Pixel_9",
+    "/sdk/emulator/emulator -list-avds",
+    "",
+  ])("%p is not an emulator", (args) => {
+    expect(parseEmulatorArgs(args)).toBeNull();
   });
 });
 
