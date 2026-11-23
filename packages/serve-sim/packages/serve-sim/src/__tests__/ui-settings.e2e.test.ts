@@ -1,8 +1,10 @@
 import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { capabilityConfigPath } from "../capability-config";
+import { timeZoneFile } from "../time-zone-capability";
 
 // Drives the built CLI's `ui` verb against whatever simulator is already
 // booted (the CI `sim-test.yml` job boots one before running this directory).
@@ -216,14 +218,23 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
   });
 
   // `simctl getenv` reads the launchd_sim store new processes inherit from.
-  test("time zone sets and clears TZ on the simulator's launchd", () => {
+  // No server streams this device, so the CLI leaves the capability off: apps get the zone from
+  // launchd at launch. `simctl getenv` reads the launchd_sim store new processes inherit from.
+  test("time zone sets TZ and the zone file, and clears them for host", () => {
+    const zoneFile = () => readFileSync(timeZoneFile(udid!), "utf-8").trim();
     cli("time-zone", "Asia/Tokyo");
     expect(simEnv("TZ")).toBe("Asia/Tokyo");
     expect(cli("time-zone")).toBe("Asia/Tokyo");
+    expect(zoneFile()).toBe("Asia/Tokyo");
+    const config = capabilityConfigPath(udid!);
+    expect(existsSync(config) ? readFileSync(config, "utf-8") : "").not.toContain(
+      "libServeSimTimeZone",
+    );
     cli("time-zone", "europe/berlin");
     expect(simEnv("TZ")).toBe("Europe/Berlin");
     cli("time-zone", "host");
     expect(simEnv("TZ")).toBeNull();
     expect(cli("time-zone")).toBe("host");
-  });
+    expect(zoneFile()).toBe("host");
+  }, 30_000);
 });
