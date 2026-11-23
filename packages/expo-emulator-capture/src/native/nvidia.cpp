@@ -197,11 +197,11 @@ class NvidiaSource final : public FrameSource {
  public:
   explicit NvidiaSource(const Gfxstream& g) : g_(g) {}
   ~NvidiaSource() override { av_buffer_unref(&pool_); }
-  bool gpuUnavailable() const override { return !g_.gpuEntryPointsAvailable(); }
+  bool gpuUnavailable() const override { return !g_.nvidiaEntryPointsAvailable(); }
   bool capture(uint32_t handle, CapturedFrame& out, std::string& error) override {
     std::lock_guard<std::mutex> guard(mutex_);
     try {
-      if (!g_.gpuEntryPointsAvailable())
+      if (!g_.nvidiaEntryPointsAvailable())
         throw std::runtime_error("NVIDIA capture needs gfxstream GL texture and EGL entry points");
       if (!device_) device_ = device();
       auto begin = Clock::now();
@@ -210,9 +210,8 @@ class NvidiaSource final : public FrameSource {
       RendererLock lock(g_, fb);
       auto retained = g_.findColorBuffer(fb, handle);
       if (!retained) throw std::runtime_error("posted color buffer disappeared");
-      void* gl = g_.colorBufferGl(retained.get());
-      if (!gl) throw std::runtime_error("NVIDIA capture needs host OpenGL, with Vulkan disabled");
-      auto borrowed = g_.borrowedImageInfo(gl);
+      // @ref LLP 0021#nvidia-capture — borrow through the exported renderer API on Linux
+      auto borrowed = g_.borrowColorBufferForDisplay(fb, handle);
       auto* descriptor = borrowed.get();
       if (!descriptor || !strstr(typeid(*descriptor).name(), "BorrowedImageInfoGl"))
         throw std::runtime_error("renderer did not return a GL image descriptor");
@@ -227,7 +226,6 @@ class NvidiaSource final : public FrameSource {
         if (!context_ || !surface_) throw std::runtime_error("cannot create shared renderer context");
       }
       RendererContext renderer(g_, display_, surface_, context_);
-      g_.waitSync(gl, false);
       unsigned texture = g_.getGlobalTexName(info->texture);
       if (!texture) throw std::runtime_error("renderer texture has no native GL name");
       if (!pool_ || width_ != int(info->width) || height_ != int(info->height)) {
@@ -238,6 +236,8 @@ class NvidiaSource final : public FrameSource {
       snapshot->device = device_;
       snapshot->image = allocateFrame(pool_);
       CurrentCuda cuda(*device_);
+      // CUDA mapping waits for preceding graphics work; the renderer stays locked until
+      // the copy is complete and the image is unmapped, before graphics can reuse it.
       MappedImage mapped(*device_, texture);
       CUarray source = nullptr;
       cuCheck(device_->array(&source, mapped.resource, 0, 0), "get renderer CUDA array");

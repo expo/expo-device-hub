@@ -78,6 +78,8 @@ struct Gfxstream {
   void* (*colorBufferGl)(void* colorBuffer) = nullptr;
   std::unique_ptr<BorrowedImageInfo> (*borrowedImageInfo)(void* colorBufferGl) = nullptr;
   void (*waitSync)(void* colorBufferGl, bool debug) = nullptr;
+  // The Linux renderer exports this borrower even when getColorBufferGl is absent.
+  std::unique_ptr<BorrowedImageInfo> (*borrowColorBufferForDisplay)(void* fb, uint32_t handle) = nullptr;
 
   // GLES translator EGL entry points, for the macOS GPU path. They are local
   // (non-exported) symbols, so a stripped renderer leaves them null and only the CPU
@@ -89,9 +91,14 @@ struct Gfxstream {
   unsigned (*getGlobalTexName)(unsigned localName) = nullptr;
 
   bool gpuEntryPointsAvailable() const {
+    return gpuContextEntryPointsAvailable() && colorBufferGl && borrowedImageInfo && waitSync;
+  }
+  bool nvidiaEntryPointsAvailable() const {
+    return gpuContextEntryPointsAvailable() && borrowColorBufferForDisplay;
+  }
+  bool gpuContextEntryPointsAvailable() const {
     return eglMakeCurrent && eglGetCurrentContext && eglGetCurrentDisplay &&
-           eglGetCurrentSurface && getGlobalTexName && createSharedTrivialContext && getDisplay &&
-           colorBufferGl && borrowedImageInfo && waitSync;
+           eglGetCurrentSurface && getGlobalTexName && createSharedTrivialContext && getDisplay;
   }
 };
 
