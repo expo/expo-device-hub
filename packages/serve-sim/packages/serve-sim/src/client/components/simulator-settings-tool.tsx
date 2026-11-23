@@ -14,10 +14,12 @@ import {
   Image,
   Laptop,
   Maximize,
+  RotateCcw,
   RotateCw,
   SlidersHorizontal,
   TriangleAlert,
 } from "lucide-react";
+import { HOST_CLOCK, zoneWallTime } from "../../clock";
 import { HOST_TIME_ZONE, supportedTimeZones, timeZoneOffsetLabel } from "../../time-zone";
 import { hostUiRequest, runHostAction } from "../../socket/client-control";
 import { parseRuntime } from "../utils/grid";
@@ -46,6 +48,7 @@ export const TEXT_SIZE_CATEGORIES = [
 ] as const;
 
 const TEXT_SIZE_DEBOUNCE_MS = 250;
+const CLOCK_REFRESH_MS = 30_000;
 /** `getUiStatus` reports an option it could not read as this. */
 const UNREADABLE = "unsupported";
 /** `pending` while SpringBoard restarts; not an option name. */
@@ -68,6 +71,7 @@ const DEFAULT_STATE: SettingsState = {
   voiceover: "off",
   "hardware-keyboard": "on",
   "time-zone": HOST_TIME_ZONE,
+  clock: HOST_CLOCK,
 };
 
 const HOST_TIME_ZONE_OPTION: SelectOption = { value: HOST_TIME_ZONE, label: "Host default" };
@@ -171,6 +175,217 @@ export function StaleClockControls({
         </button>
       </Tooltip>
     </>
+  );
+}
+
+const PICK_SETTLE_MS = 600;
+
+const CLOCK_WARNING =
+  "The status bar clock keeps the host time. An app launched before this session keeps it too.";
+
+/** The local time to show and pick: `clock.get` reports it first, then its offset. */
+const wallTime = (value: string) => value.slice(0, 16);
+
+/** Advance a reported instant, keeping UTC fallbacks in UTC when they are edited too. */
+function tickingWallTime(value: string, elapsed: number, zone: string): string {
+  const suffix = /(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!suffix) return wallTime(value); // An optimistic local pick awaits the server's readback.
+  const at = Date.parse(value) + elapsed;
+  if (suffix[1] === "Z") return wallTime(new Date(at).toISOString());
+  if (zone !== HOST_TIME_ZONE) {
+    try {
+      return wallTime(zoneWallTime(zone, at));
+    } catch {
+      // A browser can lack a zone known by the host; show the instant in UTC instead.
+    }
+  }
+  return wallTime(new Date(at).toISOString());
+}
+
+/** When the page cannot format a zone, show and edit an explicit UTC instant. */
+function clockUsesUtc(value: string, zone: string): boolean {
+  if (value === HOST_CLOCK || !/^\d{4}-/.test(value)) return false;
+  if (value.endsWith("Z")) return true;
+  if (zone !== HOST_TIME_ZONE) {
+    try {
+      zoneWallTime(zone, Date.now());
+      return false;
+    } catch {}
+  }
+  return true;
+}
+
+/**
+ * Where the picker opens: now on the simulator's clock. Empty when the page cannot know it (the
+ * host's zone, or one this browser does not have), so a pick names both its date and its time.
+ */
+function pickerStart(zone: string): string {
+  if (zone === HOST_TIME_ZONE) return "";
+  try {
+    return wallTime(zoneWallTime(zone, Date.now()));
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The simulator's date and time: the host's, or one set for its apps. The picker is the
+ * browser's own; a time without a zone is read in the simulator's zone.
+ */
+export function ClockControl({
+  value,
+  zone,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  /** The simulator's time zone setting. */
+  zone: string;
+  disabled: boolean;
+  onChange: (next: string) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editing = useRef(false);
+  const pickerUtc = useRef(clockUsesUtc(value, zone));
+  const sampledAt = useRef(0);
+  const [tick, setTick] = useState({ value, elapsed: 0 });
+  const readable = value === HOST_CLOCK || /^\d{4}-/.test(value);
+  const set = readable && value !== HOST_CLOCK;
+  useEffect(() => {
+    sampledAt.current = performance.now();
+    if (!set) return;
+    const timer = setInterval(
+      () => setTick({ value, elapsed: performance.now() - sampledAt.current }),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [set, value]);
+  useEffect(() => () => clearTimeout(settle.current ?? undefined), []);
+  // The picker changes the date and the time one field at a time: send the pick once it settles.
+  const pick = (next: string) => {
+    clearTimeout(settle.current ?? undefined);
+    settle.current = null;
+    if (!next) return;
+    const picked = `${next}${pickerUtc.current ? "Z" : ""}`;
+    settle.current = setTimeout(() => {
+      settle.current = null;
+      onChange(picked);
+    }, PICK_SETTLE_MS);
+  };
+  const reset = () => {
+    clearTimeout(settle.current ?? undefined);
+    settle.current = null;
+    onChange(HOST_CLOCK);
+  };
+  // `clock.get` reports host or a date; anything else is a read that failed.
+  const start = set
+    ? tickingWallTime(value, tick.value === value ? tick.elapsed : 0, zone)
+    : pickerStart(zone);
+  // Uncontrolled, so a reply cannot undo a field the user just picked, and a new value does not
+  // close an open picker. A value from the simulator still shows when no pick is pending.
+  useEffect(() => {
+    if (input.current && !editing.current && settle.current === null) input.current.value = start;
+  }, [start]);
+  const open = () => {
+    const picker = input.current;
+    if (!picker) return;
+    picker.value = set
+      ? tickingWallTime(value, Math.max(0, performance.now() - sampledAt.current), zone)
+      : pickerStart(zone);
+    pickerUtc.current = clockUsesUtc(value, zone);
+    editing.current = true;
+    if (typeof picker.showPicker === "function") picker.showPicker();
+    else picker.focus();
+  };
+  return (
+    <span className="flex min-w-0 items-center gap-0.5">
+      <span className="relative flex min-w-0">
+        <button
+          type="button"
+          aria-label="Date & Time"
+          disabled={disabled || !readable}
+          onClick={open}
+          className="min-w-0 cursor-pointer truncate rounded-md border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-[11px] tabular-nums text-white/90 disabled:cursor-default disabled:text-white/40"
+        >
+          {!readable
+            ? "Unavailable"
+            : set
+              ? `${start.replace("T", " ")}${clockUsesUtc(value, zone) ? " UTC" : ""}`
+              : "Host default"}
+        </button>
+        <input
+          ref={input}
+          type="datetime-local"
+          tabIndex={-1}
+          aria-hidden="true"
+          defaultValue={start}
+          onChange={(event) => pick(event.target.value)}
+          onBlur={() => (editing.current = false)}
+          className="pointer-events-none absolute inset-0 opacity-0"
+        />
+      </span>
+      {set && (
+        <Tooltip label={CLOCK_WARNING} align="right">
+          {/* Focusable, so a keyboard user can open the tooltip too. */}
+          <span
+            tabIndex={0}
+            role="img"
+            aria-label={CLOCK_WARNING}
+            className="flex h-6 w-5 items-center justify-center rounded text-amber-400 outline-none focus-visible:ring-1 focus-visible:ring-white/40"
+          >
+            <TriangleAlert aria-hidden="true" size={14} strokeWidth={1.75} />
+          </span>
+        </Tooltip>
+      )}
+      {/* Also when the clock could not be read: going back to the host time always works. */}
+      {value !== HOST_CLOCK && (
+        <Tooltip label="Back to the host time" align="right">
+          <button
+            type="button"
+            aria-label="Back to the host time"
+            onClick={reset}
+            disabled={disabled}
+            className="flex h-6 w-5 cursor-pointer items-center justify-center rounded text-white outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-white/40 disabled:cursor-default disabled:opacity-50"
+          >
+            <RotateCcw aria-hidden="true" size={14} strokeWidth={1.75} />
+          </button>
+        </Tooltip>
+      )}
+    </span>
+  );
+}
+
+/** One task in flight at a time, then the latest one queued; the ones in between are dropped. */
+export function latestWins(): (task: () => Promise<void>) => void {
+  let running = false;
+  let next: (() => Promise<void>) | null = null;
+  return (task) => {
+    next = task;
+    if (running) return;
+    running = true;
+    void (async () => {
+      while (next !== null) {
+        const current = next;
+        next = null;
+        await current().catch(() => {});
+      }
+      running = false;
+    })();
+  };
+}
+
+/** Each value runs with the `run` of the render that queued it, so it keeps that device. */
+function useLatestWins<T>(run: (value: T) => Promise<void>): (value: T) => void {
+  const [enqueue] = useState(latestWins);
+  const runRef = useRef(run);
+  runRef.current = run;
+  return useCallback(
+    (value: T) => {
+      const bound = runRef.current;
+      enqueue(() => bound(value));
+    },
+    [enqueue],
   );
 }
 
@@ -612,6 +827,21 @@ const I = {
       <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
     </svg>
   ),
+  clock: (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+    </svg>
+  ),
   textSize: (
     <svg width="14" height="14" viewBox="0 0 52 34" fill="currentColor" stroke="none">
       <path d="M39.7266 33.0234C38.1484 33.0234 36.75 32.7266 35.5312 32.1328C34.3125 31.5391 33.3594 30.7109 32.6719 29.6484C32 28.5703 31.6641 27.3125 31.6641 25.875C31.6641 23.7812 32.4297 22.1094 33.9609 20.8594C35.5078 19.6094 37.7109 18.9062 40.5703 18.75L47.6016 18.3516V16.5C47.6016 15.0156 47.1328 13.8359 46.1953 12.9609C45.2578 12.0859 43.9531 11.6484 42.2812 11.6484C40.9062 11.6484 39.75 11.9453 38.8125 12.5391C37.875 13.1328 37.0938 14.0469 36.4688 15.2812C36.2656 15.6094 36.0156 15.8516 35.7188 16.0078C35.4219 16.1641 35.0781 16.2422 34.6875 16.2422C34.1562 16.2422 33.7109 16.0781 33.3516 15.75C33.0078 15.4219 32.8359 14.9922 32.8359 14.4609C32.8359 14.2266 32.8672 13.9766 32.9297 13.7109C33.0078 13.4453 33.1094 13.1797 33.2344 12.9141C33.875 11.4609 35.0156 10.3047 36.6562 9.44531C38.3125 8.58594 40.2266 8.15625 42.3984 8.15625C44.3203 8.15625 45.9844 8.49219 47.3906 9.16406C48.8125 9.82031 49.8984 10.75 50.6484 11.9531C51.4141 13.1562 51.7969 14.5703 51.7969 16.1953V30.9141C51.7969 31.5859 51.6094 32.1094 51.2344 32.4844C50.8594 32.8594 50.3672 33.0469 49.7578 33.0469C49.1641 33.0469 48.6797 32.8672 48.3047 32.5078C47.9297 32.1484 47.7344 31.6641 47.7188 31.0547V28.3594H47.6719C46.9844 29.7812 45.9062 30.9141 44.4375 31.7578C42.9844 32.6016 41.4141 33.0234 39.7266 33.0234ZM40.8047 29.6719C42.0703 29.6719 43.2109 29.4062 44.2266 28.875C45.2578 28.3438 46.0781 27.6172 46.6875 26.6953C47.2969 25.7734 47.6016 24.75 47.6016 23.625V21.3281L41.1328 21.75C39.4453 21.8594 38.1641 22.2734 37.2891 22.9922C36.4141 23.6953 35.9766 24.6094 35.9766 25.7344C35.9766 26.9219 36.4219 27.875 37.3125 28.5938C38.2031 29.3125 39.3672 29.6719 40.8047 29.6719ZM2.17969 33.0234C1.50781 33.0234 0.976562 32.8359 0.585938 32.4609C0.195312 32.0859 0 31.5781 0 30.9375C0 30.5312 0.0859375 30.0703 0.257812 29.5547L10.4062 2.41406C10.9844 0.804688 12.1016 0 13.7578 0C14.6172 0 15.3281 0.203125 15.8906 0.609375C16.4531 1.01562 16.875 1.625 17.1562 2.4375L27.2578 29.4844C27.4453 30 27.5391 30.4688 27.5391 30.8906C27.5391 31.5469 27.3359 32.0703 26.9297 32.4609C26.5234 32.8359 25.9766 33.0234 25.2891 33.0234C24.6328 33.0234 24.1094 32.875 23.7188 32.5781C23.3438 32.2812 23.0391 31.7891 22.8047 31.1016L13.8281 5.34375H13.6641L4.66406 31.1016C4.42969 31.7891 4.125 32.2812 3.75 32.5781C3.375 32.875 2.85156 33.0234 2.17969 33.0234ZM6.67969 23.7422C6.14844 23.7422 5.70312 23.5625 5.34375 23.2031C4.98438 22.8438 4.80469 22.3984 4.80469 21.8672C4.80469 21.3516 4.98438 20.9141 5.34375 20.5547C5.70312 20.1953 6.14844 20.0156 6.67969 20.0156H20.8594C21.375 20.0156 21.8125 20.1953 22.1719 20.5547C22.5312 20.9141 22.7109 21.3516 22.7109 21.8672C22.7109 22.3984 22.5312 22.8438 22.1719 23.2031C21.8125 23.5625 21.375 23.7422 20.8594 23.7422H6.67969Z" />
@@ -726,6 +956,12 @@ export function SimulatorSettingsTool({
   const [staleClockUdid, setStaleClockUdid] = useState<string | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const readRevision = useRef(0);
+  const activeReads = useRef(0);
+  const activeMutations = useRef(0);
+  const invalidateReads = useCallback(() => {
+    readRevision.current++;
+  }, []);
   const supported = isIosRuntime(runtime);
 
   useEffect(() => {
@@ -735,22 +971,38 @@ export function SimulatorSettingsTool({
   // Hydration can fail outright (server restarted under the tab, control
   // socket unreachable) or stall — both must land in the error state with a
   // Retry, never an eternal disabled section.
-  const refresh = useCallback(async () => {
-    setError(null);
-    try {
-      const status = await hostUiRequest({ device: udid }, { signal: AbortSignal.timeout(15_000) });
-      if (status) setState(status);
-      else setError("Unexpected simulator-settings reply");
-    } catch (e) {
-      setError(
-        e instanceof DOMException && e.name === "TimeoutError"
-          ? "Timed out reading simulator settings"
-          : e instanceof Error && e.message !== "Failed to fetch"
-            ? e.message
-            : "Could not reach the preview server — reload the page if this persists",
-      );
-    }
-  }, [udid]);
+  const refresh = useCallback(
+    async (clearError = true) => {
+      const revision = ++readRevision.current;
+      activeReads.current++;
+      if (clearError) setError(null);
+      try {
+        const status = await hostUiRequest(
+          { device: udid },
+          { signal: AbortSignal.timeout(15_000) },
+        );
+        if (revision !== readRevision.current) return;
+        if (status) {
+          setState(status);
+          return true;
+        }
+        setError("Unexpected simulator-settings reply");
+      } catch (e) {
+        if (revision !== readRevision.current) return;
+        setError(
+          e instanceof DOMException && e.name === "TimeoutError"
+            ? "Timed out reading simulator settings"
+            : e instanceof Error && e.message !== "Failed to fetch"
+              ? e.message
+              : "Could not reach the preview server — reload the page if this persists",
+        );
+      } finally {
+        activeReads.current--;
+      }
+      return false;
+    },
+    [udid],
+  );
 
   useEffect(() => {
     setState(null);
@@ -758,10 +1010,32 @@ export function SimulatorSettingsTool({
     // (it would spawn an iOS binary inside e.g. a watchOS sim and abort).
     if (!supported) return;
     void refresh();
-  }, [refresh, supported]);
+    return invalidateReads;
+  }, [refresh, supported, invalidateReads]);
+
+  const clock = state?.clock;
+  useEffect(() => {
+    if (!open || !supported || !clock || clock === UNREADABLE) return;
+    let stopped = false;
+    // Pick up resets and clock changes made by another client while this panel stays open.
+    const timer = setInterval(() => {
+      if (activeReads.current || activeMutations.current) return;
+      void refresh(false).then((ok) => {
+        if (ok === false && !stopped) {
+          setState((s) => (s ? { ...s, clock: UNREADABLE } : s));
+        }
+      });
+    }, CLOCK_REFRESH_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [open, supported, clock, refresh]);
 
   const apply = useCallback(
     async (option: string, value: string) => {
+      activeMutations.current++;
+      readRevision.current++;
       setPending(option);
       setError(null);
       const previous = stateRef.current?.[option];
@@ -771,14 +1045,23 @@ export function SimulatorSettingsTool({
           { device: udid, option, value },
           { signal: AbortSignal.timeout(15_000) },
         );
-        if (option === "time-zone" && value !== previous) setStaleClockUdid(udid);
+        if (option === "clock" && (await refresh()) === false) {
+          // The set succeeded, but its local input has no canonical offset to tick from.
+          setState((s) => (s ? { ...s, clock: UNREADABLE } : s));
+        }
+        if (option === "time-zone" && value !== previous) {
+          setStaleClockUdid(udid);
+          // A set clock keeps its instant, so its wall time moves with the zone.
+          if (stateRef.current?.clock !== HOST_CLOCK) void refresh();
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : `Failed to set ${option}`);
         // Re-sync from the simulator rather than restoring a snapshot — with
         // rapid queued updates (slider drags) a snapshot can predate several
         // successful sets and would yank the control backwards.
-        void refresh();
+        void refresh(false);
       } finally {
+        activeMutations.current--;
         setPending(null);
       }
     },
@@ -786,6 +1069,8 @@ export function SimulatorSettingsTool({
   );
 
   const restartSpringBoard = useCallback(async () => {
+    activeMutations.current++;
+    readRevision.current++;
     setPending(SPRINGBOARD);
     setError(null);
     try {
@@ -800,33 +1085,17 @@ export function SimulatorSettingsTool({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to restart SpringBoard");
     } finally {
+      activeMutations.current--;
       setPending(null);
     }
   }, [udid]);
 
-  // Rapid slider movements queue latest-wins: one exec in flight at a time,
-  // intermediate values dropped, so out-of-order completions can't leave the
-  // simulator on a stale size.
-  const textSizeQueue = useRef<{ running: boolean; next: number | null }>({
-    running: false,
-    next: null,
-  });
-  const applyRef = useRef(apply);
-  applyRef.current = apply;
-  const applyTextSize = useCallback((index: number) => {
-    const queue = textSizeQueue.current;
-    queue.next = index;
-    if (queue.running) return;
-    queue.running = true;
-    void (async () => {
-      while (queue.next !== null) {
-        const next = queue.next;
-        queue.next = null;
-        await applyRef.current("text-size", TEXT_SIZE_CATEGORIES[next]!);
-      }
-      queue.running = false;
-    })();
-  }, []);
+  // Slider drags and picker edits queue latest-wins, so out-of-order completions cannot leave
+  // the simulator on a stale value.
+  const applyTextSize = useLatestWins((index: number) =>
+    apply("text-size", TEXT_SIZE_CATEGORIES[index]!),
+  );
+  const applyClock = useLatestWins((value: string) => apply("clock", value));
 
   const ready = state !== null;
   const shown = state ?? DEFAULT_STATE;
@@ -934,6 +1203,16 @@ export function SimulatorSettingsTool({
                   />
                 )}
               </span>
+            </SettingRow>
+            <SettingRow icon={I.clock} label="Date & Time">
+              <ClockControl
+                value={shown.clock ?? HOST_CLOCK}
+                zone={
+                  timeZone === HOST_TIME_ZONE ? (shown["host-time-zone"] ?? timeZone) : timeZone
+                }
+                disabled={!ready || pending === "clock"}
+                onChange={applyClock}
+              />
             </SettingRow>
 
             {TOGGLE_OPTIONS.map(({ key, label }) => (
