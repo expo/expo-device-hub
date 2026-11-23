@@ -136,16 +136,6 @@ function eventBytes(event: RecordedEvent): number {
   return Buffer.byteLength(JSON.stringify(event), "utf8");
 }
 
-/** Keep `held` naming the touch pointers and keys that are down after `gesture`. */
-function trackHeldInput(held: Set<string>, gesture: Gesture): void {
-  let id: string;
-  if (gesture.type === "touch") id = `touch:${gesture.pointerId ?? 0}`;
-  else if (gesture.type === "key" && gesture.action) id = `key:${gesture.keycode}`;
-  else return;
-  if (gesture.action === "up") held.delete(id);
-  else held.add(id);
-}
-
 function cloneGesture(gesture: Gesture): Gesture {
   return gesture.type === "text"
     ? { type: "text", text: normalizeTextForControl(gesture.text) }
@@ -503,31 +493,32 @@ export class SessionRecorder {
     multiplier: number,
   ): Promise<SessionSnapshot> {
     let outcome: "completed" | "cancelled" | "error" = "completed";
-    // A shake is recorded when it starts, so the gap to the next event includes the time it
-    // shook. The time a replayed shake took comes off the next waits, except while a touch or a
-    // key is down, so a long press that fell within the shake keeps its length.
-    let behindMs = 0;
-    const held = new Set<string>();
+    // @ref LLP 0013#shake — a replayed shake swings while the replay goes on, as it did while recording
+    // A shake is recorded when it starts, and the input after it was sent while it swung or after
+    // it, so the replay does not wait for a shake: each input replays at its recorded time. The
+    // replay ends when its last shake has ended, and a shake ends before the next one starts.
+    let shaking: Promise<void> | null = null;
     try {
       for (const event of events) {
         this.#assertReplayActive(replay);
-        const gapMs = Math.max(0, event.delayMs / multiplier);
-        const catchUpMs = held.size === 0 ? Math.min(behindMs, gapMs) : 0;
-        await this.#clock.delay(gapMs - catchUpMs, replay.controller.signal);
-        behindMs -= catchUpMs;
+        await this.#clock.delay(Math.max(0, event.delayMs / multiplier), replay.controller.signal);
         this.#assertReplayActive(replay);
         if (event.kind === "gesture") {
-          trackHeldInput(held, event.gesture);
           await handlers.dispatchGesture(event.gesture, replay.controller.signal);
         } else if (event.kind === "location") {
           await handlers.setLocation(event.location, replay.controller.signal);
         } else {
-          const startedAt = this.#clock.now();
-          await handlers.shake(replay.controller.signal, event.durationMs);
-          behindMs += Math.max(0, this.#clock.now() - startedAt);
+          if (shaking) await shaking;
+          this.#assertReplayActive(replay);
+          // Starts the shake now; a throw becomes a rejection.
+          const shake = (async () => handlers.shake(replay.controller.signal, event.durationMs))();
+          // A failure is reported when the replay waits for the shake.
+          shake.catch(() => {});
+          shaking = shake;
         }
         this.#assertReplayActive(replay);
       }
+      if (shaking) await shaking;
     } catch (err) {
       if (replay.controller.signal.aborted || this.#activeReplay?.id !== replay.id) {
         outcome = "cancelled";
@@ -536,6 +527,8 @@ export class SessionRecorder {
         this.#lastError = err instanceof Error ? err.message : String(err);
       }
     } finally {
+      // A stopped replay stops its shake after the current swing; wait until the device is back.
+      await shaking?.catch(() => {});
       // A bounded recording may end mid-gesture. Finish its input ownership
       // without marking a successfully completed replay as aborted.
       try {

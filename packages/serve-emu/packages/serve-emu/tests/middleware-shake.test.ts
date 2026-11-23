@@ -77,7 +77,7 @@ function holdingShake(shaken: string[]): ShakeMotion {
 }
 
 describe("middleware shake", () => {
-  test("a tap during a shake replays after it, and overlapping shakes record once", async () => {
+  test("a tap during a shake is recorded after it, and overlapping shakes record once", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;

@@ -402,17 +402,17 @@ The body is optional:
   request answers when the device rests again. No shake swings longer than 20 s.
 
 A shake records into the session as a `shake` event before its first swing, so
-input sent during the shake replays after it. When the shake ends, the event gets
-`durationMs`, the time it swung, and a replay swings as long. The time a
-replayed shake takes comes off the waits for the next events, so they replay at
-their recorded times, or right after the shake when they arrived during it.
-While a touch or a key is down, the full wait stays, so a long press keeps its
-length. A
+input sent during the shake comes after it in the session. When the shake ends,
+the event gets `durationMs`, the time it swung, and a replay swings as long. A
+replayed shake swings while the replay goes on, as it did while recording, so
+each input replays at its recorded time, also input sent during the shake. A
 request that arrives during a running shake joins it, including whether its
-first request recorded it. A failed shake leaves no event, and until a shake
-ends, its event does not count against the session limits, so a failed shake
-costs no older event. Send `{"record":false}` to leave it
-out of the session. A body larger than 1 KiB gets `413`. A physical device gets
+first request recorded it. A failed shake leaves no event. Until a shake ends,
+its event does not count against the session limits, so a failed shake does not
+drop older events. The one exception is the byte limit: the event after a failed
+shake takes over its time gap, and when that gap needs one more digit at a full
+session, the oldest event goes. Send `{"record":false}` to leave it out of the
+session. A body larger than 1 KiB gets `413`. A physical device gets
 `400` with `ok: false`. When the server stops during a shake, it stops swinging
 and waits until the device is back.
 

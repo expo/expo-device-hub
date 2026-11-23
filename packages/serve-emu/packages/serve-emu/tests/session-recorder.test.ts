@@ -458,7 +458,7 @@ describe("shake events", () => {
     expect(recorder.summary().retainedBytes).toBe(arrayBytes(events));
   });
 
-  test("the time a replayed shake took comes off the waits for the next events", async () => {
+  test("a replayed shake swings while each input replays at its recorded time", async () => {
     let now = 0;
     const recorder = new SessionRecorder({
       now: () => now,
@@ -466,66 +466,73 @@ describe("shake events", () => {
         now += ms;
       },
     });
+    recorder.recordGesture({ type: "key", keycode: 66, action: "down" }, "test");
+    now = 100;
     const shake = recorder.recordShake("rest:shake")!;
-    now = 1_000; // during the shake
-    recorder.recordGesture({ type: "home" }, "test");
-    now = 4_000; // after the shake settled
-    recorder.recordGesture({ type: "back" }, "test");
-    recorder.setShakeDuration(shake, 3_000);
-
-    const start = now;
-    const dispatched: number[] = [];
-    const run = recorder.startReplay({
-      dispatchGesture: () => {
-        dispatched.push(now - start);
-      },
-      setLocation: () => {},
-      shake: () => {
-        now += 3_500;
-      },
-    });
-    await run.completion;
-
-    expect(dispatched).toEqual([3_500, 4_000]);
-  });
-
-  test("a long press within a replayed shake keeps its length", async () => {
-    let now = 0;
-    const recorder = new SessionRecorder({
-      now: () => now,
-      sleep: async (ms) => {
-        now += ms;
-      },
-    });
-    const shake = recorder.recordShake("rest:shake")!;
-    now = 1_000;
+    now = 1_000; // a long press during the shake
     recorder.recordGesture({ type: "touch", action: "down", x: 0.5, y: 0.5 }, "test");
+    now = 1_200; // the key pressed before the shake comes up during it
+    recorder.recordGesture({ type: "key", keycode: 66, action: "up" }, "test");
     now = 1_800;
     recorder.recordGesture({ type: "touch", action: "up", x: 0.5, y: 0.5 }, "test");
-    now = 4_000;
+    now = 4_000; // after the shake settled
     recorder.recordGesture({ type: "home" }, "test");
     recorder.setShakeDuration(shake, 3_000);
 
     const start = now;
-    const dispatched: Array<[string, number]> = [];
+    const replayed: Array<[string, number]> = [];
+    let settle!: () => void;
     const run = recorder.startReplay({
       dispatchGesture: (gesture) => {
-        dispatched.push([gesture.type === "touch" ? gesture.action : gesture.type, now - start]);
+        const name =
+          gesture.type === "touch" || gesture.type === "key"
+            ? `${gesture.type} ${gesture.action}`
+            : gesture.type;
+        replayed.push([name, now - start]);
       },
       setLocation: () => {},
       shake: () => {
-        now += 3_500;
+        replayed.push(["shake", now - start]);
+        return new Promise<void>((resolve) => {
+          settle = resolve;
+        });
       },
     });
-    await run.completion;
 
-    // The press starts after the shake and lasts its 800 ms; the time left to catch up comes off
-    // the wait before Home.
-    expect(dispatched).toEqual([
-      ["down", 3_500],
-      ["up", 4_300],
-      ["home", 4_300],
+    while (replayed.length < 6) await Bun.sleep(1);
+    expect(replayed).toEqual([
+      ["key down", 0],
+      ["shake", 100],
+      ["touch down", 1_000],
+      ["key up", 1_200],
+      ["touch up", 1_800],
+      ["home", 4_000],
     ]);
+    // The replay ends when the shake has ended.
+    expect(recorder.summary().replaying).toBe(true);
+    settle();
+    expect((await run.completion).replayStatus).toBe("completed");
+  });
+
+  test("a replayed shake that fails ends the replay with its error", async () => {
+    const recorder = new SessionRecorder({ now: clock(0, 10), sleep: async () => {} });
+    recorder.recordShake("rest:shake");
+    recorder.recordGesture({ type: "home" }, "test");
+
+    const gestures: string[] = [];
+    const run = recorder.startReplay({
+      dispatchGesture: (gesture) => {
+        gestures.push(gesture.type);
+      },
+      setLocation: () => {},
+      shake: async () => {
+        throw new Error("setPhysicalModel failed");
+      },
+    });
+    const finished = await run.completion;
+
+    expect(finished.replayStatus).toBe("error");
+    expect(recorder.summary().lastError).toBe("setPhysicalModel failed");
   });
 
   test("a discard that lengthens the next event's gap keeps the byte limit", () => {

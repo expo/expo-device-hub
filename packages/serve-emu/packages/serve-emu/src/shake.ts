@@ -86,7 +86,8 @@ type Burst = { done: Promise<void>; started: Promise<void>; holdUntil: number; d
  * One shake per device at a time for one server: clicks, holds and session replay. A click or a
  * replay during a running shake joins it. A hold starts a shake, or keeps the running one swinging
  * for another lease; a release lets it finish. The shake records only before its first swing, so
- * input that arrives during the shake replays after it, and it gets its duration when it ends. A
+ * input that arrives during the shake comes after it in the session, and it gets its duration when
+ * it ends. A
  * failed shake removes its event, as a failed tap is never recorded. A held shake that fails while
  * it is held keeps its error for the next renewal or the release of that hold, for one lease, so
  * the client sees it instead of a renewal starting a new shake. `serials()` names the devices this
