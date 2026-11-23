@@ -27,7 +27,7 @@ beforeEach(() => {
         dylib: DYLIB,
         scope: "userApps" as const,
         loadPhase: "startupAndDeferred" as const,
-        ownerPid: null,
+        ownerPids: [],
         bundleId: null,
         env: { SIMNET_PROXY_PORT_FILE: portFile },
       },

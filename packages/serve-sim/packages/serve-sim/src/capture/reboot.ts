@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { bootDevice, shutdownDevice } from "../device";
 import { devicesArmedHere, rearmCapabilityLoader } from "../launch-manager";
+import { isProcessAlive } from "../process-utils";
 import { stateDir } from "../state";
 import { CaptureEnableError, captureRuntime, type CaptureRuntime } from "./runtime";
 import { type CaptureField } from "./fields";
@@ -28,15 +29,6 @@ function rebootRequestKey(enabled: boolean, fields: readonly CaptureField[]): st
 }
 
 type RebootRecord = { pid: number; endedAt?: number };
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function rebootRecordFile(udid: string): string {
   return join(stateDir(), `reboot-${udid}.json`);

@@ -1,4 +1,5 @@
 #import "SimCamFakes.h"
+#import "SimCamFrameSource.h"
 #import "SimCamLog.h"
 
 #import <CoreImage/CoreImage.h>
@@ -68,7 +69,7 @@ void SimCamMarkSessionUsingFakeCamera(id session, BOOL usingFakeCamera) {
         usingFakeCamera ? @YES : nil,
         OBJC_ASSOCIATION_RETAIN);
 }
-static BOOL SimCamSessionUsesFakeCamera(id session) {
+BOOL SimCamSessionHasFakeCamera(id session) {
     if (!session) return NO;
     if (![session isKindOfClass:[AVCaptureSession class]]) return NO;
     return [objc_getAssociatedObject(session, &kSimCamSessionUsingFakeCameraKey) boolValue];
@@ -79,7 +80,7 @@ static BOOL SimCamSessionUsesFakeCamera(id session) {
 BOOL SimCamShouldSwallowAVFRuntimeError(NSNotificationName name, id object) {
     if (!name) return NO;
     if (![name isEqualToString:AVCaptureSessionRuntimeErrorNotification]) return NO;
-    return SimCamSessionUsesFakeCamera(object);
+    return SimCamSessionHasFakeCamera(object);
 }
 
 void SimCamLogSwallowedRuntimeError(NSString *via, id object, NSDictionary *userInfo) {
@@ -195,7 +196,7 @@ static char kFakePositionKey;
     AVCaptureDeviceFormat *f = SimCamSharedFakeFormat();
     return f ? @[f] : @[];
 }
-- (BOOL)isConnected { return YES; }
+- (BOOL)isConnected { return SimCamDeviceIsConnected(); }
 - (BOOL)isSuspended { return NO; }
 - (BOOL)lockForConfiguration:(NSError **)e { return YES; }
 - (void)unlockForConfiguration { }
@@ -298,9 +299,19 @@ static AVCaptureInputPort *SimCamFakeInputPortForInput(AVCaptureInput *input, AV
     BOOL _automaticallyAdjustsVideoMirroring;
     BOOL _enabled;
 }
+// Built without AVCaptureConnection's initializer, so its -dealloc would read state that was
+// never set up. Skip it: NSObject's -dealloc still destroys our ivars.
+static void SimCamFakeConnectionDealloc(__unsafe_unretained id self, SEL cmd) {
+    ((void (*)(id, SEL))class_getMethodImplementation([NSObject class], cmd))(self, cmd);
+}
++ (void)initialize {
+    if (self != [SimCamFakeConnection class]) return;
+    class_addMethod(self, sel_registerName("dealloc"), (IMP)SimCamFakeConnectionDealloc, "v@:");
+}
 + (instancetype)allocWithZone:(NSZone *)zone {
     return class_createInstance([SimCamFakeConnection class], 0);
 }
+
 + (instancetype)connectionForOutput:(AVCaptureOutput *)output
                            position:(AVCaptureDevicePosition)pos {
     SimCamFakeConnection *c = [self alloc];
