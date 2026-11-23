@@ -46,20 +46,66 @@ describe("iOS device support", () => {
 });
 
 describe("Android device support", () => {
-  test("supports Pixel phone profiles, not foldables, tablets, or wearables", () => {
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_10_pro", "Pixel 10 Pro"))).toBe(true);
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_9", "Pixel 9"))).toBe(true);
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_9_pro_fold", "Pixel 9 Pro Fold"))).toBe(
+  test.each([
+    ["pixel_10_pro", "Pixel 10 Pro"],
+    ["pixel_9", "Pixel 9"],
+    ["pixel_fold", "Pixel Fold"],
+    ["pixel_9_pro_fold", "Pixel 9 Pro Fold"],
+    ["pixel_10_pro_fold", "Pixel 10 Pro Fold"],
+    ["small_phone", "Small Phone"],
+    ["medium_phone", "Medium Phone"],
+    ["pixel_tablet", "Pixel Tablet"],
+    ["small_tablet", "Small Tablet"],
+    ["medium_tablet", "Medium Tablet"],
+  ])("supports phone or tablet profile %s by id or display name", (id, name) => {
+    expect(isSupportedAndroidDeviceProfile(profile(id, name))).toBe(true);
+    expect(isSupportedAndroidDeviceProfile(profile(id, ""))).toBe(true);
+    expect(isSupportedAndroidDeviceProfile(profile("", name))).toBe(true);
+    for (const metadata of [id, `${id} (${id.startsWith("pixel") ? "Google" : "Generic"})`]) {
+      expect(
+        isSupportedAndroidDevice(androidDevice({ config: { "hw.device.name": metadata } })),
+      ).toBe(true);
+      expect(isSupportedAndroidDevice(androidDevice({ properties: { Device: metadata } }))).toBe(
+        true,
+      );
+    }
+  });
+
+  test.each([
+    ["pixel_c", "Pixel C", null],
+    ["pixel_buds", "Pixel Buds", null],
+    ["pixel_watch", "Pixel Watch", "android-wear"],
+    ["7in WSVGA (Tablet)", '7" WSVGA (Tablet)', null],
+    ["10.1in WXGA (Tablet)", '10.1" WXGA (Tablet)', null],
+    ["Nexus 9", "Nexus 9", null],
+    ["Nexus 10", "Nexus 10", null],
+    ["large_tablet", "Large Tablet", null],
+    ["tv_1080p", "Television (1080p)", "android-tv"],
+    ["wearos_large_round", "Wear OS Large Round", "android-wear"],
+    ["automotive_portrait", "Automotive Portrait", "android-automotive"],
+    ["desktop_large", "Large Desktop", "android-desktop"],
+    ["resizable", "Resizable (Experimental)", null],
+    ["7.6in Foldable", '7.6" Fold-in with outer display', null],
+    ["Nexus 5", "Nexus 5", null],
+    // Not present in the verified SDK profile list; do not invent support for it.
+    ["large_phone", "Large Phone", null],
+  ])("keeps unrelated or unknown profile %s unsupported", (id, name, tag) => {
+    expect(isSupportedAndroidDeviceProfile(profile(id, name, tag))).toBe(false);
+    expect(isSupportedAndroidDevice(androidDevice({ config: { "hw.device.name": id } }))).toBe(
       false,
     );
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_fold", "Pixel Fold"))).toBe(false);
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_tablet", "Pixel Tablet"))).toBe(false);
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_c", "Pixel C"))).toBe(false);
-    expect(isSupportedAndroidDeviceProfile(profile("medium_phone", "Medium Phone"))).toBe(false);
     expect(
-      isSupportedAndroidDeviceProfile(profile("pixel_watch", "Pixel Watch", "android-wear")),
+      isSupportedAndroidDevice(androidDevice({ properties: { Device: `${id} (Generic)` } })),
     ).toBe(false);
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_buds", "Pixel Buds"))).toBe(false);
+  });
+
+  test("does not allow phone names to override specialized profile tags", () => {
+    expect(isSupportedAndroidDeviceProfile(profile("pixel_fold", "Pixel Fold", "android-tv"))).toBe(
+      false,
+    );
+    expect(
+      isSupportedAndroidDeviceProfile(profile("medium_phone", "Medium Phone", "android-wear")),
+    ).toBe(false);
   });
 
   test("classifies known AVDs from their profile metadata", () => {
@@ -70,7 +116,43 @@ describe("Android device support", () => {
       isSupportedAndroidDevice(
         androidDevice({
           name: "Pixel_9",
-          properties: { Device: "medium_phone (Generic)" },
+          properties: { Device: "Nexus 9 (Google)" },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test("uses hardware metadata before an AVD name, preserving Pixel name fallback", () => {
+    expect(isSupportedAndroidDevice(androidDevice({ name: "Pixel_9_API_36" }))).toBe(true);
+    expect(
+      isSupportedAndroidDevice(
+        androidDevice({
+          name: "Pixel_9",
+          config: { "hw.device.name": "Nexus 9" },
+          properties: { Device: "pixel_fold (Google)" },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isSupportedAndroidDevice(
+        androidDevice({
+          name: "My_Custom_AVD",
+          config: { "hw.device.name": "medium_phone" },
+          properties: { Device: "Nexus 9 (Google)" },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isSupportedAndroidDevice(
+        androidDevice({
+          properties: { Device: " Small_Phone (Generic) " },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isSupportedAndroidDevice(
+        androidDevice({
+          config: { "hw.device.name": "medium_phone_tablet" },
         }),
       ),
     ).toBe(false);
