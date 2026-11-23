@@ -11,6 +11,7 @@ let failure: string | undefined;
 beforeEach(() => {
   calls.length = 0;
   failure = undefined;
+  packed = undefined;
 });
 void mock.module("../socket/client-control", () => ({
   runHostAction: async (action: string, params: Record<string, unknown>) => {
@@ -20,7 +21,16 @@ void mock.module("../socket/client-control", () => ({
       : { exitCode: 0, stderr: "", stdout: "/staged" };
   },
 }));
-import { uploadDroppedAppFolder, DROP_CHUNK_BYTES } from "../client/utils/drop";
+import {
+  APP_ARCHIVE_TOO_LARGE,
+  DROP_MAX_FILE_SIZE,
+  uploadDroppedAppFolder,
+  DROP_CHUNK_BYTES,
+} from "../client/utils/drop";
+let packed: ReadableStream<Uint8Array> | undefined;
+void mock.module("../client/utils/pack-app-in-worker", () => ({
+  packAppInWorker: (...args: Parameters<typeof packAppFolder>) => packed ?? packAppFolder(...args),
+}));
 
 const droppedFile = (name: string, body: BlobPart[] = ["contents"]): AppFolderEntry => ({
   name,
@@ -266,4 +276,20 @@ test("a failed upload cancels the file stream while packing is still in progress
   } finally {
     Object.assign(globalThis, { CompressionStream: original });
   }
+});
+
+test("a packed archive over the compressed cap names the archive limit", async () => {
+  // Claims a size past the cap without allocating it; the check runs before the bytes are read.
+  const chunk = new Uint8Array(1);
+  Object.defineProperty(chunk, "byteLength", { value: DROP_MAX_FILE_SIZE + 1 });
+  packed = new ReadableStream({
+    start(controller) {
+      controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+  await expect(
+    uploadDroppedAppFolder(droppedFolder("App.app", [[droppedFile("data")]]), "UDID", () => {}),
+  ).rejects.toThrow(APP_ARCHIVE_TOO_LARGE);
+  expect(calls.map((c) => c.action)).toEqual(["upload.remove"]);
 });
