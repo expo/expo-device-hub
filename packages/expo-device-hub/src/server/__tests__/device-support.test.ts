@@ -54,7 +54,10 @@ describe("Android device support", () => {
     ["pixel_10_pro_fold", "Pixel 10 Pro Fold"],
     ["small_phone", "Small Phone"],
     ["medium_phone", "Medium Phone"],
-  ])("supports phone profile %s by id or display name", (id, name) => {
+    ["pixel_tablet", "Pixel Tablet"],
+    ["small_tablet", "Small Tablet"],
+    ["medium_tablet", "Medium Tablet"],
+  ])("supports phone or tablet profile %s by id or display name", (id, name) => {
     expect(isSupportedAndroidDeviceProfile(profile(id, name))).toBe(true);
     expect(isSupportedAndroidDeviceProfile(profile(id, ""))).toBe(true);
     expect(isSupportedAndroidDeviceProfile(profile("", name))).toBe(true);
@@ -69,12 +72,14 @@ describe("Android device support", () => {
   });
 
   test.each([
-    ["pixel_tablet", "Pixel Tablet", null],
     ["pixel_c", "Pixel C", null],
     ["pixel_buds", "Pixel Buds", null],
     ["pixel_watch", "Pixel Watch", "android-wear"],
-    ["small_tablet", "Small Tablet", null],
-    ["medium_tablet", "Medium Tablet", null],
+    ["7in WSVGA (Tablet)", '7" WSVGA (Tablet)', null],
+    ["10.1in WXGA (Tablet)", '10.1" WXGA (Tablet)', null],
+    ["Nexus 9", "Nexus 9", null],
+    ["Nexus 10", "Nexus 10", null],
+    ["large_tablet", "Large Tablet", null],
     ["tv_1080p", "Television (1080p)", "android-tv"],
     ["wearos_large_round", "Wear OS Large Round", "android-wear"],
     ["automotive_portrait", "Automotive Portrait", "android-automotive"],
@@ -111,7 +116,7 @@ describe("Android device support", () => {
       isSupportedAndroidDevice(
         androidDevice({
           name: "Pixel_9",
-          properties: { Device: "medium_tablet (Generic)" },
+          properties: { Device: "Nexus 9 (Google)" },
         }),
       ),
     ).toBe(false);
@@ -123,7 +128,7 @@ describe("Android device support", () => {
       isSupportedAndroidDevice(
         androidDevice({
           name: "Pixel_9",
-          config: { "hw.device.name": "medium_tablet" },
+          config: { "hw.device.name": "Nexus 9" },
           properties: { Device: "pixel_fold (Google)" },
         }),
       ),
@@ -133,7 +138,7 @@ describe("Android device support", () => {
         androidDevice({
           name: "My_Custom_AVD",
           config: { "hw.device.name": "medium_phone" },
-          properties: { Device: "medium_tablet (Generic)" },
+          properties: { Device: "Nexus 9 (Google)" },
         }),
       ),
     ).toBe(true);

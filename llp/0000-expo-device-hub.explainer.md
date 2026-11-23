@@ -6,7 +6,7 @@
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
-**Revised:** 2026-11-20 (tablet page height, Claude Code); 2026-11-16 (sidebar support warning and Android phone profiles, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
+**Revised:** 2026-11-23 (Android tablet profiles, Claude Code); 2026-11-20 (tablet page height, Claude Code); 2026-11-16 (sidebar support warning and Android phone profiles, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
 
 ## Summary
 
@@ -239,22 +239,26 @@ above the trigger; long content scrolls within the available height. They hide w
 the trigger scrolls out of view. [observed: HubComponents `DeviceListItem.tsx` and
 `UnsupportedDeviceWarning.tsx`]
 
-#### Android supported phone profiles
+#### Android supported phone and tablet profiles
 
-The same phone predicate classifies existing AVDs and new-device choices. It
+The same predicate classifies existing AVDs and new-device choices. It
 supports Pixel phones, including the original Pixel Fold and Pixel Pro Fold
-generations, plus the generic SDK `small_phone` (Small Phone) and `medium_phone`
-(Medium Phone) profiles. Pixel Tablet, Pixel C, watches, TVs, generic tablets and
-other unrelated profiles stay outside the supported set. Physical Android devices
-remain allowed. Existing AVDs use `hw.device.name`, then avdmanager's `Device`
-metadata (including its OEM suffix); only an AVD without either falls back to its
-name. [observed: Hub `src/server/device-support.ts` and `sim-options.ts`]
+generations, Pixel Tablet (`pixel_tablet`), and the generic SDK `small_phone`
+(Small Phone), `medium_phone` (Medium Phone), `small_tablet` (Small Tablet) and
+`medium_tablet` (Medium Tablet) profiles. Pixel C, other tablets (Nexus tablets,
+`7in WSVGA (Tablet)`, `10.1in WXGA (Tablet)`), desktop, resizable, watches, TVs,
+automotive, generic foldables and other unrelated profiles stay outside the
+supported set. Physical Android devices remain allowed. Existing AVDs use
+`hw.device.name`, then avdmanager's `Device` metadata (including its OEM
+suffix); only an AVD without either falls back to its name. [observed: Hub
+`src/server/device-support.ts` and `sim-options.ts`]
 
-This classification makes these phone profiles visible by default in Recents and
+This classification makes these profiles visible by default in Recents and
 new-device choices, and removes their sidebar warning. Unsupported devices that
-are already running remain visible in the sidebar. [observed: Hub
+are already running remain visible in the sidebar. Hub has no 3D model for the
+supported tablets; they show the flat preview. [observed: Hub
 `src/dashboard/deviceVisibility.ts` and `Dashboard.tsx`; HubComponents
-`DeviceSection.tsx`]
+`DeviceSection.tsx`; HubClient `src/models/device-models.ts`]
 
 Android SDK Command-line Tools 22.0's `avdmanager list device` was checked on
 2026-11-16. It lists `small_phone`, `medium_phone`, `pixel_fold`,
@@ -264,6 +268,14 @@ system image; the bundled `sdklib` device definitions were also inspected and
 contain Small Phone and Medium Phone, with no Large Phone. No Large Phone
 profile is added. [observed: local SDK Command-line Tools 22.0,
 `lib/sdklib/tools.sdklib.jar`, `com/android/sdklib/devices/devices.xml`]
+
+The tablet IDs were checked on 2026-11-23. Android SDK Command-line Tools
+20.0's `avdmanager list device` lists `pixel_tablet` (Pixel Tablet, Google) and
+`medium_tablet` (Medium Tablet, Generic), but no `small_tablet`. Android Studio
+2026.2's bundled device definitions list `small_tablet` (Small Tablet, Generic)
+next to `medium_tablet`. [observed: local SDK Command-line Tools 20.0;
+Android Studio 2026.2 `plugins/android/lib/sdklib.jar`,
+`com/android/sdklib/devices/devices.xml`]
 
 ### Hub toolbar
 

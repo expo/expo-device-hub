@@ -11,18 +11,22 @@ import {
   visibleNewDeviceOptions,
 } from "../deviceVisibility";
 
-// IDs and names verified with Android SDK Command-line Tools 22.0's device list.
+// Phone IDs and names verified with Android SDK Command-line Tools 22.0's device list;
+// small_tablet with Android Studio 2026.2's bundled device definitions.
 const phones = [
   ["pixel_fold", "Pixel Fold"],
   ["pixel_9_pro_fold", "Pixel 9 Pro Fold"],
   ["pixel_10_pro_fold", "Pixel 10 Pro Fold"],
   ["small_phone", "Small Phone"],
   ["medium_phone", "Medium Phone"],
+  ["pixel_tablet", "Pixel Tablet"],
+  ["small_tablet", "Small Tablet"],
+  ["medium_tablet", "Medium Tablet"],
 ] as const;
 const profiles: AndroidDeviceProfile[] = [
   ...phones.map(([id, name]) => ({ id, name, index: null, oem: null, tag: null })),
-  { id: "medium_tablet", name: "Medium Tablet", index: null, oem: "Generic", tag: null },
-  { id: "pixel_tablet", name: "Pixel Tablet", index: null, oem: "Google", tag: null },
+  { id: "pixel_c", name: "Pixel C", index: null, oem: "Google", tag: null },
+  { id: "Nexus 9", name: "Nexus 9", index: null, oem: "Google", tag: null },
 ];
 
 function recent(profile: AndroidDeviceProfile): Device {
@@ -48,7 +52,7 @@ function recent(profile: AndroidDeviceProfile): Device {
   };
 }
 
-test("the default filter keeps foldable and generic phones in Recents and new-device choices", () => {
+test("the default filter keeps supported phones and tablets in Recents and new-device choices", () => {
   const hideUnsupported = readHideUnsupportedDevices({ getItem: () => null });
   expect(hideUnsupported).toBe(true);
   const recents = visibleDevices(profiles.map(recent), hideUnsupported);
@@ -73,7 +77,7 @@ test("the default filter keeps foldable and generic phones in Recents and new-de
   expect(visibleModels.every((model) => model.supported)).toBe(true);
 });
 
-test("the sidebar drops warnings for these phones while retaining them for running tablets", () => {
+test("the sidebar drops warnings for these devices while retaining them for other running tablets", () => {
   const section = (devices: Device[]) =>
     renderToStaticMarkup(
       <DeviceSection
@@ -93,8 +97,8 @@ test("the sidebar drops warnings for these phones while retaining them for runni
   );
   expect(phoneRows).not.toContain("Unsupported or untested device");
   const tabletRows = section(
-    profiles.filter((profile) => profile.id.endsWith("tablet")).map(recent),
+    profiles.filter((profile) => !phones.some(([id]) => id === profile.id)).map(recent),
   );
-  expect(tabletRows).toContain("Unsupported or untested device: Medium Tablet");
-  expect(tabletRows).toContain("Unsupported or untested device: Pixel Tablet");
+  expect(tabletRows).toContain("Unsupported or untested device: Pixel C");
+  expect(tabletRows).toContain("Unsupported or untested device: Nexus 9");
 });
