@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 export const FFMPEG_COMMIT = "894da5ca7d742e4429ffb2af534fcda0103ef593";
 const prefix = "ffmpeg-8.0.1/";
@@ -47,21 +47,24 @@ export function createFfmpegSourceArchive(source, output, commit = FFMPEG_COMMIT
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     }).trim();
+    const uncompressed = join(temporary, "source.tar");
     const compressed = join(temporary, "source.tar.gz");
-    // Git's built-in gzip writer needs no standalone compressor on macOS.
+    // Git before 2.38 shells out to gzip for tar.gz. Node compression avoids
+    // depending on either that version or an external compressor.
     execFileSync(
       "git",
       [
         "-C",
         source,
         "archive",
-        "--format=tar.gz",
+        "--format=tar",
         `--prefix=${prefix}`,
-        `--output=${compressed}`,
+        `--output=${uncompressed}`,
         resolved,
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
+    writeFileSync(compressed, gzipSync(readFileSync(uncompressed)));
     validateFfmpegSourceArchive(compressed, resolved);
     renameSync(compressed, output);
   } finally {
