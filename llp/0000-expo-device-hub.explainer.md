@@ -277,6 +277,13 @@ next to `medium_tablet`. [observed: local SDK Command-line Tools 20.0;
 Android Studio 2026.2 `plugins/android/lib/sdklib.jar`,
 `com/android/sdklib/devices/devices.xml`]
 
+New-device choices come from the installed `avdmanager list device`, so Small
+Tablet is offered only when that SDK lists `small_tablet`; with Command-line
+Tools 20.0 it is not offered. An existing `small_tablet` AVD (for example one
+made in Android Studio) is classified as supported either way. The tests pass
+the profiles in directly: they cover classification, not SDK discovery.
+[observed: Hub `src/server/sim-options.ts` `listNewDeviceOptions`]
+
 ### Hub toolbar
 
 The toolbar under the device has the look of the website's device controls: one rounded bar
