@@ -22,7 +22,7 @@ const reader = {
   scope: "allApps" as const,
   dylib: READER,
   bundleId: null,
-  ownerPid: process.pid,
+  ownerPids: [process.pid],
 };
 let state: ReturnType<typeof useTempStateDir>;
 let shims: ReturnType<typeof installShims>;
@@ -202,7 +202,7 @@ describe("clipboard session", () => {
     const clipboard = createClipboardSession(false);
     await clipboard.initialize(UDID);
     expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
-    expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe("");
+    expect(existsSync(capabilityConfigPath(UDID))).toBe(false);
     expect(readFileSync(process.env.TEST_CLIPBOARD_CALLS!, "utf8")).not.toContain(
       "simctl terminate",
     );
@@ -221,8 +221,33 @@ describe("clipboard session", () => {
     );
     await clipboard.dispose();
     expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
-    expect(readLaunchState(UDID)?.capabilities.camera?.ownerPid).toBe(process.pid);
+    expect(readLaunchState(UDID)?.capabilities.camera?.ownerPids).toEqual([process.pid]);
     expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain("/camera.dylib");
+  });
+
+  test("disposal releases only its clipboard share and keeps its camera ownership", async () => {
+    const clipboard = createClipboardSession();
+    await clipboard.initialize(UDID);
+    await enableCapabilities(UDID, null, [reader], { relaunch: false, ownerPid: process.ppid });
+    await enableCapabilities(
+      UDID,
+      null,
+      [{ name: "camera", dylib: "/camera.dylib", scope: "allApps" }],
+      { relaunch: false },
+    );
+    await clipboard.dispose();
+    expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPids).toEqual([process.ppid]);
+    expect(readLaunchState(UDID)?.capabilities.camera?.ownerPids).toEqual([process.pid]);
+    expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain(READER);
+  });
+
+  test("disposal preserves a persistent reader joined after a reboot", async () => {
+    await enableCapabilities(UDID, null, [reader], { relaunch: false, ownerPid: null });
+    const clipboard = createClipboardSession();
+    await clipboard.initialize(UDID, true);
+    await clipboard.dispose();
+    expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPids).toEqual([]);
+    expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain(READER);
   });
 
   test("disposal waits for pending initialization before withdrawing it", async () => {
@@ -276,11 +301,11 @@ describe("clipboard session", () => {
     await enableCapabilities(UDID, null, [reader], { relaunch: false });
     writeLaunchState(UDID, {
       launchArgs: [],
-      capabilities: { clipboard: { ...reader, ownerPid: 2_147_483_647 } },
+      capabilities: { clipboard: { ...reader, ownerPids: [2_147_483_647] } },
     });
     const clipboard = createClipboardSession(false);
     await clipboard.initialize(UDID);
-    expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe("");
+    expect(existsSync(capabilityConfigPath(UDID))).toBe(false);
     await clipboard.dispose();
     expect(readLaunchState(UDID)).toBeNull();
   });

@@ -6,7 +6,6 @@ import { join } from "path";
 import {
   type RecordedCapability,
   MAX_CONFIG_BYTES,
-  childLaunchEnv,
   clearLaunchState,
   formatCapabilityConfig,
   isCapabilityEnabled,
@@ -21,10 +20,17 @@ import {
   capabilityConfigPath,
   renderCapabilityConfig,
   launchApp,
+  setCapabilityEnabled,
+  armCapabilityLoader,
+  capabilityLoaderPath,
+  childLaunchEnv,
+  reserveDeviceSession,
+  disableCapability,
 } from "../launch-manager";
 import { registerCapability, clearRegisteredCapabilities } from "../capabilities";
 import { launchAppAsync } from "../launch-app";
 import { stateDir } from "../state";
+import { assertDeviceOwnership } from "../launch-state";
 import { useTempStateDir, withShimsAsync } from "./helpers";
 
 const UDID = "LAUNCH-MANAGER-TEST-" + process.pid;
@@ -60,7 +66,7 @@ describe("formatCapabilityConfig", () => {
           bundleId: "host.exp.Exponent",
           scope: "allApps",
           dylib: "/dist/simcam/libSimCameraInjector.dylib",
-          ownerPid: null,
+          ownerPids: [],
           loadDelayMs: 500,
           env: { SIMCAM_SHM_NAME: "/serve-sim-cam-1", SIMCAM_MIRROR_MODE: "on" },
         },
@@ -78,7 +84,7 @@ describe("formatCapabilityConfig", () => {
         bundleId: "a",
         scope: "allApps",
         dylib: "/cam.dylib",
-        ownerPid: null,
+        ownerPids: [],
         loadDelayMs: 500,
       },
       fps: {
@@ -87,7 +93,7 @@ describe("formatCapabilityConfig", () => {
         scope: "allApps",
         dylib: "/fps.dylib",
         env: { SERVE_SIM_FPS_FILE: "/f" },
-        ownerPid: null,
+        ownerPids: [],
       },
     });
     expect(config.trim().split("\n")).toEqual([
@@ -117,7 +123,7 @@ describe("readLaunchState", () => {
             bundleId: "host.exp.Exponent",
             scope: "allApps",
             dylib: "/cam.dylib",
-            ownerPid: null,
+            ownerPids: [],
           },
         },
       }),
@@ -150,7 +156,7 @@ describe("config size limit", () => {
       bundleId: "a",
       scope: "allApps",
       dylib: "/huge.dylib",
-      ownerPid: null,
+      ownerPids: [],
       env: { BIG: "x".repeat(70_000) },
     },
   };
@@ -171,7 +177,7 @@ describe("config size limit", () => {
             bundleId: "a",
             scope: "allApps",
             dylib: "/small.dylib",
-            ownerPid: null,
+            ownerPids: [],
           },
         },
       }),
@@ -200,7 +206,7 @@ describe("config field separators", () => {
             scope: "allApps",
             dylib: "/x.dylib",
             env: { K: value },
-            ownerPid: null,
+            ownerPids: [],
           },
         }),
       ).toThrow("separates fields");
@@ -216,7 +222,7 @@ describe("config field separators", () => {
           scope: "allApps",
           dylib: "/x.dylib",
           env: { "K=V": "1" },
-          ownerPid: null,
+          ownerPids: [],
         },
       }),
     ).toThrow('contains "="');
@@ -235,14 +241,14 @@ describe("querying what is enabled", () => {
             bundleId: "host.exp.Exponent",
             scope: "allApps",
             dylib: "/cam.dylib",
-            ownerPid: null,
+            ownerPids: [],
           },
           capture: {
             name: "capture",
             bundleId: null,
             scope: "userApps",
             dylib: "/cap.dylib",
-            ownerPid: null,
+            ownerPids: [],
           },
         },
       }),
@@ -266,14 +272,14 @@ describe("capability scopes", () => {
         bundleId: null,
         scope: "allApps",
         dylib: "/reader.dylib",
-        ownerPid: null,
+        ownerPids: [],
       },
       capture: {
         name: "capture",
         bundleId: null,
         scope: "userApps",
         dylib: "/cap.dylib",
-        ownerPid: null,
+        ownerPids: [],
         loadDelayMs: 250,
       },
     });
@@ -293,7 +299,7 @@ describe("capability scopes", () => {
             bundleId: null,
             scope: "everything",
             dylib: "/cam.dylib",
-            ownerPid: null,
+            ownerPids: [],
           },
         },
       }),
@@ -315,7 +321,7 @@ describe("releaseLaunchState", () => {
     bundleId: "a",
     scope: "allApps",
     dylib: "/probe.dylib",
-    ownerPid,
+    ownerPids: ownerPid === null ? [] : [ownerPid],
   });
 
   test("keeps a record another live session owns", () => {
@@ -331,6 +337,27 @@ describe("releaseLaunchState", () => {
 
     expect(releaseLaunchState(UDID, process.pid)).toBe(true);
     expect(listCapabilities(UDID)).toEqual(["other"]);
+  });
+
+  test("a shared capability is released only when its last owner goes", () => {
+    const shared = {
+      name: "camera",
+      bundleId: "a",
+      scope: "allApps",
+      dylib: "/camera.dylib",
+      ownerPids: [process.pid, process.ppid],
+    };
+    writeRawState(JSON.stringify({ launchArgs: [], capabilities: { camera: shared } }));
+
+    const firstReleased: string[] = [];
+    releaseSessionSync(UDID, process.pid, (capability) => firstReleased.push(capability.name));
+    expect(firstReleased).toEqual([]);
+    expect(listCapabilities(UDID)).toEqual(["camera"]);
+
+    const lastReleased: string[] = [];
+    releaseSessionSync(UDID, process.ppid, (capability) => lastReleased.push(capability.name));
+    expect(lastReleased).toEqual(["camera"]);
+    expect(readLaunchState(UDID)).toBeNull();
   });
 
   test("reports nothing left when only our records were there", () => {
@@ -372,7 +399,7 @@ describe("session cleanup", () => {
   test("releases only our host resources and preserves persistent capabilities", () => {
     const capability = (name: string, ownerPid: number | null) => ({
       name,
-      ownerPid,
+      ownerPids: ownerPid === null ? [] : [ownerPid],
       bundleId: null,
       scope: "allApps",
       dylib: "/probe.dylib",
@@ -414,7 +441,7 @@ describe("session cleanup", () => {
       JSON.stringify({
         launchArgs: [],
         capabilities: {
-          sentinel: { name: "sentinel", scope: "allApps", dylib: "/probe.dylib", ownerPid: null },
+          sentinel: { name: "sentinel", scope: "allApps", dylib: "/probe.dylib", ownerPids: [] },
         },
       }),
     );
@@ -425,7 +452,7 @@ describe("session cleanup", () => {
       setTimeout(() => {
         fs.writeFileSync(${JSON.stringify(target)}, JSON.stringify({
           launchArgs: [], capabilities: { camera: {
-            name: "camera", scope: "allApps", dylib: "/camera.dylib", ownerPid: null,
+            name: "camera", scope: "allApps", dylib: "/camera.dylib", ownerPids: [],
           } },
         }));
         fs.unlinkSync(${JSON.stringify(lock)});
@@ -516,7 +543,7 @@ describe("graceful launch shutdown", () => {
               name: "camera",
               scope: "allApps",
               dylib: "/camera.dylib",
-              ownerPid: child.pid,
+              ownerPids: [child.pid],
             },
           },
         }),
@@ -538,8 +565,8 @@ describe("graceful launch shutdown", () => {
         launchArgs: [],
         sessionPids: [process.pid],
         capabilities: {
-          camera: { name: "camera", scope: "allApps", dylib: "/camera.dylib", ownerPid: dead },
-          probe: { name: "probe", scope: "allApps", dylib: "/probe.dylib", ownerPid: null },
+          camera: { name: "camera", scope: "allApps", dylib: "/camera.dylib", ownerPids: [dead] },
+          probe: { name: "probe", scope: "allApps", dylib: "/probe.dylib", ownerPids: [] },
         },
       }),
     );
@@ -548,6 +575,53 @@ describe("graceful launch shutdown", () => {
     expect(released).toEqual(["camera"]);
     expect(listCapabilities(UDID)).toEqual(["probe"]);
     expect(readLaunchState(UDID)?.sessionPids).toEqual([process.pid]);
+  });
+});
+
+describe("disabling the last capability", () => {
+  async function disableAfterOneShotEnable(withSession: boolean): Promise<string[]> {
+    const log = join(stateDir(), `simctl-disable-calls-${withSession}`);
+    const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
+    clearRegisteredCapabilities();
+    registerCapability({
+      name: "camera",
+      defaultEnabled: false,
+      scope: "allApps",
+      async setEnabled() {
+        return { dylib: "/camera.dylib" };
+      },
+    });
+    try {
+      await withShimsAsync(
+        { xcrun: `#!/bin/sh\nprintf '%s\\n' "$*" >> ${quotedLog}\nexit 0\n` },
+        async () => {
+          if (withSession) await armCapabilityLoader(UDID);
+          await setCapabilityEnabled(UDID, "camera", {
+            enabled: true,
+            ownerPid: null,
+            relaunch: false,
+          });
+          writeFileSync(log, "");
+          await setCapabilityEnabled(UDID, "camera", { enabled: false, relaunch: false });
+        },
+      );
+      return readFileSync(log, "utf-8").split("\n");
+    } finally {
+      clearRegisteredCapabilities();
+    }
+  }
+
+  test("takes the loader out when no session holds it", async () => {
+    const calls = await disableAfterOneShotEnable(false);
+    expect(calls).toContain(`simctl spawn ${UDID} launchctl unsetenv DYLD_INSERT_LIBRARIES`);
+    expect(readLaunchState(UDID)).toBeNull();
+  });
+
+  test("leaves the loader to a live session", async () => {
+    const calls = await disableAfterOneShotEnable(true);
+    expect(calls).not.toContain(`simctl spawn ${UDID} launchctl unsetenv DYLD_INSERT_LIBRARIES`);
+    expect(readLaunchState(UDID)?.sessionPids).toEqual([process.pid]);
+    expect(listCapabilities(UDID)).toEqual([]);
   });
 });
 
@@ -701,6 +775,60 @@ if (args[1] === "spawn" && args[3] === "launchctl") {
   }
 });
 
+describe("armCapabilityLoader", () => {
+  beforeAll(() => {
+    expect(existsSync(capabilityLoaderPath()), "build the capability loader before testing").toBe(
+      true,
+    );
+  });
+  test("republishes the config before arming so a dead session's capability cannot load", async () => {
+    const log = join(stateDir(), "simctl-arm-calls");
+    const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
+    const quotedConfig = "'" + capabilityConfigPath(UDID).replaceAll("'", "'\\''") + "'";
+    const dead = 999_999;
+    writeRawState(
+      JSON.stringify({
+        launchArgs: [],
+        sessionPids: [],
+        capabilities: {
+          camera: { name: "camera", scope: "allApps", dylib: "/camera.dylib", ownerPids: [dead] },
+          probe: { name: "probe", scope: "allApps", dylib: "/probe.dylib", ownerPids: [] },
+          live: { name: "live", scope: "allApps", dylib: "/live.dylib", ownerPids: [process.pid] },
+        },
+      }),
+    );
+    writeFileSync(
+      capabilityConfigPath(UDID),
+      "all\t/camera.dylib\t\t0\nall\t/probe.dylib\t\t0\nall\t/live.dylib\t\t0\n",
+    );
+
+    await withShimsAsync(
+      {
+        xcrun: `#!/bin/sh
+printf '%s\\n' "$*" >> ${quotedLog}
+if [ "$5" = "setenv" ] && [ "$6" = "DYLD_INSERT_LIBRARIES" ]; then
+  printf 'config-at-arm:%s\\n' "$(cat ${quotedConfig} 2>/dev/null | tr '\\t\\n' '  ')" >> ${quotedLog}
+fi
+exit 0
+`,
+      },
+      async () => {
+        await armCapabilityLoader(UDID);
+      },
+    );
+
+    const atArm = readFileSync(log, "utf-8")
+      .split("\n")
+      .find((line) => line.startsWith("config-at-arm:"));
+    expect(atArm).toContain("/probe.dylib");
+    expect(atArm).toContain("/live.dylib");
+    expect(atArm).not.toContain("/camera.dylib");
+    expect(readFileSync(capabilityConfigPath(UDID), "utf-8")).toBe(
+      "all\t/probe.dylib\t\t0\nall\t/live.dylib\t\t0\n",
+    );
+  });
+});
+
 describe("childLaunchEnv", () => {
   test("inserts the capability dylib and the capability loader into the launched app", () => {
     const env = childLaunchEnv("/opt/injector.dylib", { SIMCAM_SHM_NAME: "/shm" });
@@ -714,5 +842,102 @@ describe("childLaunchEnv", () => {
     expect(childLaunchEnv("/opt/injector.dylib", { SIMCAM_SHM_NAME: "/shm" })).toMatchObject({
       SIMCTL_CHILD_SIMCAM_SHM_NAME: "/shm",
     });
+  });
+});
+
+describe("device reservation with shared capabilities", () => {
+  const capability = (owners: unknown) => ({
+    name: "camera",
+    scope: "allApps",
+    dylib: "/camera.dylib",
+    ownerPids: owners,
+  });
+
+  test("reserves a device whose capability belongs only to this session", async () => {
+    writeRawState(
+      JSON.stringify({
+        launchArgs: [],
+        capabilities: { camera: capability([process.pid]) },
+      }),
+    );
+    await reserveDeviceSession(UDID);
+    expect(readLaunchState(UDID)?.exclusivePid).toBe(process.pid);
+    expect(readLaunchState(UDID)?.capabilities.camera?.ownerPids).toEqual([process.pid]);
+  });
+
+  test("refuses a shared capability still held by another live session", async () => {
+    writeRawState(
+      JSON.stringify({
+        launchArgs: [],
+        capabilities: { camera: capability([process.pid, process.ppid]) },
+      }),
+    );
+    await expect(reserveDeviceSession(UDID)).rejects.toThrow("another session still owns it");
+    expect(readLaunchState(UDID)?.exclusivePid).toBeUndefined();
+  });
+
+  test("keeps persistent capabilities protected from adoption", () => {
+    writeRawState(JSON.stringify({ launchArgs: [], capabilities: { camera: capability([]) } }));
+    expect(() => assertDeviceOwnership(UDID, process.pid)).toThrow("another session still owns it");
+  });
+
+  test("preserves ownership checks for legacy capability records", () => {
+    const legacy = {
+      name: "camera",
+      scope: "allApps",
+      dylib: "/camera.dylib",
+      ownerPid: process.ppid,
+    };
+    writeRawState(JSON.stringify({ launchArgs: [], capabilities: { camera: legacy } }));
+    expect(() => assertDeviceOwnership(UDID, process.pid)).toThrow("another session still owns it");
+  });
+
+  test("refuses malformed owner arrays instead of treating them as unowned", () => {
+    for (const owners of [null, process.pid, [null], ["123"], [0], [1]]) {
+      writeRawState(
+        JSON.stringify({ launchArgs: [], capabilities: { camera: capability(owners) } }),
+      );
+      expect(() => assertDeviceOwnership(UDID, process.pid)).toThrow("Cannot read ownership");
+    }
+  });
+
+  test("releasing a capability preserves another session's device reservation", () => {
+    writeRawState(
+      JSON.stringify({
+        launchArgs: [],
+        exclusivePid: process.ppid,
+        capabilities: { camera: capability([process.pid]) },
+      }),
+    );
+    expect(releaseLaunchState(UDID, process.pid)).toBe(true);
+    expect(readLaunchState(UDID)?.exclusivePid).toBe(process.ppid);
+    expect(listCapabilities(UDID)).toEqual([]);
+  });
+
+  test("releasing the last owner also releases its own device reservation", () => {
+    writeRawState(
+      JSON.stringify({
+        launchArgs: [],
+        exclusivePid: process.pid,
+        capabilities: { camera: capability([process.pid]) },
+      }),
+    );
+    expect(releaseLaunchState(UDID, process.pid)).toBe(false);
+    expect(readLaunchState(UDID)).toBeNull();
+  });
+
+  test("disabling the last capability retains the device reservation", async () => {
+    writeRawState(
+      JSON.stringify({
+        launchArgs: [],
+        exclusivePid: process.pid,
+        capabilities: { camera: capability([]) },
+      }),
+    );
+    await withShimsAsync({ xcrun: "#!/bin/sh\nexit 0\n" }, () =>
+      disableCapability(UDID, null, "camera", { relaunch: false }),
+    );
+    expect(readLaunchState(UDID)?.exclusivePid).toBe(process.pid);
+    expect(listCapabilities(UDID)).toEqual([]);
   });
 });
