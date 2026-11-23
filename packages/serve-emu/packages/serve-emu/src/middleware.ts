@@ -28,7 +28,11 @@ import {
   setUserRotation,
   type NightModeStatus,
 } from "./adb.ts";
-import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
+import {
+  captureScreenshot,
+  SCREENSHOT_CAPABILITIES,
+  screenshotResponse,
+} from "./screenshot-response.ts";
 import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
 import {
@@ -1418,6 +1422,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           stream: streamSettings,
           screenRecording: opts.screenRecording?.snapshot() ?? null,
           viewerTransports: viewerTransportsFor(streamSettings, session.meta.codecId),
+          screenshot: SCREENSHOT_CAPABILITIES,
         },
         { headers: { "Cache-Control": "no-store" } },
       );
@@ -1749,6 +1754,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         return await screenshotResponse(
           () => captureScreenshot(() => screencapPng(opts.serial), deviceState.orientation),
           url,
+          req,
         );
       } catch (err) {
         return Response.json(
