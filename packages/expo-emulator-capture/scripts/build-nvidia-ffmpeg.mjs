@@ -41,4 +41,4 @@ await $`make -j${jobs}`.cwd(source);
 // Ship the exact pinned FFmpeg source beside its statically linked agent. The
 // package also includes this configure recipe and the agent's relinking script.
 const output = join(root, "dist/linux-x64");
-createFfmpegSourceArchive(source, join(output, "ffmpeg-source.tar.xz"));
+createFfmpegSourceArchive(source, join(output, "ffmpeg-source.tar.gz"));

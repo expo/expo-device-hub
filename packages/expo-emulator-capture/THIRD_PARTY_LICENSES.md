@@ -115,7 +115,7 @@ package; `scripts/build-nvidia-ffmpeg.mjs` records the configure/link recipe. Re
 with a compatible modified FFmpeg using that script and `scripts/build.mjs --target
 linux-x64 --nvidia`. LGPL-covered code may be modified/relinked, and reverse engineering
 for debugging such modifications is permitted. FFmpeg sources are unmodified. The
-exact pinned FFmpeg source archive ships as `dist/linux-x64/ffmpeg-source.tar.xz`.
+exact pinned FFmpeg source archive ships as `dist/linux-x64/ffmpeg-source.tar.gz`.
 
 The configured FFmpeg archives also contain permissively licensed sources:
 `libavcodec/jfdctfst.c` and `jrevdct.c` (Independent JPEG Group), `faandct.c` (ISC),

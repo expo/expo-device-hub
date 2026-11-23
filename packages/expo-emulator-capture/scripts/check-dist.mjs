@@ -9,7 +9,7 @@ const required = [
   "dist/darwin-arm64/libexpo_emulator_capture.dylib",
   "dist/linux-x64/libexpo_emulator_capture.so",
   "dist/linux-x64/libexpo_emulator_capture_nvidia.so",
-  "dist/linux-x64/ffmpeg-source.tar.xz",
+  "dist/linux-x64/ffmpeg-source.tar.gz",
 ];
 const missing = required.filter(
   (path) => !existsSync(fileURLToPath(new URL(`../${path}`, import.meta.url))),
@@ -19,5 +19,5 @@ if (missing.length > 0) {
   process.exit(1);
 }
 validateFfmpegSourceArchive(
-  fileURLToPath(new URL("../dist/linux-x64/ffmpeg-source.tar.xz", import.meta.url)),
+  fileURLToPath(new URL("../dist/linux-x64/ffmpeg-source.tar.gz", import.meta.url)),
 );
