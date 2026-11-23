@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { lstat, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { EMULATOR_CAPTURE_PACKAGE, installEmulatorCapture } from "./emulator-capture-install";
 
 /** Turns the experimental emulator capture on: `1`. The CLI flag sets it too. */
@@ -123,7 +123,14 @@ export function emulatorCaptureRequested(env: NodeJS.ProcessEnv = process.env): 
 export function emulatorCaptureOffReason(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
+  env: NodeJS.ProcessEnv = process.env,
 ): string {
+  if (
+    platform !== "linux" &&
+    emulatorCaptureRequested(env) &&
+    env[EMULATOR_CAPTURE_BACKEND_ENV]?.trim() === "nvidia"
+  )
+    return `${EMULATOR_CAPTURE_BACKEND_ENV}=nvidia requires Linux x86-64. Unset it for this host.`;
   if (!capturePlatform(platform, arch)) return `Emulator capture needs ${SUPPORTED_HOSTS}.`;
   return `Turned off. Restart the Hub with ${EMULATOR_CAPTURE_FLAG}, or set ${EMULATOR_CAPTURE_ENV}=1 for expo start.`;
 }
@@ -149,13 +156,28 @@ export function readEmulatorCapture(
     return null;
   }
   const nvidia = nvidiaRequested(env);
-  if (nvidia && host !== "linux")
-    throw new Error(`${EMULATOR_CAPTURE_BACKEND_ENV}=nvidia requires Linux x86-64`);
+  if (nvidia && host !== "linux") {
+    // @ref LLP 0020#integration — shared environment files must not stop an unsupported Hub
+    console.warn(`[emulator capture] ${emulatorCaptureOffReason(platform, arch, env)}`);
+    return null;
+  }
   const localLibrary = env[EMULATOR_CAPTURE_LIBRARY_ENV]?.trim() || undefined;
   if (localLibrary !== undefined && (!isAbsolute(localLibrary) || !existsSync(localLibrary))) {
     throw new Error(
-      `${EMULATOR_CAPTURE_LIBRARY_ENV} must be the absolute path of the agent library (libexpo_emulator_capture.dylib or .so); ${localLibrary} does not exist`,
+      `${EMULATOR_CAPTURE_LIBRARY_ENV} must be the absolute path of the agent library (libexpo_emulator_capture.dylib, libexpo_emulator_capture.so or libexpo_emulator_capture_nvidia.so); ${localLibrary} does not exist`,
     );
+  }
+  if (host === "linux" && localLibrary !== undefined) {
+    const name = basename(localLibrary);
+    // Local builds may use custom names. Reject the two known artifacts when
+    // their required renderer/encoder selection is demonstrably inconsistent.
+    if (
+      (name === "libexpo_emulator_capture.so" && nvidia) ||
+      (name === "libexpo_emulator_capture_nvidia.so" && !nvidia)
+    )
+      throw new Error(
+        `${EMULATOR_CAPTURE_LIBRARY_ENV} and ${EMULATOR_CAPTURE_BACKEND_ENV} select different backends`,
+      );
   }
   let pending: Promise<string> | null = null;
   let problem: string | null = null;

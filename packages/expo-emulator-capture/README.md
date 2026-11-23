@@ -194,16 +194,18 @@ devkit for the host and check its SHA-256 digest.
 ```sh
 bun run build             # macOS with Apple silicon and Xcode command line tools:
                           # dist/darwin-arm64/libexpo_emulator_capture.dylib
-bun run build:linux-x64   # Linux x86-64 with g++ and the x264 build 165 header
-                          # (Ubuntu 26.04: sudo apt install libx264-dev):
+bun run build:linux-x64   # Linux x86-64 with g++, clang, make, pkg-config and x264 build 165 headers
+                          # (Ubuntu 26.04: sudo apt install g++ clang make pkg-config libx264-dev):
                           # dist/linux-x64/libexpo_emulator_capture.so
+                          # dist/linux-x64/libexpo_emulator_capture_nvidia.so
 bun run test              # protocol, conversion and rotation unit tests (C++ and JavaScript)
 ```
 
 `bun run build` builds only the macOS agent; on other hosts it prints a warning and
 produces no binary. `bun run build:linux-x64` fails on any host but Linux x86-64. The
-release builds the macOS agent on an EAS macOS job and the Linux agent on an EAS Linux
-job, and fails without either.
+release builds the macOS agent on an EAS macOS job and both Linux agents on an EAS Linux
+job, and fails if an artifact is missing. `bun run build:linux-nvidia` builds only the NVIDIA
+agent, without x264 headers; it needs clang, make and pkg-config, but no GPU or driver.
 
 ## Limitations
 
@@ -218,8 +220,9 @@ job, and fails without either.
   again, so two Hubs do not take the capture from each other in a loop.
 - The EAS macOS VMs cannot run the Android Emulator (Hypervisor.framework reports
   `HV_UNSUPPORTED` there), so the macOS agent was tested only on a physical Mac.
-- The Linux agent was tested only on EAS Linux VMs without a GPU. It reads every frame
-  back on the renderer's thread, and it supports only x264 build 165.
+- The default Linux agent reads frames back on a capture worker and supports only x264
+  build 165. The opt-in NVIDIA agent has initial EAS L4 evidence linked below; broader
+  GPU Fold, rotation and lifecycle validation is pending.
 
 ## Licenses
 
@@ -234,7 +237,9 @@ the host system; the package does not contain it.
 
 Set `EXPO_EMULATOR_CAPTURE_BACKEND=nvidia` before starting the Hub with
 `--experimental-emulator-capture`. It selects the CUDA/NVENC agent and host GL; x264
-is not required in this mode. NVIDIA driver 570+ with CUDA and NVENC, a compute 7.5+ GPU,
-and compatible gfxstream GL exports are required. Hardware validation is pending.
+is not required in this mode. The prebuilt agent needs glibc 2.38+ (for example, Ubuntu 24.04).
+NVIDIA driver 570.124.06+ with CUDA and NVENC, a compute 7.5+ GPU,
+and compatible gfxstream GL exports are required. Initial capture, recording and WebRTC tests
+passed on an EAS staging L4 with driver 580.178.04; the minimum driver is not hardware-tested.
 See [NVIDIA capture](../../llp/0021-emulator-capture-linux.explainer.md#nvidia-capture)
 for the frame path, build instructions and staging verification scope.

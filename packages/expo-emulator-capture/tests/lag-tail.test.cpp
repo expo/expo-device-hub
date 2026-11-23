@@ -72,5 +72,10 @@ int main() {
   roles.post(12, 1'000'001);
   assert(!roles.pace(*shared, fast, 2'000'000, 30));
   assert(roles.dueUs() == 1'050'001);
+  LagTail ordered;
+  auto newest = ordered.post(20, 2'000);
+  assert(ordered.post(19, 1'000) == 0);
+  auto latest = ordered.takeIfDue(52'000);
+  assert(latest && latest->handle == 20 && latest->sequence == newest);
   puts("lag tail deadlines, replacement, retries, pacing and reset checks passed");
 }

@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { requireNativeTarget } from "./platform.mjs";
+import { validateNvidiaPtx } from "./nvidia-compat.mjs";
 
 requireNativeTarget("compile:nvidia", ["--target", "linux-x64"]);
 
@@ -14,7 +15,7 @@ const nvrtcLibraryPath = resolve(
 );
 if (!existsSync(nvrtcLibraryPath))
   throw new Error(
-    "Run npm run setup:build or set EXPO_EMULATOR_CAPTURE_NVRTC_LIBRARY to an absolute NVRTC library path",
+    "Run bun run build:linux-nvidia or set EXPO_EMULATOR_CAPTURE_NVRTC_LIBRARY to an absolute NVRTC library path",
   );
 
 // The loader reads this path at process startup. Restart only this compiler
@@ -107,6 +108,7 @@ try {
   const headerPath = join(root, "build/nvidia-ptx.h");
   await mkdir(buildDirectory, { recursive: true });
   const ptxSource = ptxBuffer.subarray(0, -1).toString();
+  validateNvidiaPtx(ptxSource);
   const headerSource = `static const char nvidiaPtx[] = R"PTX(${ptxSource})PTX";\n`;
   await writeFile(headerPath, headerSource);
   console.log("Generated build/nvidia-ptx.h with NVRTC");

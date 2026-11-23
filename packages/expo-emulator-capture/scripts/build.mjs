@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { $, root } from "./common.mjs";
 import { requireNativeTarget } from "./platform.mjs";
+import { validateNvidiaGlibc } from "./nvidia-compat.mjs";
 
 const target = requireNativeTarget("build:native");
 const nvidia = process.argv.includes("--nvidia");
@@ -148,8 +149,12 @@ if (target === "darwin-arm64") {
     "-lrt",
     "-lresolv",
   ];
-  // @ref LLP 0021#c-runtime — any C++ library works; only findColorBuffer's result is a libc++ object
+  // @ref LLP 0021#c-runtime — bridge libc++ color-buffer ownership and borrowed-image destruction
   await $`${compiler} ${compilerArgs} ${args}`;
+  if (nvidia) {
+    const versions = await $`readelf --version-info ${library}`.quiet();
+    validateNvidiaGlibc(versions.stdout.toString());
+  }
   // GNU strip -x keeps the debug sections; --strip-unneeded removes them and the local symbols,
   // and keeps the dynamic export.
   if (process.env.EXPO_EMULATOR_CAPTURE_KEEP_DEBUG !== "1")

@@ -28,13 +28,15 @@ for (const [name, repository, tag, commit] of [
     throw new Error(`${directory} differs from pinned ${commit}; remove it and retry`);
 }
 
-const version = "12.9.86";
+// PTX JIT is not covered by CUDA minor-version compatibility. CUDA 12.8's
+// compiler targets the advertised R570 driver; compute_75 alone is insufficient.
+const version = "12.8.93";
 const archive = join(dependencies, `cuda-nvrtc-${version}.tar.xz`);
 const url = `https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvrtc/linux-x86_64/cuda_nvrtc-linux-x86_64-${version}-archive.tar.xz`;
 await downloadVerified(
   url,
   archive,
-  "82913658363892dbc0f2638b070476234476e06e084fed60db861cb7e161a6af",
+  "992f5e4d95cb499f41e442245efa877dbd60c711451afe680a26700d61eb3843",
 );
 await mkdir(join(dependencies, "nvrtc"), { recursive: true });
 await $`tar -xJf ${archive} -C ${join(dependencies, "nvrtc")} --strip-components=1`;

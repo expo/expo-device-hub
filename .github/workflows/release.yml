@@ -127,15 +127,15 @@ jobs:
       - name: Build packages
         run: bun run build
 
-      # A cache hit from the EAS Linux job. A miss builds it here, which needs g++
-      # and the x264 build 165 header (Ubuntu 26.04 libx264-dev); without them the
-      # build fails and nothing is published.
+      # A cache hit from the EAS Linux job. A miss builds both Linux agents here,
+      # requiring g++, clang, make, pkg-config, the x264 build 165 header and
+      # downloads of pinned native dependencies; a missing artifact blocks publication.
       - name: Build the Linux capture agent
         run: bunx turbo run build:linux-x64 --filter=expo-emulator-capture
 
       # changeset publish starts every publish at once, so the agents' prepublishOnly would stop
       # only the agent package, and the Hub would publish with a pin to a version that is not
-      # on npm. Check both agents here, before the version commit.
+      # on npm. Check all three agent artifacts here, before the version commit.
       - name: Check the capture agents
         run: node packages/expo-emulator-capture/scripts/check-dist.mjs
 

@@ -32,6 +32,11 @@ jobs:
           library=dist/linux-x64/libexpo_emulator_capture_nvidia.so
           test -s "$library"
           nm -D --defined-only "$library"
+          exports=$(nm -D --defined-only --format=posix "$library" | awk '{print $1}')
+          if [ "$exports" != expo_emulator_capture_version ]; then
+            echo 'Only expo_emulator_capture_version may be exported'
+            exit 1
+          fi
           readelf -d "$library"
           if readelf -d "$library" | grep NEEDED | grep -E 'cuda|nvidia|avcodec|avutil|x264'; then
             echo 'GPU/codec runtimes must not be loader dependencies'

@@ -75,21 +75,47 @@ describe("readEmulatorCapture", () => {
       expect(capture.problem()).toBeNull();
     }));
 
-  test("rejects an unknown backend and NVIDIA on macOS", () => {
-    for (const backend of ["nvidia", "other"]) {
-      expect(() =>
-        readEmulatorCapture(
-          {
-            [EMULATOR_CAPTURE_ENV]: "1",
-            [EMULATOR_CAPTURE_BACKEND_ENV]: backend,
-          },
-          "darwin",
-          "arm64",
-          never,
-        ),
-      ).toThrow();
-    }
+  test("rejects an unknown backend", () => {
+    expect(() =>
+      readEmulatorCapture(
+        { [EMULATOR_CAPTURE_ENV]: "1", [EMULATOR_CAPTURE_BACKEND_ENV]: "other" },
+        "darwin",
+        "arm64",
+        never,
+      ),
+    ).toThrow();
   });
+
+  test("a shared NVIDIA environment keeps the Hub running on macOS", () => {
+    const env = { [EMULATOR_CAPTURE_ENV]: "1", [EMULATOR_CAPTURE_BACKEND_ENV]: "nvidia" };
+    expect(readEmulatorCapture(env, "darwin", "arm64", never)).toBeNull();
+    expect(emulatorCaptureOffReason("darwin", "arm64", env)).toContain("requires Linux x86-64");
+  });
+
+  test("rejects mismatched known Linux override artifacts", () =>
+    withLibrary(async (path) => {
+      const software = join(dirname(path), "libexpo_emulator_capture.so");
+      const nvidia = join(dirname(path), "libexpo_emulator_capture_nvidia.so");
+      writeFileSync(software, "");
+      writeFileSync(nvidia, "");
+      for (const [backend, library] of [
+        ["nvidia", software],
+        [undefined, nvidia],
+      ]) {
+        expect(() =>
+          readEmulatorCapture(
+            {
+              [EMULATOR_CAPTURE_ENV]: "1",
+              [EMULATOR_CAPTURE_BACKEND_ENV]: backend,
+              [EMULATOR_CAPTURE_LIBRARY_ENV]: library,
+            },
+            "linux",
+            "x64",
+            never,
+          ),
+        ).toThrow(EMULATOR_CAPTURE_BACKEND_ENV);
+      }
+    }));
 
   test("is off when the variable is unset or empty", () => {
     expect(readEmulatorCapture({}, "darwin", "arm64", never)).toBeNull();

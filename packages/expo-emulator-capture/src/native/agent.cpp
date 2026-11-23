@@ -17,6 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -130,6 +131,15 @@ struct PendingFrame {
 };
 
 enum class ReadMode { Auto, Post, Lag, LagAsync };
+
+bool immediateTail(ReadMode mode) {
+#if defined(EXPO_EMULATOR_CAPTURE_NVIDIA)
+  return mode == ReadMode::Post;
+#else
+  (void)mode;
+  return false;
+#endif
+}
 
 const char* readModeName(ReadMode mode) {
   switch (mode) {
@@ -318,8 +328,9 @@ class Agent {
   void encoderLoop(int role);
   void captureLoop();
   void capturePost(uint32_t handle, bool needLockAndBind);
-  void deliver(PendingFrame& pending, const bool (&take)[kRoleCount]);
+  std::array<bool, kRoleCount> deliver(PendingFrame& pending, const bool (&take)[kRoleCount]);
   bool deliverTail(uint32_t handle, int64_t postUs, const bool (&take)[kRoleCount]);
+  void captureTail(LagTail::Request request, int64_t nowUs);
   ReadMode effectiveReadMode() const;
   void chooseCaptureModes();
   std::string sessionOption(const char* file, const char* variable) const;
@@ -493,15 +504,27 @@ void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
           std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - entered).count());
     }
   } timer{postUs_, entered};
-  std::unique_lock<std::mutex> postLock(postMutex_, std::try_to_lock);
-  if (!postLock.owns_lock()) {
-    droppedBusy_++;
-    return;
-  }
   int64_t elapsedUs =
       std::chrono::duration_cast<std::chrono::microseconds>(entered - start_).count();
   ReadMode mode = effectiveReadMode();
+  std::unique_lock<std::mutex> postLock(postMutex_, std::try_to_lock);
+  if (!postLock.owns_lock()) {
+    droppedBusy_++;
+    if (immediateTail(mode)) {
+      {
+        std::lock_guard<std::mutex> guard(asyncMutex_);
+        tail_.post(handle, elapsedUs);
+      }
+      asyncWake_.notify_one();
+    }
+    return;
+  }
   const bool lag = mode == ReadMode::Lag || mode == ReadMode::LagAsync;
+  // @ref LLP 0021#nvidia-capture — retain paced-out final posts without resending served roles
+  // Serialize immediate posts with their idle retry through delivery, so an older
+  // tail cannot overtake a new post or copy a frame an accepted role already got.
+  std::unique_lock<std::mutex> immediatePacer(pacerMutex_, std::defer_lock);
+  if (immediateTail(mode)) immediatePacer.lock();
   uint32_t readHandle = handle;
   int64_t readPostUs = elapsedUs;
   if (lag) {
@@ -516,7 +539,8 @@ void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
   bool take[kRoleCount] = {};
   bool anyTaken = false;
   if (readHandle) {
-    std::lock_guard<std::mutex> guard(pacerMutex_);
+    std::unique_lock<std::mutex> guard(pacerMutex_, std::defer_lock);
+    if (!immediatePacer.owns_lock()) guard.lock();
     for (int role = 0; role < kRoleCount; role++) {
       RoleState& state = roles_[role];
       if (!state.active.load()) continue;
@@ -537,10 +561,11 @@ void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
       anyTaken |= take[role];
     }
   }
-  if (lag) {
+  uint64_t postSequence = 0;
+  if (lag || immediateTail(mode)) {
     {
       std::lock_guard<std::mutex> guard(asyncMutex_);
-      tail_.post(handle, elapsedUs);
+      postSequence = tail_.post(handle, elapsedUs);
       if (mode == ReadMode::LagAsync && anyTaken) {
         // captureLoop() copies the frame, so the post does not wait for the read. A newer
         // request replaces one that it has not taken, for the roles of both.
@@ -564,12 +589,16 @@ void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
   pending.ptsUs = nextPts();
   pending.postUs = readPostUs;
   captured_++;
-  deliver(pending, take);
+  auto queued = deliver(pending, take);
+  if (immediatePacer.owns_lock() && postSequence) {
+    for (int role = 0; role < kRoleCount; role++)
+      if (queued[role]) roles_[role].tailSequence = postSequence;
+  }
 }
 
 // Queues one captured frame for every active role that took it.
-void Agent::deliver(PendingFrame& pending, const bool (&take)[kRoleCount]) {
-  bool queued[kRoleCount] = {};
+std::array<bool, kRoleCount> Agent::deliver(PendingFrame& pending, const bool (&take)[kRoleCount]) {
+  std::array<bool, kRoleCount> queued{};
   {
     std::lock_guard<std::mutex> guard(encodeMutex_);
     for (int role = 0; role < kRoleCount; role++) {
@@ -587,6 +616,7 @@ void Agent::deliver(PendingFrame& pending, const bool (&take)[kRoleCount]) {
   }
   for (int role = 0; role < kRoleCount; role++)
     if (queued[role]) roles_[role].wake.notify_one();
+  return queued;
 }
 
 // The tail rule: no post came after the last one, so no post reads its frame. Every active role
@@ -620,6 +650,35 @@ bool Agent::deliverTail(uint32_t handle, int64_t postUs, const bool (&take)[kRol
   for (int role = 0; role < kRoleCount; role++)
     if (queued[role]) roles_[role].wake.notify_one();
   return true;
+}
+
+// A paced-out NVIDIA post still owns an idle deadline. Lag reads use this same
+// scheduling, but keep the expensive CPU read outside the post's pacer lock.
+void Agent::captureTail(LagTail::Request request, int64_t nowUs) {
+  ReadMode mode = effectiveReadMode();
+  if (mode != ReadMode::Lag && mode != ReadMode::LagAsync && !immediateTail(mode)) return;
+  bool take[kRoleCount] = {};
+  bool anyTaken = false;
+  std::unique_lock<std::mutex> pacerGuard(pacerMutex_);
+  {
+    std::lock_guard<std::mutex> tailGuard(asyncMutex_);
+    for (int role = 0; role < kRoleCount; role++) {
+      RoleState& state = roles_[role];
+      if (!state.active || state.tailSequence == request.sequence) continue;
+      take[role] = tail_.pace(request, state.pacer, nowUs, state.fps.load());
+      anyTaken |= take[role];
+    }
+  }
+  if (!immediateTail(mode)) pacerGuard.unlock();
+  if (!anyTaken) return;
+  if (!deliverTail(request.handle, request.postUs, take)) {
+    std::lock_guard<std::mutex> tailGuard(asyncMutex_);
+    tail_.retry(request, int64_t(clockUs()));
+    return;
+  }
+  if (!pacerGuard.owns_lock()) pacerGuard.lock();
+  for (int role = 0; role < kRoleCount; role++)
+    if (take[role]) roles_[role].tailSequence = request.sequence;
 }
 
 // Lag read: copies the frame of the post before on its own thread (lag + async), and the last
@@ -686,32 +745,7 @@ void Agent::captureLoop() {
       stats.maybeLog(anyActive, readModeName(effectiveReadMode()), renderThread_.load());
       if (!anyActive || (!handle && !tail)) continue;
       if (tail) {
-        ReadMode mode = effectiveReadMode();
-        if (mode == ReadMode::Lag || mode == ReadMode::LagAsync) {
-          bool anyTaken = false;
-          {
-            // Match the post's pacer -> async lock order after releasing the wait lock.
-            // Keep the posts' try-lock free so a final post cannot lose its handle.
-            std::lock_guard<std::mutex> pacerGuard(pacerMutex_);
-            std::lock_guard<std::mutex> tailGuard(asyncMutex_);
-            int64_t nowUs = int64_t(clockUs());
-            for (int role = 0; role < kRoleCount; role++) {
-              RoleState& state = roles_[role];
-              if (!state.active || state.tailSequence == tail->sequence) continue;
-              take[role] = tail_.pace(*tail, state.pacer, nowUs, state.fps.load());
-              anyTaken |= take[role];
-            }
-          }
-          if (anyTaken) {
-            if (!deliverTail(handle, postUs, take)) {
-              retryTail();
-            } else {
-              std::lock_guard<std::mutex> pacerGuard(pacerMutex_);
-              for (int role = 0; role < kRoleCount; role++)
-                if (take[role]) roles_[role].tailSequence = tail->sequence;
-            }
-          }
-        }
+        captureTail(*tail, int64_t(clockUs()));
         continue;
       }
       PendingFrame pending;

@@ -117,16 +117,21 @@ Frame allocateFrame(AVBufferRef* pool) {
   return frame;
 }
 void makePool(Device& device, AVBufferRef*& pool, int width, int height) {
-  av_buffer_unref(&pool);
-  pool = av_hwframe_ctx_alloc(device.hw);
-  if (!pool) throw std::runtime_error("allocating CUDA frame pool failed");
-  auto* frames = reinterpret_cast<AVHWFramesContext*>(pool->data);
+  AVBufferRef* replacement = av_hwframe_ctx_alloc(device.hw);
+  if (!replacement) throw std::runtime_error("allocating CUDA frame pool failed");
+  auto* frames = reinterpret_cast<AVHWFramesContext*>(replacement->data);
   frames->format = AV_PIX_FMT_CUDA;
   frames->sw_format = AV_PIX_FMT_0BGR32;
   frames->width = width;
   frames->height = height;
   frames->initial_pool_size = 8;
-  avCheck(av_hwframe_ctx_init(pool), "initializing CUDA frame pool");
+  int result = av_hwframe_ctx_init(replacement);
+  if (result < 0) {
+    av_buffer_unref(&replacement);
+    avCheck(result, "initializing CUDA frame pool");
+  }
+  av_buffer_unref(&pool);
+  pool = replacement;
 }
 
 class RendererContext {
@@ -308,7 +313,9 @@ class NvidiaEncoder final : public H264Encoder {
       encoder_->max_b_frames = 0;
       encoder_->color_primaries = AVCOL_PRI_BT709;
       encoder_->color_trc = AVCOL_TRC_BT709;
-      encoder_->colorspace = AVCOL_SPC_BT709;
+      // FFmpeg/NVENC converts packed RGB with a BT.601 matrix, and writes that
+      // matrix to the VUI. Keep the requested metadata consistent with it.
+      encoder_->colorspace = AVCOL_SPC_BT470BG;
       encoder_->color_range = AVCOL_RANGE_MPEG;
       encoder_->hw_frames_ctx = av_buffer_ref(pool_);
       if (!encoder_->hw_frames_ctx) throw std::runtime_error("retaining CUDA pool failed");
@@ -375,7 +382,12 @@ class NvidiaEncoder final : public H264Encoder {
   void invalidate() override {
     if (encoder_) {
       // No B-frames/lookahead; nevertheless deliver any packets retained by FFmpeg.
-      try { avCheck(avcodec_send_frame(encoder_, nullptr), "flush NVENC"); receive(); }
+      try {
+        if (avcodec_is_open(encoder_)) {
+          avCheck(avcodec_send_frame(encoder_, nullptr), "flush NVENC");
+          receive();
+        }
+      }
       catch (const std::exception& e) {
         try { if (onError_) onError_(e.what()); } catch (...) {}
       } catch (...) {}
@@ -428,10 +440,22 @@ std::unique_ptr<H264Encoder> createH264Encoder(H264Encoder::Sink sink, H264Encod
 }
 std::string h264EncoderProblem() {
   try {
-    auto cuda = device();
-    void* encoder = dlopen("libnvidia-encode.so.1", RTLD_NOW | RTLD_LOCAL);
-    if (!encoder) return "NVIDIA capture needs libnvidia-encode.so.1 from the NVIDIA driver";
-    dlclose(encoder);
+    static std::mutex mutex;
+    static bool verified = false;
+    std::lock_guard<std::mutex> guard(mutex);
+    if (verified) return {};
+    std::string error;
+    // Exercise the same NVENC and PTX setup as a real session. Loading driver
+    // libraries alone misses incompatible PTX and GPUs with no NVENC engine.
+    NvidiaEncoder probe([](EncodedPacket&&) {}, [&](const std::string& message) { error = message; });
+    EncoderConfig config;
+    config.width = config.height = 128;
+    config.fps = 30;
+    config.bitRate = 1'000'000;
+    if (!probe.configure(config, error)) return error;
+    probe.invalidate();
+    if (!error.empty()) return error;
+    verified = true;  // Failed probes remain retryable on the next connection.
     return {};
   } catch (const std::exception& e) { return e.what(); }
 }

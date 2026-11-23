@@ -16,6 +16,11 @@ await $`./build/gfxstream-startup-test`;
 await $`${compiler} -std=c++17 -O2 -Wall -Wextra -DEXPO_EMULATOR_CAPTURE_NVIDIA -I tests/fixtures/gum tests/gfxstream-startup.test.cpp src/native/gfxstream.cpp -o build/nvidia-startup-test`;
 await $`./build/nvidia-startup-test`;
 
+// Includes the real post/queue implementation with a fake source and Gum
+// declarations; no CUDA, NVENC, renderer or device is loaded.
+await $`${compiler} -std=c++17 -O2 -Wall -Wextra -pthread -fno-access-control -DEXPO_EMULATOR_CAPTURE_NVIDIA -I tests/fixtures/agent-gum tests/agent-tail.test.cpp -o build/agent-tail-test`;
+await $`./build/agent-tail-test`;
+
 if (process.platform === "darwin" && process.arch === "arm64") {
   for (const test of ["videotoolbox", "videotoolbox-letterbox"]) {
     await $`clang++ -std=c++17 -fobjc-arc -O2 -Wall -Wextra tests/${test}.test.mm src/native/encoder-videotoolbox.mm -framework Foundation -framework CoreFoundation -framework CoreMedia -framework CoreVideo -framework IOSurface -framework VideoToolbox -o build/${test}-test`;
