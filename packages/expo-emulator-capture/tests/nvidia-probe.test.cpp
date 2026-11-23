@@ -29,6 +29,9 @@ class NvencCaps final : public expo_capture::H264Encoder {
 };
 
 int main() {
+  assert(!expo_capture::nvidiaOutputSizeProblem(144, 326).empty());
+  assert(expo_capture::nvidiaOutputSizeProblem(146, 326).empty());
+  assert(expo_capture::nvidiaOutputSizeProblem(1080, 2424).empty());
   NvencCaps encoder;
   auto error = expo_capture::probeNvidiaEncoder(encoder);
   assert(error.empty() && "a supported NVENC device must not fail on undersized probe input");

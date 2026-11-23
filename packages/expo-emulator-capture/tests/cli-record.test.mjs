@@ -84,6 +84,26 @@ test("record reports the agent's encoder failure", async () => {
   expect(result.stderr).toContain("install x264");
 });
 
+test("record reports settings rejected after a successful hello", async () => {
+  const result = await runRecord([], (socket) => {
+    socket.write(hello());
+    socket.once("data", () =>
+      socket.write(
+        wireRecord(
+          3,
+          Buffer.from(
+            JSON.stringify({
+              encoderError: "NVIDIA output width must be at least 146 pixels",
+            }),
+          ),
+        ),
+      ),
+    );
+  });
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("output width must be at least 146");
+});
+
 test("record finishes a requested duration without an early-close error", async () => {
   const result = await runRecord(["--seconds", "0.2"], (socket) => {
     socket.write(hello());

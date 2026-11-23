@@ -233,13 +233,13 @@ Frida Gum (wxWindows 3.1, an LGPL-2.0+ license with a binary exception) and GLib
 with the license texts in `LICENSES/`. The Linux agent loads x264 (GPL-2.0-or-later) from
 the host system; the package does not contain it.
 
-### NVIDIA Linux hosts (experimental)
+## NVIDIA Linux hosts (experimental)
 
 Set `EXPO_EMULATOR_CAPTURE_BACKEND=nvidia` before starting the Hub with
 `--experimental-emulator-capture`. It selects the CUDA/NVENC agent and host GL; x264
 is not required in this mode. The prebuilt agent needs glibc 2.38+ (for example, Ubuntu 24.04).
 NVIDIA driver 570.124.06+ with CUDA and NVENC, a compute 7.5+ GPU,
-and compatible gfxstream GL exports are required. Initial capture, recording and WebRTC tests
+and compatible gfxstream GL exports are required. Encoded width must be at least 146 pixels. Initial capture, recording and WebRTC tests
 passed on an EAS staging L4 with driver 580.178.04; the minimum driver is not hardware-tested.
 See [NVIDIA capture](../../llp/0021-emulator-capture-linux.explainer.md#nvidia-capture)
 for the frame path, build instructions and staging verification scope.

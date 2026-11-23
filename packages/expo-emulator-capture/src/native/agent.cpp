@@ -953,6 +953,12 @@ void Agent::encoderLoop(int role) {
         config.letterbox = recording;
         std::string error;
         if (!next->configure(config, error)) {
+          // @ref LLP 0021#nvidia-integration — failed settings reach the consumer, not a keyframe timeout
+#if defined(EXPO_EMULATOR_CAPTURE_NVIDIA)
+          std::string details = "{\"encoderError\":\"" + jsonEscape(error) + "\"}";
+          sendRecord(generation, kConfigured, uint32_t(width), uint32_t(height), fps,
+                     reinterpret_cast<const uint8_t*>(details.data()), details.size());
+#endif
           // A missing encoder fails every 200 ms until the host changes; log each error once.
           if (error != lastConfigureError) logLine("%s", error.c_str());
           lastConfigureError = error;

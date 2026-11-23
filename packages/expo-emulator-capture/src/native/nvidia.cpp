@@ -290,6 +290,8 @@ class NvidiaEncoder final : public H264Encoder {
   bool configure(const EncoderConfig& config, std::string& error) override {
     invalidate();
     try {
+      const auto sizeProblem = nvidiaOutputSizeProblem(config.width, config.height);
+      if (!sizeProblem.empty()) throw std::runtime_error(sizeProblem);
       if (config.width < 2 || config.height < 2 || config.width > kMaxEdge ||
           config.height > kMaxEdge || config.width % 2 || config.height % 2 ||
           config.fps < 1 || config.fps > kMaxFps || config.rotation < 0 || config.rotation > 3 ||

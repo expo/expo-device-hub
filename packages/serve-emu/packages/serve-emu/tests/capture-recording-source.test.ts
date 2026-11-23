@@ -451,6 +451,29 @@ describe("capture recording source", () => {
     await agent.close();
   });
 
+  test("reports a rejected recording canvas with the encoder's reason", async () => {
+    const { agent, start, recorder } = await setup();
+    const message = "NVIDIA output width must be at least 146 pixels";
+    agent.onConnect((socket) => socket.write(hello({ protocol: 3, clockUs: 1_000_000 })));
+    const source = await start();
+    try {
+      agent.peers[0]!.write(
+        record(
+          GPU_RECORD.configured,
+          json({ encoderError: message }),
+          0n,
+          source.canvas.width,
+          source.canvas.height,
+        ),
+      );
+      await expect(recorder.ready).rejects.toThrow(message);
+      expect(recorder.snapshot()).toMatchObject({ status: "failed", error: message });
+    } finally {
+      source.close();
+      await agent.close();
+    }
+  });
+
   test("a delayed frame keeps its old geometry after the next fold is configured", async () => {
     const { agent, start, recorder, manifest, advance } = await setup();
     agent.onConnect((socket) =>

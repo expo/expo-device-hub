@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { $, downloadVerified, root } from "./common.mjs";
 import { requireNativeTarget } from "./platform.mjs";
+import { FFMPEG_COMMIT } from "./ffmpeg-source.mjs";
 
 requireNativeTarget("setup:nvidia", ["--target", "linux-x64"]);
 const dependencies = join(root, "deps/nvidia");
@@ -11,7 +12,7 @@ await mkdir(dependencies, { recursive: true });
 
 // Validate cached source checkouts too. Never compile a moved tag or modified dependency.
 for (const [name, repository, tag, commit] of [
-  ["ffmpeg", "FFmpeg", "n8.0.1", "894da5ca7d742e4429ffb2af534fcda0103ef593"],
+  ["ffmpeg", "FFmpeg", "n8.0.1", FFMPEG_COMMIT],
   [
     "nv-codec-headers",
     "nv-codec-headers",

@@ -3,6 +3,7 @@
 // without them.
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { validateFfmpegSourceArchive } from "./ffmpeg-source.mjs";
 
 const required = [
   "dist/darwin-arm64/libexpo_emulator_capture.dylib",
@@ -17,3 +18,6 @@ if (missing.length > 0) {
   console.error(`[expo-emulator-capture] missing release artifact: ${missing.join(", ")}`);
   process.exit(1);
 }
+validateFfmpegSourceArchive(
+  fileURLToPath(new URL("../dist/linux-x64/ffmpeg-source.tar.xz", import.meta.url)),
+);

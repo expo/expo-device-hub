@@ -230,6 +230,8 @@ export async function startCaptureRecordingSource(
       throw new Error("The capture agent changed the recording canvas");
     if (record.flags === GPU_RECORD.configured) {
       const details = parseGpuDetails(record.data);
+      if (typeof details.encoderError === "string" && details.encoderError)
+        throw new GpuCaptureEncoderError(details.encoderError);
       const contentRect = contentRectFrom(details.contentRect, canvas);
       const fromPts = details.fromPts;
       if (details.role !== "recording" || !contentRect || !Number.isSafeInteger(fromPts))

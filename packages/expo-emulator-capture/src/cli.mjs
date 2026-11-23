@@ -188,6 +188,9 @@ function record(argv) {
       stats.resizes++;
       console.log(`resized: native ${entry.width}x${entry.height}`);
     } else if (entry.flags === FLAGS.configured) {
+      const details = JSON.parse(entry.payload.toString());
+      if (typeof details.encoderError === "string" && details.encoderError)
+        fail(details.encoderError);
       console.log(
         `configured: stream ${entry.width}x${entry.height}@${entry.fps} ${entry.payload}`,
       );
