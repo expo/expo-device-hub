@@ -53,6 +53,11 @@ describe("runHostActionAsync validation", () => {
         /^textSize\.set: value /,
       );
     }
+    for (const value of ["+09:00", "--help", "Mars/Olympus_Mons"]) {
+      await expect(
+        runHostActionAsync({ action: "timeZone.set", params: { udid: "U", value } }, BIN),
+      ).rejects.toThrow(/^timeZone\.set: value /);
+    }
     await expect(
       runHostActionAsync({ action: "hinge.set", params: { udid: "U", value: 181 } }, BIN),
     ).rejects.toThrow(/^hinge\.set: value /);
