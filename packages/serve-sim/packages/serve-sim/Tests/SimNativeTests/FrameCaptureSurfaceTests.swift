@@ -19,6 +19,8 @@ private final class FakeFramebufferDescriptor: NSObject, FramebufferDescriptor {
     var surface: IOSurface?
     var maskedSurface: IOSurface?
     var registrations = 0
+    private(set) var callbackQueue: DispatchQueue?
+    private(set) var surfacesChanged: ScreenSurfacesChangedCallback?
     private(set) var surfaceReads = 0
     private(set) var maskedSurfaceReads = 0
     init(_ surface: IOSurface?) { self.surface = surface }
@@ -35,7 +37,11 @@ private final class FakeFramebufferDescriptor: NSObject, FramebufferDescriptor {
         frameCallback: @escaping ScreenFrameCallback,
         surfacesChangedCallback: @escaping ScreenSurfacesChangedCallback,
         propertiesChangedCallback: @escaping ScreenPropertiesChangedCallback
-    ) { registrations += 1 }
+    ) {
+        registrations += 1
+        self.callbackQueue = callbackQueue
+        self.surfacesChanged = surfacesChangedCallback
+    }
 }
 
 private final class FakeFramebufferPort: NSObject {
@@ -267,6 +273,36 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         let recovered = await capture.surfaceLossTimings()
         XCTAssertEqual(recovered.rewires, 2)
         XCTAssertEqual(recovered.losses, 1)
+        await capture.stop()
+    }
+
+    /// SimulatorKit invokes these blocks on the registered queue without a Swift Task.
+    func testSimulatorKitCallbackOnTheCallbackQueueCapturesTheNewSurface() async throws {
+        let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 0))
+        let io = FakeFramebufferIO()
+        let clock = FakeMonotonicClock()
+        let (capture, log) = await capture(with: descriptor, io: io, clock: clock)
+        await capture.captureFrameForTesting(force: true)
+        descriptor.surface = nil
+        let replacement = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 0))
+        io.deviceIOPorts = [FakeFramebufferPort(replacement)]
+        clock.advance(milliseconds: 1_100)
+        await capture.pollSurfaceForTesting()
+        let queue = try XCTUnwrap(replacement.callbackQueue)
+        let surfacesChanged = try XCTUnwrap(replacement.surfacesChanged)
+        let framesBefore = log.all.count
+
+        let light = surface(width: 64, height: 128, gray: 255)
+        await withCheckedContinuation { continuation in
+            queue.async {
+                XCTAssertTrue(withUnsafeCurrentTask { $0 == nil })
+                surfacesChanged(nil, light)
+                continuation.resume(returning: ())
+            }
+        }
+
+        XCTAssertEqual(log.all.count, framesBefore + 1)
+        XCTAssertGreaterThan(log.all.last!.luma, 220)
         await capture.stop()
     }
 
