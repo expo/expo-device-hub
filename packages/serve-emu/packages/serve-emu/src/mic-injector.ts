@@ -7,6 +7,8 @@ import {
 } from "./emulator-grpc.ts";
 import { MIC_BYTES_PER_SECOND, MIC_FORMAT, type MicPcm } from "./mic-audio.ts";
 import { isMicRecording, readMicRecordingClients } from "./mic-recording.ts";
+import { isEmulatorSerial } from "./device-capabilities.ts";
+import type { MicrophoneStatus, MicrophoneStreamState } from "./shared/api-contracts.ts";
 
 /**
  * Microphone injection into one Android emulator.
@@ -29,7 +31,7 @@ import { isMicRecording, readMicRecordingClients } from "./mic-recording.ts";
 /** @ref LLP 0026#android — a call opened sooner after recording starts crashed the emulator. */
 export const STREAM_OPEN_DELAY_MS = 2_000;
 /** How often the injector reads the recording state while it waits to open the call. */
-export const RECORDING_POLL_MS = 250;
+const RECORDING_POLL_MS = 250;
 /** Audio in one packet. */
 export const PACKET_MS = 20;
 /** @ref LLP 0026#android — realtime packets that run further ahead overwrite each other. */
@@ -39,25 +41,7 @@ const PACKET_BYTES = (MIC_BYTES_PER_SECOND * PACKET_MS) / 1_000;
 const SILENCE = Buffer.alloc(PACKET_BYTES);
 const END_TIMEOUT_MS = 1_000;
 
-export type MicSourceStatus =
-  | { kind: "silence" }
-  | { kind: "pcm"; label: string; loop: boolean; positionMs: number; durationMs: number };
-
-/**
- * - `idle`: no source was ever played, so no call is needed.
- * - `waiting`: waiting for an app to record before the call opens.
- * - `starting`: an app records; the call opens when the delay ends.
- * - `streaming`: the call is open and audio flows.
- */
-export type MicStreamState = "idle" | "waiting" | "starting" | "streaming";
-
-export type MicInjectorStatus = {
-  serial: string;
-  stream: MicStreamState;
-  source: MicSourceStatus;
-  /** The last error of the call or of recording detection, or null. */
-  lastError: string | null;
-};
+export type MicInjectorStatus = MicrophoneStatus;
 
 export type MicInjectorDependencies = {
   /** True while an app records from the microphone. */
@@ -95,7 +79,7 @@ export class MicInjector {
   /** Cancels the call. Separate, so that dispose can end the call cleanly after the loop. */
   readonly #streamAbort = new AbortController();
   #source: Source | null = null;
-  #state: MicStreamState = "idle";
+  #state: MicrophoneStreamState = "idle";
   #lastError: string | null = null;
   #stream: AudioInjectionStream | null = null;
   #run: Promise<void> | null = null;
@@ -139,10 +123,11 @@ export class MicInjector {
     const source = this.#source;
     return {
       serial: this.serial,
+      supported: true,
       stream: this.#state,
       source: source
         ? {
-            kind: "pcm",
+            kind: "audio",
             label: source.label,
             loop: source.loop,
             positionMs: Math.round((source.offset / MIC_BYTES_PER_SECOND) * 1_000),
@@ -359,6 +344,7 @@ export class MicInjectors {
     return (
       this.#injectors.get(serial)?.status() ?? {
         serial,
+        supported: isEmulatorSerial(serial),
         stream: "idle",
         source: { kind: "silence" },
         lastError: null,

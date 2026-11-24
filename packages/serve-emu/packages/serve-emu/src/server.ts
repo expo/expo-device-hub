@@ -10,6 +10,9 @@ import {
   readCameraWiring,
 } from "./camera.ts";
 import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
+import { MicAudioError } from "./mic-audio.ts";
+import { MicInjectors } from "./mic-injector.ts";
+import { handleMicrophoneRequest, MicrophoneInputError } from "./microphone.ts";
 import { getExecSnapshot } from "./exec.ts";
 import { applyFoldRequest, getFoldStatus } from "./fold.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
@@ -307,6 +310,8 @@ const MAX_WEBRTC_CLOSE_BODY_BYTES = 4 * 1024;
 
 export type ServerDependencies = {
   getHardwareEncoderError?: typeof getHardwareEncoderError;
+  /** Microphone injectors. The CLI passes its own, so it can play audio at startup. */
+  micInjectors?: MicInjectors;
   openSession?: (options: StartEmuSessionOptions) => Promise<EmuSession>;
   openScrcpy?: (
     serial: string,
@@ -384,6 +389,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
   const listActiveAvds = dependencies.listRunningAvds ?? listRunningAvds;
   const availableAvds = dependencies.listAvds ?? listAvds;
   const readWiring = dependencies.readCameraWiring ?? readCameraWiring;
+  const micInjectors = dependencies.micInjectors ?? new MicInjectors();
   const loadAccessibility =
     dependencies.loadAccessibility ??
     ((serial: string, signal: AbortSignal) => getAccessibilitySnapshot(serial, signal));
@@ -874,7 +880,11 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     if (err instanceof HttpBodyError) {
       status = err.status;
       code = err.code;
-    } else if (err instanceof CameraInputError) {
+    } else if (
+      err instanceof CameraInputError ||
+      err instanceof MicrophoneInputError ||
+      err instanceof MicAudioError
+    ) {
       status = err.status;
     } else if (err instanceof WebRtcSignalingError) {
       status = err.status;
@@ -2852,6 +2862,14 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       });
       if (cameraResponse) return cameraResponse;
 
+      const microphoneResponse = await handleMicrophoneRequest(req, url, {
+        serial: requestContext.serial,
+        injectors: micInjectors,
+        beforeMutation: () => sessions.assertCurrent(requestContext),
+        errorResponse: (err) => errorResponse(err, 500),
+      });
+      if (microphoneResponse) return microphoneResponse;
+
       if (url.pathname === "/ws") {
         if (requestContext.status !== "streaming") {
           return new Response(JSON.stringify(health(requestContext)), {
@@ -3007,9 +3025,11 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       serial: context.serial,
       generation: context.generation,
     });
-    stopTask = Promise.all([sessions.close("server stopping"), uploads.close(error)]).then(
-      () => {},
-    );
+    stopTask = Promise.all([
+      sessions.close("server stopping"),
+      uploads.close(error),
+      micInjectors.disposeAll(),
+    ]).then(() => {});
     return stopTask;
   };
 

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, rmdir, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AudioFormatRequest } from "./emulator-grpc.ts";
@@ -15,15 +15,25 @@ export const MIC_FORMAT: AudioFormatRequest = {
   sampleFormat: "s16",
   mode: "realtime",
 };
-export const MIC_BYTES_PER_FRAME = 2;
+const MIC_BYTES_PER_FRAME = 2;
 export const MIC_BYTES_PER_SECOND = MIC_FORMAT.samplingRate * MIC_BYTES_PER_FRAME;
 
 /** The longest audio file that serve-emu decodes: 10 minutes, about 53 MB of PCM. */
-export const MAX_MIC_AUDIO_SECONDS = 600;
+const MAX_MIC_AUDIO_SECONDS = 600;
 /** The largest audio file that serve-emu reads. */
-export const MAX_MIC_AUDIO_FILE_BYTES = 200 * 1024 * 1024;
+const MAX_MIC_AUDIO_FILE_BYTES = 200 * 1024 * 1024;
 
 const CONVERT_TIMEOUT_MS = 60_000;
+
+/** The audio cannot be used: the caller's file is at fault, or no converter can read it. */
+export class MicAudioError extends Error {
+  readonly status = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "MicAudioError";
+  }
+}
 
 /** Mono, signed 16-bit little-endian PCM at {@link MIC_FORMAT}'s rate. */
 export type MicPcm = Buffer;
@@ -40,7 +50,7 @@ const WAVE_FORMAT_PCM = 1;
 const WAVE_FORMAT_IEEE_FLOAT = 3;
 const WAVE_FORMAT_EXTENSIBLE = 0xfffe;
 
-export function isWav(bytes: Buffer): boolean {
+function isWav(bytes: Buffer): boolean {
   return (
     bytes.length >= 12 &&
     bytes.toString("ascii", 0, 4) === "RIFF" &&
@@ -53,7 +63,7 @@ export function isWav(bytes: Buffer): boolean {
  * throw, so the caller can try a converter.
  */
 export function decodeWav(bytes: Buffer): MicPcm {
-  if (!isWav(bytes)) throw new Error("not a RIFF/WAVE file");
+  if (!isWav(bytes)) throw new MicAudioError("not a RIFF/WAVE file");
   let format: WavFormat | null = null;
   let data: Buffer | null = null;
   let offset = 12;
@@ -64,14 +74,14 @@ export function decodeWav(bytes: Buffer): MicPcm {
     // A streamed WAV can declare a data size larger than the file. Use what is there.
     const end = Math.min(start + size, bytes.length);
     if (id === "fmt ") {
-      if (end - start < 16) throw new Error("WAV fmt chunk is too short");
+      if (end - start < 16) throw new MicAudioError("WAV fmt chunk is too short");
       let tag = bytes.readUInt16LE(start);
       const bitsPerSample = bytes.readUInt16LE(start + 14);
       if (tag === WAVE_FORMAT_EXTENSIBLE && end - start >= 26) {
         tag = bytes.readUInt16LE(start + 24);
       }
       if (tag !== WAVE_FORMAT_PCM && tag !== WAVE_FORMAT_IEEE_FLOAT) {
-        throw new Error(`WAV codec 0x${tag.toString(16)} is not PCM`);
+        throw new MicAudioError(`WAV codec 0x${tag.toString(16)} is not PCM`);
       }
       format = {
         encoding: tag === WAVE_FORMAT_IEEE_FLOAT ? "float" : "int",
@@ -86,8 +96,8 @@ export function decodeWav(bytes: Buffer): MicPcm {
     // Chunks are padded to an even size.
     offset = start + size + (size % 2);
   }
-  if (!format) throw new Error("WAV file has no fmt chunk");
-  if (!data) throw new Error("WAV file has no data chunk");
+  if (!format) throw new MicAudioError("WAV file has no fmt chunk");
+  if (!data) throw new MicAudioError("WAV file has no data chunk");
   const { encoding, channels, sampleRate, bitsPerSample, blockAlign } = format;
   const valid =
     channels >= 1 &&
@@ -99,13 +109,13 @@ export function decodeWav(bytes: Buffer): MicPcm {
       : [8, 16, 24, 32].includes(bitsPerSample)) &&
     blockAlign === (bitsPerSample / 8) * channels;
   if (!valid) {
-    throw new Error(
+    throw new MicAudioError(
       `unsupported WAV format: ${encoding} ${bitsPerSample}-bit, ${channels} channels, ${sampleRate} Hz`,
     );
   }
   const frames = Math.floor(data.length / blockAlign);
   if (frames / sampleRate > MAX_MIC_AUDIO_SECONDS) {
-    throw new Error(`audio is longer than ${MAX_MIC_AUDIO_SECONDS} s`);
+    throw new MicAudioError(`audio is longer than ${MAX_MIC_AUDIO_SECONDS} s`);
   }
   const bytesPerSample = bitsPerSample / 8;
   const read = (position: number): number => {
@@ -182,20 +192,49 @@ export async function decodeMicAudioFile(
   dependencies: DecodeMicAudioDependencies = {},
 ): Promise<MicPcm> {
   const info = await stat(path);
-  if (!info.isFile()) throw new Error(`${path} is not a file`);
+  if (!info.isFile()) throw new MicAudioError(`${path} is not a file`);
   if (info.size > MAX_MIC_AUDIO_FILE_BYTES) {
-    throw new Error(`audio file is larger than ${MAX_MIC_AUDIO_FILE_BYTES} bytes`);
+    throw new MicAudioError(`audio file is larger than ${MAX_MIC_AUDIO_FILE_BYTES} bytes`);
   }
   const bytes = await readFile(path);
+  return decodeWavOr(bytes, () => convertWithTool(path, signal, dependencies));
+}
+
+/** Like {@link decodeMicAudioFile}, for audio that is already in memory, such as an upload. */
+export async function decodeMicAudio(
+  bytes: Uint8Array,
+  signal?: AbortSignal,
+  dependencies: DecodeMicAudioDependencies = {},
+): Promise<MicPcm> {
+  if (bytes.length === 0) throw new MicAudioError("audio file is empty");
+  if (bytes.length > MAX_MIC_AUDIO_FILE_BYTES) {
+    throw new MicAudioError(`audio file is larger than ${MAX_MIC_AUDIO_FILE_BYTES} bytes`);
+  }
+  const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return decodeWavOr(buffer, async () => {
+    // The converters read files, so write the upload to a private temporary file.
+    const directory = await mkdtemp(join(tmpdir(), "serve-emu-mic-"));
+    const input = join(directory, "upload");
+    try {
+      await writeFile(input, buffer, { mode: 0o600 });
+      return await convertWithTool(input, signal, dependencies);
+    } finally {
+      await rm(input, { force: true });
+      await rmdir(directory).catch(() => {});
+    }
+  });
+}
+
+async function decodeWavOr(bytes: Buffer, convert: () => Promise<MicPcm>): Promise<MicPcm> {
   if (isWav(bytes)) {
     try {
       return decodeWav(bytes);
     } catch (error) {
-      // A WAV with a compressed codec can still be converted below.
-      if (!(error instanceof Error) || !/is not PCM/.test(error.message)) throw error;
+      // A WAV with a compressed codec can still be converted.
+      if (!(error instanceof MicAudioError) || !/is not PCM/.test(error.message)) throw error;
     }
   }
-  return convertWithTool(path, signal, dependencies);
+  return convert();
 }
 
 async function convertWithTool(
@@ -255,7 +294,7 @@ async function convertWithTool(
       await rmdir(directory).catch(() => {});
     }
   }
-  throw new Error(
-    `cannot decode ${path}: use a PCM WAV file, or install ffmpeg (${failures.join("; ")})`,
+  throw new MicAudioError(
+    `cannot decode the audio file: use a PCM WAV file, or install ffmpeg (${failures.join("; ")})`,
   );
 }

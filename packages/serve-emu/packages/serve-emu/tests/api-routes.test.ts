@@ -87,6 +87,9 @@ const EXPECTED_ROUTES = [
   ["GET", "/api/camera/image"],
   ["POST", "/api/camera/image"],
   ["DELETE", "/api/camera/image"],
+  ["GET", "/api/microphone"],
+  ["POST", "/api/microphone/audio"],
+  ["DELETE", "/api/microphone/audio"],
 ] as const satisfies readonly (readonly [ApiMethod, string])[];
 
 const METHOD_ORDER: readonly ApiMethod[] = [
@@ -177,6 +180,14 @@ const sessionSnapshot = {
   replayCompletedAt: null,
   lastError: null,
 };
+
+const microphoneStatus = {
+  serial: "emulator-5554",
+  supported: true,
+  stream: "waiting",
+  source: { kind: "audio", label: "tone", loop: true, positionMs: 0, durationMs: 1000 },
+  lastError: null,
+} as const;
 
 const cameraStatus = {
   serial: "emulator-5554",
@@ -438,6 +449,9 @@ function fakeDependencies(overrides: Partial<ApiDependencies> = {}): ApiDependen
     setCameraImage: async () => {},
     clearCameraImage: async () => {},
     readCameraImage: async () => placeholderCameraImage().png,
+    getMicrophone: () => microphoneStatus,
+    playMicrophoneAudio: async () => microphoneStatus,
+    stopMicrophoneAudio: () => microphoneStatus,
   };
 
   return { ...dependencies, ...overrides };
@@ -462,6 +476,14 @@ function validRequest(method: ApiMethod, path: string): Request {
   }
   if (key === "POST /api/files/import") {
     return multipartRequest(method, path, "file");
+  }
+
+  if (key === "POST /api/microphone/audio") {
+    return new Request(`${BASE_URL}${path}?loop=true&label=tone`, {
+      method,
+      body: new Uint8Array([82, 73, 70, 70]),
+      headers: { "Content-Type": "audio/wav" },
+    });
   }
 
   if (key === "POST /api/camera/image") {
@@ -518,14 +540,14 @@ const silentLogger: ApiLogger = {
 };
 
 describe("domain API route table", () => {
-  test("registers the exact 64 method/path pairs across 46 paths", () => {
+  test("registers the exact 67 method/path pairs across 48 paths", () => {
     const routes = createApiRoutes();
 
     expect(routes.map(({ method, path }) => [method, path])).toEqual(
       EXPECTED_ROUTES.map(([method, path]) => [method, path]),
     );
-    expect(routes).toHaveLength(64);
-    expect(new Set(routes.map((route) => route.path)).size).toBe(46);
+    expect(routes).toHaveLength(67);
+    expect(new Set(routes.map((route) => route.path)).size).toBe(48);
     const contractPairs = Object.entries(API_SUCCESS_PARSERS).flatMap(([path, methods]) =>
       Object.keys(methods).map((method) => `${method} ${path}`),
     );
@@ -553,12 +575,12 @@ describe("domain API route table", () => {
     expect(invoked).toEqual(EXPECTED_ROUTES.map(([method, path]) => `${method} ${path}`));
   });
 
-  test("returns structured OPTIONS 405 with exact Allow for all 46 paths", async () => {
+  test("returns structured OPTIONS 405 with exact Allow for all 48 paths", async () => {
     const router = createApiRouter(createApiRoutes());
     const deps = fakeDependencies();
     const paths = [...new Set(EXPECTED_ROUTES.map((route) => route[1]))];
 
-    expect(paths).toHaveLength(46);
+    expect(paths).toHaveLength(48);
     for (const path of paths) {
       const response = await router.handle(
         new Request(`${BASE_URL}${path}`, { method: "OPTIONS" }),
