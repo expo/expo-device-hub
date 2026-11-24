@@ -2,9 +2,13 @@
 import { parseArgs } from "node:util";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import { pickDevice } from "./adb.ts";
 import { assertCameraImage, cameraLaunchIsWired, setCameraImage } from "./camera.ts";
 import { listAvds, listRunningAvds, startEmulator } from "./emulator.ts";
+import { decodeMicAudioFile, type MicPcm } from "./mic-audio.ts";
+import { MicInjectors } from "./mic-injector.ts";
+import { assertMicrophoneSupported } from "./microphone.ts";
 import { SCRCPY_DEFAULTS } from "./scrcpy.ts";
 import { isUsableSessionToken } from "./session-token.ts";
 import {
@@ -77,6 +81,8 @@ const { values } = parseArgs({
     gpu: { type: "string", default: "host" },
     camera: { type: "boolean" },
     "camera-image": { type: "string" },
+    "mic-audio": { type: "string" },
+    "mic-loop": { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
   allowPositionals: true,
@@ -277,6 +283,10 @@ Options:
       --camera-image <path>
                          Implies --camera and preloads this PNG as the back
                          camera. PNG only, 4:3 recommended.
+      --mic-audio <path> Play this audio file into the emulator microphone. It
+                         plays when an app records. WAV always works; other
+                         formats need ffmpeg, or afconvert on macOS.
+      --mic-loop         Repeat --mic-audio until it is stopped
   -h, --help             Show this help
 `);
   process.exit(0);
@@ -336,6 +346,21 @@ async function main() {
   // and finding it after a two-minute boot would leave an emulator to clean up.
   const cameraImage =
     cameraImagePath === undefined ? undefined : await readCameraImage(cameraImagePath);
+
+  const micAudioPath = stringOption("mic-audio");
+  if (values["mic-loop"] && micAudioPath === undefined) {
+    throw new Error("--mic-loop requires --mic-audio.");
+  }
+  // Decode before launching, for the same reason as the camera image.
+  let micAudio: MicPcm | undefined;
+  if (micAudioPath !== undefined) {
+    try {
+      micAudio = await decodeMicAudioFile(micAudioPath);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      throw new Error(`--mic-audio could not be used: ${detail}`, { cause });
+    }
+  }
 
   if (values.avd && values.serial) {
     throw new Error(
@@ -397,6 +422,15 @@ async function main() {
       throw err;
     }
   }
+  if (micAudio) {
+    try {
+      assertMicrophoneSupported(serial);
+    } catch (err) {
+      emulatorLaunch?.stop();
+      throw err;
+    }
+  }
+  const micInjectors = new MicInjectors();
   const port = Number(values.port);
   const maxFps = numberOption("max-fps", SCRCPY_DEFAULTS.maxFps);
   const bitRate = numberOption("bit-rate", SCRCPY_DEFAULTS.bitRate);
@@ -463,28 +497,31 @@ async function main() {
       .finally(() => process.exit(0));
   });
 
-  startupTask = startServer({
-    serial,
-    port,
-    host,
-    token,
-    signal: lifecycleController.signal,
-    maxFps,
-    bitRate,
-    maxSize,
-    keyFrameInterval,
-    repeatFrameMs,
-    streamMode,
-    grpcImageMode,
-    encoder,
-    inputSource,
-    streamSettings,
-    maxApkUploadBytes,
-    maxMediaUploadBytes,
-    maxActiveUploads,
-    maxQueuedUploads,
-    uploadQueueTimeoutMs,
-  });
+  startupTask = startServer(
+    {
+      serial,
+      port,
+      host,
+      token,
+      signal: lifecycleController.signal,
+      maxFps,
+      bitRate,
+      maxSize,
+      keyFrameInterval,
+      repeatFrameMs,
+      streamMode,
+      grpcImageMode,
+      encoder,
+      inputSource,
+      streamSettings,
+      maxApkUploadBytes,
+      maxMediaUploadBytes,
+      maxActiveUploads,
+      maxQueuedUploads,
+      uploadQueueTimeoutMs,
+    },
+    { micInjectors },
+  );
   try {
     activeServer = await startupTask;
   } catch (err) {
@@ -500,6 +537,15 @@ async function main() {
     return;
   }
   const { server } = activeServer;
+  if (micAudio && micAudioPath !== undefined) {
+    micInjectors.get(serial).play(micAudio, {
+      label: basename(micAudioPath),
+      loop: Boolean(values["mic-loop"]),
+    });
+    console.log(
+      `Microphone: ${basename(micAudioPath)} plays when an app records${values["mic-loop"] ? ", in a loop" : ""}.`,
+    );
+  }
 
   const base = `http://${displayHost(host)}:${server.port}`;
   if (token) {

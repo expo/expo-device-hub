@@ -6,6 +6,7 @@ import { deviceRoutes } from "./devices.ts";
 import { inputRoutes } from "./input.ts";
 import { inspectionRoutes } from "./inspection.ts";
 import { locationRoutes } from "./location.ts";
+import { microphoneRoutes } from "./microphone.ts";
 import { sessionRoutes } from "./session.ts";
 
 export function createApiRoutes(): ContractApiRoute<ApiDependencies>[] {
@@ -17,5 +18,6 @@ export function createApiRoutes(): ContractApiRoute<ApiDependencies>[] {
     ...locationRoutes(),
     ...sessionRoutes(),
     ...cameraRoutes(),
+    ...microphoneRoutes(),
   ];
 }

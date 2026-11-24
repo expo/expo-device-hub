@@ -14,6 +14,7 @@ import type {
   FontWeightStatus,
   CameraFacing,
   CameraStatus,
+  MicrophoneStatus,
   DeviceGridResponse,
   DeviceListResponse,
   DeviceSelectionResponse,
@@ -133,4 +134,13 @@ export type ApiDependencies = {
    */
   setCameraImage: (facing: CameraFacing, png: Uint8Array) => Promise<void>;
   clearCameraImage: (facing: CameraFacing) => Promise<void>;
+
+  getMicrophone: () => MicrophoneStatus;
+  /** Decodes the audio file and plays it into the microphone, replacing the current audio. */
+  playMicrophoneAudio: (
+    audio: Uint8Array,
+    options: { loop: boolean; label: string },
+  ) => Promise<MicrophoneStatus>;
+  /** Sends silence. */
+  stopMicrophoneAudio: () => MicrophoneStatus;
 };

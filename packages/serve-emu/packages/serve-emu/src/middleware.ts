@@ -54,6 +54,8 @@ import {
   isCameraPath,
   readCameraWiring,
 } from "./camera.ts";
+import { MicInjectors } from "./mic-injector.ts";
+import { handleMicrophoneRequest, isMicrophonePath } from "./microphone.ts";
 import {
   clearAppData,
   forceStopApp,
@@ -2361,6 +2363,8 @@ export type RouterDefaults = Partial<AppOptions> & {
 };
 
 export type RouterDependencies = {
+  /** Microphone injectors, one per emulator serial. */
+  micInjectors?: MicInjectors;
   listDevices?: typeof listDevices;
   listAllDevices?: typeof listAllDevices;
   listAvds?: typeof listAvds;
@@ -2407,6 +2411,7 @@ export function createRouter(
   const launchEmulator = dependencies.startEmulator ?? startEmulator;
   const killEmulator = dependencies.stopEmulator ?? stopEmulator;
   const readWiring = dependencies.readCameraWiring ?? readCameraWiring;
+  const micInjectors = dependencies.micInjectors ?? new MicInjectors();
   const createDeviceApp = dependencies.createApp ?? createApp;
   const hardwareEncoderError = dependencies.getHardwareEncoderError ?? getHardwareEncoderError;
   const apps = new Map<string, EmuApp>();
@@ -3216,6 +3221,22 @@ export function createRouter(
       if (response) return response;
     }
 
+    // The microphone injector lives as long as the emulator, not a stream session, so these
+    // routes must not start one either.
+    if (isMicrophonePath(url.pathname)) {
+      let serial: string;
+      try {
+        serial = await resolveSerial(url.searchParams.get("device"));
+      } catch (err) {
+        return Response.json({ ok: false, error: errMsg(err) }, { status: 503 });
+      }
+      const response = await handleMicrophoneRequest(req, url, {
+        serial,
+        injectors: micInjectors,
+      });
+      if (response) return response;
+    }
+
     // Device-scoped endpoints are `/api`, `/api/*` (other than the fleet listing
     // handled above), and `/health`. Everything else is the device-independent
     // UI shell — serve it (and its 404s) without starting a device, so the page
@@ -3293,6 +3314,7 @@ export function createRouter(
       await Promise.allSettled([
         recordingFinish,
         recordingStartTask,
+        micInjectors.disposeAll(),
         ...liveStops,
         ...startupTasks,
         ...sourceTasks,

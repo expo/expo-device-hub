@@ -220,7 +220,7 @@ describe("MicInjector", () => {
     const start = once.length;
     await clock.advance(1_000);
     expect(once.slice(start).every((packet) => packet.readInt16LE(0) === 7)).toBe(true);
-    expect(injector.status().source).toMatchObject({ kind: "pcm", label: "loop", loop: true });
+    expect(injector.status().source).toMatchObject({ kind: "audio", label: "loop", loop: true });
 
     injector.stop();
     await clock.advance(200);

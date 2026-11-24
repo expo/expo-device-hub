@@ -460,6 +460,31 @@ export type CameraStatus = {
 };
 export type CameraStatusResponse = ApiSuccess<{ camera: CameraStatus }>;
 
+/**
+ * The state of serve-emu's `injectAudio` call into one emulator's microphone.
+ * - `idle`: no audio was ever played, so no call is open.
+ * - `waiting`: waiting for an app to record.
+ * - `starting`: an app records; the call opens about 2 s after the recording started.
+ * - `streaming`: the call is open. Audio flows while an app records.
+ */
+const MICROPHONE_STREAM_STATES = ["idle", "waiting", "starting", "streaming"] as const;
+export type MicrophoneStreamState = (typeof MICROPHONE_STREAM_STATES)[number];
+export type MicrophoneSourceStatus =
+  | { kind: "silence" }
+  | { kind: "audio"; label: string; loop: boolean; positionMs: number; durationMs: number };
+export type MicrophoneStatus = {
+  serial: string;
+  /** False for a physical device. Only an emulator takes injected audio. */
+  supported: boolean;
+  stream: MicrophoneStreamState;
+  source: MicrophoneSourceStatus;
+  /** The last error of the call or of recording detection, or null. */
+  lastError: string | null;
+};
+export type MicrophoneStatusResponse = ApiSuccess<{ microphone: MicrophoneStatus }>;
+/** An audio file in the request body: WAV, or any format that ffmpeg or afconvert reads. */
+export type BinaryAudioRequest = Uint8Array;
+
 export type GestureSessionEvent = {
   id: number;
   at: string;
@@ -793,6 +818,11 @@ export type ApiContractMap = {
     GET: EndpointContract<undefined, BinaryPngResponse>;
     POST: EndpointContract<BinaryPngResponse, CameraStatusResponse>;
     DELETE: EndpointContract<undefined, CameraStatusResponse>;
+  };
+  "/api/microphone": { GET: EndpointContract<undefined, MicrophoneStatusResponse> };
+  "/api/microphone/audio": {
+    POST: EndpointContract<BinaryAudioRequest, MicrophoneStatusResponse>;
+    DELETE: EndpointContract<undefined, MicrophoneStatusResponse>;
   };
 };
 
@@ -1614,6 +1644,35 @@ export function parseCameraStatusResponse(value: unknown): CameraStatusResponse 
   return { ok: true, camera: parseCameraStatus(root.camera) };
 }
 
+function parseMicrophoneSource(value: unknown): MicrophoneSourceStatus {
+  const source = record(value, "microphone.source");
+  const kind = oneOf(source.kind, ["silence", "audio"] as const, "microphone.source.kind");
+  if (kind === "silence") return { kind };
+  return {
+    kind,
+    label: string(source.label, "microphone.source.label"),
+    loop: boolean(source.loop, "microphone.source.loop"),
+    positionMs: number(source.positionMs, "microphone.source.positionMs"),
+    durationMs: number(source.durationMs, "microphone.source.durationMs"),
+  };
+}
+
+export function parseMicrophoneStatusResponse(value: unknown): MicrophoneStatusResponse {
+  const root = record(value, "microphone response");
+  if (root.ok !== true) fail("microphone response.ok must be true");
+  const microphone = record(root.microphone, "microphone");
+  return {
+    ok: true,
+    microphone: {
+      serial: string(microphone.serial, "microphone.serial"),
+      supported: boolean(microphone.supported, "microphone.supported"),
+      stream: oneOf(microphone.stream, MICROPHONE_STREAM_STATES, "microphone.stream"),
+      source: parseMicrophoneSource(microphone.source),
+      lastError: nullableString(microphone.lastError, "microphone.lastError"),
+    },
+  };
+}
+
 function parseSessionEvent(value: unknown, index: number): SessionEvent {
   const item = record(value, `session.events[${index}]`);
   const base = {
@@ -2120,6 +2179,11 @@ export const API_SUCCESS_PARSERS = {
     GET: parseCameraImageResponse,
     POST: parseCameraStatusResponse,
     DELETE: parseCameraStatusResponse,
+  },
+  "/api/microphone": { GET: parseMicrophoneStatusResponse },
+  "/api/microphone/audio": {
+    POST: parseMicrophoneStatusResponse,
+    DELETE: parseMicrophoneStatusResponse,
   },
 } satisfies ApiSuccessParserMap;
 

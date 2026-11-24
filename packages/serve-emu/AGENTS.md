@@ -15,6 +15,7 @@
 - App install/launch/clear/grant/import helpers: `packages/serve-emu/src/app-management.ts`.
 - Location and route playback: `packages/serve-emu/src/location.ts` and `packages/serve-emu/src/route-playback.ts`.
 - Still-image camera passthrough for the emulator: `packages/serve-emu/src/camera.ts`.
+- Microphone injection into the emulator: `packages/serve-emu/src/microphone.ts` (HTTP), `src/mic-injector.ts` (the `injectAudio` call and its rules, LLP 0026), `src/mic-recording.ts` (recording detection), and `src/mic-audio.ts` (decoding).
 - Session recording/replay: `packages/serve-emu/src/session-recorder.ts`.
 - React UI: `packages/serve-emu/src/ui`.
 - Vendored scrcpy downloader and pinned version: `packages/serve-emu/scripts/fetch-scrcpy.ts`.

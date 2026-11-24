@@ -606,7 +606,7 @@ const AUDIO_CHANNELS = { mono: 0, stereo: 1 } as const;
 const AUDIO_DELIVERY_MODE = { blocking: 0, realtime: 1 } as const;
 
 /** The emulator rejects a sampling rate above 48 kHz with INVALID_ARGUMENT. */
-export const MAX_AUDIO_SAMPLING_RATE = 48_000;
+const MAX_AUDIO_SAMPLING_RATE = 48_000;
 
 /**
  * The largest `AudioPacket.audio` that serve-emu sends: 100 ms of 48 kHz stereo 16-bit audio.

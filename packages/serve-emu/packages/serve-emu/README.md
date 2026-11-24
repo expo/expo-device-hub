@@ -107,7 +107,7 @@ The download comes from the scrcpy GitHub release. To use a mirror, set `SERVE_E
 ```text
 serve-emu [-p <port>] [--host <addr>] [--token <secret>] [-s <serial>] [--stream-mode scrcpy|grpc-screenshot] [--grpc-image-mode png|mmap|rgb888] [--input-source scrcpy|grpc] [--encoder software|hardware] [--max-fps N] [--bit-rate N] [--max-size N] [--key-frame-interval sec] [--repeat-frame-ms ms] [--max-apk-upload-bytes N] [--max-media-upload-bytes N]
 serve-emu --transport webrtc [--stun-url url[,url...]] [--turn-url url[,url...] --turn-username user --turn-credential pass]
-serve-emu --avd <name> [--gpu <mode>] [--restart-avd] [--camera] [--camera-image <path.png>]
+serve-emu --avd <name> [--gpu <mode>] [--restart-avd] [--camera] [--camera-image <path.png>] [--mic-audio <path> [--mic-loop]]
 serve-emu --avd-list
 serve-emu --running-avds
 ```
@@ -148,6 +148,8 @@ serve-emu --running-avds
 | `--emulator-port`           | auto                 | Android Emulator console port for `--avd`; must be an even port from 5554 through 5682                                                                                                                                            |
 | `--camera`                  | false                | Feed the emulator cameras from PNG files serve-emu owns, so the picture can change while the emulator runs. Requires `--avd`; see [Camera Image](#camera-image)                                                                   |
 | `--camera-image`            | none                 | Implies `--camera` and preloads this PNG as the back camera                                                                                                                                                                       |
+| `--mic-audio`               | none                 | Play this audio file into the emulator microphone while an app records. See [Microphone](#microphone)                                                                                                                             |
+| `--mic-loop`                | false                | Repeat `--mic-audio` until it is stopped                                                                                                                                                                                          |
 
 By default, `serve-emu` attaches to the only online device. If more than one device is online, pass `-s <serial>` or select another running device later through the HTTP API/UI.
 
@@ -595,6 +597,46 @@ by emulator serial, holding whatever image was posted last, so delete them by
 hand if a fixture is sensitive. A launch always rewrites both feeds rather than
 adopting what it finds, because serials are recycled and the file left behind
 belongs to an unrelated earlier run.
+
+### Microphone
+
+serve-emu can play an audio file into an emulator's microphone, so an app that
+records hears it. The host microphone is never used.
+
+```sh
+serve-emu --avd Pixel_8 --mic-audio ~/fixtures/voice.wav --mic-loop
+```
+
+```sh
+curl "$BASE/api/microphone"
+curl -X POST "$BASE/api/microphone/audio?loop=true&label=voice" \
+  --data-binary @voice.wav
+curl -X DELETE "$BASE/api/microphone/audio"
+```
+
+`POST /api/microphone/audio` replaces the current audio. `DELETE` sends
+silence. `GET /api/microphone` reports the state of the injection and the
+audio that plays. WAV files (PCM or float) always work. Other formats need
+`ffmpeg` (or `SERVE_EMU_FFMPEG`), or `afconvert` on macOS. serve-emu converts
+all audio to 44.1 kHz mono. An upload can be at most 50 MB; pass a longer file
+to `--mic-audio`.
+
+serve-emu uses the emulator's `injectAudio` gRPC call, which is fragile. The
+rules are in LLP 0026, and serve-emu follows them for you:
+
+- **The emulator must run with audio on.** An emulator started with
+  `-no-audio` or `-noaudio` drops the audio with no error. serve-emu's `--avd`
+  launch keeps audio on.
+- **Audio flows only while an app records.** serve-emu polls
+  `dumpsys media.audio_policy`. It opens the call about 2 s after the first
+  recording starts, because an earlier call can crash the emulator. So the
+  first 2 s of the first recording are silent. Later recordings get audio at
+  once.
+- **The call stays open for the life of the emulator.** A call that ends while
+  nothing records makes later calls record silence until the emulator
+  restarts. If serve-emu stops while the emulator keeps running, restart the
+  emulator before you inject audio again.
+- **Emulators only.** A physical device returns `409`.
 
 ### Sessions
 
