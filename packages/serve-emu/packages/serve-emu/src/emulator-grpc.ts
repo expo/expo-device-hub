@@ -600,6 +600,114 @@ export function encodeKeyboardEvent(request: KeyboardEventRequest): Buffer {
   return Buffer.from(output);
 }
 
+/** `AudioFormat.SampleFormat`, `Channels`, and `DeliveryMode` in the emulator's controller proto. */
+const AUDIO_SAMPLE_FORMAT = { u8: 0, s16: 1 } as const;
+const AUDIO_CHANNELS = { mono: 0, stereo: 1 } as const;
+const AUDIO_DELIVERY_MODE = { blocking: 0, realtime: 1 } as const;
+
+/** The emulator rejects a sampling rate above 48 kHz with INVALID_ARGUMENT. */
+export const MAX_AUDIO_SAMPLING_RATE = 48_000;
+
+/**
+ * The largest `AudioPacket.audio` that serve-emu sends: 100 ms of 48 kHz stereo 16-bit audio.
+ * The emulator buffers about 300 ms and rejects a larger packet with INVALID_ARGUMENT.
+ */
+export const MAX_AUDIO_PACKET_BYTES = 19_200;
+
+export type AudioFormatRequest = {
+  /** Hz, 1 to {@link MAX_AUDIO_SAMPLING_RATE}. */
+  samplingRate: number;
+  channels: keyof typeof AUDIO_CHANNELS;
+  sampleFormat: keyof typeof AUDIO_SAMPLE_FORMAT;
+  /**
+   * `realtime` (`MODE_REAL_TIME`): the emulator never blocks, and the client paces the audio.
+   * `blocking` (`MODE_UNSPECIFIED`): the emulator pulls packets, and the call blocks while
+   * nothing records.
+   */
+  mode: keyof typeof AUDIO_DELIVERY_MODE;
+};
+
+export type AudioPacketRequest = {
+  /** Only the format of the first packet in a call is used by the emulator. */
+  format?: AudioFormatRequest;
+  /** Unix epoch in microseconds when the audio was captured. */
+  timestampUs?: bigint;
+  /** Samples in the format of the call. */
+  audio: Buffer;
+};
+
+function validateAudioFormat(format: AudioFormatRequest): void {
+  if (
+    !Number.isInteger(format.samplingRate) ||
+    format.samplingRate <= 0 ||
+    format.samplingRate > MAX_AUDIO_SAMPLING_RATE
+  ) {
+    throw new RangeError(
+      `audio samplingRate must be an integer from 1 to ${MAX_AUDIO_SAMPLING_RATE}`,
+    );
+  }
+  if (!Object.hasOwn(AUDIO_CHANNELS, format.channels)) {
+    throw new RangeError(`unsupported audio channels ${String(format.channels)}`);
+  }
+  if (!Object.hasOwn(AUDIO_SAMPLE_FORMAT, format.sampleFormat)) {
+    throw new RangeError(`unsupported audio sample format ${String(format.sampleFormat)}`);
+  }
+  if (!Object.hasOwn(AUDIO_DELIVERY_MODE, format.mode)) {
+    throw new RangeError(`unsupported audio delivery mode ${String(format.mode)}`);
+  }
+}
+
+/** Bytes in one sample frame (all channels) of `format`. */
+export function audioFrameBytes(format: AudioFormatRequest): number {
+  return (format.sampleFormat === "s16" ? 2 : 1) * (format.channels === "stereo" ? 2 : 1);
+}
+
+export function encodeAudioFormat(format: AudioFormatRequest): Buffer {
+  validateAudioFormat(format);
+  const output: number[] = [];
+  varintField(output, 1, format.samplingRate);
+  varintField(output, 2, AUDIO_CHANNELS[format.channels]);
+  varintField(output, 3, AUDIO_SAMPLE_FORMAT[format.sampleFormat]);
+  varintField(output, 4, AUDIO_DELIVERY_MODE[format.mode]);
+  return Buffer.from(output);
+}
+
+export function encodeAudioPacket(packet: AudioPacketRequest): Buffer {
+  if (packet.audio.length > MAX_AUDIO_PACKET_BYTES) {
+    throw new RangeError(
+      `audio packet of ${packet.audio.length} bytes exceeds ${MAX_AUDIO_PACKET_BYTES}`,
+    );
+  }
+  const header: number[] = [];
+  // A present format with only default values still selects 44.1 kHz mono U8, blocking.
+  if (packet.format) messageField(header, 1, encodeAudioFormat(packet.format));
+  if (packet.timestampUs) {
+    writeVarint(header, (2 << 3) | 0);
+    writeVarint(header, packet.timestampUs);
+  }
+  if (!packet.audio.length) return Buffer.from(header);
+  writeVarint(header, (3 << 3) | 2);
+  writeVarint(header, packet.audio.length);
+  return Buffer.concat([Buffer.from(header), packet.audio]);
+}
+
+/** A client-streaming `injectAudio` call. Create it with {@link EmulatorGrpcClient.injectAudio}. */
+export type AudioInjectionStream = {
+  /**
+   * Sends one packet of samples in the call's format. The first packet also carries the format.
+   * Resolves when HTTP/2 accepts the bytes, so a caller that awaits each write cannot buffer
+   * without bound. Rejects after the call ended.
+   */
+  write(audio: Buffer): Promise<void>;
+  /** Half-closes the call and resolves with {@link done}. */
+  end(): Promise<void>;
+  /**
+   * Settles when the call ends: resolves on grpc-status 0, rejects on another status, a
+   * transport error, or an abort.
+   */
+  readonly done: Promise<void>;
+};
+
 function grpcFrame(message: Buffer): Buffer {
   const output = Buffer.allocUnsafe(5 + message.length);
   output.writeUInt8(0, 0);
@@ -1007,6 +1115,19 @@ export class EmulatorGrpcClient {
     return () => this.#errorListeners.delete(listener);
   }
 
+  #headers(method: string): http2.OutgoingHttpHeaders {
+    const headers: http2.OutgoingHttpHeaders = {
+      ":method": "POST",
+      ":path": CONTROLLER_PREFIX + method,
+      "content-type": "application/grpc",
+      te: "trailers",
+    };
+    if (this.#endpoint.token) {
+      headers.authorization = `Bearer ${this.#endpoint.token}`;
+    }
+    return headers;
+  }
+
   #request(method: string, message: Buffer, options: RequestOptions = {}): Promise<Buffer[]> {
     return new Promise((resolve, reject) => {
       if (this.#closed) {
@@ -1017,16 +1138,7 @@ export class EmulatorGrpcClient {
         reject(abortReason(options.signal, `${method} aborted`));
         return;
       }
-      const headers: http2.OutgoingHttpHeaders = {
-        ":method": "POST",
-        ":path": CONTROLLER_PREFIX + method,
-        "content-type": "application/grpc",
-        te: "trailers",
-      };
-      if (this.#endpoint.token) {
-        headers.authorization = `Bearer ${this.#endpoint.token}`;
-      }
-      const stream = this.#session.request(headers);
+      const stream = this.#session.request(this.#headers(method));
       const messages: Buffer[] = [];
       const maxMessageBytes = Math.min(
         options.maxMessageBytes ?? MAX_GRPC_MESSAGE_BYTES,
@@ -1293,6 +1405,115 @@ export class EmulatorGrpcClient {
     } catch (error) {
       if (!signal.aborted) throw error;
     }
+  }
+
+  /**
+   * Opens a client-streaming `injectAudio` call into the emulator's microphone. The call has no
+   * timeout: it stays open until {@link AudioInjectionStream.end}, an abort, or an error.
+   *
+   * The emulator honors only the format of the first packet, and it fails the call with
+   * FAILED_PRECONDITION while another call injects audio. Rules for when to open and close the
+   * call are the caller's job (LLP 0026, Android rules).
+   */
+  injectAudio(format: AudioFormatRequest, signal?: AbortSignal): AudioInjectionStream {
+    validateAudioFormat(format);
+    const method = "injectAudio";
+    if (this.#closed) throw new Error("emulator gRPC client is closed");
+    throwIfAborted(signal, `${method} aborted`);
+    const frameBytes = audioFrameBytes(format);
+    const stream = this.#session.request(this.#headers(method));
+    let grpcStatus: string | null = null;
+    let grpcMessage = "";
+    let ended = false;
+    let settled = false;
+    let firstPacket = true;
+    let resolveDone!: () => void;
+    let rejectDone!: (error: Error) => void;
+    const done = new Promise<void>((resolve, reject) => {
+      resolveDone = resolve;
+      rejectDone = reject;
+    });
+    // A caller that only awaits write() or end() must not leave an unhandled rejection.
+    done.catch(() => {});
+    const drainWaiters = new Set<() => void>();
+    const settle = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      for (const wake of drainWaiters) wake();
+      drainWaiters.clear();
+      if (error) rejectDone(error);
+      else resolveDone();
+    };
+    const onAbort = () => {
+      try {
+        stream.close(http2.constants.NGHTTP2_CANCEL);
+      } catch {}
+      settle(abortReason(signal!, `${method} aborted`));
+    };
+    const takeStatus = (values: Record<string, unknown>) => {
+      if (values["grpc-status"] === undefined) return;
+      grpcStatus = String(values["grpc-status"]);
+      try {
+        grpcMessage = decodeURIComponent(String(values["grpc-message"] ?? ""));
+      } catch {
+        grpcMessage = String(values["grpc-message"] ?? "");
+      }
+    };
+    stream.on("response", (values) => takeStatus(values as Record<string, unknown>));
+    stream.on("trailers", (values) => takeStatus(values as Record<string, unknown>));
+    // The response is google.protobuf.Empty. Read it so that flow control never stalls.
+    stream.on("data", () => {});
+    stream.on("drain", () => {
+      for (const wake of drainWaiters) wake();
+      drainWaiters.clear();
+    });
+    stream.on("error", (error: Error) => settle(new Error(`${method}: ${error.message}`)));
+    stream.on("close", () => {
+      if (grpcStatus === "0") settle();
+      else if (grpcStatus !== null) {
+        settle(
+          new Error(
+            `${method}: grpc-status ${grpcStatus}${grpcMessage ? ` (${grpcMessage})` : ""}`,
+          ),
+        );
+      } else settle(new Error(`${method}: stream closed without grpc status`));
+    });
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    const closedError = () =>
+      new Error(`${method}: ${settled ? "call has ended" : "end() was called"}`);
+    return {
+      done,
+      write: async (audio: Buffer) => {
+        if (ended || settled) throw closedError();
+        if (audio.length % frameBytes !== 0) {
+          throw new RangeError(
+            `audio packet of ${audio.length} bytes is not a whole number of ${frameBytes}-byte frames`,
+          );
+        }
+        const message = encodeAudioPacket({
+          // The emulator honors only the first packet's format, so send it once.
+          format: firstPacket ? format : undefined,
+          audio,
+        });
+        firstPacket = false;
+        if (stream.write(grpcFrame(message))) return;
+        await new Promise<void>((resolve) => drainWaiters.add(resolve));
+        if (settled) {
+          // The call ended while the write waited. Report its result, not a generic error.
+          await done;
+          throw closedError();
+        }
+      },
+      end: async () => {
+        if (!ended && !settled) {
+          ended = true;
+          stream.end();
+        }
+        await done;
+      },
+    };
   }
 
   close(): void {
