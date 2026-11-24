@@ -158,6 +158,7 @@ type ConnectCall = {
 
 type HarnessOptions = {
   cacheInitially?: boolean;
+  cacheEmpty?: boolean;
   deferProbe?: boolean;
   deferSocketPoll?: boolean;
   blockConnectIndex?: number;
@@ -191,6 +192,7 @@ function createHarness(options: HarnessOptions = {}) {
     activeForwards: new Map<number, string>(),
     events: [] as string[],
     cachePresent: options.cacheInitially ?? false,
+    cacheEmpty: options.cacheEmpty ?? false,
     pushCount: 0,
     fixedAttempt: 0,
     removeWasDeferred: false,
@@ -213,12 +215,14 @@ function createHarness(options: HarnessOptions = {}) {
     state.adbCalls.push(call);
     state.events.push(`adb:${args.join(" ")}`);
 
-    if (args[0] === "shell" && args[1] === "test" && args[2] === "-f") {
+    if (args[0] === "shell" && args[1] === "test" && (args[2] === "-f" || args[2] === "-s")) {
       if (options.deferProbe) {
         probeReached.resolve(call);
         return waitForDeferred(probeDeferred, commandOptions.signal);
       }
-      return state.cachePresent ? ok() : failed("cache miss");
+      return state.cachePresent && (args[2] === "-f" || !state.cacheEmpty)
+        ? ok()
+        : failed("cache miss");
     }
     if (args[0] === "push") {
       state.pushCount++;
@@ -226,6 +230,7 @@ function createHarness(options: HarnessOptions = {}) {
     }
     if (args[0] === "shell" && args[1] === "mv") {
       state.cachePresent = true;
+      state.cacheEmpty = false;
       return ok();
     }
     if (args[0] === "shell" && args[1] === "cp") return ok();
@@ -425,12 +430,30 @@ describe("scrcpy async lifecycle", () => {
     const second = await startWith(harness);
     expect(harness.state.pushCount).toBe(1);
     expect(
-      harness.state.adbCalls.filter(
-        (call) => call.args[0] === "shell" && call.args[1] === "test" && call.args[2] === "-f",
-      ),
+      harness.state.adbCalls.filter((call) => call.args[0] === "shell" && call.args[1] === "test"),
     ).toHaveLength(2);
     await second.close();
   });
+
+  test.each(["video", "control"] as const)(
+    "replaces an empty cached jar before starting %s and reuses the replacement",
+    async (mode) => {
+      const harness = createHarness({ cacheInitially: true, cacheEmpty: true });
+      const start = () =>
+        mode === "video"
+          ? startWith(harness)
+          : startScrcpyControl({ serial: SERIAL }, harness.deps);
+
+      const first = await start();
+      expect(harness.state.pushCount).toBe(1);
+      expect(harness.state.cacheEmpty).toBe(false);
+      await first.close();
+
+      const second = await start();
+      expect(harness.state.pushCount).toBe(1);
+      await second.close();
+    },
+  );
 
   test("starts one control socket without scrcpy video or audio", async () => {
     const harness = createHarness();

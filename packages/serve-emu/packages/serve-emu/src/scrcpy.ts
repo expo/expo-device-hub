@@ -440,7 +440,7 @@ async function prepareDeviceServerJar(
   const probe = await runAdbRaw(
     runtime,
     serial,
-    ["shell", "test", "-f", paths.cache],
+    ["shell", "test", "-s", paths.cache],
     timeouts.copyMs,
     signal,
   );
