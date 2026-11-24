@@ -125,13 +125,38 @@ std::string resolveGfxstream(GumModule* module, Gfxstream& g) {
   resolve(module, "_ZN9gfxstream4host2gl13ColorBufferGl20getBorrowedImageInfoEv",
           g.borrowedImageInfo);
   resolve(module, "_ZN9gfxstream4host2gl13ColorBufferGl8waitSyncEb", g.waitSync);
+#if defined(EXPO_EMULATOR_CAPTURE_NVIDIA)
+  // @ref LLP 0021#nvidia-capture — the display borrower avoids private ColorBuffer layouts
+  resolve(module, "_ZN9gfxstream4host11FrameBuffer27borrowColorBufferForDisplayEj",
+          g.borrowColorBufferForDisplay);
+#endif
   resolve(module, "_ZN10translator3egl14eglMakeCurrentEPvS1_S1_S1_", g.eglMakeCurrent, true);
   resolve(module, "_ZN10translator3egl20eglGetCurrentContextEv", g.eglGetCurrentContext, true);
   resolve(module, "_ZN10translator3egl20eglGetCurrentDisplayEv", g.eglGetCurrentDisplay, true);
   resolve(module, "_ZN10translator3egl20eglGetCurrentSurfaceEi", g.eglGetCurrentSurface, true);
+#if defined(EXPO_EMULATOR_CAPTURE_NVIDIA)
+  // @ref LLP 0021#nvidia-capture — stripped Linux binaries export the RenderEGL dispatch table
+  // PR #107 used these RenderEGL_functions.h slots; never guess private object offsets.
+  if (!g.eglMakeCurrent || !g.eglGetCurrentContext || !g.eglGetCurrentDisplay ||
+      !g.eglGetCurrentSurface) {
+    void** egl = nullptr;
+    if (resolve(module, "_ZN9gfxstream4host2gl5s_eglE", egl)) {
+      g.eglMakeCurrent = reinterpret_cast<decltype(g.eglMakeCurrent)>(egl[16]);
+      g.eglGetCurrentContext = reinterpret_cast<decltype(g.eglGetCurrentContext)>(egl[17]);
+      g.eglGetCurrentDisplay = reinterpret_cast<decltype(g.eglGetCurrentDisplay)>(egl[18]);
+      g.eglGetCurrentSurface = reinterpret_cast<decltype(g.eglGetCurrentSurface)>(egl[19]);
+    }
+  }
+#endif
   void* (*glesProc)(const char*) = nullptr;
   if (resolve(module, "_ZN9gfxstream4host2gl35gles2_dispatch_get_proc_func_staticEPKc", glesProc))
     g.getGlobalTexName = reinterpret_cast<decltype(g.getGlobalTexName)>(glesProc("glGetGlobalTexName"));
+#if defined(EXPO_EMULATOR_CAPTURE_NVIDIA)
+  if (!g.borrowColorBufferForDisplay)
+    return "NVIDIA capture needs FrameBuffer::borrowColorBufferForDisplay in " + g.path;
+  if (!g.nvidiaEntryPointsAvailable())
+    return "NVIDIA capture needs compatible gfxstream GL texture and EGL exports";
+#endif
   return "";
 }
 

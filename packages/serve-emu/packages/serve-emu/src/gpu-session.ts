@@ -252,6 +252,8 @@ export async function startGpuCaptureSession(
     }
     if (record.flags === GPU_RECORD.configured) {
       const details = parseGpuDetails(record.data);
+      if (typeof details.encoderError === "string" && details.encoderError)
+        throw new GpuCaptureEncoderError(details.encoderError);
       framePath =
         details.framePath === "gpu" || details.framePath === "cpu" ? details.framePath : null;
       hardwareEncoder =

@@ -24,7 +24,7 @@ enum RecordFlags : uint32_t {
   kFrame = 0,       // H.264 access unit, Annex-B.
   kKeyFrame = 1,    // IDR access unit that starts with SPS and PPS.
   kHello = 2,       // Native display size; payload is a JSON object.
-  kConfigured = 3,  // Stream settings in effect; width and height are the stream size.
+  kConfigured = 3,  // Settings acknowledgement, or JSON encoderError; dimensions are the attempted size.
   kResized = 4,     // Native display size changed; a kConfigured record follows.
   kReplaced = 5,    // Sent to a consumer that a new consumer replaces, just before the close.
 };

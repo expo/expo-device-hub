@@ -611,6 +611,26 @@ describe("GPU capture session", () => {
     }
   });
 
+  test("reports a settings failure instead of waiting for a keyframe", async () => {
+    const fixture = await gpuFixture();
+    const message = "NVIDIA output width must be at least 146 pixels";
+    try {
+      fixture.onConnect((socket) => {
+        socket.write(record(GPU_RECORD.hello, json({ protocol: 3 }), 0n, 1080, 2424));
+        socket.once("data", () =>
+          socket.write(
+            record(GPU_RECORD.configured, json({ encoderError: message }), 0n, 144, 326),
+          ),
+        );
+      });
+      const failure = fixture.start({ maxSize: 326 });
+      await expect(failure).rejects.toBeInstanceOf(GpuCaptureUnavailableError);
+      await expect(failure).rejects.toThrow(message);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   test("reports an unavailable agent when nothing listens on the socket", async () => {
     const fixture = await gpuFixture();
     try {

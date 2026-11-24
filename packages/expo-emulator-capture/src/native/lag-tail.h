@@ -19,10 +19,14 @@ class LagTail {
     int64_t postUs;
   };
 
-  void post(uint32_t handle, int64_t nowUs) {
+  uint64_t post(uint32_t handle, int64_t nowUs) {
+    // A busy immediate post may publish its tail before an older in-flight
+    // post reaches this point. That older post must not replace the final image.
+    if (nowUs < request_.postUs) return 0;
     request_ = {handle, request_.sequence + 1, nowUs};
     dueUs_ = nowUs + delayUs;
     pending_ = true;
+    return request_.sequence;
   }
   std::optional<Request> takeIfDue(int64_t nowUs) {
     if (!pending_ || nowUs < dueUs_) return std::nullopt;
@@ -49,6 +53,7 @@ class LagTail {
   void reset() {
     pending_ = false;
     request_.sequence++;
+    request_.postUs = 0;
   }
   bool pending() const { return pending_; }
   int64_t dueUs() const { return dueUs_; }

@@ -3,8 +3,8 @@ name: Build release cache
 # Dispatched by .github/workflows/release.yml with --ref <release commit>.
 # Builds the release commit on macOS and on Linux and writes the Turborepo remote
 # cache, so the Ubuntu release job gets cache hits for the macOS-only serve-sim and
-# expo-emulator-capture builds, and for expo-emulator-capture's Linux agent, which
-# needs the x264 build 165 header from Ubuntu 26.04.
+# expo-emulator-capture builds, and for both Linux capture agents. The latter need
+# x264 build 165 headers, clang, make, pkg-config and pinned dependency downloads.
 # The version steps repeat the release job's steps: package.json versions and
 # changelogs are Turborepo inputs, so all runs must write the same tree.
 
@@ -81,10 +81,10 @@ jobs:
             exit 1
           fi
 
-      - name: Install the x264 build 165 header
+      - name: Install Linux capture build prerequisites
         run: |
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libx264-dev
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libx264-dev clang make pkg-config
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -103,5 +103,5 @@ jobs:
 
       # Only this task: the generic build task of expo-emulator-capture is the
       # macOS agent, which the macOS job writes.
-      - name: Build the Linux agent
+      - name: Build both Linux agents and FFmpeg source archive
         run: bunx turbo run build:linux-x64 --filter=expo-emulator-capture --force

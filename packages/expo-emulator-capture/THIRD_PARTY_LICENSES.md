@@ -96,11 +96,38 @@ bundled.
 
 The npm package contains the agent's own source code (`src/native`) and its build
 scripts (`scripts`). `bun run build` (macOS with Apple silicon and the Xcode command
-line tools) and `bun run build:linux-x64` (Linux x86-64 with g++ and the x264 build 165
-header, `libx264-dev` on Ubuntu 26.04) download the pinned Frida Gum devkit, check its
+line tools) and `bun run build:linux-x64` (Linux x86-64 with g++, clang, make,
+pkg-config and the x264 build 165 header, `libx264-dev` on Ubuntu 26.04) download the pinned Frida Gum devkit, check its
 SHA-256 digest, and link the agent, so the agent can be rebuilt and relinked with a
 modified copy of a statically linked component. The source code of each
 statically linked third-party component is at the revision that the table above
 links. The revisions are the ones that Frida 17.18.0 pins in its dependency list
 (`releng/deps.toml` at `frida/releng` commit
 `963fe3826f861a7d844d235957f2f13738e3a73b`).
+
+## Optional NVIDIA agent
+
+`libexpo_emulator_capture_nvidia.so` additionally statically links FFmpeg libavcodec
+and libavutil from [FFmpeg 8.0.1, commit 894da5ca7d742e4429ffb2af534fcda0103ef593](https://github.com/FFmpeg/FFmpeg/tree/894da5ca7d742e4429ffb2af534fcda0103ef593).
+These libraries primarily use [LGPL-2.1-or-later](LICENSES/LGPL-2.1.txt); no GPL or nonfree FFmpeg
+features are enabled. The complete capture sources and scripts are included in this
+package; `scripts/build-nvidia-ffmpeg.mjs` records the configure/link recipe. Rebuild
+with a compatible modified FFmpeg using that script and `scripts/build.mjs --target
+linux-x64 --nvidia`. LGPL-covered code may be modified/relinked, and reverse engineering
+for debugging such modifications is permitted. FFmpeg sources are unmodified. The
+exact pinned FFmpeg source archive ships as `dist/linux-x64/ffmpeg-source.tar.gz`.
+
+The configured FFmpeg archives also contain permissively licensed sources:
+`libavcodec/jfdctfst.c` and `jrevdct.c` (Independent JPEG Group), `faandct.c` (ISC),
+`libavutil/avsscanf.c` (MIT) and `adler32.c` (zlib). Their copyright and permission
+notices are preserved in [FFmpeg permissive notices](LICENSES/FFmpeg-PERMISSIVE.txt).
+This software is based in part on the work of the Independent JPEG Group.
+
+NVIDIA interface declarations in [nv-codec-headers 13.0.19.0, commit e844e5b26f46bb77479f063029595293aa8f812d](https://github.com/FFmpeg/nv-codec-headers/tree/e844e5b26f46bb77479f063029595293aa8f812d)
+are used under their MIT license; see `LICENSES/MIT-NVIDIA.txt`. `CudaDevicePrefix`
+adapts the public leading fields of FFmpeg's LGPL-2.1-or-later `AVCUDADeviceContext`.
+The capture/transform implementation adapts this repository's MIT-licensed PR #107.
+
+The build downloads NVIDIA NVRTC 12.8.93 to compile our own CUDA source to PTX.
+NVRTC, CUDA toolkit binaries and NVIDIA drivers are not shipped in the package.
+Runtime dynamically loads the host's `libcuda.so.1` and `libnvidia-encode.so.1`.

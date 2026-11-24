@@ -3,8 +3,11 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { $, root } from "./common.mjs";
 import { requireNativeTarget } from "./platform.mjs";
+import { validateNvidiaGlibc } from "./nvidia-compat.mjs";
 
 const target = requireNativeTarget("build:native");
+const nvidia = process.argv.includes("--nvidia");
+if (nvidia && target !== "linux-x64") throw new Error("NVIDIA capture needs Linux x86-64");
 
 if (!existsSync(join(root, "deps/frida-gum/libfrida-gum.a")))
   throw new Error("Frida Gum devkit missing; run bun run setup:build first");
@@ -74,21 +77,23 @@ if (target === "darwin-arm64") {
   // @ref LLP 0021#encoder — x264 build 165 from the host, not bundled
   // The agent includes x264's header from the build host (libx264-dev) and loads the
   // library at run time, so the header must be build 165, the build that the agent loads.
-  const probe = await $`${compiler} ${compilerArgs} -E -P -x c++ - < ${new Response(
-    "#include <stdint.h>\n#include <x264.h>\nx264_build_is X264_BUILD\n",
-  )}`
-    .quiet()
-    .nothrow();
-  const build = /x264_build_is (\d+)/.exec(probe.stdout.toString())?.[1];
-  if (build !== "165") {
-    const stderr = probe.stderr.toString().trim();
-    throw new Error(
-      build
-        ? `x264.h is build ${build}; the agent needs build 165 (Ubuntu 26.04: sudo apt install libx264-dev)`
-        : probe.exitCode !== 0 && !stderr.includes("x264.h")
-          ? `the x264 header check failed: ${stderr.split("\n").slice(-3).join(" ")}`
-          : "x264.h is missing; install x264 build 165 headers (Ubuntu 26.04: sudo apt install libx264-dev)",
-    );
+  if (!nvidia) {
+    const probe = await $`${compiler} ${compilerArgs} -E -P -x c++ - < ${new Response(
+      "#include <stdint.h>\n#include <x264.h>\nx264_build_is X264_BUILD\n",
+    )}`
+      .quiet()
+      .nothrow();
+    const build = /x264_build_is (\d+)/.exec(probe.stdout.toString())?.[1];
+    if (build !== "165") {
+      const stderr = probe.stderr.toString().trim();
+      throw new Error(
+        build
+          ? `x264.h is build ${build}; the agent needs build 165 (Ubuntu 26.04: sudo apt install libx264-dev)`
+          : probe.exitCode !== 0 && !stderr.includes("x264.h")
+            ? `the x264 header check failed: ${stderr.split("\n").slice(-3).join(" ")}`
+            : "x264.h is missing; install x264 build 165 headers (Ubuntu 26.04: sudo apt install libx264-dev)",
+      );
+    }
   }
 
   // The same single export. --exclude-libs keeps the bundled Gum, GLib and the
@@ -97,7 +102,9 @@ if (target === "darwin-arm64") {
   const versionScript = join(root, "build/exports.map");
   await writeFile(versionScript, "{ global: expo_emulator_capture_version; local: *; };\n");
 
-  const library = "dist/linux-x64/libexpo_emulator_capture.so";
+  const library = nvidia
+    ? "dist/linux-x64/libexpo_emulator_capture_nvidia.so"
+    : "dist/linux-x64/libexpo_emulator_capture.so";
   const args = [
     "-std=c++17",
     "-O2",
@@ -109,13 +116,28 @@ if (target === "darwin-arm64") {
     ...defines,
     "-I",
     "deps/frida-gum",
+    ...(nvidia
+      ? [
+          "-DEXPO_EMULATOR_CAPTURE_NVIDIA",
+          "-I",
+          "build",
+          "-I",
+          "deps/nvidia/nv-codec-headers/include",
+          "-I",
+          "deps/nvidia/ffmpeg",
+        ]
+      : []),
     "src/native/agent.cpp",
-    "src/native/encoder-x264.cpp",
-    "src/native/frame-source-linux.cpp",
+    ...(nvidia
+      ? ["src/native/nvidia.cpp"]
+      : ["src/native/encoder-x264.cpp", "src/native/frame-source-linux.cpp"]),
     "src/native/gfxstream.cpp",
     "-o",
     library,
     "deps/frida-gum/libfrida-gum.a",
+    ...(nvidia
+      ? ["deps/nvidia/ffmpeg/libavcodec/libavcodec.a", "deps/nvidia/ffmpeg/libavutil/libavutil.a"]
+      : []),
     `-Wl,--version-script=${versionScript}`,
     "-Wl,--exclude-libs,ALL",
     "-Wl,--gc-sections",
@@ -127,8 +149,12 @@ if (target === "darwin-arm64") {
     "-lrt",
     "-lresolv",
   ];
-  // @ref LLP 0021#c-runtime — any C++ library works; only findColorBuffer's result is a libc++ object
+  // @ref LLP 0021#c-runtime — bridge libc++ color-buffer ownership and borrowed-image destruction
   await $`${compiler} ${compilerArgs} ${args}`;
+  if (nvidia) {
+    const versions = await $`readelf --version-info ${library}`.quiet();
+    validateNvidiaGlibc(versions.stdout.toString());
+  }
   // GNU strip -x keeps the debug sections; --strip-unneeded removes them and the local symbols,
   // and keeps the dynamic export.
   if (process.env.EXPO_EMULATOR_CAPTURE_KEEP_DEBUG !== "1")

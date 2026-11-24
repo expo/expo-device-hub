@@ -8,8 +8,16 @@ const AGENT_LIBRARIES = {
 };
 
 /** The agent library that `launch` preloads into the emulator on this platform. */
-export function agentLibraryPath(platform = process.platform) {
-  const library = AGENT_LIBRARIES[platform] ?? AGENT_LIBRARIES.darwin;
+export function agentLibraryPath(platform = process.platform, env = process.env) {
+  const backend = env.EXPO_EMULATOR_CAPTURE_BACKEND?.trim();
+  if (backend && backend !== "nvidia")
+    throw new Error("EXPO_EMULATOR_CAPTURE_BACKEND must be nvidia or unset");
+  if (backend === "nvidia" && platform !== "linux")
+    throw new Error("NVIDIA capture requires Linux x86-64");
+  const library =
+    backend === "nvidia"
+      ? "linux-x64/libexpo_emulator_capture_nvidia.so"
+      : (AGENT_LIBRARIES[platform] ?? AGENT_LIBRARIES.darwin);
   return fileURLToPath(new URL(`../dist/${library}`, import.meta.url));
 }
 

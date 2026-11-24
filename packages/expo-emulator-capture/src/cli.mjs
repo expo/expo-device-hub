@@ -34,6 +34,8 @@ emulator, or --socket, so the socket path is known. On macOS, use -gpu host for
 the GPU frame path; software renderers use CPU readback. On Linux, every renderer
 uses CPU readback, -gpu lavapipe is the tested one, and the agent encodes with the
 system's x264 build 165 (Ubuntu 26.04: sudo apt install libx264-165).
+On NVIDIA Linux hosts, EXPO_EMULATOR_CAPTURE_BACKEND=nvidia selects the CUDA/NVENC
+agent instead. Pass -gpu host -feature -Vulkan to the emulator in that mode.
 
 record takes the stream role by default. --role recording takes the recording role,
 which another program's stream does not replace: the panel orientation, keyframes at
@@ -186,6 +188,9 @@ function record(argv) {
       stats.resizes++;
       console.log(`resized: native ${entry.width}x${entry.height}`);
     } else if (entry.flags === FLAGS.configured) {
+      const details = JSON.parse(entry.payload.toString());
+      if (typeof details.encoderError === "string" && details.encoderError)
+        fail(details.encoderError);
       console.log(
         `configured: stream ${entry.width}x${entry.height}@${entry.fps} ${entry.payload}`,
       );

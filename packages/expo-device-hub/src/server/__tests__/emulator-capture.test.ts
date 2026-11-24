@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   EMULATOR_CAPTURE_ENV,
+  EMULATOR_CAPTURE_BACKEND_ENV,
   EMULATOR_CAPTURE_LIBRARY_ENV,
   emulatorCaptureArgs,
   emulatorCaptureEncoderProblem,
@@ -42,6 +43,79 @@ describe("readEmulatorCapture", () => {
   const never = async (): Promise<string> => {
     throw new Error("install must not run");
   };
+
+  test("NVIDIA selects the packaged GPU agent without an x264 requirement", () =>
+    withLibrary(async (software) => {
+      const library = join(dirname(software), "libexpo_emulator_capture_nvidia.so");
+      writeFileSync(library, "");
+      const env = { [EMULATOR_CAPTURE_ENV]: "1", [EMULATOR_CAPTURE_BACKEND_ENV]: "nvidia" };
+      expect(
+        emulatorCaptureEncoderProblem(
+          "linux",
+          env,
+          () => false,
+          () => "",
+        ),
+      ).toBeNull();
+      const capture = readEmulatorCapture(env, "linux", "x64", async () => software)!;
+      expect(await capture.library()).toBe(library);
+      expect(capture.problem()).toBeNull();
+      expect(emulatorCaptureArgs("linux", env)).toEqual(["-gpu", "host", "-feature", "-Vulkan"]);
+    }));
+
+  test("a missing NVIDIA artifact is actionable and can be retried", () =>
+    withLibrary(async (software) => {
+      const env = { [EMULATOR_CAPTURE_ENV]: "1", [EMULATOR_CAPTURE_BACKEND_ENV]: "nvidia" };
+      const capture = readEmulatorCapture(env, "linux", "x64", async () => software)!;
+      await expect(capture.library()).rejects.toThrow("NVIDIA capture agent is missing");
+      expect(capture.problem()).toContain("NVIDIA capture agent is missing");
+      const library = join(dirname(software), "libexpo_emulator_capture_nvidia.so");
+      writeFileSync(library, "");
+      expect(await capture.library()).toBe(library);
+      expect(capture.problem()).toBeNull();
+    }));
+
+  test("rejects an unknown backend", () => {
+    expect(() =>
+      readEmulatorCapture(
+        { [EMULATOR_CAPTURE_ENV]: "1", [EMULATOR_CAPTURE_BACKEND_ENV]: "other" },
+        "darwin",
+        "arm64",
+        never,
+      ),
+    ).toThrow();
+  });
+
+  test("a shared NVIDIA environment keeps the Hub running on macOS", () => {
+    const env = { [EMULATOR_CAPTURE_ENV]: "1", [EMULATOR_CAPTURE_BACKEND_ENV]: "nvidia" };
+    expect(readEmulatorCapture(env, "darwin", "arm64", never)).toBeNull();
+    expect(emulatorCaptureOffReason("darwin", "arm64", env)).toContain("requires Linux x86-64");
+  });
+
+  test("rejects mismatched known Linux override artifacts", () =>
+    withLibrary(async (path) => {
+      const software = join(dirname(path), "libexpo_emulator_capture.so");
+      const nvidia = join(dirname(path), "libexpo_emulator_capture_nvidia.so");
+      writeFileSync(software, "");
+      writeFileSync(nvidia, "");
+      for (const [backend, library] of [
+        ["nvidia", software],
+        [undefined, nvidia],
+      ]) {
+        expect(() =>
+          readEmulatorCapture(
+            {
+              [EMULATOR_CAPTURE_ENV]: "1",
+              [EMULATOR_CAPTURE_BACKEND_ENV]: backend,
+              [EMULATOR_CAPTURE_LIBRARY_ENV]: library,
+            },
+            "linux",
+            "x64",
+            never,
+          ),
+        ).toThrow(EMULATOR_CAPTURE_BACKEND_ENV);
+      }
+    }));
 
   test("is off when the variable is unset or empty", () => {
     expect(readEmulatorCapture({}, "darwin", "arm64", never)).toBeNull();
