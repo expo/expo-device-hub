@@ -1,8 +1,19 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { freePortAsync, useTempStateDir, withShimsAsync } from "./helpers";
+
+function expectStartupDiagnostics(stderr: string) {
+  const lines = stderr.trim().split("\n");
+  expect(lines.length).toBeGreaterThan(0);
+  for (const line of lines) {
+    expect(line).toStartWith("[startup] ");
+    expect(JSON.parse(line.slice("[startup] ".length))).toMatchObject({
+      phase: expect.any(String),
+    });
+  }
+}
 
 const bundleDir = mkdtempSync(join(tmpdir(), "serve-sim-caller-cli-node-"));
 const diagnostic = "SERVE_SIM_ADDITIONAL_DYLIBS needs absolute paths to existing dylibs";
@@ -19,6 +30,179 @@ beforeAll(async () => {
   entrypoint = build.outputs[0]!.path;
 });
 afterAll(() => rmSync(bundleDir, { recursive: true, force: true }));
+
+test.each(["none", "publish", "stop", "missing-loader", "lock-timeout", "rollback"] as const)(
+  "plain default initialization handles %s",
+  async (failureMode) => {
+    const failFirst =
+      failureMode === "publish" || failureMode === "stop" || failureMode === "rollback";
+    const state = useTempStateDir();
+    const artifacts = join(bundleDir, "dist", "capability-loader");
+    const loader = join(artifacts, "libServeSimCapabilityLoader.dylib");
+    const clipboard = join(state.dir, "libSimPasteboardReader.dylib");
+    const environment = join(state.dir, "env.json");
+    const calls = join(state.dir, "calls.jsonl");
+    const failure = join(state.dir, "fail-once");
+    const preload = join(state.dir, "no-gui.cjs");
+    writeFileSync(
+      preload,
+      `const cp = require('node:child_process');
+const original = cp.execFileSync;
+cp.execFileSync = function(file, ...args) {
+  if (file === '/usr/bin/xcode-select') return ${JSON.stringify(join(state.dir, "fake-xcode"))};
+  if (file === '/usr/bin/open') throw new Error('GUI opening forbidden in this test');
+  return original.call(this, file, ...args);
+};
+require('node:module').syncBuiltinESMExports();
+${
+  failureMode === "lock-timeout"
+    ? `
+const now = Date.now;
+let lockTime = 0;
+Date.now = () => new Error().stack.includes('withStateLock') ? (lockTime += 90001) : now();
+`
+    : ""
+}
+`,
+    );
+    mkdirSync(artifacts, { recursive: true });
+    if (failureMode !== "missing-loader") writeFileSync(loader, "");
+    writeFileSync(clipboard, "");
+    writeFileSync(environment, JSON.stringify({ DYLD_INSERT_LIBRARIES: "/foreign.dylib" }));
+    // The rollback mode fails the insert write and then its restore.
+    if (failFirst) writeFileSync(failure, failureMode === "rollback" ? "2" : "1");
+    try {
+      await withShimsAsync(
+        {
+          xcrun: `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + '\\n');
+if (args[1] === 'list') console.log(JSON.stringify({ devices: { iOS: [{ udid: '${UDID}', state: 'Booted' }] } }));
+else if (args[1] === 'bootstatus') {}
+else if (args[1] === 'spawn' && args[3] === 'launchctl') {
+  const file = ${JSON.stringify(environment)};
+  const env = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const [,,, , command, name, value] = args;
+  if (command === 'setenv' && name === 'DYLD_INSERT_LIBRARIES' && fs.existsSync(${JSON.stringify(failure)})) {
+    const left = Number(fs.readFileSync(${JSON.stringify(failure)}, 'utf8')) - 1;
+    if (left > 0) fs.writeFileSync(${JSON.stringify(failure)}, String(left));
+    else fs.unlinkSync(${JSON.stringify(failure)});
+    console.error('fixture insert write ' + (left > 0 ? 'failed' : 'restore failed'));
+    ${failureMode === "stop" ? "process.kill(process.ppid, 'SIGTERM'); setTimeout(() => process.exit(1), 100); return;" : "process.exit(1);"}
+  }
+  if (command === 'getenv') process.stdout.write(env[name] || '');
+  if (command === 'setenv') env[name] = value;
+  if (command === 'unsetenv') delete env[name];
+  fs.writeFileSync(file, JSON.stringify(env));
+} else process.exit(1);
+`,
+        },
+        async () => {
+          const port = await freePortAsync();
+          const child = Bun.spawn(
+            ["node", "--require", preload, entrypoint, UDID, "--quiet", "--port", String(port)],
+            {
+              env: {
+                ...process.env,
+                SERVE_SIM_STATE_DIR: state.dir,
+                SERVE_SIM_SIMPB_DIR: state.dir,
+              },
+              stdout: "pipe",
+              stderr: "pipe",
+            },
+          );
+          const timeout = setTimeout(() => child.kill("SIGKILL"), 8_000);
+          const stderr = new Response(child.stderr).text();
+          const reader = child.stdout.getReader();
+          let output = "";
+          try {
+            while (!output.includes("\n")) {
+              const { done, value } = await reader.read();
+              if (done) {
+                if (["stop", "missing-loader", "lock-timeout", "rollback"].includes(failureMode))
+                  break;
+                throw new Error(`No readiness: ${output} ${await stderr}`);
+              }
+              output += new TextDecoder().decode(value);
+            }
+            if (failureMode === "rollback") {
+              expect(await child.exited).toBe(1);
+              // Both causes reach the startup error, so a log shows which writes failed.
+              const { error } = JSON.parse(output);
+              expect(error).toContain("Could not restore capability launch state");
+              expect(error).toContain("fixture insert write failed");
+              expect(error).toContain("fixture insert write restore failed");
+              return;
+            }
+            if (["stop", "missing-loader", "lock-timeout"].includes(failureMode)) {
+              expect(await child.exited).toBe(failureMode === "stop" ? 0 : 1);
+              const diagnostic = await stderr;
+              expect(diagnostic).not.toContain("retrying separately");
+              if (failureMode === "stop") expect(output).toBe("");
+              else
+                expect(JSON.parse(output)).toEqual({
+                  error: expect.stringContaining(
+                    failureMode === "missing-loader"
+                      ? "Capability loader not built"
+                      : "Timed out after 90s",
+                  ),
+                });
+              const trace: string[][] = readFileSync(calls, "utf8")
+                .trim()
+                .split("\n")
+                .map((line) => JSON.parse(line));
+              expect(
+                trace.filter(
+                  (a) =>
+                    a[4] === "setenv" &&
+                    a[5] === "DYLD_INSERT_LIBRARIES" &&
+                    a[6]?.includes("libServeSimCapabilityLoader"),
+                ),
+              ).toHaveLength(failureMode === "stop" ? 1 : 0);
+              expect(JSON.parse(readFileSync(environment, "utf8")).DYLD_INSERT_LIBRARIES).toBe(
+                "/foreign.dylib",
+              );
+              return;
+            }
+            expect(JSON.parse(output.trim())).toMatchObject({ device: UDID, port });
+            const launch = JSON.parse(readFileSync(join(state.dir, `launch-${UDID}.json`), "utf8"));
+            expect(launch.sessionPids).toEqual([child.pid]);
+            expect(launch.capabilities.clipboard.ownerPid).toBe(child.pid);
+            const trace: string[][] = readFileSync(calls, "utf8")
+              .trim()
+              .split("\n")
+              .map((line) => JSON.parse(line));
+            expect(trace.filter((a) => a[1] === "bootstatus")).toHaveLength(1);
+            // After a failed publish: the failed write, its rollback, and the separate loader arming.
+            // The defaults publish that follows finds the insert already armed and leaves it.
+            expect(
+              trace.filter((a) => a[4] === "setenv" && a[5] === "DYLD_INSERT_LIBRARIES"),
+            ).toHaveLength(failFirst ? 3 : 1);
+            expect(trace.some((a) => ["install", "launch", "openurl"].includes(a[1]!))).toBe(false);
+            child.kill("SIGTERM");
+            while (!(await reader.read()).done) {}
+            expect(await child.exited).toBe(0);
+            if (failFirst) expect(await stderr).toContain("retrying separately");
+            else expectStartupDiagnostics(await stderr);
+            expect(JSON.parse(readFileSync(environment, "utf8")).DYLD_INSERT_LIBRARIES).toBe(
+              "/foreign.dylib",
+            );
+          } finally {
+            clearTimeout(timeout);
+            child.kill("SIGKILL");
+            await child.exited;
+            reader.releaseLock();
+          }
+        },
+      );
+    } finally {
+      rmSync(loader, { force: true });
+      state.restore();
+    }
+  },
+  15_000,
+);
 
 async function runCLI(args: string[], env: Record<string, string | undefined>, preload?: string) {
   const child = Bun.spawn(
@@ -178,7 +362,7 @@ if (args[3] === 'launchctl') {
         expect(result.exitCode).toBe(1);
         expect(result.stdout.trim().split("\n")).toHaveLength(1);
         expect(JSON.parse(result.stdout)).toEqual({ error: `${diagnostic}: ${guard}` });
-        expect(result.stderr).toBe("");
+        expectStartupDiagnostics(result.stderr);
         const calls: string[][] = readFileSync(log, "utf8")
           .trim()
           .split("\n")
@@ -319,7 +503,7 @@ if (args[1] === 'list') {
           }
           expect(await child.exited).toBe(0);
           expect(stdout.trim().split("\n")).toHaveLength(1);
-          expect(await stderr).toBe("");
+          expectStartupDiagnostics(await stderr);
           expect(existsSync(join(state.dir, `server-${UDID}.json`))).toBe(false);
         } finally {
           child.kill("SIGKILL");

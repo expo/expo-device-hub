@@ -12,6 +12,8 @@ function lockFile(udid: string): string {
 
 const pendingLaunchUpdates = new Set<Promise<unknown>>();
 
+export class LaunchStateLockTimeoutError extends Error {}
+
 export async function waitForLaunchUpdates(): Promise<void> {
   while (pendingLaunchUpdates.size) await Promise.allSettled(pendingLaunchUpdates);
 }
@@ -28,7 +30,7 @@ async function acquireLaunchStateLock<T>(udid: string, fn: () => Promise<T>): Pr
     path,
     LOCK_TIMEOUT_MS,
     () =>
-      new Error(
+      new LaunchStateLockTimeoutError(
         `Timed out after ${LOCK_TIMEOUT_MS / 1000}s waiting to update the launch state for ` +
           `${udid}. Another serve-sim command on this machine is holding ${path}. A lock left by ` +
           `a dead process is reclaimed on its own, so wait for that command to finish.`,

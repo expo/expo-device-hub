@@ -17,7 +17,13 @@ import { basename, join, resolve, sep } from "path";
 
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
 import { UPLOAD_DIR } from "../host-paths";
-import { EXIT_0_SHIM, UDID, withActionTimeoutAsync, withShimsAsync } from "./helpers";
+import {
+  EXIT_0_SHIM,
+  SCREENSHOT_SHIM,
+  UDID,
+  withActionTimeoutAsync,
+  withShimsAsync,
+} from "./helpers";
 
 const BIN = "true";
 const PROTECTED = /is inside a location this host protects/;
@@ -74,7 +80,10 @@ describe("what a preview link may spend on the host", () => {
     "refuses to write a screenshot named %s",
     async (fileName) => {
       await expect(
-        runHostActionAsync({ action: "screenshot.capture", params: { udid: UDID, fileName } }, BIN),
+        runHostActionAsync(
+          { action: "screenshot.capture", params: { display: 1, udid: UDID, fileName } },
+          BIN,
+        ),
       ).rejects.toBeInstanceOf(InvalidHostActionError);
     },
   );
@@ -184,9 +193,12 @@ describe("what a preview link may spend on the host", () => {
       writeFileSync(fresh, "");
       utimesSync(fresh, cutoffSeconds + 60, cutoffSeconds + 60);
 
-      await withShimsAsync({ xcrun: EXIT_0_SHIM, cp: EXIT_0_SHIM }, async () => {
+      await withShimsAsync({ xcrun: SCREENSHOT_SHIM, cp: EXIT_0_SHIM }, async () => {
         const result = await runHostActionAsync(
-          { action: "screenshot.capture", params: { udid: UDID, fileName: basename(captured) } },
+          {
+            action: "screenshot.capture",
+            params: { display: 1, udid: UDID, fileName: basename(captured) },
+          },
           BIN,
         );
         expect(result.exitCode).toBe(0);

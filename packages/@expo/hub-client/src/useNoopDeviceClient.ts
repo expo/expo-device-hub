@@ -1,5 +1,6 @@
 import { NO_PENDING_PERMISSION_WRITES } from "./app-permissions";
 import { NO_PENDING_CAMERA_WRITES } from "./device-camera";
+import { NO_CLIPBOARD } from "./device-clipboard";
 import { DeviceClient } from "./types";
 
 /** Inert client returned while no device is selected — module-level so its
@@ -8,8 +9,13 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   platform: "ios",
   status: "idle",
   error: null,
+  framePresented: false,
   inputError: null,
   screen: null,
+  fold: null,
+  displays: null,
+  deviceModelUrl: null,
+  displayCorners: null,
   fps: 0,
   devices: [],
   logs: [],
@@ -49,8 +55,11 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   setPermission: () => {},
   resetPermissions: () => {},
   refreshPermissions: () => {},
+  ...NO_CLIPBOARD,
   streamCapabilities: null,
   screenRecording: null,
+  recordingLock: null,
+  recordingControlsLocked: false,
   streamSettings: null,
   streamSettingsPending: false,
   updateStreamSettings: () => {},
@@ -71,9 +80,12 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
     events: false,
     camera: false,
     accessibility: false,
+    fold: false,
     streamSettings: false,
     location: false,
     permissions: false,
+    clipboard: false,
+    orientation: false,
   },
   foregroundApp: null,
   videoKind: "img",
@@ -83,6 +95,11 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   pressButton: () => {},
   reload: () => {},
   rotate: () => {},
+  orientation: null,
+  orientationPending: false,
+  orientationError: null,
+  orientationUnavailable: null,
+  setOrientation: () => {},
   screenshot: async () => null,
   appearance: null,
   setAppearance: () => {},

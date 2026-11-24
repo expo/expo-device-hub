@@ -1,0 +1,13 @@
+{
+  "capabilities": {
+    "idiom": "phone",
+    "ScreenDimensionsCapability": {
+      "main-screen-height": 2622,
+      "main-screen-pitch": 460,
+      "main-screen-width": 1206,
+      "main-screen-orientation": 0.0,
+      "main-screen-class": 36,
+      "main-screen-scale": 3.0
+    }
+  }
+}

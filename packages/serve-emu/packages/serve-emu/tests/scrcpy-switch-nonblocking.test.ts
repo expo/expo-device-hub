@@ -4,6 +4,7 @@ import { Socket } from "node:net";
 import type { ChildProcess } from "node:child_process";
 import { startServer } from "../src/server.ts";
 import { FramedReader, type ScrcpySession, type StartOpts } from "../src/scrcpy.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -64,6 +65,7 @@ describe("live device switching", () => {
     const started = await startServer(
       { serial: "device-1", host: "127.0.0.1", port: 0 },
       {
+        readOrientation: readNoOrientation,
         listAllDevices: async () => [
           { serial: "device-1", state: "device" },
           { serial: "device-2", state: "device" },
@@ -132,6 +134,7 @@ describe("live device switching", () => {
     const started = await startServer(
       { serial: "device-1", host: "127.0.0.1", port: 0 },
       {
+        readOrientation: readNoOrientation,
         listAllDevices: async () => [
           { serial: "device-1", state: "device" },
           { serial: "device-2", state: "device" },
@@ -184,7 +187,7 @@ describe("live device switching", () => {
             host: "127.0.0.1",
             port: occupied.port,
           },
-          { startScrcpy: async () => initial },
+          { readOrientation: readNoOrientation, startScrcpy: async () => initial },
         ),
       ).rejects.toThrow();
       expect(closeCount).toBe(1);

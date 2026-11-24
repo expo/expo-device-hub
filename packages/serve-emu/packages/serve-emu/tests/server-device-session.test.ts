@@ -4,6 +4,7 @@ import { startServer } from "../src/server.ts";
 import type { EmulatorLaunch } from "../src/emulator.ts";
 import type { GeoFix } from "../src/location.ts";
 import type { ScrcpySession, VideoPacket } from "../src/scrcpy.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -99,6 +100,7 @@ describe("startServer device session lifecycle", () => {
       startServer(
         { serial: "A", port: 3300 },
         {
+          readOrientation: readNoOrientation,
           openScrcpy: async () => initial.session,
           serve: (() => {
             throw new Error("EADDRINUSE");
@@ -123,6 +125,7 @@ describe("startServer device session lifecycle", () => {
     const started = await startServer(
       { serial: "A", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openScrcpy: async (serial) => sessions.get(serial)!.session,
         listDevices: async () => [
           { serial: "A", state: "device" },
@@ -210,6 +213,7 @@ describe("startServer device session lifecycle", () => {
     const started = await startServer(
       { serial: "A", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openScrcpy: async (serial) => (serial === "A" ? a : b).session,
         listDevices: async () => [
           { serial: "A", state: "device" },
@@ -265,6 +269,7 @@ describe("startServer device session lifecycle", () => {
     const started = await startServer(
       { serial: "A", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openScrcpy: async (serial) => (serial === "A" ? a : b).session,
         listDevices: async () => [
           { serial: "A", state: "device" },
@@ -324,6 +329,7 @@ describe("startServer device session lifecycle", () => {
     const started = await startServer(
       { serial: "A", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openScrcpy: async (serial) => {
           openCalls.push(serial);
           if (serial === "A") return a.session;
@@ -383,6 +389,7 @@ describe("startServer device session lifecycle", () => {
     const started = await startServer(
       { serial: "A", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openScrcpy: async (serial) => (serial === "A" ? a : b).session,
         listDevices: async () => [
           { serial: "A", state: "device" },
@@ -409,5 +416,52 @@ describe("startServer device session lifecycle", () => {
     expect(switchResponse.status).toBe(200);
     expect(started.session).toBe(b.session);
     await started.stop();
+  });
+
+  test("reports the display orientation in /api and /health and records the locked pose", async () => {
+    const a = fakeScrcpy("A");
+    const captured: CapturedServer = { options: null, stopCalls: 0 };
+    const calls: string[] = [];
+    const started = await startServer(
+      { serial: "A", port: 3300 },
+      {
+        openScrcpy: async () => a.session,
+        serve: capturingServe(captured),
+        readOrientation: async (serial) => (calls.push(`read ${serial}`), "portrait"),
+        applyRotation: async (serial, orientation) => {
+          calls.push(`lock ${serial} ${orientation}`);
+          return {
+            mode: "lock",
+            rotation: 1,
+            orientation: "landscape",
+            pose: "landscape_right",
+            raw: "lock 1",
+          };
+        },
+      },
+    );
+
+    try {
+      const info = await invokeFetch(captured, "/api");
+      expect(await info.json()).toMatchObject({ pose: "portrait" });
+      const health = await invokeFetch(captured, "/health");
+      expect(await health.json()).toMatchObject({ pose: "portrait" });
+
+      const locked = await invokeFetch(captured, "/api/orientation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orientation: "landscape_right" }),
+      });
+      expect(await locked.json()).toMatchObject({
+        ok: true,
+        orientation: { pose: "landscape_right" },
+      });
+      // `/api` right after the lock reports the locked pose without another read.
+      const after = await invokeFetch(captured, "/api");
+      expect(await after.json()).toMatchObject({ pose: "landscape_right" });
+      expect(calls).toEqual(["read A", "lock A landscape_right"]);
+    } finally {
+      await started.stop();
+    }
   });
 });

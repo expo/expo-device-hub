@@ -113,7 +113,10 @@ private func u32(_ v: Int) -> UInt32 {
     }
 
     @NodeMethod func hingeControlEligibility() async -> [String: any NodePropertyConvertible] {
-        hingeStateProperties(await CoreDeviceBridge.shared.hingeControlEligibility(udid: udid))
+        let readback = await CoreDeviceBridge.shared.hingeControlReadback(udid: udid)
+        var result = hingeStateProperties(readback.state)
+        if let active = readback.tableModeActive { result["tableModeActive"] = active }
+        return result
     }
 
     private func hingeStateProperties(_ state: CoreDeviceBridge.HingeState) -> [String: any NodePropertyConvertible] {
@@ -246,6 +249,20 @@ private func u32(_ v: Int) -> UInt32 {
         try await engine.resumeAfterReboot()
     }
 
+    @NodeMethod func screenshot(_ value: Int, _ maxWidth: Int = 0) async throws -> NodeTypedArray<UInt8> {
+        guard let screenID = UInt32(exactly: value), screenID > 0 else { throw Errors.invalidScreenID }
+        let data = try await engine.screenshot(screenID, maxWidth: maxWidth)
+        var buffer = try CaptureBuffer(initialCapacity: data.count)
+        return try buffer.setData(data)
+    }
+
+    @NodeMethod func screenshotWithMetadata(_ value: Int, _ maxWidth: Int = 0) async throws -> [String: any NodePropertyConvertible] {
+        guard let screenID = UInt32(exactly: value), screenID > 0 else { throw Errors.invalidScreenID }
+        let result = try await engine.screenshotWithMetadata(screenID, maxWidth: maxWidth)
+        var buffer = try CaptureBuffer(initialCapacity: result.data.count)
+        return ["data": try buffer.setData(result.data), "metadata": try result.metadata.json()]
+    }
+
     @NodeMethod func startRecording(_ outputDirectory: String) async throws {
         try await engine.startRecording(outputDirectory: outputDirectory)
     }
@@ -280,6 +297,10 @@ private func u32(_ v: Int) -> UInt32 {
 
     @NodeMethod func webRTCSenderStats(_ sessionId: String) async throws -> String {
         try await engine.webRTCSenderStats(sessionId: sessionId.isEmpty ? nil : sessionId)
+    }
+
+    @NodeMethod func activeScreenId() async throws -> Int {
+        Int(try await engine.activeScreenID())
     }
 
     @NodeMethod func screenSize() async -> [String: any NodePropertyConvertible] {
@@ -376,7 +397,15 @@ private func axQuery<T: Sendable>(
     }
 }
 
+private let screenshotConverter = ScreenshotEncoder()
+
 #NodeModule(exports: [
+    "convertScreenshot": try NodeFunction { (bytes: NodeTypedArray<UInt8>, maxWidth: Int, quality: Int?) async throws -> NodeTypedArray<UInt8> in
+        let input = try bytes.withUnsafeMutableRawBytes { Data($0) }
+        let data = try await screenshotConverter.convert(input, maxWidth: maxWidth, jpegQuality: quality)
+        var buffer = try CaptureBuffer(initialCapacity: data.count)
+        return try buffer.setData(data)
+    },
     "SimHID": SimHID.deferredConstructor,
     "SimCapture": SimCapture.deferredConstructor,
     // axDescribe(udid): Promise<string> — axe-shaped accessibility JSON.

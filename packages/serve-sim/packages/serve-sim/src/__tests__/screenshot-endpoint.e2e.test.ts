@@ -56,8 +56,9 @@ describe("POST /api/screenshot", () => {
 
 describe("POST /api/screenshot artifact outcome (stubbed simctl)", () => {
   const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  // `xcrun simctl io <udid> screenshot <file>`: the destination is the fifth argument.
-  const XCRUN = `#!/bin/sh\nprintf '\\211PNG\\r\\n\\032\\n' > "$5"\n`;
+  // Pin the display: these cases test artifact persistence without native startup.
+  // `xcrun simctl io <udid> screenshot --display=1 <file>`: destination is argument six.
+  const XCRUN = `#!/bin/sh\nprintf '\\211PNG\\r\\n\\032\\n' > "$6"\n`;
 
   async function captureWithDirectory(
     prepare: (root: string) => Promise<string>,
@@ -70,7 +71,7 @@ describe("POST /api/screenshot artifact outcome (stubbed simctl)", () => {
       process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = directory;
       await withShimsAsync({ xcrun: XCRUN }, async () => {
         const res = await middleware(
-          new Request(`http://localhost:3200/preview/api/screenshot?device=${UDID}`, {
+          new Request(`http://localhost:3200/preview/api/screenshot?device=${UDID}&display=1`, {
             method: "POST",
             headers: { origin: DASHBOARD },
           }),
@@ -90,6 +91,7 @@ describe("POST /api/screenshot artifact outcome (stubbed simctl)", () => {
       async (res, directory) => {
         expect(res.status).toBe(200);
         expect(res.headers.get("content-type")).toBe("image/png");
+        expect(res.headers.get("content-length")).toBe(String(PNG.length));
         expect(res.headers.get("x-expo-screenshot-artifact")).toBe("saved");
         expect(res.headers.has("x-expo-screenshot-artifact-error")).toBe(false);
         expect(res.headers.get("access-control-expose-headers")).toContain(

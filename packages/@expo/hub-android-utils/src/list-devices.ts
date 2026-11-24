@@ -41,9 +41,10 @@ export async function listDevices(): Promise<AndroidUtilsResult<AndroidDevice[]>
 
     const avdBlocks = avdList.value ? parseAvdList(avdList.value) : [];
     const connected = await inspectConnectedDevices(adb, adbList.value);
-    if (connected.error) return result([], connected.error);
-
-    return await buildDevices(avdBlocks, connected.value);
+    const devices = await buildDevices(avdBlocks, connected.value);
+    // An empty list with an error means buildDevices failed; report that cause.
+    if (devices.error && devices.value.length === 0) return devices;
+    return result(devices.value, connected.error ?? devices.error);
   } catch (error) {
     return result([], reportError("[android-utils] Failed to list devices:", error));
   }
@@ -58,12 +59,16 @@ async function inspectConnectedDevices(
 
   const online = parseAdbDevices(adbStdout).filter(isOnline);
   const connected: ConnectedDevice[] = [];
+  let firstError: AndroidUtilsError | null = null;
   for (const device of online) {
     const inspected = await inspectDevice(adb, device.serial);
-    if (inspected.error) return result([], inspected.error);
+    firstError ??= inspected.error;
+    // Skip a device whose getprop failed. Keep an emulator whose `emu avd name`
+    // failed (for example one reached over the network); it lists by serial.
+    if (inspected.error && !inspected.value.isEmulator) continue;
     connected.push(inspected.value);
   }
-  return result(connected);
+  return result(connected, firstError);
 }
 
 async function inspectDevice(

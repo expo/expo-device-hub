@@ -4,24 +4,29 @@ import { type Platform } from "./data";
 /**
  * Shown in the stream panel when no devices are available — i.e. there are no
  * booted simulators, emulators, or connected physical devices to mirror. Points
- * the user at the sidebar's + buttons to boot one.
+ * the user at the sidebar's + buttons to boot one. A single-device session has
+ * no device lifecycle controls, so it asks for the same device instead.
  */
 export function EmptyState({
   platform,
   framed = true,
+  singleDevice = false,
 }: {
   platform?: Platform;
+  singleDevice?: boolean;
   /** Whether to draw the hairline seams toward the sidebars (see StreamPanel). */
   framed?: boolean;
 }) {
-  const title =
-    platform === "ios"
+  const title = singleDevice
+    ? "The session device is unavailable"
+    : platform === "ios"
       ? "No booted simulators"
       : platform === "android"
         ? "No booted emulators"
         : "No booted devices";
-  const description =
-    platform === "ios"
+  const description = singleDevice
+    ? "Reconnect the same device to continue."
+    : platform === "ios"
       ? "There are no booted simulators. Use the + button to add one."
       : platform === "android"
         ? "There are no booted emulators or connected devices. Use the + button to add one."

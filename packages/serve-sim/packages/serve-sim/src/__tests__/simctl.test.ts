@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { simctl, simctlRaw } from "../simctl";
+import { isSimctlTimeout, simctl, simctlRaw, simctlSync } from "../simctl";
 import { PasteboardTooLargeError } from "../sim-pasteboard";
 import { PasteboardUnavailableError, readSimPasteboardResult } from "../sim-pasteboard-reader";
 import { withShimsAsync } from "./helpers";
@@ -55,6 +55,49 @@ describe("simctl", () => {
       const error = await simctlRaw(["list"]).catch((error: unknown) => error);
       expect((error as Error).message).toBe("simctl list: diagnostic");
       expect(((error as Error).cause as { code?: unknown } | undefined)?.code).toBe(3);
+    });
+  });
+
+  test("names the command and its limit when a call times out", async () => {
+    await withShimsAsync({ xcrun: "#!/bin/sh\nexec sleep 10\n" }, async () => {
+      const args = ["spawn", "DEVICE", "launchctl", "getenv", "DYLD_INSERT_LIBRARIES"];
+      const error = await simctlRaw(args, 1_000).catch((error: unknown) => error);
+      expect((error as Error).message).toBe(
+        "xcrun simctl spawn DEVICE launchctl getenv DYLD_INSERT_LIBRARIES timed out after 1 s",
+      );
+      // Callers such as the boot wait still recognize the timeout.
+      expect(error).toHaveProperty("killed", true);
+      expect(() => simctlSync(args, 1_000)).toThrow(
+        "xcrun simctl spawn DEVICE launchctl getenv DYLD_INSERT_LIBRARIES timed out after 1 s",
+      );
+    });
+  });
+
+  test("recognizes a timeout by the error object, even with a newline in an argument", async () => {
+    await withShimsAsync({ xcrun: "#!/bin/sh\nexec sleep 10\n" }, async () => {
+      const error = await simctlRaw(["launch", "DEVICE", "app", "first\nsecond"], 500).catch(
+        (error: unknown) => error,
+      );
+      expect(isSimctlTimeout(error)).toBe(true);
+      expect(isSimctlTimeout(new Error((error as Error).message))).toBe(false);
+    });
+  });
+
+  test("does not call a terminated command without a time limit a timeout", async () => {
+    await withShimsAsync({ xcrun: "#!/bin/sh\nkill -TERM $$\n" }, async () => {
+      for (const failed of [
+        await simctlRaw(["list"], 0).catch((error: unknown) => error),
+        (() => {
+          try {
+            simctlSync(["list"], 0);
+          } catch (error) {
+            return error;
+          }
+        })(),
+      ]) {
+        expect(failed).toBeInstanceOf(Error);
+        expect((failed as Error).message).not.toContain("timed out");
+      }
     });
   });
 

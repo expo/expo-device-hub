@@ -23,9 +23,11 @@ function clampToViewport(x: number, y: number, w: number, h: number) {
 export function PresentationControls({
   onExit,
   children,
+  keyboardRaised = false,
 }: {
   onExit: () => void;
   children?: ReactNode;
+  keyboardRaised?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
@@ -95,6 +97,10 @@ export function PresentationControls({
         top: pos?.y ?? MARGIN,
         padding: PRESENTATION_EXIT_WRAPPER_PADDING,
         visibility: pos ? "visible" : "hidden",
+      }}
+      // @ref LLP 0000#mobile-serve-sim-layout — exiting presentation must not dismiss the phone keyboard.
+      onMouseDownCapture={(event) => {
+        if (keyboardRaised) event.preventDefault();
       }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

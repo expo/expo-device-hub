@@ -1,6 +1,6 @@
 import type { AccessibilitySnapshot } from "./accessibility.ts";
 import { ControlInputQueue } from "./control-input-queue.ts";
-import { DeviceSessionState } from "./device-session-state.ts";
+import { DeviceSessionState, type DeviceSessionStateOptions } from "./device-session-state.ts";
 import { FrameStatWindow } from "./frame-stat-window.ts";
 import type { Screen } from "./input.ts";
 import type { GeoFix } from "./location.ts";
@@ -31,12 +31,25 @@ export type SessionClient = {
 
 type Cleanup = () => void | Promise<void>;
 
-type ActiveDeviceSessionOpts<TClient extends SessionClient> = {
+/** What a new `DeviceSessionState` needs to change the device. */
+type DeviceStateDependencies = {
+  applyLocation: (serial: string, fix: GeoFix, signal: AbortSignal) => Promise<void>;
+  readOrientation: DeviceSessionStateOptions["readOrientation"];
+  applyRotation: DeviceSessionStateOptions["applyRotation"];
+};
+
+/**
+ * A context either reuses a device state from the same device, or gets the dependencies to
+ * create one, so the compiler requires them whenever a new state can be needed.
+ */
+type DeviceStateSource =
+  | { deviceState: DeviceSessionState }
+  | ({ deviceState?: undefined } & DeviceStateDependencies);
+
+type ActiveDeviceSessionOpts<TClient extends SessionClient> = DeviceStateSource & {
   serial: string;
   generation: number;
   stream: EmuSession;
-  applyLocation?: (serial: string, fix: GeoFix, signal: AbortSignal) => Promise<void>;
-  deviceState?: DeviceSessionState;
   closeClient?: (client: TClient, code: number, reason: string) => void;
   inputQueue?: ControlInputQueue;
   now?: () => number;
@@ -117,18 +130,14 @@ export class ActiveDeviceSession<TClient extends SessionClient = SessionClient> 
         client.ws.close(code, reason);
       });
     this.inputQueue = opts.inputQueue ?? opts.stream.controls;
-    const applyLocation = opts.applyLocation;
-    this.deviceState =
-      opts.deviceState ??
-      new DeviceSessionState({
-        serial: opts.serial,
-        applyLocation: async (serial, fix, signal) => {
-          if (!applyLocation) {
-            throw new Error("applyLocation is required for a new device state");
-          }
-          await applyLocation(serial, fix, signal);
-        },
-      });
+    this.deviceState = opts.deviceState
+      ? opts.deviceState
+      : new DeviceSessionState({
+          serial: opts.serial,
+          applyLocation: opts.applyLocation,
+          readOrientation: opts.readOrientation,
+          applyRotation: opts.applyRotation,
+        });
     if (this.deviceState.serial !== this.serial) {
       throw new Error(
         `device state for ${this.deviceState.serial} cannot be used by ${this.serial}`,

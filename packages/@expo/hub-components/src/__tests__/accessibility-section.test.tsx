@@ -8,9 +8,16 @@ const BASE_CLIENT: DeviceClient = {
   platform: "ios",
   status: "streaming",
   error: null,
+  framePresented: true,
   inputError: null,
   screenRecording: null,
+  recordingLock: null,
+  recordingControlsLocked: false,
   screen: { width: 390, height: 844 },
+  fold: null,
+  displays: null,
+  deviceModelUrl: null,
+  displayCorners: null,
   fps: 60,
   devices: [],
   logs: [],
@@ -46,6 +53,13 @@ const BASE_CLIENT: DeviceClient = {
   setPermission: () => {},
   resetPermissions: () => {},
   refreshPermissions: () => {},
+  pasteText: async () => {},
+  copyText: async () => "",
+  clipboardActionId: 0,
+  clipboardAction: null,
+  clipboardPending: null,
+  clipboardError: null,
+  clipboardWarning: null,
   accessibility: null,
   accessibilityPending: false,
   accessibilityError: null,
@@ -73,6 +87,9 @@ const BASE_CLIENT: DeviceClient = {
     accessibility: true,
     location: false,
     permissions: false,
+    clipboard: false,
+    orientation: false,
+    fold: false,
     streamSettings: false,
   },
   foregroundApp: null,
@@ -83,6 +100,11 @@ const BASE_CLIENT: DeviceClient = {
   pressButton: () => {},
   reload: () => {},
   rotate: () => {},
+  orientation: null,
+  orientationPending: false,
+  orientationError: null,
+  orientationUnavailable: null,
+  setOrientation: () => {},
   screenshot: async () => null,
   appearance: "light",
   setAppearance: () => {},
@@ -112,7 +134,8 @@ function render(overrides: Partial<DeviceClient>) {
 }
 
 function refreshTag(html: string) {
-  const index = html.indexOf(">Refresh</button>");
+  // The action is a `Button`, which wraps its label in a span.
+  const index = html.indexOf(">Refresh</span></button>");
   expect(index).toBeGreaterThanOrEqual(0);
 
   return html.slice(html.lastIndexOf("<button", index), index + 1);

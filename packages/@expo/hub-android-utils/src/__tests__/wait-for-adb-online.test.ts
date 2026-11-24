@@ -17,14 +17,26 @@ const device = (serial: string, overrides: Partial<AndroidDevice> = {}): Android
 const listed = (value: AndroidDevice[]) => ({ value, error: null });
 
 describe("waitForAdbOnline", () => {
-  test("resolves true on the first poll when the serial is already booted", async () => {
+  test("resolves on the first poll when the serial is already booted", async () => {
     let calls = 0;
     const listDevicesFn = async () => {
       calls++;
-      return listed([device("emulator-5554")]);
+      return listed([device("emulator-5554", { name: "Pixel_9" })]);
     };
-    expect((await waitForAdbOnline("emulator-5554", 1000, { listDevicesFn })).value).toBe(true);
+    expect((await waitForAdbOnline("emulator-5554", 1000, { listDevicesFn })).value).toBe(
+      "Pixel_9",
+    );
     expect(calls).toBe(1);
+  });
+
+  test("reports which AVD is online at the serial, whichever it is", async () => {
+    const listDevicesFn = async () =>
+      listed([
+        device("emulator-5554", { name: "j5-tester-1" }),
+        device("emulator-5556", { name: "j5-tester-2" }),
+      ]);
+    const online = await waitForAdbOnline("emulator-5554", 1000, { listDevicesFn });
+    expect(online).toEqual({ value: "j5-tester-1", error: null });
   });
 
   test("keeps polling until the serial comes online", async () => {
@@ -37,11 +49,11 @@ describe("waitForAdbOnline", () => {
       listDevicesFn,
       pollIntervalMs: 1,
     });
-    expect(online.value).toBe(true);
+    expect(online.value).toBe("emulator-5554");
     expect(calls).toBe(3);
   });
 
-  test("resolves false once the timeout elapses", async () => {
+  test("resolves null once the timeout elapses", async () => {
     let calls = 0;
     const listDevicesFn = async () => {
       calls++;
@@ -51,7 +63,7 @@ describe("waitForAdbOnline", () => {
       listDevicesFn,
       pollIntervalMs: 10,
     });
-    expect(online.value).toBe(false);
+    expect(online.value).toBeNull();
     expect(calls).toBeGreaterThanOrEqual(1);
   });
 
@@ -65,7 +77,7 @@ describe("waitForAdbOnline", () => {
       listDevicesFn,
       pollIntervalMs: 10,
     });
-    expect(online.value).toBe(false);
+    expect(online.value).toBeNull();
   });
 
   test("returns a thrown lister error on the first poll", async () => {
@@ -78,12 +90,12 @@ describe("waitForAdbOnline", () => {
       listDevicesFn,
       pollIntervalMs: 10,
     });
-    expect(online.value).toBe(false);
+    expect(online.value).toBeNull();
     expect(online.error).not.toBeNull();
     expect(calls).toBe(1);
   });
 
-  test("resolves false without polling when the signal is already aborted", async () => {
+  test("resolves null without polling when the signal is already aborted", async () => {
     let calls = 0;
     const listDevicesFn = async () => {
       calls++;
@@ -94,7 +106,7 @@ describe("waitForAdbOnline", () => {
       pollIntervalMs: 1,
       signal: AbortSignal.abort(),
     });
-    expect(online.value).toBe(false);
+    expect(online.value).toBeNull();
     expect(calls).toBe(0);
   });
 
@@ -111,7 +123,7 @@ describe("waitForAdbOnline", () => {
       pollIntervalMs: 1,
       signal: controller.signal,
     });
-    expect(online.value).toBe(false);
+    expect(online.value).toBeNull();
     expect(calls).toBe(1);
   });
 
@@ -126,7 +138,7 @@ describe("waitForAdbOnline", () => {
       listDevicesFn,
       pollIntervalMs: 1,
     });
-    expect(online).toEqual({ value: false, error });
+    expect(online).toEqual({ value: null, error });
     expect(calls).toBe(1);
   });
 });

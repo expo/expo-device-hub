@@ -10,7 +10,7 @@ actor CoreDeviceBridge {
 
     enum BridgeError: Error { case unavailable, deviceUnavailable, initializationTimedOut, resetDuringLookup, observationEnded }
 
-    private var manager: CoreDeviceManagerObject?
+    private var managerTask: Task<CoreDeviceManagerObject?, Never>?
     private let managerReadiness = SharedReadiness()
     private var capabilities = BootBoundCache<String, String, CoreDeviceCapabilityObject>()
     private var hingeSupport: [String: Bool] = [:]
@@ -31,23 +31,54 @@ actor CoreDeviceBridge {
         let id = UUID()
     }
     private final class DeviceStateObservation {
+        let isFoldable: Bool
+        var registering: DeviceStateToken?
         var token: DeviceStateToken?
         var connection: UUID?
         var task: Task<Void, Never>?
         var listeners: [UUID: @Sendable (DeviceStateSnapshot) -> Void] = [:]
+        var backoff = ReconnectBackoff()
+        init(isFoldable: Bool) { self.isFoldable = isFoldable }
+    }
+    /// Each failure kind logs once, and consecutive failures of one kind double the
+    /// retry delay up to a fixed cap. An accepted update or a new observation resets both.
+    private struct ReconnectBackoff {
+        static let maximumDelay: Duration = .seconds(30)
+        static func cap(after initialDelay: Duration) -> Duration { max(maximumDelay, initialDelay) }
+        private var last: (kind: String, delay: Duration)?
+        private var loggedKinds: Set<String> = []
+
+        mutating func failure(_ error: Error, initialDelay: Duration) -> (delay: Duration, log: Bool) {
+            let failure = error as NSError
+            let kind = "\(failure.domain)#\(failure.code)"
+            let delay = if let last, last.kind == kind {
+                min(last.delay * 2, Self.cap(after: initialDelay))
+            } else { initialDelay }
+            last = (kind, delay)
+            return (delay, loggedKinds.insert(kind).inserted)
+        }
     }
     private var deviceStateObservations: [String: DeviceStateObservation] = [:]
+    /// Devices whose capture is suspended for a reboot. Until the next capture
+    /// start resets the device, no producer starts for them.
+    private var rebootSuspendedUDIDs: Set<String> = []
     private var observedDeviceStates: [String: ObservedDeviceState] = [:]
     private let deviceStateConsumer: DeviceStateConsumer?
     let hingeClock: @Sendable () -> Double
     private let reconnectDelay: Duration
+    private let reconnectSleep: @Sendable (Duration) async throws -> Void
+    private let log: @Sendable (String) -> Void
 
     init(deviceStateConsumer: DeviceStateConsumer? = nil,
          hingeClock: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime },
-         reconnectDelay: Duration = .seconds(1)) {
+         reconnectDelay: Duration = .seconds(1),
+         reconnectSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+         log: @escaping @Sendable (String) -> Void = { fputs($0, stderr) }) {
         self.deviceStateConsumer = deviceStateConsumer
         self.hingeClock = hingeClock
         self.reconnectDelay = reconnectDelay
+        self.reconnectSleep = reconnectSleep
+        self.log = log
     }
 
     /// CoreDevice's capability objects belong to a simulator boot. A new capture
@@ -58,6 +89,7 @@ actor CoreDeviceBridge {
     /// stays: after a reboot it lists the device again, and other devices keep
     /// using it.
     func resetForNewCapture(udid: String) {
+        rebootSuspendedUDIDs.remove(udid)
         capabilities.reset(scope: udid)
         hingeResetGenerations[udid, default: 0] &+= 1
         hingeSupport.removeValue(forKey: udid)
@@ -101,28 +133,47 @@ actor CoreDeviceBridge {
         return hingeControlEligibility[udid, default: HingeControlEligibility()].state(observed: observed)
     }
 
-    func recordHingeControl(udid: String, angle: Double? = nil, orientation: String? = nil,
-                            sentAt: Double, generation: UInt64) {
-        guard hingeResetGenerations[udid, default: 0] == generation else { return }
-        if let angle { hingeControlEligibility[udid, default: HingeControlEligibility()].angle = (angle, sentAt) }
-        if let orientation { hingeControlEligibility[udid, default: HingeControlEligibility()].orientation = (orientation, sentAt) }
+    // Reconciled controls and raw activity are read in one actor turn, without
+    // adding a second cache or turning a setting acknowledgement into a sample.
+    func hingeControlReadback(udid: String) -> (state: HingeState, tableModeActive: Bool?) {
+        (hingeControlEligibility(udid: udid), observedDeviceStates[udid]?.state.tableMode)
     }
 
-    func subscribeDeviceState(udid: String, onChange: @escaping @Sendable (DeviceStateSnapshot) -> Void) async -> @Sendable () async -> Void {
+    func recordHingeControl(udid: String, angle: Double? = nil, orientation: String? = nil, tableMode: Bool? = nil,
+                            sentAt: Double, generation: UInt64) {
+        guard hingeResetGenerations[udid, default: 0] == generation else { return }
+        // @ref LLP 0004#confirmed-hinge-state — successful controls share one recorder
+        // One successful-send path updates legacy command readback and the
+        // timestamped overlay. Raw observations remain owned by their stream.
+        if let angle {
+            hingeStates[udid, default: HingeState()].angle = angle
+            hingeControlEligibility[udid, default: HingeControlEligibility()].angle = (angle, sentAt)
+        }
+        if let orientation {
+            hingeStates[udid, default: HingeState()].orientation = orientation
+            hingeControlEligibility[udid, default: HingeControlEligibility()].orientation = (orientation, sentAt)
+        }
+        if let tableMode {
+            hingeStates[udid, default: HingeState()].tableMode = tableMode
+            hingeControlEligibility[udid, default: HingeControlEligibility()].tableMode = (tableMode, sentAt)
+        }
+    }
+
+    func subscribeDeviceState(udid: String, isFoldable: Bool = true, onChange: @escaping @Sendable (DeviceStateSnapshot) -> Void) async -> @Sendable () async -> Void {
         while let previous = deviceStateObservations[udid], previous.listeners.isEmpty {
             await previous.task?.value
             if deviceStateObservations[udid] === previous { deviceStateObservations.removeValue(forKey: udid) }
         }
         guard !Task.isCancelled else { return {} }
         let id = UUID()
-        let observation = deviceStateObservations[udid] ?? DeviceStateObservation()
+        let observation = deviceStateObservations[udid] ?? DeviceStateObservation(isFoldable: isFoldable)
         let starts = observation.listeners.isEmpty
         observation.listeners[id] = onChange
         deviceStateObservations[udid] = observation
         if observedDeviceStates[udid] == nil {
             observedDeviceStates[udid] = ObservedDeviceState(generation: hingeResetGenerations[udid, default: 0])
         }
-        if starts { startDeviceStateObservation(udid: udid, observation: observation) }
+        if starts, !rebootSuspendedUDIDs.contains(udid) { startDeviceStateObservation(udid: udid, observation: observation) }
         onChange(observedDeviceState(udid: udid))
         return { await self.removeDeviceStateListener(udid: udid, id: id) }
     }
@@ -132,31 +183,62 @@ actor CoreDeviceBridge {
         previous?.cancel()
         let token = DeviceStateToken(generation: hingeResetGenerations[udid, default: 0])
         observation.token = token
+        observation.registering = observation.isFoldable ? nil : token
         observation.connection = nil
+        observation.backoff = ReconnectBackoff()
         observation.task = Task {
+            defer {
+                if observation.registering == token { observation.registering = nil }
+                if observation.listeners.isEmpty, observation.registering == nil,
+                   deviceStateObservations[udid] === observation {
+                    deviceStateObservations.removeValue(forKey: udid)
+                }
+            }
             await previous?.value
             guard !Task.isCancelled else { return }
             await self.runDeviceStateObservation(udid: udid, token: token)
         }
     }
 
-    private func removeDeviceStateListener(udid: String, id: UUID) async {
-        guard let observation = deviceStateObservations[udid], observation.listeners.removeValue(forKey: id) != nil,
-              observation.listeners.isEmpty else { return }
+    /// A capture reboot ends this boot. Stop its producer and keep its listeners,
+    /// so the device gets no CoreDevice pose requests while it shuts down, boots and
+    /// is rearmed. resetForNewCapture starts a producer for the next boot.
+    func suspendDeviceStateObservation(udid: String) {
+        // @ref LLP 0004#live-pose-observation — no pose requests while the device reboots
+        rebootSuspendedUDIDs.insert(udid)
+        // Do not await the task: a registration RPC can ignore cancellation, and a
+        // reboot must not wait for it. The replacement waits for it instead.
+        if let observation = deviceStateObservations[udid] { cancelDeviceStateObservation(udid: udid, observation: observation) }
+    }
+
+    private func cancelDeviceStateObservation(udid: String, observation: DeviceStateObservation) {
         observation.token = nil
         observation.connection = nil
         observation.task?.cancel()
         clearObservedDeviceState(udid: udid)
+    }
+
+    private func removeDeviceStateListener(udid: String, id: UUID) async {
+        guard let observation = deviceStateObservations[udid], observation.listeners.removeValue(forKey: id) != nil,
+              observation.listeners.isEmpty else { return }
+        cancelDeviceStateObservation(udid: udid, observation: observation)
+        // A native registration RPC may ignore cancellation. Its task keeps ownership
+        // until it returns; a replacement still waits for that task above.
+        if observation.registering != nil { return }
         await observation.task?.value
         if deviceStateObservations[udid] === observation { deviceStateObservations.removeValue(forKey: udid) }
     }
 
     private func runDeviceStateObservation(udid: String, token: DeviceStateToken) async {
         defer { if deviceStateObservations[udid]?.token == token { deviceStateObservations[udid]?.token = nil } }
+        var didLogMissingDeviceHint = false
         while !Task.isCancelled, deviceStateObservations[udid]?.token == token {
             let startedAt = hingeClock()
             let connection = UUID()
             deviceStateObservations[udid]?.connection = connection
+            if let observation = deviceStateObservations[udid], !observation.isFoldable {
+                observation.registering = token
+            }
             do {
                 let receive: @Sendable (DeviceStateUpdate) async -> Void = { update in
                     await self.applyObservedDeviceState(udid: udid, update: update, token: token,
@@ -164,18 +246,32 @@ actor CoreDeviceBridge {
                 }
                 let supported: Bool
                 if let deviceStateConsumer { supported = try await deviceStateConsumer(udid, receive) }
-                else { supported = try await consumeDeviceStateUpdates(udid: udid, onUpdate: receive) }
+                // @ref LLP 0004#live-pose-observation — ordinary devices have no motion-state stream
+                else if deviceStateObservations[udid]?.isFoldable == false {
+                    supported = try await consumeDisplayStateUpdates(udid: udid, onRegistered: {
+                        await self.deviceStateRegistered(udid: udid, token: token, connection: connection)
+                    }, onUpdate: receive)
+                } else { supported = try await consumeDeviceStateUpdates(udid: udid, onUpdate: receive) }
                 guard supported else { return }
                 throw BridgeError.observationEnded
             } catch {
-                guard !Task.isCancelled, deviceStateObservations[udid]?.token == token else { return }
-                deviceStateObservations[udid]?.connection = nil
+                guard !Task.isCancelled, let observation = deviceStateObservations[udid],
+                      observation.token == token else { return }
+                observation.connection = nil
                 clearObservedDeviceState(udid: udid)
-                for symbol in ["$s10CoreDevice23MonitorMotionCapabilityVN", "$s10CoreDevice28OrientationControlCapabilityVN"] {
+                for symbol in ["$s10CoreDevice23MonitorMotionCapabilityVN", "$s10CoreDevice28OrientationControlCapabilityVN",
+                               "$s10CoreDevice21DisplayInfoCapabilityVN"] {
                     capabilities.removeValue(forKey: "\(udid):\(symbol)")
                 }
-                fputs("[hid] Device state observation unavailable: \(error); reconnecting in \(reconnectDelay)\n", stderr)
-                do { try await Task.sleep(for: reconnectDelay) }
+                let retry = observation.backoff.failure(error, initialDelay: reconnectDelay)
+                if retry.log {
+                    log("[hid] Device state observation unavailable: \(error); reconnecting in \(retry.delay). Repeats back off up to \(ReconnectBackoff.cap(after: reconnectDelay)) and are not logged until observation recovers.\n")
+                }
+                if case BridgeError.deviceUnavailable = error, !didLogMissingDeviceHint {
+                    didLogMissingDeviceHint = true
+                    log("[hid] CoreDevice does not list simulator \(udid). Check `xcrun devicectl list devices`. If it is booted and this started after an Xcode update, the per-user CoreDeviceService may be stale; `pkill -x CoreDeviceService` restarts it on the next CoreDevice request and may interrupt other device sessions.\n")
+                }
+                do { try await reconnectSleep(retry.delay) }
                 catch { return }
             }
         }
@@ -190,8 +286,17 @@ actor CoreDeviceBridge {
             hingeControlEligibility[udid]?.recordOrientationRead(sample, since: startedAt)
         }
         let oldRevision = observedDeviceStates[udid]?.revision
-        observedDeviceStates[udid]?.apply(update, since: startedAt)
+        // A sample the timestamp check rejects as history is not recovery.
+        if observedDeviceStates[udid]?.apply(update, since: startedAt) == true {
+            observation.backoff = ReconnectBackoff()
+        }
         if observedDeviceStates[udid]?.revision != oldRevision { publishObservedDeviceState(udid: udid) }
+    }
+
+    private func deviceStateRegistered(udid: String, token: DeviceStateToken, connection: UUID) {
+        guard let observation = deviceStateObservations[udid], observation.token == token,
+              observation.connection == connection, observation.registering == token else { return }
+        observation.registering = nil
     }
 
     private func clearObservedDeviceState(udid: String) {
@@ -208,27 +313,13 @@ actor CoreDeviceBridge {
     func remoteDevice(udid: String) async throws -> CoreDeviceRemoteDevice {
         guard SSCoreDeviceInitialize() else { throw BridgeError.unavailable }
         let lookup = capabilities.beginLookup(scope: udid)
-        if manager == nil {
-            // Initializes resilient class metadata and field offsets before
-            // using the class metadata's allocating initializer.
-            _ = coreDeviceSharedManager()
-            guard let managerMetadata = SSCoreDeviceSymbol("$s10CoreDevice0B7ManagerCN"),
-                  let visibilityMetadata = SSCoreDeviceSymbol("$s10CoreDevice0B15VisibilityClassON"),
-                  let visibilityType = unsafeBitCast(visibilityMetadata, to: Any.Type.self) as? any Hashable.Type
-            else { throw BridgeError.unavailable }
-            let managerType = unsafeBitCast(managerMetadata, to: CoreDeviceManagerObject.Type.self)
-            let visibilitySet = Self.makeVisibilitySet(visibilityType)
-            manager = withExtendedLifetime(visibilitySet) {
-                let rawSet = withUnsafePointer(to: visibilitySet) {
-                    UnsafeRawPointer($0).load(as: UnsafeMutableRawPointer.self)
-                }
-                // The private initializer consumes the Set. Keep the original
-                // Any-owned value alive until initialization has completed.
-                SSCoreDeviceRetainBridgeObject(rawSet)
-                return managerType.create(connection: coreDeviceServiceConnection(), allowed: rawSet)
-            }
+        if managerTask == nil {
+            // Creating the manager can synchronously wait for CoreDeviceService.
+            // Keep one owned task without blocking listener removal on this actor.
+            managerTask = Task.detached { Self.createManager() }
         }
-        guard let manager else { throw BridgeError.unavailable }
+        guard let manager = await managerTask?.value else { throw BridgeError.unavailable }
+        try Task.checkCancellation()
         do {
             try await managerReadiness.waitUntilReady {
                 await self.managerIsInitialized()
@@ -236,14 +327,36 @@ actor CoreDeviceBridge {
         } catch SharedReadiness.Failure.timedOut {
             throw BridgeError.initializationTimedOut
         }
+        try Task.checkCancellation()
         guard capabilities.isCurrent(lookup) else { throw BridgeError.resetDuringLookup }
         guard let device = manager.allDevices().first(where: { $0.identifier().uuidString.caseInsensitiveCompare(udid) == .orderedSame })
         else { throw BridgeError.deviceUnavailable }
         return device
     }
 
-    private func managerIsInitialized() -> Bool {
-        manager?.initialized() == true
+    nonisolated private static func createManager() -> CoreDeviceManagerObject? {
+        // Initializes resilient class metadata and field offsets before
+        // using the class metadata's allocating initializer.
+        _ = coreDeviceSharedManager()
+        guard let managerMetadata = SSCoreDeviceSymbol("$s10CoreDevice0B7ManagerCN"),
+              let visibilityMetadata = SSCoreDeviceSymbol("$s10CoreDevice0B15VisibilityClassON"),
+              let visibilityType = unsafeBitCast(visibilityMetadata, to: Any.Type.self) as? any Hashable.Type
+        else { return nil }
+        let managerType = unsafeBitCast(managerMetadata, to: CoreDeviceManagerObject.Type.self)
+        let visibilitySet = Self.makeVisibilitySet(visibilityType)
+        return withExtendedLifetime(visibilitySet) {
+            let rawSet = withUnsafePointer(to: visibilitySet) {
+                UnsafeRawPointer($0).load(as: UnsafeMutableRawPointer.self)
+            }
+            // The private initializer consumes the Set. Keep the original
+            // Any-owned value alive until initialization has completed.
+            SSCoreDeviceRetainBridgeObject(rawSet)
+            return managerType.create(connection: coreDeviceServiceConnection(), allowed: rawSet)
+        }
+    }
+
+    private func managerIsInitialized() async -> Bool {
+        await managerTask?.value?.initialized() == true
     }
 
     private static func makeVisibilitySet<T: Hashable>(_: T.Type) -> Any {
@@ -284,7 +397,6 @@ actor CoreDeviceBridge {
             self.recordHingeControl(udid: udid, angle: angle, sentAt: sentAt, generation: generation)
         }
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-        if sent { hingeStates[udid, default: HingeState()].angle = angle }
         return sent
     }
 
@@ -328,7 +440,7 @@ actor CoreDeviceBridge {
         // still fail, and a real send failure must not be reported as success.
         guard SSCoreDeviceTableModeAvailable() else {
             fputs("[hid] CoreDevice Table Mode unavailable in this Xcode\n", stderr)
-            if !enabled { hingeStates[udid, default: HingeState()].tableMode = false }
+            if !enabled { recordHingeControl(udid: udid, tableMode: false, sentAt: hingeClock(), generation: hingeResetGenerations[udid, default: 0]) }
             return !enabled
         }
         let generation = hingeResetGenerations[udid, default: 0]
@@ -339,14 +451,15 @@ actor CoreDeviceBridge {
                 witnessSymbol: "$s10CoreDevice29UniversalHIDServiceCapabilityVAA0bE0AAWP"
             )
             guard hingeResetGenerations[udid, default: 0] == generation else { return false }
+            let sentAt = hingeClock()
             let sent = SSCoreDeviceSendTableMode(capability.storage, enabled)
-            if sent { hingeStates[udid, default: HingeState()].tableMode = enabled }
+            if sent { recordHingeControl(udid: udid, tableMode: enabled, sentAt: sentAt, generation: generation) }
             if !sent { capabilities.removeValue(forKey: "\(udid):\(metadataSymbol)") }
             return sent
         } catch BridgeError.unavailable {
             fputs("[hid] CoreDevice Table Mode capability unavailable\n", stderr)
             guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-            if !enabled { hingeStates[udid, default: HingeState()].tableMode = false }
+            if !enabled { recordHingeControl(udid: udid, tableMode: false, sentAt: hingeClock(), generation: generation) }
             return !enabled
         } catch {
             fputs("[hid] CoreDevice Table Mode failed: \(error)\n", stderr)
@@ -363,7 +476,6 @@ actor CoreDeviceBridge {
             self.recordHingeControl(udid: udid, orientation: value, sentAt: sentAt, generation: generation)
         }
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-        if sent { hingeStates[udid, default: HingeState()].orientation = value }
         return sent
     }
 

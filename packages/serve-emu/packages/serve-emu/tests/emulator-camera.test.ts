@@ -76,6 +76,7 @@ describe("startEmulator camera wiring", () => {
       "@Pixel_8",
       "-port",
       "5560",
+      "-no-metrics",
       "-gpu",
       "host",
       ...cameraLaunchArgs("emulator-5560"),
@@ -97,7 +98,7 @@ describe("startEmulator camera wiring", () => {
     );
 
     expect(launch.cameraFeed).toBe(false);
-    expect(spawnCalls[0]?.[1]).toEqual(["@Pixel_8", "-port", "5560"]);
+    expect(spawnCalls[0]?.[1]).toEqual(["@Pixel_8", "-port", "5560", "-no-metrics"]);
     const status = await readCameraStatus("emulator-5560", unwired);
     expect(status.feeds.every((feed) => feed.present)).toBe(false);
   });

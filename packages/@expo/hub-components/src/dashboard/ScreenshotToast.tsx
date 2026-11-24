@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Toaster, toast as sonnerToast } from "sonner";
 
 import { type DeviceClient, type ScreenshotArtifact } from "@expo/hub-client";
@@ -6,11 +6,13 @@ import {
   bg,
   border,
   ChevronRightIcon,
-  isFocusVisible,
+  PRESSABLE_CLASS,
+  pressableStyle,
   radius,
   shadow,
   text,
   textSize,
+  tone,
 } from "../primitives";
 
 export type ScreenshotToastState =
@@ -60,13 +62,13 @@ function download(url: string, filename: string): void {
   a.remove();
 }
 
-const TOASTER_ID = "hub-screenshot";
+export const DEVICE_TOASTER_ID = "hub-device";
 
-/** Where the screenshot toasts render: the bottom-right corner of the viewport, clear of the toolbar. */
+/** Screenshot notifications render at the bottom-right of the viewport, clear of the device. */
 export function ScreenshotToaster() {
   return (
     <Toaster
-      id={TOASTER_ID}
+      id={DEVICE_TOASTER_ID}
       position="bottom-right"
       offset={16}
       gap={8}
@@ -74,7 +76,7 @@ export function ScreenshotToaster() {
       // Sonner's default Alt+T moves focus to the toasts, which would steal keys from the device.
       // No key has the code ' ', so this disables the hotkey and keeps the region label clean.
       hotkey={[" "]}
-      containerAriaLabel="Screenshot notifications"
+      containerAriaLabel="Device notifications"
     />
   );
 }
@@ -102,7 +104,7 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
     if (inFlight.current) return;
     inFlight.current = true;
     const id = sonnerToast.custom(() => <ScreenshotToast toast={{ phase: "capturing" }} />, {
-      toasterId: TOASTER_ID,
+      toasterId: DEVICE_TOASTER_ID,
       duration: Infinity,
     });
     open.current.set(id, null);
@@ -117,7 +119,7 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
       if (!shot) {
         sonnerToast.custom(() => <ScreenshotToast toast={{ phase: "capture-failed" }} />, {
           id,
-          toasterId: TOASTER_ID,
+          toasterId: DEVICE_TOASTER_ID,
           duration: FAILED_DISMISS_MS,
           onDismiss: close,
           onAutoClose: close,
@@ -139,7 +141,7 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
               onFocusChange={(focused) => show(focused ? Infinity : dismissMs)}
             />
           ),
-          { id, toasterId: TOASTER_ID, duration, onDismiss: close, onAutoClose: close },
+          { id, toasterId: DEVICE_TOASTER_ID, duration, onDismiss: close, onAutoClose: close },
         );
       show(dismissMs);
     } finally {
@@ -148,7 +150,8 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
   }, [client, deviceName]);
 }
 
-const PILL_STYLE = {
+/** The box of a toast pill, without its surface: a pressable pill takes the surface from its class. */
+const TOAST_PILL_BOX = {
   display: "flex",
   alignItems: "center",
   gap: 12,
@@ -156,13 +159,17 @@ const PILL_STYLE = {
   maxWidth: "100%",
   boxSizing: "border-box",
   padding: "8px 14px 8px 8px",
-  backgroundColor: bg.default,
   border: `1px solid ${border.default}`,
   borderRadius: radius.lg,
-  boxShadow: shadow.lg,
   color: text.default,
   fontFamily: "inherit",
   textAlign: "left",
+} as const;
+
+export const TOAST_PILL_STYLE = {
+  ...TOAST_PILL_BOX,
+  backgroundColor: bg.default,
+  boxShadow: shadow.lg,
 } as const;
 
 /**
@@ -178,9 +185,6 @@ export function ScreenshotToast({
   onDownloadAgain?: () => void;
   onFocusChange?: (focused: boolean) => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
-
   const title =
     toast.phase === "capturing"
       ? "Capturing screenshot…"
@@ -218,7 +222,7 @@ export function ScreenshotToast({
 
   if (toast.phase !== "saved") {
     return (
-      <div data-testid="screenshot-toast" style={PILL_STYLE}>
+      <div data-testid="screenshot-toast" style={TOAST_PILL_STYLE}>
         {body}
       </div>
     );
@@ -229,23 +233,18 @@ export function ScreenshotToast({
       data-testid="screenshot-toast"
       aria-label="Download screenshot again"
       onClick={onDownloadAgain}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocus={(event) => {
-        setFocused(isFocusVisible(event));
-        onFocusChange?.(true);
-      }}
-      onBlur={() => {
-        setFocused(false);
-        onFocusChange?.(false);
-      }}
+      onFocus={() => onFocusChange?.(true)}
+      onBlur={() => onFocusChange?.(false)}
+      className={PRESSABLE_CLASS}
       style={{
-        ...PILL_STYLE,
-        backgroundColor: hovered ? bg.hover : bg.default,
-        boxShadow: focused ? `0 0 0 2px ${border.secondary}, ${shadow.lg}` : shadow.lg,
-        outline: "none",
+        ...TOAST_PILL_BOX,
+        ...pressableStyle({
+          background: bg.default,
+          hoverBackground: bg.hover,
+          shadow: shadow.lg,
+          pressScale: 1,
+        }),
         cursor: "pointer",
-        transition: "background-color 120ms ease",
       }}
     >
       {body}
@@ -266,7 +265,7 @@ function SavedLines({ artifact }: { artifact: ScreenshotArtifact | null }) {
             lineHeight: 1.3,
             marginTop: 4,
             overflowWrap: "anywhere",
-            color: artifact?.status === "failed" ? text.warning : text.tertiary,
+            color: artifact?.status === "failed" ? tone.warning.text : text.tertiary,
           }}
         >
           {message}

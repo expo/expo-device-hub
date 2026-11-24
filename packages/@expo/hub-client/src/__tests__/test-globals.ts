@@ -4,7 +4,9 @@ export function createGlobalStubs() {
 
   return {
     stubGlobal(name: string, value: unknown) {
-      originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
+      // A second stub of the same name must not record the first stub as the original.
+      if (!originals.has(name))
+        originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
       Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
     },
     restoreGlobals() {

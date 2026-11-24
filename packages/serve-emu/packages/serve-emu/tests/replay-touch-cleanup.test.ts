@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { replayTouchInput } from "../src/client-touch-state.ts";
 import { ControlInputQueue, ControlInputRejectedError } from "../src/control-input-queue.ts";
 import { DeviceSessionState } from "../src/device-session-state.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 function deferred() {
   let resolve!: () => void;
@@ -47,7 +48,14 @@ function harness(options: { blockDown?: boolean; twoPointers?: boolean } = {}) {
       async resetVideo() {},
     },
   });
-  const state = new DeviceSessionState({ serial: "cleanup-test", async applyLocation() {} });
+  const state = new DeviceSessionState({
+    serial: "cleanup-test",
+    async applyLocation() {},
+    readOrientation: readNoOrientation,
+    async applyRotation() {
+      throw new Error("not used");
+    },
+  });
   const owner = {};
   const input = replayTouchInput(() => ({
     identity: queue,

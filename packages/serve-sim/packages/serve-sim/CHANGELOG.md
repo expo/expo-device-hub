@@ -1,5 +1,146 @@
 # @expo/serve-sim
 
+## 0.14.6
+
+### Patch Changes
+
+- 9f38980: Re-releasing because promotion to `latest` failed.
+
+## 0.14.5
+
+### Patch Changes
+
+- a90df2c: Capture reboots no longer fail when a just-booted simulator is slow to start processes.
+
+## 0.14.4
+
+### Patch Changes
+
+- 8e6fc4e: Follow each exec-ws binary screenshot with a `{id, screenshotMetadata}` JSON frame, with the same metadata as the HTTP `X-Expo-Screenshot-Metadata` header for that request. `actions.describe` advertises it with `binaryMetadataFrame: true` on the `output` property.
+- 8ceda40: Show SpringBoard with its name, default icon, and app installation guidance. Replace raw app metadata errors with “Unable to read app details”.
+
+## 0.14.3
+
+### Patch Changes
+
+- e169141: Show the name of the foreground iOS app on hosts where the simulator runtime is mounted outside serve-sim's allowed paths, for example Safari and Settings in an EAS simulator session. serve-sim now sends `label` with each `/appstate` event. It reads the name from the bundle path that simctl reports, so the client no longer needs `app.infoPlist` for the name. hub-client uses that label, and a bundle read that finds no name no longer clears it.
+- 913e47c: Report physical device pose separately from app orientation so clients can follow external turns on supported iOS runtimes. Support physical rotations on iPhone Duo independently of the active panel; temporary screenshot captures do not start pose observation.
+
+## 0.14.2
+
+### Patch Changes
+
+- 0c9742e: Populate screenshot dimensions, screen rotation, and display identity from native capture state. Older native helpers and the simctl fallback keep unknown metadata values.
+- 5ece7f9: Add a screenshot metadata response contract with zero/null defaults for unknown values. Existing paths and PNG output remain unchanged.
+
+## 0.14.1
+
+### Patch Changes
+
+- d033e46: Avoid Darwin filesystem metadata lookups when discovering TCP listeners, so unrelated mounts do not delay port reclamation when starting a server.
+- 154e80a: Capture default Simulator screenshots, including resized and JPEG requests, without starting video when the device profile and runtime enumeration verify one usable display. Keep native display selection when the evidence is missing, ambiguous, or conflicting. Reuse native capture for existing sessions, including sessions created during display verification.
+
+## 0.14.0
+
+### Minor Changes
+
+- d0f7c95: Add optional screenshot resizing and JPEG output to the HTTP and binary WebSocket APIs. Full-resolution PNG remains the default.
+
+### Patch Changes
+
+- b66e959: Add an `automation` flag to screenshot captures so background session thumbnails do not count as user activity. Automated captures skip Desktop copies, and binary captures do not create manual screenshot artifacts.
+
+  The POST screenshot endpoint also accepts `automation: true` in its JSON body with the existing bearer token.
+
+## 0.13.3
+
+### Patch Changes
+
+- de14fb6: Show the whole iPhone Duo cover screen in the 2D WebRTC stream. The picture was stretched and its right edge was cut, which showed as a dark stripe. serve-sim now draws it from the top-left corner of the shared canvas, with black bars right after the picture, and the screen views pin the frame to the top-left.
+- 05edb0b: Add iPhone Duo support to the Hub: fold controls in the inspector, Option+Shift+1–5 pose shortcuts, and a live 3D model of the device that folds with the hinge, or its active display flat in 2D.
+- c3f073c: Fix Simulator app installation from uploads and preview drops.
+
+## 0.13.2
+
+### Patch Changes
+
+- 6f21cf8: Capture active-display screenshots from native Simulator pixels to reduce latency while keeping full resolution and orientation.
+- 6dd111c: Return native HTTP screenshots from memory with an explicit response length. Add an opt-in binary response mode for `screenshot.capture` over exec-ws to download a PNG in one request without staging or Desktop copies.
+
+## 0.13.1
+
+### Patch Changes
+
+- 5f000be: Fix the device jumping and scaling back when entering or leaving full screen on mobile. Keep transitions continuous when reversing direction before the animation finishes.
+
+  Keep the device in place, with its frame and screen aligned, while the phone keyboard changes the mobile preview size. Keep the phone keyboard open when leaving full screen.
+
+- a702c83: Fix the Home-button artwork appearing at the left edge of older iPhone and iPad device frames.
+- 1ce9814: Fit the mobile preview to the available screen space while keeping the existing floating controls. Hide the device name, live badge, and accessibility overlay button on small screens.
+
+  Hide the bottom action toolbar while the phone keyboard is open so the preview has more room.
+
+  Stack mobile preview controls in one vertical toolbar, including the keyboard toggle.
+
+  Keep the full device visible in presentation mode when the phone keyboard opens.
+
+## 0.13.0
+
+### Minor Changes
+
+- 413a053: Adopt a running serve-sim with a different Simulator while keeping the server and respecting `--single-device`. Adoption reuses the UI device lifecycle and waits for unused devices to shut down and the selected device to become ready.
+
+### Patch Changes
+
+- 0665a67: Fix about three seconds of lag in the HTTP simulator preview on Chromium. When the encoder falls back to default rate control, the stream now declares that frames are never reordered.
+
+## 0.12.0
+
+### Minor Changes
+
+- 12e23ba: Add single-device mode to lock a session to one Simulator and hide the sidebar.
+
+### Patch Changes
+
+- ec8156b: Center the Simulator beside open panels and restore its preferred size when they close.
+
+## 0.11.0
+
+### Minor Changes
+
+- 78c10f6: Let adoption start video recording before app actions, using paired `--recording-output` and `--recording-id` flags. The server owns the recording until an explicit stop or shutdown.
+- 499c168: Add `--orphan` to start a warm Simulator server that a job can claim once with `--adopt`, with network capture ready before app launch.
+
+### Patch Changes
+
+- 3a6cf32: Show missing mitmproxy errors once when restarting with network capture. On EAS runners, ask users to restart the session with `--network-capture`; locally, show the Homebrew install command.
+- f9cba16: Add an optional `restart` setting to `app.launch`, launch apps and answer the first readiness check faster, and retry `app.launch` once after a simctl timeout, with clearer timeout and rollback errors.
+- 1357114: Log startup phase durations and readiness failures to help diagnose slow Simulator sessions.
+- 998aa7a: Stop foreground-app log streams before preview shutdown so they cannot restart while recordings finish.
+
+## 0.10.4
+
+### Patch Changes
+
+- 0f718a1: Follow the active simulator display when capturing screenshots, or select a device screen by ID. Preserve validated screenshots after failed or concurrent captures, bound native waits, and support the sole screen on tvOS when native selection is unavailable. Keep native diagnostics in host logs. Preserve default screenshots with older iOS Simulator profiles by verifying the sole integrated framebuffer port before capturing it.
+- ace59bf: Follow external Duo rotation in the preview using native physical orientation, without applying UI rotation readback twice, including while a hinge command is pending.
+- 706806e: Make tunneled and dashboard screenshot downloads follow the active Duo panel, with an optional explicit display query. Single-display devices can fall back to simctl when native capture is unavailable.
+
+  Add troubleshooting guidance when CoreDevice cannot find a simulator, including how to check for a stale service after an Xcode update.
+
+- 3dc6128: Report native hinge observations through the CLI and host actions after external folds. Report failed native reads as errors instead of successful partial state.
+
+  Preserve readback from older helpers and immediate acknowledged Tent controls. Report tabletop activity only from native samples, and keep unobserved Table Mode availability unknown.
+
+## 0.10.3
+
+### Patch Changes
+
+- 144cd70: Avoid repeated capability-loader setup when starting a Simulator preview with the default capabilities.
+- 098b3a2: Wait up to 3 s for an app's clipboard on headless workers, so reads work right after an app starts on iOS 27.
+- 1c1c630: Detect the foreground app when iOS shows it before its process starts, as on a cold launch on iOS 27.
+- 1c1c630: `serve-sim ui` reports an error instead of waiting forever when the simulator does not answer.
+
 ## 0.10.2
 
 ### Patch Changes

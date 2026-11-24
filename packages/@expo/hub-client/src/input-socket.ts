@@ -2,6 +2,7 @@ import {
   discardUnfinishedQueuedGestures,
   flushWsMessageQueue,
   sendOrQueueWsMessage,
+  trySendEncodedWsMessage,
   trySendWsMessage,
   type QueuedWsMessage,
   type WsMessagePayload,
@@ -157,6 +158,9 @@ export function createInputSocket(
     },
     trySend(tag: number, payload: object) {
       return admitted && trySendWsMessage(socket, tag, payload);
+    },
+    trySendEncoded(message: Uint8Array<ArrayBuffer>) {
+      return admitted && trySendEncodedWsMessage(socket, message);
     },
     /** Transfer unsent intent across rediscovery without resetting its original age. */
     takePending() {

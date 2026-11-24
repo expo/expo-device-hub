@@ -1,9 +1,11 @@
 import { runHostAction } from "../../socket/client-control";
+import { isUnsupportedAppArchive, UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
+import { packAppFolder, type AppFolderEntry } from "./app-drop-folder";
 
-// ─── File drop (drag media/ipa onto the simulator) ───
+// ─── File drop (drag media onto the simulator) ───
 //
 // Media → `xcrun simctl addmedia`   (Photos)
-// .ipa  → `xcrun simctl install`    (install app on simulator)
+// Device archives are diagnosed before uploading.
 //
 // Files are streamed to the host in base64 chunks over the action channel, which decodes and
 // appends each one. No sonner dep here, so uploads surface in an inline toast list.
@@ -20,7 +22,7 @@ export const DROP_MEDIA_MIME_TYPES = new Set([
 ]);
 
 // 192KB of raw bytes per chunk → ~256KB of base64 per frame, well inside the channel's 4MB
-// message cap, while sharply cutting round-trips on large .ipa uploads. Each chunk is decoded
+// message cap, while sharply cutting round-trips on large uploads. Each chunk is decoded
 // and appended on its own, so chunks are independent of each other.
 export const DROP_CHUNK_BYTES = 196608;
 export const DROP_MAX_FILE_SIZE = 500 * 1024 * 1024;
@@ -39,7 +41,7 @@ export async function addHostMediaToPhotos(path: string, udid: string) {
   }
 }
 
-export type DropKind = "media" | "ipa";
+export type DropKind = "media" | "app";
 
 export function fileExtension(file: File): string {
   const name = file.name;
@@ -50,7 +52,7 @@ export function fileExtension(file: File): string {
 }
 
 export function dropKindFor(file: File): DropKind | null {
-  if (fileExtension(file) === "ipa") return "ipa";
+  if (/\.(?:tar\.gz|tgz)$/i.test(file.name)) return "app";
   if (DROP_MEDIA_MIME_TYPES.has(file.type)) return "media";
   return null;
 }
@@ -79,16 +81,7 @@ async function streamFileToHost(
   let lastReportedPct = 0;
   for (let offset = 0; offset < file.size; offset += DROP_CHUNK_BYTES) {
     const slice = await file.slice(offset, offset + DROP_CHUNK_BYTES).arrayBuffer();
-    const chunk = arrayBufferToBase64(slice);
-    const result = await runHostAction("upload.append", {
-      uploadId,
-      data: chunk,
-      first: offset === 0,
-    });
-    if (result.exitCode !== 0) {
-      throw new Error(result.stderr || `Write failed (exit ${result.exitCode})`);
-    }
-    hostPath = result.stdout.trim();
+    hostPath = await appendChunk(uploadId, slice, offset === 0);
     if (!onProgress) continue;
     const written = Math.min(offset + DROP_CHUNK_BYTES, file.size);
     const pct = Math.floor((written / file.size) * 100);
@@ -98,6 +91,47 @@ async function streamFileToHost(
     }
   }
   return hostPath;
+}
+
+async function appendChunk(uploadId: string, bytes: ArrayBuffer, first: boolean): Promise<string> {
+  const result = await runHostAction("upload.append", {
+    uploadId,
+    data: arrayBufferToBase64(bytes),
+    first,
+  });
+  if (result.exitCode !== 0)
+    throw new Error(result.stderr || `Write failed (exit ${result.exitCode})`);
+  return result.stdout.trim();
+}
+
+async function streamArchiveToHost(stream: ReadableStream<Uint8Array>, uploadId: string) {
+  const reader = stream.getReader();
+  const buffer = new Uint8Array(DROP_CHUNK_BYTES);
+  let used = 0,
+    written = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (written + used + value.byteLength > DROP_MAX_FILE_SIZE)
+        throw new Error("App archive too large (max 500MB compressed)");
+      for (let offset = 0; offset < value.byteLength; ) {
+        const size = Math.min(buffer.length - used, value.length - offset);
+        buffer.set(value.subarray(offset, offset + size), used);
+        used += size;
+        offset += size;
+        if (used === buffer.length) {
+          await appendChunk(uploadId, buffer.buffer, written === 0);
+          written += used;
+          used = 0;
+        }
+      }
+    }
+    if (used) await appendChunk(uploadId, buffer.buffer.slice(0, used), written === 0);
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
 }
 
 // Stream a file to the host upload directory in base64 chunks. Used by the camera
@@ -116,26 +150,53 @@ export async function uploadDroppedFile(
   udid: string,
   onProgress: (progress: number | null) => void,
 ) {
+  if (isUnsupportedAppArchive(file.name)) throw new Error(UNSUPPORTED_INSTALL_FORMAT);
   if (file.size > DROP_MAX_FILE_SIZE) {
     throw new Error("File too large (max 500MB)");
   }
 
-  const ext = kind === "ipa" ? "ipa" : fileExtension(file);
-  const prefix = kind === "ipa" ? "serve-sim-install" : "serve-sim-upload";
+  await installDroppedSource(
+    kind,
+    udid,
+    kind === "app" ? "tgz" : fileExtension(file),
+    onProgress,
+    (uploadId) => streamFileToHost(file, uploadId, onProgress),
+  );
+}
+
+export async function uploadDroppedAppFolder(
+  entry: AppFolderEntry,
+  udid: string,
+  onProgress: (progress: number | null) => void,
+) {
+  await installDroppedSource("app", udid, "tgz", onProgress, async (uploadId) => {
+    const archive = await packAppFolder(entry, onProgress);
+    await streamArchiveToHost(archive, uploadId);
+  });
+}
+
+async function installDroppedSource(
+  kind: DropKind,
+  udid: string,
+  ext: string,
+  onProgress: (progress: number | null) => void,
+  upload: (uploadId: string) => Promise<unknown>,
+) {
+  const prefix = kind === "app" ? "serve-sim-install" : "serve-sim-upload";
   const uploadId = `${prefix}-${crypto.randomUUID()}.${ext}`;
 
   try {
     onProgress(0);
-    await streamFileToHost(file, uploadId, onProgress);
+    await upload(uploadId);
 
     // install/addmedia gives no progress signal — flip to indeterminate.
     onProgress(null);
-    const result = await runHostAction(kind === "ipa" ? "app.install" : "media.add", {
+    const result = await runHostAction(kind === "app" ? "app.install" : "media.add", {
       udid,
       uploadId,
     });
     if (result.exitCode !== 0) {
-      const label = kind === "ipa" ? "install" : "addmedia";
+      const label = kind === "app" ? "install" : "addmedia";
       throw new Error(result.stderr || `${label} failed (exit ${result.exitCode})`);
     }
   } finally {

@@ -294,6 +294,7 @@ test("exhausted WebRTC codecs report an error without attempting locked HTTP str
   expect(hub.client.videoKind).toBe("video");
   expect(hub.client.status).toBe("error");
   expect(hub.client.error).toContain("No supported WebRTC codec");
+  expect(hub.client.error).toContain("Retrying...");
   expect(hub.requests.some((url) => /stream\.(mjpeg|avcc)/.test(url))).toBe(false);
 });
 
@@ -308,6 +309,7 @@ test("a locked session restarts its exhausted ladder with a growing delay", asyn
   for (let attempt = 0; attempt < 3; attempt++) await hub.fireTimer(4000);
   expect(offers()).toHaveLength(6);
   expect(hub.client.error).toContain("No supported WebRTC codec");
+  expect(hub.client.error).toContain("Retrying...");
   // The second restart waits 4 s, not 2 s.
   await hub.fireTimer(4000);
   expect(offers()).toHaveLength(7);

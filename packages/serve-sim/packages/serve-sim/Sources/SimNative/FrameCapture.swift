@@ -98,6 +98,7 @@ actor FrameCapture {
     private var deviceUDID: String?
     private var displayProfile = SimulatorDisplayProfile()
     private(set) var isFoldable = false
+    private(set) var supportsDevicePose = false
     private var authoritativeDisplay: CoreDeviceDisplayState?
     private var capturedPanelActivity: Bool?
     private var displayInfoTask: Task<Void, Never>?
@@ -105,14 +106,18 @@ actor FrameCapture {
     private var displayRefreshRequested = false
     private var displayConfigurationReady = false
     private var captureGeneration: UInt64 = 0
+    private let readDisplayInfo: @Sendable (String) async throws -> [CoreDeviceDisplayState]?
+    private var legacyScreenSize: Dimensions?
     private var capturedDisplay: SimDisplayMetadata?
     private var bestSurfaceKey: ObjectIdentifier?
     private var lastLiveRevalidationNs: UInt64?
     private var ioClient: NSObject?
     private var device: NSObject?
 
-    init(nowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) {
+    init(nowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
+         readDisplayInfo: @escaping @Sendable (String) async throws -> [CoreDeviceDisplayState]? = { try await CoreDeviceDisplayInfo.read(udid: $0) }) {
         self.nowNanoseconds = nowNanoseconds
+        self.readDisplayInfo = readDisplayInfo
         surfaceWatch = FramebufferSurfaceWatch(startNanoseconds: nowNanoseconds())
     }
 
@@ -140,7 +145,13 @@ actor FrameCapture {
         // Drop this device's CoreDevice capabilities from the previous boot
         // before HID or display election asks for capabilities from this boot.
         displayProfile = SimulatorDisplayProfile.read(from: device)
+        legacyScreenSize = SimDisplayMetadata.legacyScreenSize(from: device)
         isFoldable = displayProfile.isFoldable
+        let runtimeSelector = NSSelectorFromString("runtime")
+        let runtime = device.responds(to: runtimeSelector)
+            ? device.perform(runtimeSelector)?.takeUnretainedValue() as? NSObject : nil
+        let runtimeIdentifier = runtime?.value(forKey: "identifier") as? String ?? ""
+        supportsDevicePose = displayProfile.supportsDevicePose(runtimeIdentifier: runtimeIdentifier)
         if screenID == nil {
             await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
@@ -159,7 +170,7 @@ actor FrameCapture {
         let integratedIDs = Set(screenMetadata.values.filter { $0.screenType == 0 }.map(\.screenID))
         if fixedScreenID == nil, integratedIDs.count == 2 {
             // Only foldable main feeds use CoreDevice display election.
-            let displays = try? await CoreDeviceDisplayInfo.read(udid: deviceUDID)
+            let displays = try? await readDisplayInfo(deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
             if let displays {
                 updateDisplayInfo(displays)
@@ -169,7 +180,7 @@ actor FrameCapture {
         displayConfigurationReady = true
         captureFrame(force: true)
         startSurfacePoller()
-        print("[capture] Frame callbacks registered + \(fixedScreenID == nil ? 60 : 120)Hz IOSurface poll + 5fps idle floor")
+        fputs("[capture] Frame callbacks registered + \(fixedScreenID == nil ? 60 : 120)Hz IOSurface poll + 5fps idle floor\n", stderr)
     }
 
     /// Find all framebuffer display descriptors, register callbacks on each,
@@ -212,7 +223,7 @@ actor FrameCapture {
         if let (_, surface) = currentSurface() {
             let width = IOSurfaceGetWidth(surface)
             let height = IOSurfaceGetHeight(surface)
-            print("[capture] Framebuffer: \(width)x\(height) (direct IOSurface, zero-copy)")
+            fputs("[capture] Framebuffer: \(width)x\(height) (direct IOSurface, zero-copy)\n", stderr)
         }
 
         captureFrame()
@@ -288,7 +299,7 @@ actor FrameCapture {
 
     /// Fixed feeds select only their panel. Main capture prefers the
     /// authoritative active panel and retains its legacy largest-area fallback.
-    private func pickBestSurface(live: Bool) -> (key: ObjectIdentifier, surface: IOSurface)? {
+    private func pickBestSurface(live: Bool, screenID: UInt32? = nil) -> (key: ObjectIdentifier, surface: IOSurface)? {
         let surfaces = descriptors.compactMap { descriptor -> (key: ObjectIdentifier, surface: IOSurface)? in
             guard let surface = surface(for: descriptor, live: live) else { return nil }
             return (ObjectIdentifier(descriptor), surface)
@@ -301,7 +312,7 @@ actor FrameCapture {
         }
         guard let index = FramebufferSelectionPolicy.preferredIndex(
             in: candidates, activeScreenID: authoritativeDisplay?.screenID,
-            fixedScreenID: fixedScreenID
+            fixedScreenID: screenID ?? fixedScreenID
         ) else { return nil }
         return surfaces[index]
     }
@@ -336,7 +347,7 @@ actor FrameCapture {
         defer { if generation == captureGeneration { displayRefreshTask = nil } }
         while displayRefreshRequested, generation == captureGeneration, !Task.isCancelled {
             displayRefreshRequested = false
-            if let displays = try? await CoreDeviceDisplayInfo.read(udid: udid) {
+            if let displays = try? await readDisplayInfo(udid) {
                 guard generation == captureGeneration, !Task.isCancelled else { return }
                 updateDisplayInfo(displays)
             }
@@ -489,7 +500,7 @@ actor FrameCapture {
             atNanoseconds: healthCheckNs, capturedAnyFrame: frameCount > 0, deviceBooted: isDeviceBooted()
         ) else { return }
         if lossStarted {
-            print("[capture] No framebuffer surface for \(Self.seconds(surfaceWatch.currentLossNanoseconds(atNanoseconds: nowNs))); re-wiring the display pipeline")
+            fputs("[capture] No framebuffer surface for \(Self.seconds(surfaceWatch.currentLossNanoseconds(atNanoseconds: nowNs))); re-wiring the display pipeline\n", stderr)
         }
         do {
             try wireUpFramebuffer()
@@ -519,6 +530,26 @@ actor FrameCapture {
         (screen: screenFrameCount, idle: idleFrameCount)
     }
 
+    /// Retain the selected native surface independently of video size, cadence and subscribers.
+    /// CPU readback and compression belong on the screenshot queue, not the video capture actor.
+    func screenshotPixels(screenID: UInt32) async throws -> (pixels: CVPixelBuffer, orientation: String?, screen: RecordingScreen?) {
+        guard displayConfigurationReady else { throw makeError(10, "Simulator display is unavailable") }
+        // The producer maintains these surfaces through callbacks and bounded revalidation.
+        // A synchronous ROCKit lookup here can stall the same queue that delivers video.
+        guard let (key, surface) = pickBestSurface(live: false, screenID: screenID) else {
+            throw makeError(10, "Simulator display is unavailable")
+        }
+        var source: Unmanaged<CVPixelBuffer>?
+        guard CVPixelBufferCreateWithIOSurface(kCFAllocatorDefault, surface,
+            [kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA] as CFDictionary,
+            &source) == kCVReturnSuccess, let source = source?.takeRetainedValue() else {
+            throw makeError(10, "Could not read simulator display")
+        }
+        // CVPixelBuffer retains its IOSurface even if a transition retires this descriptor.
+        let display = screenMetadata[key]?.applying(authoritativeDisplay)
+        return (source, display?.orientation, display?.recordingScreen(in: displayProfile))
+    }
+
     private func captureFrame(force: Bool = false, allowLiveRevalidation: Bool = true) {
         guard displayConfigurationReady else { return }
         let entryNs = DispatchTime.now().uptimeNanoseconds
@@ -540,7 +571,7 @@ actor FrameCapture {
         if pickNs > pickMaxNs { pickMaxNs = pickNs }
         guard let (key, surface) = picked else { return }
         if let lostNs = surfaceWatch.surfaceFound(atNanoseconds: nowNanoseconds()) {
-            print("[capture] Framebuffer surface is back after \(Self.seconds(lostNs))")
+            fputs("[capture] Framebuffer surface is back after \(Self.seconds(lostNs))\n", stderr)
         }
         let display = screenMetadata[key]?.applying(authoritativeDisplay)
         let panelActivity: Bool? = if isFoldable, let fixedScreenID, let deviceUDID {
@@ -585,7 +616,7 @@ actor FrameCapture {
         if dimensionsChanged {
             capturedWidth = w
             capturedHeight = h
-            print("[capture] Surface size changed: \(w)x\(h)")
+            fputs("[capture] Surface size changed: \(w)x\(h)\n", stderr)
         }
         if displayChanged || dimensionsChanged {
             for notify in screenObservers.values { notify() }
@@ -620,10 +651,16 @@ actor FrameCapture {
         _ installed: [(descriptor: NSObject, metadata: SimDisplayMetadata?)],
         io: NSObject? = nil,
         device: NSObject? = nil,
+        deviceUDID: String? = nil,
+        profile: SimulatorDisplayProfile? = nil,
+        legacyScreenSize: Dimensions? = nil,
         onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void
     ) {
         ioClient = io
         self.device = device
+        self.deviceUDID = deviceUDID
+        if let profile { displayProfile = profile }
+        self.legacyScreenSize = legacyScreenSize
         self.onFrame = { buffer, timestamp, canvas, _ in onFrame(buffer, timestamp, canvas) }
         descriptors = installed.map(\.descriptor)
         screenMetadata = Dictionary(uniqueKeysWithValues: installed.compactMap { entry in
@@ -667,6 +704,37 @@ actor FrameCapture {
         guard capturedWidth > 0, capturedHeight > 0 else { return nil }
         return CapturedScreenInfo(width: capturedWidth, height: capturedHeight, display: capturedDisplay,
                                   displayProfile: displayProfile)
+    }
+
+    /// A screenshot must not use the panel cached before the most recent fold.
+    func activeScreenID() async throws -> UInt32 {
+        let integratedIDs = Set(screenMetadata.values.filter { $0.screenType == 0 }.map(\.screenID))
+        if let fixedScreenID { return fixedScreenID }
+        if integratedIDs.count == 1, let id = integratedIDs.first,
+           capturedDisplay?.integratedScreenID == id {
+            if displayProfile.singleIntegratedScreenID == id { return id }
+            // Match a legacy profile to a completely identified framebuffer set.
+            // Rotation may swap geometry, but neither missing metadata nor a second
+            // integrated panel can establish a sole-screen identity.
+            if let size = legacyScreenSize,
+               screenMetadata.count == descriptors.count,
+               screenMetadata.values.allSatisfy({ $0.screenType != nil }),
+               (size.width == capturedWidth && size.height == capturedHeight ||
+                size.width == capturedHeight && size.height == capturedWidth) {
+                return id
+            }
+        }
+        guard displayProfile.integratedDisplayCount > 1 || integratedIDs.count > 1,
+              let deviceUDID else { throw makeError(5, "Simulator did not report its active display") }
+        let generation = captureGeneration
+        let displays = try await readDisplayInfo(deviceUDID)
+        guard generation == captureGeneration, !Task.isCancelled else { throw CancellationError() }
+        guard let displays,
+              let active = displays.first(where: { $0.isActive && integratedIDs.contains($0.screenID) }) else {
+            throw makeError(5, "Simulator did not report its active display")
+        }
+        updateDisplayInfo(displays)
+        return active.screenID
     }
 
     /// Surfaces that this capture can publish. A fixed-panel session must not
@@ -736,7 +804,9 @@ actor FrameCapture {
         if !preservingObservers { screenObservers.removeAll() }
         deviceUDID = nil
         isFoldable = false
+        supportsDevicePose = false
         displayProfile = SimulatorDisplayProfile()
+        legacyScreenSize = nil
         authoritativeDisplay = nil
         displayConfigurationReady = false
         surfacePollTimer?.cancel()

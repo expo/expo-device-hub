@@ -1,9 +1,12 @@
 import { execSync } from "child_process";
 
+import { validatedAdditionalDylibs } from "./additional-dylibs";
+import { timeStartup } from "./startup-timing";
 import { simctl } from "./simctl";
 
 const SHUTDOWN_TIMEOUT_MS = 60_000;
 export const BOOT_TIMEOUT_MS = 120_000;
+const CONFIRM_BOOTED_TIMEOUT_MS = 10_000;
 
 /**
  * UDID of a booted simulator, or null if none is booted. Prefers an iOS device
@@ -30,7 +33,7 @@ export function findBootedDevice(): string | null {
 }
 
 /**
- * Resolve a device name or UDID to a UDID. A UDID is returned as-is; a name is
+ * Resolve a device name or UDID to a UDID. A UDID is normalized to uppercase; a name is
  * matched case-insensitively against `simctl list devices`. Exits the process
  * with a clear error when the name cannot be resolved.
  */
@@ -41,7 +44,7 @@ export function resolveDevice(nameOrUDID: string): string {
 /** All matching simulator UDIDs, so callers targeting existing streams can check live state. */
 export function resolveDeviceMatches(nameOrUDID: string): string[] {
   if (/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID)) {
-    return [nameOrUDID];
+    return [nameOrUDID.toUpperCase()];
   }
   const matches: string[] = [];
   try {
@@ -58,6 +61,30 @@ export function resolveDeviceMatches(nameOrUDID: string): string[] {
   if (matches.length > 0) return matches;
   console.error(`Could not resolve device: ${nameOrUDID}`);
   process.exit(1);
+}
+
+/** Canonical device identity for native capture, without exiting a middleware host. */
+export async function resolveBootedDeviceAsync(nameOrUDID: string): Promise<string> {
+  if (/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID))
+    return nameOrUDID.toUpperCase();
+  const { devices } = JSON.parse(await simctl(["list", "devices", "booted", "-j"])) as {
+    devices: Record<string, Array<{ udid: string; name: string; state: string }>>;
+  };
+  const matches = Object.values(devices)
+    .flat()
+    .filter(
+      (device) =>
+        device.state === "Booted" &&
+        (nameOrUDID.toLowerCase() === "booted" ||
+          device.name.toLowerCase() === nameOrUDID.toLowerCase()),
+    );
+  if (matches.length !== 1)
+    throw new Error(
+      matches.length
+        ? "Several booted simulators match; specify a simulator UDID."
+        : "No booted simulator matches that device name.",
+    );
+  return matches[0]!.udid.toUpperCase();
 }
 
 // Match simctl output, not the command echoed in every execution error.
@@ -77,7 +104,62 @@ export async function shutdownDevice(udid: string): Promise<void> {
   });
 }
 
-export async function bootDevice(udid: string): Promise<void> {
-  await simctl(["boot", udid], BOOT_TIMEOUT_MS);
-  await simctl(["bootstatus", udid, "-b"], BOOT_TIMEOUT_MS);
+export async function getDeviceState(udid: string): Promise<string | null> {
+  const data = JSON.parse(await simctl(["list", "devices", "-j"]));
+  const device = Object.values(data.devices)
+    .flat()
+    .find((item: any) => item.udid.toUpperCase() === udid.toUpperCase()) as
+    | { state: string }
+    | undefined;
+  return device?.state ?? null;
+}
+
+export async function bootDevice(
+  udid: string,
+  options: { allowBootedRecovery?: boolean } = {},
+): Promise<void> {
+  validatedAdditionalDylibs();
+  await timeStartup(
+    "simulator-boot",
+    async () => {
+      if ((await getDeviceState(udid).catch(() => null)) === "Booted") return;
+      await simctl(["boot", udid], BOOT_TIMEOUT_MS).catch((error: unknown) => {
+        if (
+          !options.allowBootedRecovery &&
+          !/current state: Booted/i.test(error instanceof Error ? error.message : String(error))
+        )
+          throw error;
+      });
+    },
+    udid,
+  );
+  validatedAdditionalDylibs();
+  // @ref LLP 0011#boot-is-a-readiness-barrier — adoption requires bootstatus; the grid retains its state-readback recovery.
+  try {
+    await timeStartup(
+      "simulator-bootstatus",
+      () => simctl(["bootstatus", udid, "-b"], BOOT_TIMEOUT_MS),
+      udid,
+    );
+  } catch (error) {
+    validatedAdditionalDylibs();
+    if (options.allowBootedRecovery) {
+      try {
+        if ((await getDeviceState(udid)) === "Booted") return;
+      } catch {}
+    }
+    throw error;
+  }
+}
+
+/**
+ * The readiness barrier alone, for a device that this process already prepared. Without `-b` it
+ * does not boot a device that shut down, which would lose its capability loader; it times out.
+ */
+export async function confirmDeviceBooted(udid: string): Promise<void> {
+  await timeStartup(
+    "simulator-bootstatus",
+    () => simctl(["bootstatus", udid], CONFIRM_BOOTED_TIMEOUT_MS),
+    udid,
+  );
 }

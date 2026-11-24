@@ -54,6 +54,19 @@ export type HingePhysicalOrientation =
   | "faceup"
   | "facedown";
 
+export type CardinalPhysicalOrientation = Exclude<HingePhysicalOrientation, "faceup" | "facedown">;
+
+export function isCardinalPhysicalOrientation(
+  value: unknown,
+): value is CardinalPhysicalOrientation {
+  return (
+    value === "portrait" ||
+    value === "pud" ||
+    value === "landscape-left" ||
+    value === "landscape-right"
+  );
+}
+
 export function hingePoseOrientation(pose: HingePose): HingePhysicalOrientation {
   return pose === "laptop" ? "landscape-left" : pose === "tent" ? "facedown" : "portrait";
 }
@@ -73,6 +86,25 @@ export function observedHingePose(
         (pose.id === "tent") === tableMode,
     )?.id ?? null
   );
+}
+
+/** Native observations replace command state, including fields the native reader omits. */
+export function observedHingeState(state: {
+  hingeAngle?: number;
+  physicalOrientation?: HingePhysicalOrientation;
+  tableMode?: boolean;
+}) {
+  const { hingeAngle, physicalOrientation, tableMode } = state;
+  return {
+    hingeAngle,
+    physicalOrientation,
+    tableMode,
+    hingePose: observedHingePose(hingeAngle, physicalOrientation, tableMode),
+    tableModeAvailable:
+      hingeAngle === undefined || physicalOrientation === undefined
+        ? undefined
+        : isTableModeAvailable(hingeAngle, physicalOrientation),
+  };
 }
 
 /** Native observation has reached every field that a local preview sets. */

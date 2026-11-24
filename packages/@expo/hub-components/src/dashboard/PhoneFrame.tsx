@@ -1,4 +1,4 @@
-import { type ComponentType, type CSSProperties, useState } from "react";
+import { type ComponentType, type CSSProperties, useLayoutEffect, useState } from "react";
 
 import {
   type AgentInteraction,
@@ -6,24 +6,36 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
-import { bg, text, textSize } from "../primitives";
+import type { DeviceModelScreenProps } from "@expo/hub-client/models";
+import {
+  type DeviceModelAssets,
+  type DeviceModelDescription,
+  deviceModelPreview,
+  modelStageMaxSide,
+} from "@expo/hub-client/models/catalog";
+import type { DeviceShapeProps, ScreenShape } from "@expo/hub-client/shapes";
+import { layer, motion } from "../primitives";
 import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
 import { type Device } from "./data";
 import {
-  deviceFramePresentation,
-  deviceViewportStyle,
-  type DeviceFrameAssets,
-} from "./deviceFrame";
-import { deviceScreenClipPath } from "./deviceScreenClipPath";
+  DeviceScreenStageLayers,
+  deviceScreenStage,
+  screenShapeBorderRadius,
+} from "./DeviceScreenStage";
+import { DeviceScreenStatus, deviceScreenLoading } from "./DeviceScreenStatus";
+import { deviceViewportStyle } from "./deviceViewport";
+import { deviceScreenCornersClipPath, type ScreenCornerRadiiCqw } from "./deviceScreenClipPath";
 
-const PRELOADED_FRAME_STYLE: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  width: 1,
-  height: 1,
-  opacity: 0,
-  pointerEvents: "none",
-};
+// No solid layer stays under a presented stream. The browser blends the
+// anti-aliased clipped edge of every layer it clips, so a solid layer under the
+// stream shows as a thin line along the screen's edge. Each stage of the screen
+// is its own layer, and the last one goes when the live picture has faded in.
+// @ref LLP 0017#hub-dashboard — no solid layer under the stream; the shape moves in by 1px
+const STREAM_STYLE: CSSProperties = { position: "absolute", inset: 0 };
+
+// A stream can paint up to about 0.75 CSS px short of its box, so a known screen
+// shape moves in by this much and the picture reaches past its edges.
+const SCREEN_SHAPE_INSET_PX = 1;
 
 // Cap on the device's *short* side (portrait width / landscape height). Sizing
 // by the short side keeps the physical phone the same size across rotations:
@@ -31,88 +43,192 @@ const PRELOADED_FRAME_STYLE: CSSProperties = {
 // height becomes the width instead of the frame shrinking into the old width.
 const MAX_SHORT_SIDE = 480;
 
-const CONFIG: Record<
-  Device["platform"],
-  { ratio: number; radiusFraction: number; squircle: boolean }
-> = {
-  ios: { ratio: 320 / 695, radiusFraction: 55 / 391, squircle: true },
-  android: { ratio: 320 / 711, radiusFraction: 10 / 390, squircle: false },
+// A model's 3D stage is as large as the flat device can be: the long side of
+// its longest display at the MAX_SHORT_SIDE cap (the iPhone Duo's cover), on
+// both axes so that any pose or rotation fits, plus the model's fill inset on
+// each side. Below that size it shrinks to the stream area, so there the model
+// is two fill insets (64 px) smaller than the flat device on its limiting
+// side. The stream area is the space that StreamPanel keeps clear of the
+// device title and the controls. Only that container sizes it, never a native
+// screen configuration, so the stage keeps its footprint as the device folds,
+// turns, and changes active displays: resizing it then would animate on top of
+// the hinge motion. Window and sidebar resizes do resize it.
+// @ref LLP 0004#stage-size — the Hub caps the stage at the flat device's size; serve-sim keeps a fixed 1:1 stage
+function modelStageStyle(model: DeviceModelDescription): CSSProperties {
+  const maxSide = modelStageMaxSide(model, MAX_SHORT_SIDE);
+  return {
+    width: `min(${maxSide.toFixed(3)}px, 100cqw)`,
+    height: `min(${maxSide.toFixed(3)}px, 100cqh)`,
+    flexShrink: 0,
+    position: "relative",
+    isolation: "isolate",
+    containerType: "inline-size",
+  };
+}
+
+/** How a device with a 3D model is presented: the flat active display, or its 3D model. */
+export type FoldPreviewMode = "2d" | "3d";
+
+/** Viewer-local 3D choices; the options pass through to `DeviceModelScreen`. */
+export type PhoneFrameFoldPreview = { mode: FoldPreviewMode } & Pick<
+  DeviceModelScreenProps,
+  "cacheScreenOnFold" | "sizeMode" | "onUnavailable"
+>;
+
+/** The screen's aspect ratio before the stream reports its size. */
+const PLACEHOLDER_RATIO: Record<Device["platform"], number> = {
+  ios: 320 / 695,
+  android: 320 / 711,
 };
 
 /**
  * The selected device's screen. When a {@link DeviceClient} connection is active
  * (a serve-sim/serve-emu server is selected) it renders the live, interactive
  * `DeviceScreen` — injected by the consumer from `@expo/hub-client` so this
- * library stays free of a runtime dependency on it; otherwise it shows an empty
- * idle surface.
+ * library stays free of a runtime dependency on it; otherwise the screen is
+ * off. It draws the stages of the screen and its errors, which the renderers
+ * do not draw: the flat screen glows until its first frame, and the 3D stage
+ * shows a spinner.
  *
  * The phone stays as large as fits (short side capped at {@link MAX_SHORT_SIDE},
- * shrinking to the available height or panel width). Without artwork, the frame
- * adopts the stream's exact aspect ratio. With artwork, the calibrated opening
- * clips a centered, undistorted stream and may crop its edges to prevent leaks.
+ * shrinking to the available height or panel width), with the stream's exact
+ * aspect ratio. The screen is clipped to its device shape. A device without a
+ * known shape, or a viewer who turns the shape off, sees the whole video
+ * rectangle. A device's 3D stage is capped at the flat device's long side on
+ * both axes.
  */
 // @ref LLP 0013#input-feedback — consumers own input notices without replacing live media
 export function PhoneFrame({
   device,
   client,
   agentInteraction,
+  onCopy,
+  preserveKeyboardFocus = false,
   DeviceScreen,
+  DeviceModelScreen,
+  DeviceShape,
+  foldPreview,
   displayScreen,
-  showDeviceFrame = true,
-  deviceFrameAssets,
+  showScreenShape = true,
+  deviceModelAssets,
+  screenShape,
+  onLoadingChange,
 }: {
   device: Device;
   client?: DeviceClient;
   agentInteraction?: AgentInteraction | null;
+  onCopy?: DeviceScreenProps["onCopy"];
+  preserveKeyboardFocus?: boolean;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
+  /**
+   * 3D renderer from `@expo/hub-client/models`, injected so that this
+   * entry never loads three.js; without it every device stays flat.
+   */
+  DeviceModelScreen?: ComponentType<DeviceModelScreenProps>;
+  /**
+   * Screen shape clip from `@expo/hub-client/shapes`, injected so that this
+   * entry bundles the shape table only for a consumer that passes it. It gives
+   * a device with a known `model` its own screen corners; without it, or for an
+   * unknown model, the screen is the whole video rectangle.
+   */
+  DeviceShape?: ComponentType<DeviceShapeProps>;
+  foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
-  /** Viewer-local preference. Ignored when the selected model has no frame. */
-  showDeviceFrame?: boolean;
-  /** Consumer-owned frame artwork so this shared component remains asset-system agnostic. */
-  deviceFrameAssets?: DeviceFrameAssets;
+  /**
+   * Viewer-local preference: clip the screen to its device shape. Off, the
+   * stream shows as the whole video rectangle. Defaults to on.
+   */
+  showScreenShape?: boolean;
+  /** Consumer-owned 3D model files; a device whose model has no URL stays flat. */
+  deviceModelAssets?: DeviceModelAssets;
+  /**
+   * The device's screen shape as the viewer sees it, from `useScreenShape` of
+   * `@expo/hub-client/shapes`. It gives the frame its proportions before the
+   * stream reports its size, and the loading glow its corners.
+   */
+  screenShape?: ScreenShape | null;
+  /** Whether the screen is in its first load, for a status label beside the frame. */
+  onLoadingChange?: (loading: boolean) => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  // The device whose 3D model is loaded or unavailable; the 3D preview loads until it has one.
+  const [modelSettledDevice, setModelSettledDevice] = useState<string | null>(null);
   const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
-  const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[device.platform];
+  const fallbackRatio = PLACEHOLDER_RATIO[device.platform];
 
   // Prefer the live screen's aspect ratio once known, so the stream fills the
   // frame 1:1 instead of being stretched to the placeholder's body ratio. Uses
   // the orientation-corrected (display) size so a rotated device shows landscape.
+  // Until then, a known screen shape gives the frame the device's proportions,
+  // so the frame does not change its size when the stream starts.
   const display = client ? displayScreen(client.screen) : null;
-  const ratio = display && display.height > 0 ? display.width / display.height : fallbackRatio;
+  const ratio =
+    display && display.height > 0
+      ? display.width / display.height
+      : screenShape
+        ? screenShape.width / screenShape.height
+        : fallbackRatio;
 
-  // The container's width is the phone width; `cqw` on the child resolves
-  // against it, so the radius is always `radiusFraction` of the rendered width.
   // The pixel cap applies to the short side: in portrait (ratio < 1) it caps the
   // width directly; in landscape it caps the height (width / ratio), so the
   // frame widens on rotation instead of squeezing into the portrait width.
   const wrapperStyle: CSSProperties = {
     ...deviceViewportStyle({ maxShortSide: MAX_SHORT_SIDE, ratio }),
+    ...(client?.fold
+      ? {
+          transition: `width ${motion.frame} ${motion.ease}, aspect-ratio ${motion.frame} ${motion.ease}`,
+        }
+      : {}),
     containerType: "inline-size",
   };
 
-  // `cqw` resolves against the width, but the radius should stay a fraction of
-  // the *short* side so the corners look the same in portrait and landscape.
-  const radiusCqw = (radiusFraction / Math.max(ratio, 1)) * 100;
-  const borderRadius = `${radiusCqw.toFixed(3)}cqw`;
+  // A display that describes its own glass, like the iPhone Duo's cover and
+  // inner panel, is clipped to those corners when no table shape is known for
+  // its model: what the 3D model shows head-on. The client already turned them
+  // with the device. `cqw` resolves against the frame's width.
+  const displayCorners: ScreenCornerRadiiCqw | null =
+    showScreenShape && client?.displayCorners
+      ? {
+          topLeft: client.displayCorners.topLeft * 100,
+          topRight: client.displayCorners.topRight * 100,
+          bottomRight: client.displayCorners.bottomRight * 100,
+          bottomLeft: client.displayCorners.bottomLeft * 100,
+        }
+      : null;
+  const borderRadius = displayCorners
+    ? [
+        displayCorners.topLeft,
+        displayCorners.topRight,
+        displayCorners.bottomRight,
+        displayCorners.bottomLeft,
+      ]
+        .map((corner) => `${corner.toFixed(3)}cqw`)
+        .join(" ")
+    : undefined;
   const live = client && client.status !== "idle";
+  // The model needs the device's model file and, for the iPhone Duo, its fold state and both displays.
+  const modelPreview =
+    live && foldPreview?.mode === "3d" && DeviceModelScreen
+      ? deviceModelPreview(device, client, deviceModelAssets)
+      : null;
+  const loading =
+    !!live && deviceScreenLoading(client, !modelPreview || modelSettledDevice === device.id);
+  useLayoutEffect(() => {
+    onLoadingChange?.(loading);
+  }, [onLoadingChange, loading]);
+  const error = live && client.status === "error" ? (client.error ?? "Disconnected") : null;
   const overlayVisible =
     !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
 
-  const deviceSurface = live ? (
-    <DeviceScreen client={client} agentInteraction={agentInteraction} />
-  ) : (
-    <div style={{ position: "absolute", inset: 0, backgroundColor: bg.element }} />
-  );
   const takeoverOverlay = (
     <div
       data-testid="agent-device-overlay-clip"
       style={{
         position: "absolute",
         inset: 0,
-        zIndex: 2,
+        zIndex: layer.screenOverlay,
         pointerEvents: overlayVisible ? "auto" : "none",
       }}
     >
@@ -123,91 +239,129 @@ export function PhoneFrame({
     </div>
   );
 
-  const frameAsset =
-    showDeviceFrame && device.deviceFrame ? deviceFrameAssets?.[device.deviceFrame] : undefined;
-  const framed = frameAsset
-    ? deviceFramePresentation({
-        asset: frameAsset,
-        orientation: client?.screen?.orientation,
-        displayRatio: ratio,
-        maxScreenShortSide: MAX_SHORT_SIDE,
-      })
-    : null;
-  const screenStyle: CSSProperties = framed
-    ? { ...framed.screenStyle, backgroundColor: bg.element }
-    : {
-        position: "absolute",
-        inset: 0,
-        // One responsive path clips both the stream and every overlay, which
-        // avoids fractional seams between separate composited masks.
-        clipPath: deviceScreenClipPath(radiusCqw, squircle),
-      };
+  // The model draws its own device, so the screen clip does not apply; the
+  // status layer and the agent overlay still cover the stage.
+  if (modelPreview && client && DeviceModelScreen && foldPreview) {
+    const { mode: _mode, ...modelOptions } = foldPreview;
+    return (
+      <div
+        data-testid="device-screen-frame"
+        data-device-frame-kind="device-model"
+        data-device-model={modelPreview.model.id}
+        data-agent-active={agentInteraction ? "true" : "false"}
+        style={modelStageStyle(modelPreview.model)}
+        onPointerEnter={(event) => {
+          if (event.pointerType === "mouse") setHovered(true);
+        }}
+        onPointerLeave={() => setHovered(false)}
+      >
+        <div data-testid="device-screen-clip" style={{ position: "absolute", inset: 0 }}>
+          <DeviceModelScreen
+            key={device.id}
+            client={client}
+            model={modelPreview.model}
+            modelUrl={modelPreview.url}
+            onCopy={onCopy}
+            preserveKeyboardFocus={preserveKeyboardFocus}
+            onModelSettledChange={(settled) => setModelSettledDevice(settled ? device.id : null)}
+            {...modelOptions}
+          />
+          <DeviceScreenStatus loading={loading} error={error} inputError={client.inputError} />
+          {takeoverOverlay}
+        </div>
+      </div>
+    );
+  }
+
+  // The flat screen shows its stage under the stream: black while it is off, the
+  // glow until the first frame, and the reason when the session fails before it.
+  const stage = deviceScreenStage(live ? client : null);
+  const stageRadius = !showScreenShape
+    ? undefined
+    : screenShape
+      ? screenShapeBorderRadius(screenShape)
+      : borderRadius;
+
+  const screenStyle: CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    // One responsive path clips both the stream and every overlay, which
+    // avoids fractional seams between separate composited masks.
+    clipPath: displayCorners ? deviceScreenCornersClipPath(displayCorners, false) : undefined,
+  };
+
+  const screenContent = (
+    <>
+      <DeviceScreenStageLayers
+        stage={stage}
+        error={error}
+        ratio={ratio}
+        borderRadius={stageRadius}
+      />
+      {/* The live picture fades in above the glow, which stays opaque until then. */}
+      <div
+        data-testid="device-screen-stream"
+        className="hub-screen-stream"
+        data-presented={stage === "live" ? "true" : undefined}
+        style={STREAM_STYLE}
+      >
+        {live && (
+          <DeviceScreen
+            client={client}
+            agentInteraction={agentInteraction}
+            onCopy={onCopy}
+            preserveKeyboardFocus={preserveKeyboardFocus}
+          />
+        )}
+      </div>
+      {live &&
+        stage !== "unavailable" && (
+          // An error after the first frame shows over the picture. An input error shows at any
+          // time: input can work while video fails. The `unavailable` stage has its own text.
+          <DeviceScreenStatus loading={false} error={error} inputError={client.inputError} />
+        )}
+      {takeoverOverlay}
+    </>
+  );
 
   return (
     <div
       data-testid="device-screen-frame"
-      data-device-frame-kind={framed ? device.deviceFrame : "none"}
+      data-device-frame-kind="flat"
+      data-display-corners={displayCorners ? "device" : undefined}
       data-agent-active={agentInteraction ? "true" : "false"}
-      style={framed ? framed.frameStyle : { ...wrapperStyle, borderRadius }}
+      style={borderRadius ? { ...wrapperStyle, borderRadius } : wrapperStyle}
       onPointerEnter={(event) => {
         if (event.pointerType === "mouse") setHovered(true);
       }}
       onPointerLeave={() => setHovered(false)}
     >
-      <div
-        data-testid="device-screen-clip"
-        data-device-frame-screen={framed ? "true" : undefined}
-        style={screenStyle}
-      >
-        <div
-          data-testid="device-frame-stream-cover"
-          style={framed ? framed.streamStyle : { position: "absolute", inset: 0 }}
+      {DeviceShape ? (
+        // A known model's screen shape replaces the DeviceKit corners in
+        // `screenStyle`. An unknown model, or the shape turned off, shows the whole
+        // video rectangle. The element stays a DeviceShape either way, so turning
+        // the shape on or off does not remount the live screen inside it.
+        // @ref LLP 0017#hub-dashboard — no shape known, no clip: the whole stream rectangle
+        <DeviceShape
+          data-testid="device-screen-clip"
+          client={client}
+          platform={device.platform}
+          // A device whose model the server cannot name has no shape: an empty
+          // model stops the fallback to the client's device name, which a user
+          // can rename.
+          model={device.model ?? ""}
+          shape={showScreenShape ? undefined : null}
+          aspectRatio={ratio}
+          insetPx={SCREEN_SHAPE_INSET_PX}
+          style={screenStyle}
         >
-          {deviceSurface}
+          {screenContent}
+        </DeviceShape>
+      ) : (
+        <div data-testid="device-screen-clip" style={screenStyle}>
+          {screenContent}
         </div>
-        {live && client.inputError && (
-          <div
-            role="status"
-            aria-live="polite"
-            style={{
-              ...textSize.xs,
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              zIndex: 1,
-              padding: 12,
-              backgroundColor: bg.danger,
-              color: text.danger,
-              pointerEvents: "none",
-            }}
-          >
-            {client.inputError}
-          </div>
-        )}
-        {takeoverOverlay}
-      </div>
-      {deviceFrameAssets
-        ? (Object.keys(deviceFrameAssets) as (keyof DeviceFrameAssets)[]).map((kind) => {
-            const asset = deviceFrameAssets[kind];
-            const active = !!framed && device.deviceFrame === kind;
-
-            return (
-              <img
-                key={kind}
-                data-testid={active ? "device-frame-artwork" : undefined}
-                data-device-frame-artwork-kind={kind}
-                src={asset.src}
-                alt=""
-                aria-hidden="true"
-                draggable={false}
-                decoding="async"
-                loading="eager"
-                style={active ? framed.artworkStyle : PRELOADED_FRAME_STYLE}
-              />
-            );
-          })
-        : null}
+      )}
     </div>
   );
 }

@@ -477,8 +477,8 @@ export function CaptureFieldsWarning({ fields }: { fields: readonly string[] }) 
 }
 
 /**
- * The action's error, unless it is exactly the enable action's report of the failed start the
- * capture state already shows ("Could not enable network capture: <reason>"). Any other error, such
+ * The action's error, unless it repeats the failed start the capture state already shows,
+ * either verbatim (restart) or with the enable action's prefix. Any other error, such
  * as a restart that failed with the same reason, keeps its own message and recovery advice.
  */
 export function visibleChangeError(
@@ -489,7 +489,8 @@ export function visibleChangeError(
   const repeatsFailedStart =
     meta?.attachment === "failed" &&
     !!meta.attachError &&
-    changeError === `Could not enable network capture: ${meta.attachError}`;
+    (changeError === meta.attachError ||
+      changeError === `Could not enable network capture: ${meta.attachError}`);
   return repeatsFailedStart ? null : changeError;
 }
 

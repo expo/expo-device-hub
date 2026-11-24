@@ -1,137 +1,201 @@
-import { type ReactNode } from "react";
-
-import { areRecordingControlsLocked, type DeviceScreenRecordingStatus } from "@expo/hub-client";
+import {
+  type DeviceClipboardAction,
+  type DeviceClipboardCapabilities,
+  type DeviceOrientationUnavailableReason,
+} from "@expo/hub-client";
 import {
   CONTROL_BUTTON_SIZE,
+  CONTROL_ICON_SIZE,
   CameraIcon,
+  ClipboardPasteIcon,
   ControlButton,
+  CopyIcon,
+  Dropdown,
+  DropdownItem,
   HomeIcon,
-  RefreshIcon,
+  KeyboardDismissIcon,
+  KeyboardIcon,
+  ReloadIcon,
   RotateIcon,
-  ThemeIcon,
+  SquareIcon,
+  TriangleBackIcon,
   bg,
   border,
   radius,
-  text,
 } from "../primitives";
-import { type ColorScheme } from "./data";
+import { rotationUnavailableText } from "./rotation-availability";
 
-const GROUP_PADDING = 4;
-const GROUP_GAP = 24;
-const ICON_SIZE = 20;
-const ICON_STROKE = 1.67;
+const TOOLBAR_PADDING = 8;
+const TOOLBAR_GAP = 4;
+/** Stroke of the Hub's own toolbar icons, the weight of the styleguide's outline icons. */
+const ICON_STROKE = 2;
 
-/** Rendered height of the toolbar: a button plus the group's padding and hairline border. */
-export const STREAM_CONTROLS_HEIGHT = CONTROL_BUTTON_SIZE + GROUP_PADDING * 2 + 2;
-
-/** A pill that groups toolbar buttons on the shared element surface. */
-function ControlGroup({ children }: { children: ReactNode }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        padding: GROUP_PADDING,
-        boxSizing: "border-box",
-        border: `1px solid ${border.default}`,
-        borderRadius: radius.xl,
-        backgroundColor: bg.element,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
+/** Rendered height of a one-row toolbar: a button plus the toolbar's padding and hairline border. */
+export const STREAM_CONTROLS_HEIGHT = CONTROL_BUTTON_SIZE + TOOLBAR_PADDING * 2 + 2;
 
 /**
- * Controls under the device stream. Both platforms share one toolbar: a pill
- * with Save · Theme · Home · Reload, plus a separate Rotate button. Each button
- * shows its label as a tooltip on hover. Device-level actions (Android Back and
- * Recents keys, shutting down or removing the device) live in the inspector's
- * Device options section.
+ * Controls under the device stream, in the look of the website's device
+ * controls: one rounded bar of round icon buttons. Each button shows a tooltip
+ * that says what it does.
  *
- * "Reload" reloads the running React Native/Expo bundle via the active device
- * client. "Theme" toggles the **device's** system dark/light appearance (not
- * Hub's own theme).
+ * The order follows the website. An Android device leads with its navigation
+ * buttons in the order of its navigation bar (Back, Home, Recents), then
+ * Dismiss keyboard. Screenshot and Reload follow on both platforms. The
+ * controls that only the Hub has come last: the Clipboard menu (Copy, then
+ * Paste, as in serve-sim), the Keyboard toggle of a phone layout, and Rotate.
+ *
+ * The controls do not follow the stream status: input can work while video
+ * fails. Only Rotate locks, from the client's `orientationUnavailable`, and its
+ * tooltip then gives the reason. "Reload" reloads the running React
+ * Native/Expo bundle via the active device client.
  */
+// @ref LLP 0013#orientation — Rotate locks from orientationUnavailable only; the toolbar does not check the stream status
 export function StreamControls({
-  appearance,
-  appearanceDisabled = false,
-  onToggleAppearance,
+  onBack,
   onHome,
+  onRecents,
+  onDismissKeyboard,
   onReload,
   onRotate,
   onSave,
-  recording = null,
+  saving = false,
+  orientationUnavailable,
+  clipboard = false,
+  clipboardPending = null,
+  onPaste,
+  onCopy,
+  keyboard,
 }: {
-  /** The device's current dark/light appearance; null while unknown. */
-  appearance: ColorScheme | null;
-  /** Whether appearance settings are unavailable or a change is pending. */
-  appearanceDisabled?: boolean;
-  /** Flip the device's system appearance (dark ↔ light). */
-  onToggleAppearance: () => void;
+  /** Press the Android Back button. The control shows only when given. */
+  onBack?: () => void;
   /** Press the device Home button. */
   onHome?: () => void;
+  /** Press the Android Recents button. The control shows only when given. */
+  onRecents?: () => void;
+  /** Hide the Android on-screen keyboard. The control shows only when given. */
+  onDismissKeyboard?: () => void;
   /** Reload the running React Native/Expo bundle. */
   onReload?: () => void;
   /** Rotate the device. */
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
-  recording?: DeviceScreenRecordingStatus | null;
+  /** A screenshot is in flight. The Screenshot control shows a spinner. */
+  saving?: boolean;
+  /** The client's `orientationUnavailable`. Locks Rotate and picks the explanation while set. */
+  orientationUnavailable: DeviceOrientationUnavailableReason | null;
+  /** The clipboard actions the device offers. Each one shows only when the device has it. */
+  clipboard?: DeviceClipboardCapabilities;
+  /** A clipboard action is in flight. The Clipboard control shows a spinner. */
+  clipboardPending?: DeviceClipboardAction | null;
+  /** Paste the browser clipboard into the device app. */
+  onPaste?: () => void;
+  /** Copy the text selected in the device app to the browser clipboard. */
+  onCopy?: () => void;
+  /** Type with this device's own keyboard. The control shows only when given. */
+  keyboard?: { open: boolean; onToggle: () => void };
 }) {
-  const recordingControlsLocked = areRecordingControlsLocked(recording);
-  const themeDisabled = appearanceDisabled || appearance === null;
+  const rotateUnavailable = rotationUnavailableText(orientationUnavailable);
+  const clipboardBusy = clipboardPending !== null;
+  const showClipboard = !!clipboard && (clipboard.paste || clipboard.copy);
+  const iconSize = CONTROL_ICON_SIZE;
+
   return (
     <div
       role="toolbar"
       aria-label="Device controls"
-      style={{ display: "flex", alignItems: "center", gap: GROUP_GAP }}
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        justifyContent: "center",
+        gap: TOOLBAR_GAP,
+        padding: TOOLBAR_PADDING,
+        boxSizing: "border-box",
+        border: `1px solid ${border.default}`,
+        borderRadius: radius["2xl"],
+        backgroundColor: bg.element,
+      }}
     >
-      <ControlGroup>
+      {onBack && (
         <ControlButton
-          icon={<CameraIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-          label="Save"
-          onClick={onSave}
+          label="Go back"
+          icon={<TriangleBackIcon size={iconSize} />}
+          onClick={onBack}
         />
+      )}
+      <ControlButton
+        label="Go to home screen"
+        icon={<HomeIcon size={iconSize} />}
+        onClick={onHome}
+      />
+      {onRecents && (
         <ControlButton
-          icon={<ThemeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-          label="Theme"
+          label="Show recent apps"
+          icon={<SquareIcon size={iconSize} />}
+          onClick={onRecents}
+        />
+      )}
+      {onDismissKeyboard && (
+        <ControlButton
+          label="Dismiss keyboard"
+          icon={<KeyboardDismissIcon size={iconSize} />}
+          onClick={onDismissKeyboard}
+        />
+      )}
+      <ControlButton
+        label="Take screenshot"
+        icon={<CameraIcon size={iconSize} />}
+        loading={saving}
+        onClick={onSave}
+      />
+      <ControlButton label="Reload app" icon={<ReloadIcon size={iconSize} />} onClick={onReload} />
+      {showClipboard && (
+        <Dropdown
+          side="top"
+          align="center"
+          disabled={clipboardBusy}
+          trigger={
+            <ControlButton
+              label="Clipboard"
+              icon={<ClipboardPasteIcon size={iconSize} strokeWidth={ICON_STROKE} />}
+              loading={clipboardBusy}
+            />
+          }
+        >
+          {clipboard.copy && (
+            <DropdownItem
+              label="Copy from Simulator"
+              Icon={CopyIcon}
+              disabled={clipboardBusy}
+              onSelect={onCopy}
+            />
+          )}
+          {clipboard.paste && (
+            <DropdownItem
+              label="Paste from Device"
+              Icon={ClipboardPasteIcon}
+              disabled={clipboardBusy}
+              onSelect={onPaste}
+            />
+          )}
+        </Dropdown>
+      )}
+      {keyboard && (
+        <ControlButton
+          label="Keyboard"
+          icon={<KeyboardIcon size={iconSize} strokeWidth={ICON_STROKE} />}
           role="switch"
-          aria-checked={appearance === "dark"}
-          disabled={themeDisabled}
-          onClick={themeDisabled ? undefined : onToggleAppearance}
-          style={themeDisabled ? { color: text.tertiary, cursor: "not-allowed" } : undefined}
+          aria-checked={keyboard.open}
+          onClick={keyboard.onToggle}
         />
-        <ControlButton
-          icon={<HomeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-          label="Home"
-          onClick={onHome}
-        />
-        <ControlButton
-          icon={<RefreshIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-          label="Reload"
-          onClick={onReload}
-        />
-      </ControlGroup>
-      <ControlGroup>
-        <ControlButton
-          icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-          label="Rotate"
-          tooltip={
-            recording === "unknown"
-              ? "Rotation is unavailable until recording status is known."
-              : recordingControlsLocked
-                ? "Rotation is unavailable while recording."
-                : undefined
-          }
-          aria-disabled={recordingControlsLocked || undefined}
-          onClick={recordingControlsLocked ? undefined : onRotate}
-          style={
-            recordingControlsLocked ? { color: text.tertiary, cursor: "not-allowed" } : undefined
-          }
-        />
-      </ControlGroup>
+      )}
+      <ControlButton
+        label="Rotate device"
+        tooltip={rotateUnavailable}
+        unavailable={rotateUnavailable !== undefined}
+        icon={<RotateIcon size={iconSize} strokeWidth={ICON_STROKE} />}
+        onClick={onRotate}
+      />
     </div>
   );
 }

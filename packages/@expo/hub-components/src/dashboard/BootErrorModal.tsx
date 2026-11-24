@@ -1,16 +1,4 @@
-import {
-  Button,
-  DialogContent,
-  DialogContentContainer,
-  DialogFooter,
-  DialogRoot,
-  DialogTitle,
-  bg,
-  border,
-  font,
-  radius,
-  text,
-} from "../primitives";
+import { Button, Modal, bg, border, font, radius, text, textSize, tone } from "../primitives";
 
 /**
  * Error dialog shown when booting a device on the host failed (e.g. the
@@ -29,44 +17,31 @@ export type BootErrorModalProps = {
 
 export function BootErrorModal({ open, onClose, deviceName, message }: BootErrorModalProps) {
   return (
-    <DialogRoot
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <DialogContent>
-        <DialogTitle title="Failed to boot device" />
-        <DialogContentContainer>
-          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: text.secondary }}>
-            <strong style={{ color: text.default, fontWeight: 600 }}>{deviceName}</strong> could not
-            be booted.
-          </p>
-          <pre
-            style={{
-              margin: "6px 0 0",
-              padding: "10px 12px",
-              overflowX: "auto",
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-              backgroundColor: bg.subtle,
-              border: `1px solid ${border.default}`,
-              borderRadius: radius.lg,
-              color: text.danger,
-              fontFamily: font.mono,
-              fontSize: 12,
-              lineHeight: 1.5,
-            }}
-          >
-            {message}
-          </pre>
-        </DialogContentContainer>
-        <DialogFooter>
-          <Button theme="primary" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </DialogRoot>
+    <Modal open={open} onClose={onClose} title="Failed to boot device">
+      <p style={{ ...textSize.sm, margin: 0, color: text.secondary }}>
+        <strong style={{ color: text.default, fontWeight: 600 }}>{deviceName}</strong> could not be
+        booted.
+      </p>
+      <pre
+        style={{
+          ...textSize.xs,
+          margin: "12px 0 24px",
+          padding: "10px 12px",
+          overflowX: "auto",
+          whiteSpace: "pre-wrap",
+          overflowWrap: "anywhere",
+          backgroundColor: bg.subtle,
+          border: `1px solid ${border.default}`,
+          borderRadius: radius.xl,
+          color: tone.danger.text,
+          fontFamily: font.mono,
+        }}
+      >
+        {message}
+      </pre>
+      <Button theme="primary" size="xl" block onClick={onClose}>
+        Close
+      </Button>
+    </Modal>
   );
 }

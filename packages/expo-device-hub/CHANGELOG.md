@@ -1,5 +1,151 @@
 # expo-device-hub
 
+## 0.26.1
+
+### Patch Changes
+
+- 9f38980: Re-releasing because promotion to `latest` failed.
+
+## 0.26.0
+
+### Minor Changes
+
+- 6133f01: Add optional screenshot width limits and JPEG output, while preserving native PNG and legacy base64 PNG responses. Screenshot responses report capture, encoding, and artifact timings.
+- e48ed23: The 3D preview now uses Expo's own device models, and it also shows the iPhone 18 Pro, the Pixel 9 Pro, and the Pixel 9 Pro Fold with the live screen. Other devices keep the flat preview.
+
+## 0.25.0
+
+### Minor Changes
+
+- bce1c89: Adding a device now has two steps. The + button of the simulator or emulator list opens a menu of the recent devices, each with its OS version; a click boots the device. The last row of the menu, "Create new simulator" or "Create new emulator", opens a new modal with the name, the OS version, and the model of the device. A boot that fails opens a dialog with the reason from the host.
+- e2b8525: The device screen loads like the screen on the Expo website. A selected device shows its shape at once, in its real proportions. Until the stream connects, the black screen shows a glow that moves around its edge, and the first frame fades in above it. A session that fails before its first frame says why on the screen. The dot of the status pill pulses while the status is Loading, Reconnecting, or Live.
+- ab70b74: The sidebar now has the look of the website's preview settings: sections with a hairline and a title row that takes a fill under the pointer, select boxes of one width, switches that turn blue when on, and pill buttons. The simulator and emulator lists show the platform's mark before each device name, the OS version at the right, and the selected device on a blue surface. The current app is in a card with its icon, name, and app ID.
+
+  The inspector no longer adds and removes sections and options while a device connects or reconnects. A selected device always has the sections and options of its platform. An option that cannot change now keeps its last value and is locked, and a tooltip gives the reason. An option whose value is not known shows a dash.
+
+- 2a32592: The toolbar under the device now has the look of the website's device controls: one rounded bar of round icon buttons, with a dark tooltip above each button that says what it does. An Android device also has Back, Recents, and Dismiss keyboard in the toolbar, next to Home. Take screenshot and the Clipboard menu show a spinner while their action runs. The buttons have new accessible names, such as "Go to home screen", "Take screenshot", "Reload app", and "Rotate device".
+
+### Patch Changes
+
+- 1cfe87e: Show the Android launcher icon of apps whose adaptive icon bitmaps carry an API level in their resource config, such as `xxxhdpi-v26`. This affects apps with a minSdk below 26, for example Expo Go, which showed the placeholder icon before.
+- c1c62d7: Dashboard controls now share one hover, press, and keyboard focus behavior. Buttons, selects, switches, text fields, and device rows show the same blue focus outline for keyboard focus. A hover fill no longer stays on a control after a touch, and a locked control no longer reacts to the pointer. The toolbar tooltips and the hints of disabled controls use the same tooltip.
+- c2eefa5: Make the sidebar's unsupported-device warning open explanatory details without selecting the device.
+
+## 0.24.0
+
+### Minor Changes
+
+- 3df743a: Android screen recordings of a foldable emulator now survive folding and unfolding. With gRPC capture, the Hub records a foldable on one fixed canvas that fits both displays and centers the shown display on it. `session.json` then has a `deviceStates` timeline, in the format of serve-sim's iPhone Duo recordings: at each change, the display (`inner` or `outer`), its native size, its place on the canvas (`contentRect`), the hinge angle, and the UI `orientation`. The hinge is read over the emulator's gRPC controller every 100 ms and at once when the emulator reports a posture change, and the recording has a keyframe at least once a second, as serve-sim's recordings. The recording status from `/api` has `followsFold: true` for such a recording, and `POST /api/fold` answers 409 while a recording that cannot follow a fold runs. In hub-client, `DeviceFold` has an optional `unavailable` reason. On Android, it is the recording lock only while the recording does not follow folds, so fold commands and the Hub's Fold settings stay available during a recording that does. Rotation and stream changes stay locked while a recording runs.
+
+## 0.23.2
+
+### Patch Changes
+
+- 1e5f890: Show the foreground app's name on Android. serve-emu now reads the label with
+  `aapt2 dump badging` from the APK it already pulls for the icon, and returns it as
+  `label` from `GET /api/apps/icon`. Before, it searched `dumpsys package` output,
+  which has no label, so the name was always missing. The Android client keeps the
+  label and the icon across foreground polls of the same build, reads them again
+  after a reinstall with a new version or build, and retries a failed read.
+- 9ea899f: Android boots no longer reuse the console port of an emulator that is still booting or offline, and a boot that finds a different AVD on its allocated serial now fails, and stops the emulator it spawned, instead of returning that other emulator.
+- ab2ba42: Android: one device that fails its check no longer hides the other devices. An emulator whose `adb emu avd name` fails, such as one connected over the network, now shows by its serial.
+
+## 0.23.1
+
+### Patch Changes
+
+- 021f335: Return screenshot metadata from serve-emu responses. The rotation is read right before and right after each capture and is reported only when both readings agree with each other and the image, with no Hub rotation command between them; width and height come from the PNG.
+
+## 0.23.0
+
+### Minor Changes
+
+- 09b61b1: Show each device in the screen shape of its model in the Hub dashboard, as on expo.dev: the corners of each iPhone, iPad, Pixel 9, and Pixel 10 model, and the display that an iPhone Duo or a Pixel Pro Fold shows, turned with the device. A device without a known shape shows the whole stream rectangle, with no generic corners. The device frame artwork of the iPhone 17 Pro, the Pixel 9, and the Pixel 10 Pro is removed, and the inspector's "Show device frame" option is now "Show device shape": off, the screen is the whole video rectangle. The option is disabled for a device without a known shape, or whose model the server cannot name, and in the iPhone Duo 3D view, where it does not apply. `InspectorSections` takes `screenShapeAvailable`, and hub-components exports `NO_DEVICE_SHAPE_DESCRIPTION` and `DEVICE_SHAPE_2D_ONLY_DESCRIPTION`. The Hub server sends each device's `model` and no longer sends `deviceFrame`. `Device` and `NewDeviceRequest` take an optional `model`, and `PhoneFrame` and `StreamPanel` take `DeviceShape` from `@expo/hub-client/shapes` as an optional injected prop, so a consumer that does not pass it does not bundle the shapes. `showScreenShape` replaces `showDeviceFrame` and `deviceFrameAssets`, and the `deviceFrame*` exports and `NO_DEVICE_FRAME_DESCRIPTION` are removed.
+
+### Patch Changes
+
+- d033e46: Avoid Darwin filesystem metadata lookups when discovering TCP listeners, so unrelated mounts do not delay port reclamation when starting a server.
+- 154e80a: Capture default Simulator screenshots, including resized and JPEG requests, without starting video when the device profile and runtime enumeration verify one usable display. Keep native display selection when the evidence is missing, ambiguous, or conflicting. Reuse native capture for existing sessions, including sessions created during display verification.
+
+## 0.22.1
+
+### Patch Changes
+
+- 6e4cd83: Keep the device sidebar and inspector in single-device mode, and hide all device lifecycle controls there: boot, create, Shut down, Start and Remove.
+
+## 0.22.0
+
+### Minor Changes
+
+- fced3d6: Allow foldable Android emulators to set hinge angles from 0 to 180 degrees through `/api/fold`, with device-range validation and confirmed readback. Fold status now includes the hinge range, and ambiguous rounded readings get time to settle before an angle write answers.
+- fced3d6: Expose Android emulator folding through `client.fold` and `capabilities.fold`, with angle controls and closed, book, and open presets in the existing dashboard. Controls honor recording locks and remain hidden unless the emulator reports a supported 0 to 180 degree hinge range.
+
+### Patch Changes
+
+- 0d95b3d: Try the Android scrcpy server download up to 3 times on a temporary failure, and let `SERVE_EMU_SCRCPY_BASE_URL` point the download at a mirror that keeps the GitHub release layout. If the mirror fails, the download falls back to GitHub.
+
+## 0.21.0
+
+### Minor Changes
+
+- c27ada7: Show one spinner while a device screen loads, on the device's own surface instead of a black screen, for iOS and Android and for the iPhone Duo's 2D and 3D previews. The status pill says "Loading" until the screen, or the 3D model with its first display frame, appears. A stream that drops after it loaded keeps its last frame and shows "Reconnecting" without a spinner. Stream errors appear as one notice over the screen, also over the 3D preview. A 3D model that does not load in 30 seconds while the tab is visible falls back to the flat screen until you select 3D again or switch the device.
+- 480a9cb: In a large window, the iPhone Duo's 3D model is about as large as the 2D preview, which uses the same 480 px short-side cap as other devices. In a smaller window the 3D stage shrinks to the stream area between the device name and the toolbar, and the model keeps a 32 px margin on each side, so there it is 64 px smaller than the 2D preview. Folding, rotating, or switching displays never resizes it, and the 2D preview keeps its size.
+- 05edb0b: Add iPhone Duo support to the Hub: fold controls in the inspector, Option+Shift+1–5 pose shortcuts, and a live 3D model of the device that folds with the hinge, or its active display flat in 2D.
+
+### Patch Changes
+
+- de14fb6: Show the whole iPhone Duo cover screen in the 2D WebRTC stream. The picture was stretched and its right edge was cut, which showed as a dark stripe. serve-sim now draws it from the top-left corner of the shared canvas, with black bars right after the picture, and the screen views pin the frame to the top-left.
+
+## 0.20.0
+
+### Minor Changes
+
+- 91a29eb: Add an Orientation select to the dashboard's Device options, which appears once the client has a pose, from a pick or a report, and shows a pick right away. The select and Rotate are unavailable during an Android recording, and on iOS while the simulator cannot take input.
+- e262c36: serve-emu's `POST /api/orientation` now also accepts `portrait`, `landscape_left`, `portrait_upside_down` and `landscape_right`, counted from the natural display so tablets are named right, and returns the locked `pose`; `landscape` stays as an alias for `landscape_right`. `GET /api` and `/health` now report the shown pose as `pose`.
+- 8589ebf: serve-emu's `--transport webrtc` now makes WebRTC the only video transport, as serve-sim's does. A video WebSocket is refused with `stream_transport_locked` (HTTP 409 on the standalone server, close code 1008 through `createRouter`), the input-only `/ws?video=0` socket still works, and `/api` lists only `webrtc` in `viewerTransports.available`. The default `--transport websocket` still lets each viewer choose WebSocket or WebRTC.
+
+### Patch Changes
+
+- 0c8f2a8: The Hub's Android device frame now follows the pose the emulator reports, including upside down and both landscape sides.
+- a6b40fa: Add `recordingLock`, the reason a running Android recording locks rotation and stream changes, and `recordingControlsLocked`; calls to the locked controls are silently ignored meanwhile. `areRecordingControlsLocked` is deprecated in favor of `recordingLock`. Custom `DeviceClient` implementations and mocks must add these required members.
+- 20cc264: Fit the Hub viewer above the phone keyboard, add mobile keyboard and full-screen controls, group the inspector toggle with those controls, and give the device more room on small screens.
+- 20cc264: Show the device inspector in the left sidebar, below the device lists, and remove the right sidebar. Remove the toolbar Theme button, move the phone Keyboard toggle into the Clipboard group, and pin the phone Full screen button to the top-right corner.
+- 92f86cd: Disable Android emulator usage metrics collection explicitly when launching emulators, avoiding the metrics consent warning and future blocking prompt.
+
+## 0.19.1
+
+### Patch Changes
+
+- 32b4ccf: Stop the device list from hanging when CoreSimulatorService stops responding. `simctl` calls now time out after 30 s and report that the command did not respond.
+- 0665a67: Fix about three seconds of lag in the iOS Simulator preview on Chromium. The vendored serve-sim stream now declares that frames are never reordered after its encoder falls back to default rate control.
+
+## 0.19.0
+
+### Minor Changes
+
+- 96d74b8: Add single-device mode to lock the Hub to one device and hide the sidebar.
+
+## 0.18.1
+
+### Patch Changes
+
+- 16dcce4: Fix pnpm installation failing on the node-datachannel install script by using prebuilt platform packages that do not need install scripts.
+- 660da0e: Retry temporary Android WebRTC offer conflicts when capture or the device session changes during setup.
+
+  Refuse standalone Android WebRTC offers for a selected device that is no longer active, so recovery cannot connect to a different device.
+
+- 174f551: Advertise the effective Android idle repeat interval and recover gRPC screenshot streams that stop delivering frames, while allowing scrcpy and slow custom repeats to stay idle. Indicate pending automatic recovery when a locked iOS codec ladder restarts.
+
+## 0.18.0
+
+### Minor Changes
+
+- c2ae06b: Paste and copy text between the browser and an iOS Simulator using the dashboard Clipboard menu or Command+V/Command+C. Show centered clipboard feedback, offer manual clipboard fields when browser access is blocked, and release the clipboard reader when the CLI stops.
+
+### Patch Changes
+
+- 563b357: Refresh the shared Hardware Keyboard setting when another viewer changes it. Hub connections still start with Hardware Keyboard off so browser-layout typing works.
+
 ## 0.17.3
 
 ### Patch Changes

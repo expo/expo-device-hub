@@ -7,14 +7,15 @@
     },
     "packages/serve-sim": {
       "ignoreDependencies": ["preact", "node-swift"],
-      "ignoreBinaries": ["mkfifo", "Sources/ServeSimCapabilityLoader/tests/run.sh", "sips"],
+      "ignoreBinaries": ["Sources/ServeSimCapabilityLoader/tests/run.sh"],
       "entry": [
         "src/index.ts",
         "src/client/client.tsx",
         "src/client/global.css",
         "scripts/build-trails.ts",
         "src/**/__tests__/**/*.test.{ts,tsx}",
-        "src/__tests__/fixtures/*.child.ts",
+        "src/__tests__/fixtures/*.child.{ts,tsx}",
+        "src/__tests__/fixtures/grid-shutdown-xcrun.cjs",
         "scripts/tart/__tests__/*.test.ts"
       ]
     }

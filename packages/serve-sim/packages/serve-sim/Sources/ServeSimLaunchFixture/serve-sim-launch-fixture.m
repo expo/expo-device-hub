@@ -81,6 +81,9 @@ static void RequestIfAsked(void) {
 
 - (void)viewDidLoad {
   [super viewDidLoad];
+  [NSNotificationCenter.defaultCenter addObserver:self
+      selector:@selector(softwareKeyboardShown:)
+      name:UIKeyboardDidShowNotification object:nil];
   self.view.backgroundColor = UIColor.systemGreenColor;
   [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardShown:)
       name:UIKeyboardDidShowNotification object:nil];
@@ -137,6 +140,17 @@ static void RequestIfAsked(void) {
 
 - (void)clipboardChanged:(NSNotification *)notification {
   Record(@"text", self.clipboardField.text ?: @"");
+}
+
+- (void)softwareKeyboardShown:(NSNotification *)notification {
+  CGRect frame = [notification.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+  if (CGRectIntersectsRect(frame, self.view.window.bounds)) {
+    Record(@"software-keyboard-ready", @"");
+  }
+}
+
+- (void)dealloc {
+  [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 @end

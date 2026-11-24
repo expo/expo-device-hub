@@ -2,10 +2,8 @@ import { type AndroidDevice, type AndroidDeviceProfile } from "@expo/hub-android
 import { describe, expect, test } from "bun:test";
 
 import {
-  androidDeviceFrame,
-  androidDeviceProfileFrame,
-  appleDeviceFrame,
-  appleDeviceTypeFrame,
+  androidDevice3DModel,
+  appleDevice3DModel,
   isSupportedAndroidDevice,
   isSupportedAndroidDeviceProfile,
   isSupportedAppleDevice,
@@ -13,7 +11,7 @@ import {
 } from "../device-support";
 
 describe("iOS device support", () => {
-  test("keeps iPhone support independent from exact frame-profile availability", () => {
+  test("supports iPhone device types, not iPad", () => {
     const iphone17Pro = {
       identifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
     };
@@ -23,11 +21,8 @@ describe("iOS device support", () => {
     const ipad = { identifier: "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4" };
 
     expect(isSupportedAppleDeviceType(iphone17Pro)).toBe(true);
-    expect(appleDeviceTypeFrame(iphone17Pro)).toBe("ios:iphone-17-pro");
     expect(isSupportedAppleDeviceType(iphone16Pro)).toBe(true);
-    expect(appleDeviceTypeFrame(iphone16Pro)).toBeNull();
     expect(isSupportedAppleDeviceType(ipad)).toBe(false);
-    expect(appleDeviceTypeFrame(ipad)).toBeNull();
   });
 
   test("classifies existing simulators from their device type identifier", () => {
@@ -37,55 +32,80 @@ describe("iOS device support", () => {
       }),
     ).toBe(true);
     expect(
-      appleDeviceFrame({
-        deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
-      }),
-    ).toBe("ios:iphone-17-pro");
-    expect(
       isSupportedAppleDevice({
         deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro",
       }),
     ).toBe(true);
-    expect(
-      appleDeviceFrame({
-        deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro",
-      }),
-    ).toBeNull();
     expect(
       isSupportedAppleDevice({
         deviceTypeIdentifier: "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4",
       }),
     ).toBe(false);
     expect(isSupportedAppleDevice({ deviceTypeIdentifier: null })).toBe(false);
-    expect(appleDeviceFrame({ deviceTypeIdentifier: null })).toBeNull();
   });
 });
 
 describe("Android device support", () => {
-  test("keeps Pixel-phone support independent from exact frame-profile availability", () => {
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_10_pro", "Pixel 10 Pro"))).toBe(true);
-    expect(androidDeviceProfileFrame(profile("pixel_10_pro", "Pixel 10 Pro"))).toBe(
-      "android:pixel-10-pro",
-    );
-    expect(androidDeviceProfileFrame(profile("pixel_6", "Pixel 6"))).toBeNull();
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_9", "Pixel 9"))).toBe(true);
-    expect(androidDeviceProfileFrame(profile("pixel_9", "Pixel 9"))).toBe("android:pixel-9");
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_9_pro_fold", "Pixel 9 Pro Fold"))).toBe(
+  test.each([
+    ["pixel_10_pro", "Pixel 10 Pro"],
+    ["pixel_9", "Pixel 9"],
+    ["pixel_fold", "Pixel Fold"],
+    ["pixel_9_pro_fold", "Pixel 9 Pro Fold"],
+    ["pixel_10_pro_fold", "Pixel 10 Pro Fold"],
+    ["small_phone", "Small Phone"],
+    ["medium_phone", "Medium Phone"],
+    ["pixel_tablet", "Pixel Tablet"],
+    ["small_tablet", "Small Tablet"],
+    ["medium_tablet", "Medium Tablet"],
+  ])("supports phone or tablet profile %s by id or display name", (id, name) => {
+    expect(isSupportedAndroidDeviceProfile(profile(id, name))).toBe(true);
+    expect(isSupportedAndroidDeviceProfile(profile(id, ""))).toBe(true);
+    expect(isSupportedAndroidDeviceProfile(profile("", name))).toBe(true);
+    for (const metadata of [id, `${id} (${id.startsWith("pixel") ? "Google" : "Generic"})`]) {
+      expect(
+        isSupportedAndroidDevice(androidDevice({ config: { "hw.device.name": metadata } })),
+      ).toBe(true);
+      expect(isSupportedAndroidDevice(androidDevice({ properties: { Device: metadata } }))).toBe(
+        true,
+      );
+    }
+  });
+
+  test.each([
+    ["pixel_c", "Pixel C", null],
+    ["pixel_buds", "Pixel Buds", null],
+    ["pixel_watch", "Pixel Watch", "android-wear"],
+    ["7in WSVGA (Tablet)", '7" WSVGA (Tablet)', null],
+    ["10.1in WXGA (Tablet)", '10.1" WXGA (Tablet)', null],
+    ["Nexus 9", "Nexus 9", null],
+    ["Nexus 10", "Nexus 10", null],
+    ["large_tablet", "Large Tablet", null],
+    ["tv_1080p", "Television (1080p)", "android-tv"],
+    ["wearos_large_round", "Wear OS Large Round", "android-wear"],
+    ["automotive_portrait", "Automotive Portrait", "android-automotive"],
+    ["desktop_large", "Large Desktop", "android-desktop"],
+    ["resizable", "Resizable (Experimental)", null],
+    ["7.6in Foldable", '7.6" Fold-in with outer display', null],
+    ["Nexus 5", "Nexus 5", null],
+    // Not present in the verified SDK profile list; do not invent support for it.
+    ["large_phone", "Large Phone", null],
+  ])("keeps unrelated or unknown profile %s unsupported", (id, name, tag) => {
+    expect(isSupportedAndroidDeviceProfile(profile(id, name, tag))).toBe(false);
+    expect(isSupportedAndroidDevice(androidDevice({ config: { "hw.device.name": id } }))).toBe(
       false,
     );
-    expect(androidDeviceProfileFrame(profile("pixel_9_pro_fold", "Pixel 9 Pro Fold"))).toBeNull();
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_fold", "Pixel Fold"))).toBe(false);
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_tablet", "Pixel Tablet"))).toBe(false);
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_c", "Pixel C"))).toBe(false);
-    expect(isSupportedAndroidDeviceProfile(profile("medium_phone", "Medium Phone"))).toBe(false);
     expect(
-      isSupportedAndroidDeviceProfile(profile("pixel_watch", "Pixel Watch", "android-wear")),
+      isSupportedAndroidDevice(androidDevice({ properties: { Device: `${id} (Generic)` } })),
     ).toBe(false);
+  });
+
+  test("does not allow phone names to override specialized profile tags", () => {
+    expect(isSupportedAndroidDeviceProfile(profile("pixel_fold", "Pixel Fold", "android-tv"))).toBe(
+      false,
+    );
     expect(
-      androidDeviceProfileFrame(profile("pixel_watch", "Pixel Watch", "android-wear")),
-    ).toBeNull();
-    expect(isSupportedAndroidDeviceProfile(profile("pixel_buds", "Pixel Buds"))).toBe(false);
-    expect(androidDeviceProfileFrame(profile("medium_phone", "Medium Phone"))).toBeNull();
+      isSupportedAndroidDeviceProfile(profile("medium_phone", "Medium Phone", "android-wear")),
+    ).toBe(false);
   });
 
   test("classifies known AVDs from their profile metadata", () => {
@@ -93,33 +113,49 @@ describe("Android device support", () => {
       isSupportedAndroidDevice(androidDevice({ config: { "hw.device.name": "pixel_10_pro" } })),
     ).toBe(true);
     expect(
-      androidDeviceFrame(androidDevice({ config: { "hw.device.name": "pixel_10_pro" } })),
-    ).toBe("android:pixel-10-pro");
-    expect(
-      androidDeviceFrame(androidDevice({ config: { "hw.device.name": "pixel_6" } })),
-    ).toBeNull();
-    expect(
-      androidDeviceFrame(androidDevice({ config: { "hw.device.name": "pixel_8" } })),
-    ).toBeNull();
-    expect(androidDeviceFrame(androidDevice({ config: { "hw.device.name": "pixel_9" } }))).toBe(
-      "android:pixel-9",
-    );
+      isSupportedAndroidDevice(
+        androidDevice({
+          name: "Pixel_9",
+          properties: { Device: "Nexus 9 (Google)" },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test("uses hardware metadata before an AVD name, preserving Pixel name fallback", () => {
+    expect(isSupportedAndroidDevice(androidDevice({ name: "Pixel_9_API_36" }))).toBe(true);
     expect(
       isSupportedAndroidDevice(
         androidDevice({
           name: "Pixel_9",
-          properties: { Device: "medium_phone (Generic)" },
+          config: { "hw.device.name": "Nexus 9" },
+          properties: { Device: "pixel_fold (Google)" },
         }),
       ),
     ).toBe(false);
     expect(
-      androidDeviceFrame(
+      isSupportedAndroidDevice(
         androidDevice({
-          name: "Pixel_9",
-          properties: { Device: "medium_phone (Generic)" },
+          name: "My_Custom_AVD",
+          config: { "hw.device.name": "medium_phone" },
+          properties: { Device: "Nexus 9 (Google)" },
         }),
       ),
-    ).toBeNull();
+    ).toBe(true);
+    expect(
+      isSupportedAndroidDevice(
+        androidDevice({
+          properties: { Device: " Small_Phone (Generic) " },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isSupportedAndroidDevice(
+        androidDevice({
+          config: { "hw.device.name": "medium_phone_tablet" },
+        }),
+      ),
+    ).toBe(false);
   });
 
   test("supports all physical Android devices", () => {
@@ -133,31 +169,47 @@ describe("Android device support", () => {
         androidDevice({ type: "device", properties: { "ro.product.model": "Galaxy S25" } }),
       ),
     ).toBe(true);
-    expect(
-      androidDeviceFrame(
-        androidDevice({ type: "device", properties: { "ro.product.model": "Pixel 10 Pro" } }),
-      ),
-    ).toBe("android:pixel-10-pro");
-    expect(
-      androidDeviceFrame(
-        androidDevice({ type: "device", properties: { "ro.product.model": "Pixel 9" } }),
-      ),
-    ).toBe("android:pixel-9");
-    expect(
-      androidDeviceFrame(
-        androidDevice({ type: "device", properties: { "ro.product.model": "Pixel 9 Pro" } }),
-      ),
-    ).toBeNull();
-    expect(
-      androidDeviceFrame(
-        androidDevice({ type: "device", properties: { "ro.product.model": "Galaxy S25" } }),
-      ),
-    ).toBeNull();
     expect(isSupportedAndroidDevice(androidDevice({ type: "device" }))).toBe(true);
   });
 
   test("treats unknown Android emulators as untested", () => {
     expect(isSupportedAndroidDevice(androidDevice())).toBe(false);
+  });
+});
+
+describe("3D device models", () => {
+  test("picks a simulator's model from its device type identifier", () => {
+    const model = (deviceTypeIdentifier: string | null) =>
+      appleDevice3DModel({ deviceTypeIdentifier });
+    expect(model("com.apple.CoreSimulator.SimDeviceType.iPhone-Duo")).toBe("ios:iphone-duo");
+    expect(model("com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro")).toBe("ios:iphone-18-pro");
+    // Close relatives have no model and keep the flat preview.
+    expect(model("com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro-Max")).toBeNull();
+    expect(model("com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro")).toBeNull();
+    expect(model(null)).toBeNull();
+  });
+
+  test("picks an emulator's model from its hardware profile, not its AVD name", () => {
+    const model = (config: Record<string, string>, name = "Test_Device") =>
+      androidDevice3DModel(androidDevice({ name, config }));
+    expect(model({ "hw.device.name": "pixel_9_pro" })).toBe("android:pixel-9-pro");
+    expect(model({ "hw.device.name": "pixel_9_pro_fold" })).toBe("android:pixel-9-pro-fold");
+    expect(model({ "hw.device.name": "pixel_9_pro_xl" })).toBeNull();
+    expect(model({ "hw.device.name": "pixel_9" })).toBeNull();
+    expect(model({ "hw.device.name": "medium_phone" }, "Pixel_9_Pro_API_36_1")).toBeNull();
+    // Without profile metadata, an AVD named like a model still gets none.
+    expect(model({}, "Pixel_9_Pro")).toBeNull();
+    expect(model({}, "Pixel_9_Pro_Fold")).toBeNull();
+  });
+
+  test("picks a physical Android device's model from its product model", () => {
+    const model = (productModel: string) =>
+      androidDevice3DModel(
+        androidDevice({ type: "device", properties: { "ro.product.model": productModel } }),
+      );
+    expect(model("Pixel 9 Pro")).toBe("android:pixel-9-pro");
+    expect(model("Pixel 9 Pro Fold")).toBe("android:pixel-9-pro-fold");
+    expect(model("Galaxy S25")).toBeNull();
   });
 });
 

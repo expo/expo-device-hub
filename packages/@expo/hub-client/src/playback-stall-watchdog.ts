@@ -42,6 +42,8 @@ export interface PlaybackStallWatchdog {
   stop: () => void;
   /** Reset samples whose counters are no longer comparable. */
   invalidate: () => void;
+  /** Apply a new source cadence without replacing the peer. */
+  setExpectContinuousFrames: (value: boolean) => void;
 }
 
 // @ref LLP 0012#playback-watchdog — one shared poll; idle change-driven streams are not stalls
@@ -170,5 +172,10 @@ export function startPlaybackStallWatchdog({
       stopPolling();
     },
     invalidate,
+    setExpectContinuousFrames(value) {
+      if (value === expectContinuousFrames) return;
+      expectContinuousFrames = value;
+      invalidate();
+    },
   };
 }

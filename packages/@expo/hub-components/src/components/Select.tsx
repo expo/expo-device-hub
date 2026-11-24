@@ -12,16 +12,34 @@ import {
 } from "@radix-ui/react-select";
 import { useEffect, useRef, useState } from "react";
 
-import { bg, border, icon, radius, shadow, text, textSize } from "../theme/tokens";
-import { CheckIcon, ChevronDownIcon } from "./icons";
-import { isFocusVisible } from "./focusVisible";
-import { pillControlStyle } from "./pill";
+import {
+  bg,
+  border,
+  icon,
+  layer,
+  motion,
+  opacity,
+  radius,
+  shadow,
+  text,
+  textSize,
+  truncate,
+} from "../theme/tokens";
 import { DisabledControlHint } from "./DisabledControlHint";
+import {
+  FIELD_HEIGHT,
+  FIELD_WIDTH,
+  type FieldSize,
+  LARGE_FIELD_HEIGHT,
+  fieldControlProps,
+} from "./field";
+import { CheckIcon, ChevronDownIcon } from "./icons";
 
 export type SelectOption<Value extends string = string> = {
   value: Value;
   label: string;
   disabled?: boolean;
+  shortcut?: string;
 };
 
 export type SelectProps<Value extends string> = {
@@ -32,9 +50,20 @@ export type SelectProps<Value extends string> = {
   disabled?: boolean;
   disabledReason?: string;
   onChange: (value: Value) => void;
+  /** Re-apply an already selected action, without changing ordinary select behavior. */
+  onReselect?: (value: Value) => void;
+  /** Shown in place of the value while it is unknown, such as before the device reports it. */
+  placeholder?: string;
+  /** Width of the trigger in px. Every select of a column has the same width. */
+  width?: number;
+  /** `lg` is the select of a form in a modal: taller, and as wide as the form. */
+  size?: FieldSize;
+  /** The `id` of the trigger, for a `<label htmlFor>`. */
+  id?: string;
 };
 
-const ITEM_HEIGHT = 28;
+/** What a select shows for a value that is not known: the website's placeholder. */
+export const SELECT_PLACEHOLDER = "—";
 
 type SelectRegistration = {
   trigger: HTMLButtonElement | null;
@@ -60,11 +89,12 @@ function selectAtPoint(x: number, y: number, except: SelectRegistration) {
 }
 
 /**
- * A compact single-value select rendered as a soft pill: the current value
- * followed by a chevron. The closed trigger is only as wide as the selected
- * value; the open menu grows to fit its widest option instead of wrapping.
- * Clicking another select while this one is open closes this menu and opens
- * the other in the same click.
+ * A compact single-value select in the look of the website's preview options:
+ * a bordered box of a fixed width with the current value and a chevron. A
+ * value that is longer than the box ends in an ellipsis; the open menu grows
+ * to fit its widest option instead of wrapping. A value that is not one of
+ * the options shows the placeholder. Clicking another select while this one
+ * is open closes this menu and opens the other in the same click.
  * The offered option labels are exposed on the trigger as `data-test-options`
  * (newline-separated) so tests can read them, since the menu only renders
  * while open.
@@ -77,12 +107,22 @@ export function Select<Value extends string>({
   disabled = false,
   disabledReason,
   onChange,
+  onReselect,
+  placeholder = SELECT_PLACEHOLDER,
+  width = FIELD_WIDTH,
+  size = "md",
+  id,
 }: SelectProps<Value>) {
   const [open, setOpen] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const selectedLabel = options.find((option) => option.value === value)?.label ?? value;
+  const selectedOption = options.find((option) => option.value === value);
+  const selectedLabel = selectedOption?.label ?? (value || placeholder);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const field = fieldControlProps({ disabled, width, size });
+  const large = size === "lg";
+  const pointerType = useRef("touch");
+  const reselect = (option: SelectOption<Value>) => {
+    if (!disabled && !option.disabled && option.value === value) onReselect?.(option.value);
+  };
   const registration = useRef<SelectRegistration>({
     trigger: null,
     disabled,
@@ -119,49 +159,44 @@ export function Select<Value extends string>({
       >
         <Trigger
           ref={triggerRef}
+          id={id}
           aria-label={ariaLabel}
           aria-describedby={ariaDescribedBy}
           data-test-options={options.map((option) => option.label).join("\n")}
-          onFocus={(event) => setFocused(isFocusVisible(event))}
-          onBlur={() => setFocused(false)}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          style={{
-            ...pillControlStyle({ hovered, focused, disabled }),
-            width: "max-content",
-            maxWidth: "100%",
-            justifyContent: "space-between",
-            padding: "0 8px 0 10px",
-          }}
+          className={field.className}
+          style={{ ...field.style, maxWidth: "100%" }}
         >
           <span
             style={{
+              ...truncate,
               minWidth: 0,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
+              flex: 1,
+              textAlign: "left",
+              // The website shows a value that is not known in the quaternary color.
+              color: selectedOption || value ? undefined : text.quaternary,
             }}
           >
-            <Value>{selectedLabel}</Value>
+            {/* Radix shows the placeholder, not the children, while the value is empty. */}
+            <Value placeholder={placeholder}>{selectedLabel}</Value>
           </span>
           <SelectIcon
             aria-hidden="true"
             style={{
               display: "flex",
               flexShrink: 0,
-              color: icon.default,
+              color: icon.secondary,
               transform: open ? "rotate(180deg)" : undefined,
-              transition: "transform 120ms ease",
+              transition: `transform ${motion.fast} ${motion.ease}`,
             }}
           >
-            <ChevronDownIcon size={16} strokeWidth={1.5} />
+            <ChevronDownIcon size={16} strokeWidth={2} />
           </SelectIcon>
         </Trigger>
       </DisabledControlHint>
       <Portal>
         <Content
           position="popper"
-          align="end"
+          align="start"
           sideOffset={4}
           collisionPadding={8}
           onPointerDownOutside={(event) => {
@@ -178,17 +213,15 @@ export function Select<Value extends string>({
           className="will-change-[opacity,transform] data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade data-[side=right]:animate-slideLeftAndFade data-[side=top]:animate-slideDownAndFade"
           style={{
             ...textSize.sm,
-            fontWeight: 500,
-            zIndex: 605,
+            zIndex: layer.popover,
             width: "max-content",
             minWidth: "var(--radix-select-trigger-width)",
             maxWidth: "var(--radix-select-content-available-width)",
             maxHeight: "var(--radix-select-content-available-height)",
             boxSizing: "border-box",
             overflow: "hidden",
-            padding: 4,
             border: `1px solid ${border.default}`,
-            borderRadius: radius.lg,
+            borderRadius: large ? radius.xl : radius.lg,
             outline: "none",
             backgroundColor: bg.default,
             boxShadow: shadow.md,
@@ -203,39 +236,67 @@ export function Select<Value extends string>({
                 value={option.value}
                 textValue={option.label}
                 disabled={option.disabled}
-                className="data-[highlighted]:bg-hover data-[state=checked]:bg-element"
+                onPointerDown={(event) => {
+                  pointerType.current = event.pointerType;
+                }}
+                onPointerMove={(event) => {
+                  pointerType.current = event.pointerType;
+                }}
+                onPointerUp={() => {
+                  if (pointerType.current === "mouse") reselect(option);
+                }}
+                onClick={() => {
+                  if (pointerType.current !== "mouse") reselect(option);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.target === event.currentTarget &&
+                    !event.repeat &&
+                    (event.key === "Enter" || event.key === " ")
+                  ) {
+                    reselect(option);
+                  }
+                }}
+                className="data-[highlighted]:bg-element"
                 style={{
                   display: "flex",
                   width: "100%",
-                  height: ITEM_HEIGHT,
+                  minHeight: large ? LARGE_FIELD_HEIGHT - 8 : FIELD_HEIGHT,
                   alignItems: "center",
                   justifyContent: "space-between",
                   gap: 8,
                   boxSizing: "border-box",
-                  padding: "0 6px",
-                  borderRadius: radius.md,
+                  padding: large ? "8px 16px" : "8px 12px",
                   outline: "none",
                   color: text.default,
                   cursor: option.disabled ? "default" : "pointer",
-                  opacity: option.disabled ? 0.5 : 1,
+                  opacity: option.disabled ? opacity.disabled : 1,
                   userSelect: "none",
                   whiteSpace: "nowrap",
                 }}
               >
                 <ItemText>{option.label}</ItemText>
+                {option.shortcut && (
+                  <span
+                    aria-label={`Shortcut ${option.shortcut}`}
+                    style={{ ...textSize.xs, color: text.tertiary }}
+                  >
+                    {option.shortcut}
+                  </span>
+                )}
                 <span
                   aria-hidden="true"
                   style={{
                     display: "flex",
-                    width: 14,
+                    width: 16,
                     flexShrink: 0,
                     alignItems: "center",
                     justifyContent: "center",
-                    color: icon.default,
+                    color: icon.secondary,
                   }}
                 >
                   <ItemIndicator>
-                    <CheckIcon size={12} />
+                    <CheckIcon size={16} />
                   </ItemIndicator>
                 </span>
               </Item>

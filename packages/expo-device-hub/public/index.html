@@ -18,6 +18,9 @@
         if (platform === "ios" || platform === "android") {
           window.__EXPO_DEVICE_HUB_PLATFORM__ = platform;
         }
+        var singleDevice = "{{singleDevice}}";
+        if (singleDevice && singleDevice !== "{{" + "singleDevice}}")
+          window.__EXPO_DEVICE_HUB_SINGLE_DEVICE__ = singleDevice;
         var transport = "{{transport}}";
         if (transport === "mjpeg" || transport === "h264" || transport === "webrtc") {
           window.__EXPO_DEVICE_HUB_TRANSPORT__ = transport;

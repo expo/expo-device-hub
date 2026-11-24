@@ -1,3 +1,4 @@
+import { parseSingleDevice } from "../single-device";
 import { parseArgs } from "node:util";
 
 import { type WebRtcStreamCodec } from "@expo/serve-sim/state";
@@ -38,7 +39,7 @@ Options:
                              @expo/hub-client (repeatable). Accepts a subdomain wildcard, e.g.
                              https://*.expo.dev, as serve-sim does.
       --platform <platform>  Show only iOS simulators or Android emulators (ios or android)
-      --transport <transport> Preferred transport: ${TRANSPORTS.join(", ")} (default: ${DEFAULT_TRANSPORT})
+      --transport <transport> Preferred transport: ${TRANSPORTS.join(", ")} (default: ${DEFAULT_TRANSPORT}); webrtc allows only WebRTC video
       --webrtc-codec <codec> WebRTC video codec: ${WEBRTC_CODECS.join(", ")} (default: ${DEFAULT_WEBRTC_CODEC})
       --max-dimension <pixels> Maximum captured width or height; 0 keeps native resolution (0-4096)
       --mjpeg-quality <quality> MJPEG quality (0.05-1)
@@ -53,7 +54,8 @@ Options:
       --turn-credential <credential> TURN credential (requires --turn-username and --turn-url)
       --webrtc-ice-policy <policy> Android ICE policy: ${WEBRTC_ICE_POLICIES.join(", ")} (default: ${DEFAULT_WEBRTC_ICE_POLICY})
       --metrics-cors-origin <origin> Allow an origin to read serve-sim metrics (repeatable)
-      --hide-sidebar         Hide the device list sidebar by default
+      --single-device <id>   Lock to one device (requires --platform); hide device lifecycle controls
+      --hide-sidebar         Hide the device list and inspector sidebar by default
       --hide-boot-device     Hide controls for booting or creating devices
       --android-recording-directory <path> Record the only booted emulator until shutdown
   -h, --help                 Show this help
@@ -79,6 +81,7 @@ export type CliOptions = {
   turnCredential?: string;
   webrtcIcePolicy?: WebRtcIcePolicy;
   metricsCorsOrigins?: string[];
+  singleDevice?: string;
   hideSidebar?: boolean;
   hideBootDevice?: boolean;
   /** serve-sim's flag: the CLI mints a session token and the server gates every route with it. */
@@ -181,6 +184,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     "turn-credential"?: string;
     "webrtc-ice-policy"?: string;
     "metrics-cors-origin": string[];
+    "single-device"?: string;
     "hide-sidebar": boolean;
     "hide-boot-device": boolean;
     "share-url"?: string;
@@ -216,6 +220,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         "turn-credential": { type: "string" },
         "webrtc-ice-policy": { type: "string" },
         "metrics-cors-origin": { type: "string", multiple: true, default: [] },
+        "single-device": { type: "string" },
         "hide-sidebar": { type: "boolean", default: false },
         "hide-boot-device": { type: "boolean", default: false },
         // Undocumented no-ops: the Hub has no Share button, but the EAS worker may pass
@@ -254,6 +259,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     throw new Error(`Invalid --platform: ${values.platform}\n\n${HELP}`);
   }
 
+  const singleDevice = parseSingleDevice(values["single-device"], platform)?.id;
   const transport = parseTransport(values.transport);
   if (values.transport !== undefined && transport === undefined) {
     throw new Error(`Invalid --transport: ${values.transport}\n\n${HELP}`);
@@ -364,6 +370,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     turnCredential,
     webrtcIcePolicy,
     metricsCorsOrigins: values["metrics-cors-origin"],
+    ...(singleDevice ? { singleDevice } : {}),
     hideSidebar: values["hide-sidebar"],
     hideBootDevice: values["hide-boot-device"],
     requireToken: values["require-token"],

@@ -9,6 +9,16 @@ import {
 } from "../src/device-session-context.ts";
 import { ControlInputQueue } from "../src/control-input-queue.ts";
 import type { EmuSession } from "../src/stream-session.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
+
+/** Device changes for a new device state; these tests never move the device. */
+const NO_DEVICE_CHANGES = {
+  applyLocation: async () => {},
+  readOrientation: readNoOrientation,
+  applyRotation: async () => {
+    throw new Error("rotation is not applied in this test");
+  },
+};
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -68,7 +78,7 @@ function activeSession(
     serial,
     generation,
     stream: fakeStream(serial, onClose),
-    applyLocation: async () => {},
+    ...NO_DEVICE_CHANGES,
   });
 }
 
@@ -159,7 +169,7 @@ describe("ActiveDeviceSession disposal", () => {
         scrcpyCloseCalls += 1;
         scrcpyClosed.resolve();
       }),
-      applyLocation: async () => {},
+      ...NO_DEVICE_CHANGES,
       closeClient: () => {
         clientCloseCalls += 1;
       },

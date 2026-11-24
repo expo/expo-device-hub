@@ -135,3 +135,23 @@ describe("Android gRPC encoder status", () => {
     }
   });
 });
+
+test("preserves only finite nonnegative source repeat cadence metadata", () => {
+  const source = {
+    ok: true,
+    mode: "grpc-screenshot",
+    grpcImageMode: "mmap",
+    inputSource: "scrcpy",
+    availableInputSources: ["scrcpy"],
+    availableModes: ["scrcpy", "grpc-screenshot"],
+    sessionGeneration: 1,
+  };
+  for (const repeatFrameMs of [0, 500, 30_000]) {
+    expect(parseAndroidStreamSource({ ...source, repeatFrameMs })).toMatchObject({ repeatFrameMs });
+  }
+  for (const repeatFrameMs of [undefined, null, -1, NaN, Infinity, "500", true]) {
+    const parsed = parseAndroidStreamSource({ ...source, repeatFrameMs });
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty("repeatFrameMs");
+  }
+});

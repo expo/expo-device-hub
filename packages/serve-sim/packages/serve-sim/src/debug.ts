@@ -7,9 +7,11 @@ import createDebug from "debug";
 //   serve-sim:mw       — middleware state selection + stale-helper recycling
 //   serve-sim:cli      — top-level command dispatch
 //   serve-sim:keyboard - software-keyboard reads and toggles
+//   serve-sim:ui       — how long each step of a `ui` setting change takes
 export const debugCli = createDebug("serve-sim:cli");
 export const debugHelper = createDebug("serve-sim:helper");
 export const debugState = createDebug("serve-sim:state");
 export const debugMw = createDebug("serve-sim:mw");
 export const debugKeyboard = createDebug("serve-sim:keyboard");
 export const debugPasteboard = createDebug("serve-sim:pasteboard");
+export const debugUi = createDebug("serve-sim:ui");

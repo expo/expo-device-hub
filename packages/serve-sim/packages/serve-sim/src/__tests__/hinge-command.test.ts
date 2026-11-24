@@ -115,3 +115,113 @@ test("reports a simulator without a hinge instead of an empty state", async () =
   const url = serveConfigs([{ width: 1206, height: 2622, supportsHingeAngle: false }]);
   await expect(readHingeStateFromWs(url)).rejects.toThrow("Hinge control is unavailable");
 });
+
+test("legacy helpers retain acknowledged config fields even with an older observation", async () => {
+  const url = serveConfigs([
+    {
+      supportsHingeAngle: true,
+      hingeAngle: 90,
+      hingePose: "book",
+      physicalOrientation: "portrait",
+      tableMode: false,
+      tableModeAvailable: true,
+      observedDeviceState: { hingeAngle: 0, physicalOrientation: "portrait", tableMode: false },
+    },
+  ]);
+  expect(await readHingeStateFromWs(url)).toEqual({
+    hingeAngle: 90,
+    hingePose: "book",
+    physicalOrientation: "portrait",
+    tableMode: false,
+    tableModeAvailable: true,
+  });
+});
+
+test("requests reconciled readback instead of consuming a pre-command native snapshot", async () => {
+  const requests: number[] = [];
+  server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch(req, srv) {
+      if (srv.upgrade(req, { data: undefined })) return;
+      return new Response(null, { status: 400 });
+    },
+    websocket: {
+      open(ws) {
+        ws.send(
+          Buffer.concat([
+            Buffer.from([0x82]),
+            Buffer.from(
+              JSON.stringify({
+                supportsHingeAngle: true,
+                supportsHingeStateReadback: true,
+                hingeAngle: 90,
+                observedDeviceState: { hingeAngle: 0 },
+              }),
+            ),
+          ]),
+        );
+      },
+      message(ws, data) {
+        requests.push(Buffer.from(data)[0]!);
+        ws.send(
+          Buffer.concat([
+            Buffer.from([0x93]),
+            Buffer.from(
+              JSON.stringify({
+                ok: true,
+                state: {
+                  hingeAngle: 90,
+                  physicalOrientation: "portrait",
+                  tableMode: true,
+                  tableModeActive: false,
+                },
+              }),
+            ),
+          ]),
+        );
+      },
+    },
+  });
+  expect(await readHingeStateFromWs(`ws://127.0.0.1:${server.port}`)).toEqual({
+    hingeAngle: 90,
+    physicalOrientation: "portrait",
+    tableMode: true,
+    tableModeActive: false,
+  });
+  expect(requests).toEqual([0x13]);
+});
+
+test("reconciled readback rejects malformed replies", async () => {
+  server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch(req, srv) {
+      if (srv.upgrade(req, { data: undefined })) return;
+      return new Response(null, { status: 400 });
+    },
+    websocket: {
+      open(ws) {
+        ws.send(
+          Buffer.concat([
+            Buffer.from([0x82]),
+            Buffer.from('{"supportsHingeAngle":true,"supportsHingeStateReadback":true}'),
+          ]),
+        );
+      },
+      message(ws) {
+        ws.send(Buffer.concat([Buffer.from([0x93]), Buffer.from('{"ok":true,"state":null}')]));
+      },
+    },
+  });
+  await expect(readHingeStateFromWs(`ws://127.0.0.1:${server.port}`)).rejects.toThrow(
+    "Invalid hinge state",
+  );
+});
+
+test("times out if a helper advertises readback but does not answer", async () => {
+  const url = serveConfigs([
+    { supportsHingeAngle: true, supportsHingeStateReadback: true, hingeAngle: 90 },
+  ]);
+  await expect(readHingeStateFromWs(url, { timeoutMs: 50 })).rejects.toThrow("Timed out");
+});

@@ -2,18 +2,19 @@ import { expect, test } from "bun:test";
 import { type DeviceClient, type DevicePlatform } from "@expo/hub-client";
 import {
   type Device,
-  NO_DEVICE_FRAME_DESCRIPTION,
+  NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
 } from "@expo/hub-components";
+import { isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { ClipboardSection } from "../../../../@expo/hub-components/src/dashboard/ClipboardSection";
 import { LocationSection } from "../../../../@expo/hub-components/src/dashboard/LocationSection";
-import { LogSidebar } from "../../../../@expo/hub-components/src/dashboard/LogSidebar";
+import { InspectorSections } from "../../../../@expo/hub-components/src/dashboard/InspectorSections";
 import { PermissionsSection } from "../../../../@expo/hub-components/src/dashboard/PermissionsSection";
 import { StreamOptionsSection } from "../../../../@expo/hub-components/src/dashboard/StreamOptionsSection";
 import { StreamStatistics } from "../../../../@expo/hub-components/src/dashboard/StreamStatistics";
-import { StreamPanel } from "../../../../@expo/hub-components/src/dashboard/StreamPanel";
 
 function inspectorClient(platform: DevicePlatform): DeviceClient {
   const ios = platform === "ios";
@@ -21,9 +22,16 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     platform,
     status: "streaming",
     error: null,
+    framePresented: true,
     inputError: null,
     screenRecording: null,
+    recordingLock: null,
+    recordingControlsLocked: false,
     screen: { width: 390, height: 844 },
+    fold: null,
+    displays: null,
+    deviceModelUrl: null,
+    displayCorners: null,
     fps: 60,
     devices: [],
     logs: [],
@@ -75,6 +83,13 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     setPermission: () => {},
     resetPermissions: () => {},
     refreshPermissions: () => {},
+    pasteText: async () => {},
+    copyText: async () => "",
+    clipboardActionId: 0,
+    clipboardAction: null,
+    clipboardPending: null,
+    clipboardError: null,
+    clipboardWarning: null,
     streamCapabilities: ios
       ? {
           modeAvailability: { mjpeg: true, h264: true, webrtc: true },
@@ -125,6 +140,8 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       camera: false,
       accessibility: true,
       permissions: false,
+      clipboard: false,
+      orientation: false,
       streamSettings: ios
         ? {
             mjpegFps: true,
@@ -135,6 +152,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
           }
         : { maxDimension: true, h264Fps: true, h264Bitrate: true },
       location: false,
+      fold: false,
     },
     foregroundApp: null,
     videoKind: "img",
@@ -144,6 +162,11 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     pressButton: () => {},
     reload: () => {},
     rotate: () => {},
+    orientation: null,
+    orientationPending: false,
+    orientationError: null,
+    orientationUnavailable: null,
+    setOrientation: () => {},
     screenshot: async () => null,
     appearance: "light",
     setAppearance: () => {},
@@ -183,23 +206,15 @@ test.each([
   },
 );
 
-function device(platform: DevicePlatform, deviceFrame: Device["deviceFrame"]): Device {
+function device(platform: DevicePlatform, supported = true): Device {
   return {
     id: `${platform}-device`,
-    name:
-      deviceFrame === "ios:iphone-17-pro"
-        ? "iPhone 17 Pro"
-        : deviceFrame === "android:pixel-9"
-          ? "Pixel 9"
-          : deviceFrame === "android:pixel-10-pro"
-            ? "Pixel 10 Pro"
-            : "Other",
+    name: !supported ? "Other" : platform === "ios" ? "iPhone 17 Pro" : "Pixel 10 Pro",
     version: platform === "ios" ? "iOS 27.0" : "Android 17.0",
     platform,
     booted: true,
     physical: false,
-    supported: deviceFrame !== null,
-    deviceFrame,
+    supported,
   };
 }
 
@@ -350,7 +365,7 @@ function openingTag(html: string, marker: string) {
 
 test("renders every supported iOS inspector section and option", () => {
   const html = renderToStaticMarkup(
-    <LogSidebar
+    <InspectorSections
       client={inspectorClient("ios")}
       streamMode="h264"
       httpCodec="h264"
@@ -388,8 +403,8 @@ test("renders every supported iOS inspector section and option", () => {
   expect(html).not.toContain(">Network<");
   expect(sectionExpanded(html, "Current app")).toBe(true);
   expect(sectionExpanded(html, "Device options")).toBe(true);
-  // The first section has no separator above it; every following section does.
-  expect(openingTag(html, '<section aria-label="Current app"')).not.toContain("border-top:");
+  // Every section has a separator above it: the device lists above the first one end without one.
+  expect(openingTag(html, '<section aria-label="Current app"')).toContain("border-top:");
   expect(openingTag(html, '<section aria-label="Device options"')).toContain("border-top:");
   const currentApp = sectionMarkup(html, "Current app");
   for (const label of ["App ID", "Version", "Build number"]) {
@@ -398,26 +413,26 @@ test("renders every supported iOS inspector section and option", () => {
   for (const label of ["Minimum iOS", "Minimum SDK", "PID"]) {
     expect(currentApp).not.toContain(`>${label}<`);
   }
-  expect(currentApp).toContain("width:40px");
+  // The app icon of the website's current app card.
+  expect(currentApp).toContain("width:60px");
   expect(currentApp).toContain('data-testid="activity-charts"');
   expect(currentApp).toContain("Waiting for activity data…");
   for (const label of ["Stream options", "Events", "Logs"]) {
     expect(sectionExpanded(html, label)).toBe(false);
     expect(openingTag(html, `<section aria-label="${label}"`)).toContain("border-top:");
-    expect(openingTag(html, `<section aria-label="${label}"`)).toContain("padding:0 16px;");
+    // The title row spans the sidebar and keeps the shared inset inside.
+    expect(sectionMarkup(html, label)).toContain("padding:0 16px;");
     expect(sectionMarkup(html, label)).toContain("grid-template-rows:0fr");
   }
-  expect(openingTag(html, '<section aria-label="Device options"')).toContain("padding:0 16px;");
+  expect(sectionMarkup(html, "Device options")).toContain("padding:0 16px;");
   expect(sectionMarkup(html, "Device options")).toContain("grid-template-rows:1fr");
-  expect(sectionMarkup(html, "Device options")).toContain("padding-bottom:12px");
-  // The title sits centered in its row, so collapsed sections line up evenly.
-  expect(openingTag(html, '<button type="button" aria-expanded="true"')).toContain(
-    "padding:18px 0",
-  );
+  expect(sectionMarkup(html, "Device options")).toContain("padding:0 16px 8px");
+  // The title row has one height, so collapsed sections line up evenly.
+  expect(openingTag(html, '<button type="button" aria-expanded="true"')).toContain("height:52px");
 });
 
 test("renders Android stream options while omitting unsupported and iOS-only sections", () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />);
+  const html = renderToStaticMarkup(<InspectorSections client={inspectorClient("android")} />);
 
   for (const label of [
     "Current app",
@@ -438,7 +453,7 @@ test("renders Android stream options while omitting unsupported and iOS-only sec
   const currentApp = sectionMarkup(html, "Current app");
   expect(currentApp).toContain('data-testid="activity-charts"');
   expect(currentApp).toContain("Waiting for activity data…");
-  expect(currentApp).toContain("width:40px");
+  expect(currentApp).toContain("width:60px");
   for (const label of ["App ID", "Version", "Build number"]) {
     expect(currentApp).toContain(`>${label}<`);
   }
@@ -453,7 +468,7 @@ test("renders Android stream options while omitting unsupported and iOS-only sec
 test("shows the Camera section only when the client reports camera feeds", () => {
   const android = inspectorClient("android");
   const html = renderToStaticMarkup(
-    <LogSidebar
+    <InspectorSections
       client={{
         ...android,
         camera: { wiredAtLaunch: true, feeds: [] },
@@ -470,7 +485,7 @@ test("shows the Camera section only when the client reports camera feeds", () =>
   expect(cameraIndex).toBeGreaterThan(html.indexOf('<section aria-label="Stream options"'));
   expect(cameraIndex).toBeLessThan(html.indexOf('<section aria-label="Events"'));
 
-  const iosHtml = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  const iosHtml = renderToStaticMarkup(<InspectorSections client={inspectorClient("ios")} />);
   expect(iosHtml).not.toContain('<section aria-label="Camera"');
 });
 
@@ -481,15 +496,15 @@ test("shows the Location section between Camera and Events, with Clear only wher
     camera: { wiredAtLaunch: true, feeds: [] },
     capabilities: { ...android.capabilities, camera: true, location: {} as const },
   } satisfies DeviceClient;
-  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  const html = renderToStaticMarkup(<InspectorSections client={client} />);
   expect(html.match(/<section aria-label="Location"/g)).toHaveLength(1);
 
   const locationIndex = html.indexOf('<section aria-label="Location"');
   expect(locationIndex).toBeGreaterThan(html.indexOf('<section aria-label="Camera"'));
   expect(locationIndex).toBeLessThan(html.indexOf('<section aria-label="Events"'));
-  expect(renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />)).not.toContain(
-    '<section aria-label="Location"',
-  );
+  expect(
+    renderToStaticMarkup(<InspectorSections client={inspectorClient("android")} />),
+  ).not.toContain('<section aria-label="Location"');
 
   const settable = renderToStaticMarkup(<LocationSection client={client} defaultOpen />);
   const clearable = renderToStaticMarkup(
@@ -641,7 +656,7 @@ test("shows an Android capture source failure below the switch", () => {
   expect(html).toContain("Unable to change stream source: Emulator gRPC endpoint is unavailable");
 });
 
-test("hides the Android capture source row when gRPC is unavailable", () => {
+test("locks the Android capture source row when gRPC is unavailable", () => {
   const client = {
     ...inspectorClient("android"),
     streamSource: {
@@ -658,7 +673,9 @@ test("hides the Android capture source row when gRPC is unavailable", () => {
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
-  expect(html).not.toContain('aria-label="Stream source"');
+  // The row stays, so the section has the same rows for every Android device.
+  expect(selectValue(html, "Stream source")).toBe("scrcpy");
+  expect(selectMarkup(html, "Stream source")).toContain('disabled=""');
 });
 
 test("disables Android encoder controls while a stream restart is pending", () => {
@@ -1132,8 +1149,8 @@ test("explains when the Android host was not launched with WebRTC", () => {
   expect(html).toContain("Start the standalone server with --transport webrtc");
 });
 
-test("renders every iOS device option as a select pill sized by its options", () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+test("renders every iOS device option as a select of the shared width", () => {
+  const html = renderToStaticMarkup(<InspectorSections client={inspectorClient("ios")} />);
 
   for (const [label, options, selected] of [
     ["Appearance", ["Light", "Dark"], "Light"],
@@ -1141,23 +1158,139 @@ test("renders every iOS device option as a select pill sized by its options", ()
     ["Color filter", ["None", "Grayscale", "Red-green", "Green-red", "Blue-yellow"], "None"],
     ["Text size", ["XS", "S", "M", "L", "XL", "2XL", "3XL"], "L"],
   ] as const) {
-    expect(rowOpeningTag(html, label)).toContain("padding:12px 0");
+    expect(rowOpeningTag(html, label)).toContain("padding:10px 0");
     expect(rowOpeningTag(html, label)).not.toContain("border-bottom:");
     // Row labels sit between body text (400) and section titles (600).
     expect(html).toMatch(new RegExp(`<span style="[^"]*font-weight:500[^"]*">${label}</span>`));
-    expect(selectMarkup(html, label)).toContain("height:28px");
+    // The website's select box: 36px high and 128px wide, so the selects form one column.
+    expect(selectMarkup(html, label)).toContain("height:36px");
+    expect(selectMarkup(html, label)).toContain("width:128px");
     expect(selectValue(html, label)).toBe(selected);
     expect(selectOptionLabels(html, label)).toEqual([...options]);
   }
 });
 
 test("maps Android device options onto Network and S–XL selects", () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />);
+  const html = renderToStaticMarkup(<InspectorSections client={inspectorClient("android")} />);
 
   expect(selectOptionLabels(html, "Network")).toEqual(["On", "Off"]);
   expect(selectValue(html, "Network")).toBe("On");
   expect(selectOptionLabels(html, "Text size")).toEqual(["S", "M", "L", "XL"]);
   expect(selectValue(html, "Text size")).toBe("M");
+});
+
+test("offers the client's orientations and shows the client's pose", () => {
+  const all = {
+    orientations: ["portrait", "landscape_left", "portrait_upside_down", "landscape_right"],
+  } as const;
+  const ios = renderToStaticMarkup(
+    <InspectorSections
+      client={{
+        ...inspectorClient("ios"),
+        capabilities: { ...inspectorClient("ios").capabilities, orientation: all },
+        screen: { width: 844, height: 390, orientation: "landscape_right" },
+        orientation: "landscape_right",
+      }}
+    />,
+  );
+  expect(selectOptionLabels(ios, "Orientation")).toEqual([
+    "Portrait",
+    "Landscape left",
+    "Landscape right",
+    "Upside down",
+  ]);
+  expect(selectValue(ios, "Orientation")).toBe("Landscape right");
+
+  // A pick shows at once, before the frame turns.
+  const picked = renderToStaticMarkup(
+    <InspectorSections
+      client={{
+        ...inspectorClient("android"),
+        capabilities: { ...inspectorClient("android").capabilities, orientation: all },
+        screen: { width: 390, height: 844, orientation: "portrait", framesUpright: true },
+        orientation: "portrait_upside_down",
+        orientationPending: true,
+      }}
+    />,
+  );
+  expect(selectValue(picked, "Orientation")).toBe("Upside down");
+
+  // The client offers poses before it knows the shown one, so the select waits instead of guessing.
+  const unknownPose = renderToStaticMarkup(
+    <InspectorSections
+      client={{
+        ...inspectorClient("android"),
+        capabilities: { ...inspectorClient("android").capabilities, orientation: all },
+        screen: { width: 844, height: 390 },
+      }}
+    />,
+  );
+  expect(selectValue(unknownPose, "Orientation")).toBe("—");
+  expect(selectMarkup(unknownPose, "Orientation")).toContain('disabled=""');
+
+  // An older serve-emu reports no pose, so the client offers no poses, also after a Rotate.
+  // The row stays, so the section keeps its rows, and the select is locked.
+  const olderServer = renderToStaticMarkup(
+    <InspectorSections
+      client={{
+        ...inspectorClient("android"),
+        screen: { width: 390, height: 844 },
+        orientation: "landscape_right",
+        orientationPending: true,
+      }}
+    />,
+  );
+  expect(selectMarkup(olderServer, "Orientation")).toContain('disabled=""');
+  expect(selectOptionLabels(olderServer, "Orientation")).toEqual([""]);
+
+  const unsupported = renderToStaticMarkup(<InspectorSections client={inspectorClient("ios")} />);
+  expect(selectValue(unsupported, "Orientation")).toBe("—");
+  expect(selectMarkup(unsupported, "Orientation")).toContain('disabled=""');
+});
+
+test("disables the orientation select with the client's reason, as Rotate does", () => {
+  const ios = inspectorClient("ios");
+  const client = {
+    ...ios,
+    capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+    screen: { width: 390, height: 844, orientation: "portrait" },
+    orientation: "portrait",
+  } as const;
+  for (const [overrides, reason] of [
+    [{}, null],
+    [{ orientationUnavailable: "recording" }, "Rotation is unavailable while recording."],
+    [
+      { orientationUnavailable: "recording-status-unknown" },
+      "Rotation is unavailable until recording status is known.",
+    ],
+    [
+      { orientationUnavailable: "input-unavailable" },
+      "Rotation is unavailable until the simulator accepts input.",
+    ],
+    // The dashboard follows the client's reason, not the status or recording it sees.
+    [{ status: "reconnecting", recordingControlsLocked: true, screenRecording: "recording" }, null],
+  ] as const) {
+    const html = renderToStaticMarkup(<InspectorSections client={{ ...client, ...overrides }} />);
+    const select = selectMarkup(html, "Orientation");
+    expect(select.includes('disabled=""')).toBe(reason !== null);
+    if (reason) expect(html).toContain(`aria-description="${reason}"`);
+  }
+});
+
+test("shows why an orientation change failed", () => {
+  const ios = inspectorClient("ios");
+  const html = renderToStaticMarkup(
+    <InspectorSections
+      client={{
+        ...ios,
+        capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+        screen: { width: 390, height: 844, orientation: "portrait" },
+        orientation: "portrait",
+        orientationError: "The orientation was not sent.",
+      }}
+    />,
+  );
+  expect(html).toContain("The orientation was not sent.");
 });
 
 test("renders the Android display-size control the backend reports", () => {
@@ -1170,7 +1303,7 @@ test("renders the Android display-size control the backend reports", () => {
       "display-size": "large",
     },
   };
-  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  const html = renderToStaticMarkup(<InspectorSections client={client} />);
 
   expect(selectOptionLabels(html, "Display size")).toEqual(["S", "M", "L", "XL"]);
   expect(selectValue(html, "Display size")).toBe("L");
@@ -1187,7 +1320,7 @@ test("describes the Android display-size control with the resulting dp width", (
     },
     displayWidthDp: 411,
   };
-  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  const html = renderToStaticMarkup(<InspectorSections client={client} />);
   const describedBy = /aria-describedby="([^"]+)"/.exec(selectMarkup(html, "Display size"))?.[1];
 
   expect(html).toContain(">sw411dp<");
@@ -1205,16 +1338,18 @@ test("omits the dp width when the Android device has not reported one", () => {
       "display-size": "large",
     },
   };
-  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  const html = renderToStaticMarkup(<InspectorSections client={client} />);
 
   expect(html).not.toMatch(/sw\d+dp/);
   expect(selectMarkup(html, "Display size")).not.toContain("aria-describedby");
 });
 
-test("omits the Android display-size control the backend does not report", () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />);
+test("locks the Android display-size control that the backend does not report", () => {
+  const html = renderToStaticMarkup(<InspectorSections client={inspectorClient("android")} />);
 
-  expect(html).not.toContain(">Display size<");
+  // The row stays, so the rows of a device do not change with what it reports.
+  expect(selectValue(html, "Display size")).toBe("—");
+  expect(selectMarkup(html, "Display size")).toContain('disabled=""');
 });
 
 test("never renders the Android-only display-size control on iOS", () => {
@@ -1222,7 +1357,7 @@ test("never renders the Android-only display-size control on iOS", () => {
     ...inspectorClient("ios"),
     deviceSettings: { ...inspectorClient("ios").deviceSettings, "display-size": "large" },
   };
-  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  const html = renderToStaticMarkup(<InspectorSections client={client} />);
 
   expect(html).not.toContain(">Display size<");
 });
@@ -1239,15 +1374,15 @@ test("renders the Android accessibility switches the backend reports", () => {
       "increase-contrast": "off",
     },
   };
-  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  const html = renderToStaticMarkup(<InspectorSections client={client} />);
 
   expect(switchMarkup(html, "Reduce motion")).toContain('aria-checked="true"');
   expect(switchMarkup(html, "Bold text")).toContain('aria-checked="true"');
   expect(switchMarkup(html, "Increase contrast")).toContain('aria-checked="false"');
 });
 
-test("omits the Android accessibility switches the backend does not report", () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />);
+test("locks the Android accessibility switches that the backend does not report", () => {
+  const html = renderToStaticMarkup(<InspectorSections client={inspectorClient("android")} />);
 
   for (const label of [
     "Reduce motion",
@@ -1255,12 +1390,17 @@ test("omits the Android accessibility switches the backend does not report", () 
     "Increase contrast",
     "Force on-screen keyboard",
   ]) {
+    expect(switchMarkup(html, label)).toContain('aria-checked="false"');
+    expect(switchMarkup(html, label)).toContain('disabled=""');
+  }
+  // The switches of iOS only have no row on Android.
+  for (const label of ["Show borders", "Reduce transparency", "VoiceOver"]) {
     expect(html).not.toContain(`>${label}<`);
   }
 });
 
 test("keeps keyboard controls at the end of the device options list", () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  const html = renderToStaticMarkup(<InspectorSections client={inspectorClient("ios")} />);
   const section = sectionMarkup(html, "Device options");
 
   expect(section.indexOf(">Hardware keyboard</span>")).toBeGreaterThan(
@@ -1274,17 +1414,17 @@ test("keeps keyboard controls at the end of the device options list", () => {
 
 test("stacks device option rows without dividers", () => {
   for (const platform of ["ios", "android"] as const) {
-    const html = renderToStaticMarkup(<LogSidebar client={inspectorClient(platform)} />);
+    const html = renderToStaticMarkup(<InspectorSections client={inspectorClient(platform)} />);
     const section = sectionMarkup(html, "Device options");
 
     expect(openingTag(section, "<section")).toContain("border-top:");
     expect(section).not.toContain("border-bottom:");
-    expect(section.match(/padding:12px 0"/g)?.length).toBeGreaterThan(0);
+    expect(section.match(/padding:10px 0"/g)?.length).toBeGreaterThan(0);
   }
 });
 
 test("renders boolean device options as compact switches", () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  const html = renderToStaticMarkup(<InspectorSections client={inspectorClient("ios")} />);
   const reduceMotion = switchMarkup(html, "Reduce motion");
 
   expect(reduceMotion).toContain('role="switch"');
@@ -1296,9 +1436,9 @@ test("renders boolean device options as compact switches", () => {
 
 test("moves device actions into Device options and hides Remove for physical devices", () => {
   const android = renderToStaticMarkup(
-    <LogSidebar
+    <InspectorSections
       client={inspectorClient("android")}
-      device={device("android", "android:pixel-10-pro")}
+      device={device("android")}
       onShutdown={() => {}}
       onRemove={() => {}}
     />,
@@ -1322,9 +1462,9 @@ test("moves device actions into Device options and hides Remove for physical dev
   );
 
   const physical = renderToStaticMarkup(
-    <LogSidebar
+    <InspectorSections
       client={inspectorClient("android")}
-      device={{ ...device("android", "android:pixel-10-pro"), physical: true }}
+      device={{ ...device("android"), physical: true }}
       onShutdown={() => {}}
       onRemove={() => {}}
     />,
@@ -1332,15 +1472,15 @@ test("moves device actions into Device options and hides Remove for physical dev
   expect(physical).toContain(">Shut down device</span>");
   expect(physical).not.toContain(">Remove device</span>");
 
-  const ios = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  const ios = renderToStaticMarkup(<InspectorSections client={inspectorClient("ios")} />);
   for (const label of ["Back button", "Recents button", "Shut down device", "Remove device"]) {
     expect(ios).not.toContain(`>${label}</span>`);
   }
 });
 
-test("styles sidebar action buttons like the select pills", () => {
+test("styles sidebar action buttons as the website's secondary buttons, beside its select boxes", () => {
   const html = renderToStaticMarkup(
-    <LogSidebar client={inspectorClient("ios")} onShutdown={() => {}} />,
+    <InspectorSections client={inspectorClient("ios")} onShutdown={() => {}} />,
   );
   const toggle = html.slice(
     html.lastIndexOf("<button", html.indexOf(">Toggle<")),
@@ -1348,32 +1488,35 @@ test("styles sidebar action buttons like the select pills", () => {
   );
   const select = selectMarkup(html, "Appearance");
 
+  // The action is a small secondary button: a pill, like every website button.
   for (const style of [
-    "height:28px",
-    "border:1px solid var(--expo-theme-border-default)",
-    "border-radius:var(--expo-radius-lg)",
-    "background-color:var(--expo-theme-background-element)",
-    "font-size:14px",
+    "height:32px",
+    "border-radius:var(--expo-radius-full)",
+    // The pressable rules read the fill and its hover from these properties.
+    "--hub-pressable-bg:var(--expo-theme-button-secondary-background)",
+    "--hub-pressable-bg-hover:var(--expo-theme-button-secondary-hover)",
+    "font-size:12px",
     "font-weight:500",
   ]) {
     expect(toggle).toContain(style);
+  }
+  // The select is the website's option box.
+  for (const style of [
+    "height:36px",
+    "width:128px",
+    "border:1px solid var(--expo-theme-border-default)",
+    "border-radius:var(--expo-radius-lg)",
+    "--hub-pressable-bg:var(--expo-theme-background-default)",
+    "--hub-pressable-bg-hover:var(--expo-theme-background-element)",
+    "font-size:14px",
+  ]) {
     expect(select).toContain(style);
   }
+  expect(toggle).toContain('class="hub-pressable"');
+  expect(select).toContain('class="hub-pressable"');
 });
 
-function themeButtonMarkup(client: DeviceClient) {
-  const html = renderToStaticMarkup(
-    <StreamPanel
-      device={device(client.platform, null)}
-      client={client}
-      DeviceScreen={() => null}
-      displayScreen={(screen) => screen ?? null}
-    />,
-  );
-  return html.match(/<button[^>]*aria-label="Theme"[^>]*>/)?.[0];
-}
-
-test("keeps toolbar and sidebar appearance availability aligned without locking the viewer-local frame control", () => {
+test("keeps sidebar appearance availability aligned without locking the viewer-local shape control", () => {
   for (const platform of ["ios", "android"] as const) {
     for (const status of ["idle", "loading", "error", "ready"] as const) {
       const base = inspectorClient(platform);
@@ -1383,26 +1526,21 @@ test("keeps toolbar and sidebar appearance availability aligned without locking 
         deviceSettingsStatus: status,
       };
       const html = renderToStaticMarkup(
-        <LogSidebar
+        <InspectorSections
           client={client}
-          device={device(
-            platform,
-            platform === "ios" ? "ios:iphone-17-pro" : "android:pixel-10-pro",
-          )}
-          showDeviceFrame
-          onShowDeviceFrameChange={() => {}}
+          device={device(platform)}
+          showScreenShape
+          screenShapeAvailable
+          onShowScreenShapeChange={() => {}}
         />,
       );
       const appearance = selectMarkup(html, "Appearance");
       expect(appearance).toContain("Dark");
       expect(appearance.includes('disabled=""')).toBe(status !== "ready");
-      const theme = themeButtonMarkup(client);
-      expect(theme).toContain('aria-checked="true"');
-      expect(theme?.includes('disabled=""')).toBe(status !== "ready");
       const otherControl =
         platform === "ios" ? switchMarkup(html, "Reduce motion") : selectMarkup(html, "Network");
       expect(otherControl.includes('disabled=""')).toBe(status !== "ready");
-      expect(switchMarkup(html, "Show device frame")).not.toContain('disabled=""');
+      expect(switchMarkup(html, "Show device shape")).not.toContain('disabled=""');
     }
   }
 });
@@ -1412,12 +1550,11 @@ test("disables only the pending Android device setting", () => {
     ...inspectorClient("android"),
     deviceSettingsPending: new Set(["network"] as const),
   };
-  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  const html = renderToStaticMarkup(<InspectorSections client={client} />);
 
   expect(selectMarkup(html, "Network")).toContain('disabled=""');
   expect(selectMarkup(html, "Appearance")).not.toContain('disabled=""');
   expect(selectMarkup(html, "Text size")).not.toContain('disabled=""');
-  expect(themeButtonMarkup(client)).not.toContain('disabled=""');
 });
 
 test("disables only the device setting with an in-flight update", () => {
@@ -1426,70 +1563,59 @@ test("disables only the device setting with an in-flight update", () => {
       ...inspectorClient(platform),
       deviceSettingsPending: new Set(["appearance"] as const),
     };
-    const html = renderToStaticMarkup(<LogSidebar client={client} />);
+    const html = renderToStaticMarkup(<InspectorSections client={client} />);
 
     expect(selectMarkup(html, "Appearance")).toContain('disabled=""');
-    expect(themeButtonMarkup(client)).toContain('disabled=""');
     expect(selectMarkup(html, platform === "ios" ? "Liquid glass" : "Network")).not.toContain(
       'disabled=""',
     );
   }
 });
 
-test("disables the toolbar Theme button for missing or unsupported settings", () => {
+test("shows an enabled viewer-local shape switch, on and off", () => {
   for (const platform of ["ios", "android"] as const) {
-    for (const deviceSettings of [null, {}, { appearance: "unsupported" }]) {
-      expect(themeButtonMarkup({ ...inspectorClient(platform), deviceSettings })).toContain(
-        'disabled=""',
-      );
-    }
-  }
-});
-
-test("shows an enabled viewer-local frame switch for exact device profiles", () => {
-  for (const [platform, frame] of [
-    ["ios", "ios:iphone-17-pro"],
-    ["android", "android:pixel-10-pro"],
-  ] as const) {
     const onMarkup = renderToStaticMarkup(
-      <LogSidebar
+      <InspectorSections
         client={inspectorClient(platform)}
-        device={device(platform, frame)}
-        showDeviceFrame
-        onShowDeviceFrameChange={() => {}}
+        device={device(platform)}
+        showScreenShape
+        screenShapeAvailable
+        onShowScreenShapeChange={() => {}}
       />,
     );
     const offMarkup = renderToStaticMarkup(
-      <LogSidebar
+      <InspectorSections
         client={inspectorClient(platform)}
-        device={device(platform, frame)}
-        showDeviceFrame={false}
-        onShowDeviceFrameChange={() => {}}
+        device={device(platform)}
+        showScreenShape={false}
+        screenShapeAvailable
+        onShowScreenShapeChange={() => {}}
       />,
     );
 
-    expect(switchMarkup(onMarkup, "Show device frame")).toContain('aria-checked="true"');
-    expect(switchMarkup(onMarkup, "Show device frame")).not.toContain('disabled=""');
-    expect(switchMarkup(offMarkup, "Show device frame")).toContain('aria-checked="false"');
-    expect(switchMarkup(offMarkup, "Show device frame")).not.toContain('disabled=""');
+    expect(switchMarkup(onMarkup, "Show device shape")).toContain('aria-checked="true"');
+    expect(switchMarkup(onMarkup, "Show device shape")).not.toContain('disabled=""');
+    expect(switchMarkup(offMarkup, "Show device shape")).toContain('aria-checked="false"');
+    expect(switchMarkup(offMarkup, "Show device shape")).not.toContain('disabled=""');
   }
 });
 
-test("places the device frame option immediately above the hardware keyboard", () => {
+test("places the device shape option immediately above the hardware keyboard", () => {
   const html = renderToStaticMarkup(
-    <LogSidebar
+    <InspectorSections
       client={inspectorClient("ios")}
-      device={device("ios", "ios:iphone-17-pro")}
-      showDeviceFrame
-      onShowDeviceFrameChange={() => {}}
+      device={device("ios")}
+      showScreenShape
+      screenShapeAvailable
+      onShowScreenShapeChange={() => {}}
     />,
   );
 
-  const frameIndex = html.indexOf(">Show device frame</span>");
+  const shapeIndex = html.indexOf(">Show device shape</span>");
   const hardwareKeyboardIndex = html.indexOf(">Hardware keyboard</span>");
 
-  expect(frameIndex).toBeGreaterThan(html.indexOf(">VoiceOver</span>"));
-  expect(frameIndex).toBeLessThan(hardwareKeyboardIndex);
+  expect(shapeIndex).toBeGreaterThan(html.indexOf(">VoiceOver</span>"));
+  expect(shapeIndex).toBeLessThan(hardwareKeyboardIndex);
 });
 
 test("shows the Permissions section only when the client can change permissions", () => {
@@ -1504,13 +1630,13 @@ test("shows the Permissions section only when the client can change permissions"
     permissionsPending: new Set(["android.permission.RECORD_AUDIO"]),
     capabilities: { ...android.capabilities, permissions: true },
   } satisfies DeviceClient;
-  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  const html = renderToStaticMarkup(<InspectorSections client={client} />);
 
   expect(sectionMarkup(html, "Permissions")).toContain('aria-expanded="false"');
   const index = html.indexOf('<section aria-label="Permissions"');
   expect(index).toBeGreaterThan(html.indexOf('<section aria-label="Stream options"'));
   expect(index).toBeLessThan(html.indexOf('<section aria-label="Events"'));
-  expect(renderToStaticMarkup(<LogSidebar client={android} />)).not.toContain(
+  expect(renderToStaticMarkup(<InspectorSections client={android} />)).not.toContain(
     'aria-label="Permissions"',
   );
 
@@ -1534,7 +1660,49 @@ test("shows the Permissions section only when the client can change permissions"
   ]);
 });
 
-test("keeps the frame option disabled with an explanation for unsupported devices", () => {
+test("shows the Clipboard section only when the client can paste or copy", () => {
+  const ios = inspectorClient("ios");
+  const client = {
+    ...ios,
+    capabilities: {
+      ...ios.capabilities,
+      permissions: true,
+      clipboard: { paste: true, copy: true },
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<InspectorSections client={client} />);
+
+  expect(sectionExpanded(html, "Clipboard")).toBe(false);
+  const index = html.indexOf('<section aria-label="Clipboard"');
+  expect(index).toBeGreaterThan(html.indexOf('<section aria-label="Permissions"'));
+  expect(index).toBeLessThan(html.indexOf('<section aria-label="Events"'));
+  for (const unsupported of [
+    ios,
+    { ...ios, capabilities: { ...ios.capabilities, clipboard: { paste: false, copy: false } } },
+    inspectorClient("android"),
+  ] satisfies DeviceClient[]) {
+    expect(renderToStaticMarkup(<InspectorSections client={unsupported} />)).not.toContain(
+      'aria-label="Clipboard"',
+    );
+  }
+
+  // `steady-inspector.test.tsx` in hub-components checks that the sibling sections keyed by the
+  // device have distinct keys.
+
+  const copyOnly = renderToStaticMarkup(
+    <ClipboardSection
+      client={{
+        ...ios,
+        capabilities: { ...ios.capabilities, clipboard: { paste: false, copy: true } },
+      }}
+      defaultOpen
+    />,
+  );
+  expect(copyOnly).toContain(">Copy from Simulator</span>");
+  expect(copyOnly).not.toContain(">Send</span>");
+});
+
+test("keeps the shape option off and disabled, with an explanation, for a device without a known shape", () => {
   for (const platform of ["ios", "android"] as const) {
     const client = {
       ...inspectorClient(platform),
@@ -1545,28 +1713,31 @@ test("keeps the frame option disabled with an explanation for unsupported device
         camera: false,
         accessibility: false,
         permissions: false,
+        clipboard: false,
         streamSettings: false,
         location: false,
+        fold: false,
       },
     } satisfies DeviceClient;
     const html = renderToStaticMarkup(
-      <LogSidebar
+      <InspectorSections
         client={client}
-        device={device(platform, null)}
-        showDeviceFrame
-        onShowDeviceFrameChange={() => {}}
+        device={device(platform, false)}
+        showScreenShape
+        onShowScreenShapeChange={() => {}}
       />,
     );
 
     expect(html).toContain('aria-label="Device options"');
-    expect(switchMarkup(html, "Show device frame")).toContain('aria-checked="false"');
-    expect(switchMarkup(html, "Show device frame")).toContain('disabled=""');
-    expect(html).toContain(NO_DEVICE_FRAME_DESCRIPTION);
-    expect(html).not.toContain(">Appearance</span>");
+    expect(switchMarkup(html, "Show device shape")).toContain('aria-checked="false"');
+    expect(switchMarkup(html, "Show device shape")).toContain('disabled=""');
+    expect(html).toContain(NO_DEVICE_SHAPE_DESCRIPTION);
+    // The device's settings keep their rows, locked, while the device does not offer them.
+    expect(selectMarkup(html, "Appearance")).toContain('disabled=""');
   }
 });
 
-test("shows only the viewer-local frame option while iOS device settings are unavailable", () => {
+test("keeps the viewer-local shape option free while iOS device settings are unavailable", () => {
   const client = {
     ...inspectorClient("ios"),
     capabilities: {
@@ -1577,22 +1748,28 @@ test("shows only the viewer-local frame option while iOS device settings are una
       accessibility: false,
       location: false,
       permissions: false,
+      clipboard: false,
       streamSettings: false,
+      fold: false,
     },
     deviceSettings: null,
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
-    <LogSidebar
+    <InspectorSections
       client={client}
-      device={device("ios", "ios:iphone-17-pro")}
-      showDeviceFrame
-      onShowDeviceFrameChange={() => {}}
+      device={device("ios")}
+      showScreenShape
+      screenShapeAvailable
+      onShowScreenShapeChange={() => {}}
     />,
   );
 
-  expect(switchMarkup(html, "Show device frame")).not.toContain('disabled=""');
-  expect(html).not.toContain(">Appearance</span>");
-  expect(html).not.toContain(">Liquid glass</span>");
+  expect(switchMarkup(html, "Show device shape")).not.toContain('disabled=""');
+  // The device's own settings stay in place, locked, with no value.
+  for (const label of ["Appearance", "Liquid glass"]) {
+    expect(selectValue(html, label)).toBe("—");
+    expect(selectMarkup(html, label)).toContain('disabled=""');
+  }
   expect(html).not.toContain(">Keyboard</span>");
 });
 
@@ -1637,16 +1814,18 @@ test("keeps the Android on-screen keyboard row off iOS while device settings loa
       accessibility: false,
       location: false,
       permissions: false,
+      clipboard: false,
       streamSettings: false,
+      fold: false,
     },
     deviceSettings: null,
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
-    <LogSidebar
+    <InspectorSections
       client={client}
-      device={device("ios", "ios:iphone-17-pro")}
-      showDeviceFrame
-      onShowDeviceFrameChange={() => {}}
+      device={device("ios")}
+      showScreenShape
+      onShowScreenShapeChange={() => {}}
     />,
   );
 
@@ -1659,7 +1838,7 @@ test("disables the keyboard switch on a device with no hardware keyboard", () =>
   const settings = { ...base, deviceSettings: { "onscreen-keyboard": "off" } } as const;
 
   const without = renderToStaticMarkup(
-    <LogSidebar
+    <InspectorSections
       client={{ ...settings, hardwareKeyboardConnected: false } satisfies DeviceClient}
     />,
   );
@@ -1667,18 +1846,20 @@ test("disables the keyboard switch on a device with no hardware keyboard", () =>
   expect(without).toContain(NO_HARDWARE_KEYBOARD_DESCRIPTION);
 
   const with_ = renderToStaticMarkup(
-    <LogSidebar client={{ ...settings, hardwareKeyboardConnected: true } satisfies DeviceClient} />,
+    <InspectorSections
+      client={{ ...settings, hardwareKeyboardConnected: true } satisfies DeviceClient}
+    />,
   );
   expect(switchMarkup(with_, "Force on-screen keyboard")).not.toContain('disabled=""');
   expect(with_).not.toContain(NO_HARDWARE_KEYBOARD_DESCRIPTION);
 });
 
 test("offers a keyboard dismiss action on Android only", () => {
-  const android = renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />);
+  const android = renderToStaticMarkup(<InspectorSections client={inspectorClient("android")} />);
   const options = sectionMarkup(android, "Device options");
   expect(options).toContain(">Dismiss on-screen keyboard</span>");
 
-  const ios = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  const ios = renderToStaticMarkup(<InspectorSections client={inspectorClient("ios")} />);
   expect(sectionMarkup(ios, "Device options")).not.toContain(">Dismiss on-screen keyboard</span>");
 });
 
@@ -1693,7 +1874,7 @@ test("renders the Android on-screen keyboard switch the backend reports", () => 
       "onscreen-keyboard": "on",
     },
   } satisfies DeviceClient;
-  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  const html = renderToStaticMarkup(<InspectorSections client={client} />);
 
   expect(switchMarkup(html, "Force on-screen keyboard")).toContain('aria-checked="true"');
   expect(html).toContain(ONSCREEN_KEYBOARD_DESCRIPTION);
@@ -1769,13 +1950,29 @@ test("shows the active hardware encoder and hides unresolved encoder names", () 
   ).not.toContain("Active encoder:");
 });
 
-test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed", null] as const)(
-  "recording state %s locks only capture and destructive device controls",
-  (screenRecording) => {
+test.each([
+  ["unknown", "status-unknown"],
+  ["waiting", "recording"],
+  ["recording", "recording"],
+  ["finalizing", "recording"],
+  ["complete", null],
+  ["failed", null],
+  [null, null],
+  // The dashboard follows the client's lock, not its own reading of the status.
+  ["recording", null],
+  ["unknown", null],
+  ["complete", "recording"],
+  ["recording", "status-unknown"],
+] as const)(
+  "with recording %s and recordingLock %s, the lock disables only capture and destructive device controls",
+  (screenRecording, recordingLock) => {
+    const locked = recordingLock !== null;
     const base = inspectorClient("android");
     const client: DeviceClient = {
       ...base,
       screenRecording,
+      recordingLock,
+      recordingControlsLocked: locked,
       deviceSettings: { ...base.deviceSettings, "display-size": "medium" },
       streamSource: {
         mode: "grpc-screenshot",
@@ -1789,11 +1986,7 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
         sessionGeneration: 0,
       },
     };
-    const locked =
-      screenRecording === "unknown" ||
-      screenRecording === "waiting" ||
-      screenRecording === "recording" ||
-      screenRecording === "finalizing";
+    const unknownReason = recordingLock === "status-unknown";
     const stream = renderToStaticMarkup(
       <StreamOptionsSection
         client={client}
@@ -1816,21 +2009,19 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
     }
     expect(selectMarkup(stream, "Stream transport")).not.toContain('disabled=""');
     expect(stream).not.toContain("Capture settings are locked");
-    expect(stream.includes("until recording status is known")).toBe(screenRecording === "unknown");
+    expect(stream.includes("until recording status is known")).toBe(unknownReason);
     expect((stream.match(/role="group"/g) ?? []).length).toBe(locked ? 7 : 0);
     if (locked) expect(stream).toContain('aria-description="Unavailable until recording');
 
     const deviceOptions = renderToStaticMarkup(
-      <LogSidebar client={client} onShutdown={() => {}} onRemove={() => {}} />,
+      <InspectorSections client={client} onShutdown={() => {}} onRemove={() => {}} />,
     );
     for (const label of ["Shut down", "Remove"]) {
       const end = deviceOptions.indexOf(`>${label}<`);
       const button = deviceOptions.slice(deviceOptions.lastIndexOf("<button", end), end);
       expect(button.includes('disabled=""')).toBe(locked);
     }
-    expect(deviceOptions.includes("until recording status is known")).toBe(
-      screenRecording === "unknown",
-    );
+    expect(deviceOptions.includes("until recording status is known")).toBe(unknownReason);
     expect((deviceOptions.match(/aria-description="Unavailable/g) ?? []).length).toBe(
       locked ? 2 : 0,
     );
@@ -1839,3 +2030,46 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
     }
   },
 );
+
+test("Android fold capabilities show the shared pose controls without Duo-only controls", () => {
+  const base = inspectorClient("android");
+  const client = {
+    ...base,
+    fold: { angle: 0, pose: "closed", pending: false, error: null, setControl: () => {} },
+    capabilities: {
+      ...base.capabilities,
+      fold: {
+        angle: { min: 0, max: 180 },
+        poses: { closed: { angle: 0 }, book: { angle: 90 }, open: { angle: 180 } },
+        tableMode: false,
+      },
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<InspectorSections client={client} />);
+  expect(html).toContain('aria-label="Fold pose"');
+  expect(html).toContain("Fully folded");
+  expect(html).toContain('aria-label="Hinge angle"');
+  expect(html).not.toContain(">Table Mode<");
+  expect(html).not.toContain(">Preview mode<");
+  expect(html).not.toContain(">Folded<");
+  const locked = renderToStaticMarkup(
+    <InspectorSections
+      client={{
+        ...client,
+        recordingLock: "recording",
+        fold: { ...client.fold, unavailable: "recording" },
+      }}
+    />,
+  );
+  expect(locked.match(/<button[^>]*aria-label="Fold pose"[^>]*>/)?.[0]).toContain("disabled");
+  expect(locked).toContain("interrupt the recording");
+  // A recording that follows folds locks rotation but leaves the fold controls on.
+  const following = renderToStaticMarkup(
+    <InspectorSections client={{ ...client, recordingLock: "recording" }} />,
+  );
+  expect(following.match(/<button[^>]*aria-label="Fold pose"[^>]*>/)?.[0]).not.toContain(
+    "disabled",
+  );
+  const unsupported = renderToStaticMarkup(<InspectorSections client={base} />);
+  expect(unsupported).not.toContain('aria-label="Fold pose"');
+});

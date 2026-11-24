@@ -41,10 +41,11 @@
   },
   "dependencies": {
     "@expo/styleguide": "^14.1.5",
-    "@radix-ui/react-dialog": "^1.1.15",
-    "@radix-ui/react-dropdown-menu": "^2.1.16",
-    "@radix-ui/react-select": "^2.3.7",
-    "@radix-ui/react-tooltip": "^1.2.16",
+    "@radix-ui/react-dialog": "1.1.23",
+    "@radix-ui/react-dropdown-menu": "2.1.24",
+    "@radix-ui/react-popover": "1.1.23",
+    "@radix-ui/react-select": "2.3.7",
+    "@radix-ui/react-tooltip": "1.2.16",
     "@radix-ui/react-visually-hidden": "^1.2.4",
     "sonner": "^2.0.7"
   },
@@ -52,13 +53,18 @@
     "@expo/hub-client": "workspace:*",
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.15.43",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "~19.2.2",
     "@types/react-dom": "~19.2.0",
+    "@types/react-test-renderer": "19.1.0",
+    "happy-dom": "^20.14.5",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
+    "react-test-renderer": "19.2.3",
     "typescript": "~6.0.3"
   },
   "peerDependencies": {
+    "@expo/hub-client": "*",
     "react": "*",
     "react-dom": "*"
   },

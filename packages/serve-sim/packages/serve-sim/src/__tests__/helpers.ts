@@ -8,6 +8,8 @@ import { stateDir, stateFileForDevice } from "../state";
 
 export const UDID = "404F2659-7202-4450-8465-912BD2AB744B";
 export const EXIT_0_SHIM = "#!/bin/sh\nexit 0\n";
+export const SCREENSHOT_SHIM =
+  '#!/bin/sh\nif [ "$1" = simctl ] && [ "$2" = list ]; then printf \'{ "devices": {} }\'; exit 0; fi\nfor output; do :; done\nprintf PNG > "$output"\n';
 
 /** Puts throwaway executables first on PATH; `restore` puts PATH back and removes them. */
 export function installShims(shims: Record<string, string>): { dir: string; restore(): void } {

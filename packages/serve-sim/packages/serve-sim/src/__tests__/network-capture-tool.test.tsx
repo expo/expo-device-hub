@@ -445,6 +445,10 @@ describe("visibleChangeError", () => {
     ).toBeNull();
   });
 
+  test("hides the restart action's duplicate capture failure", () => {
+    expect(visibleChangeError(reason, failed(reason))).toBeNull();
+  });
+
   test("keeps a restart failure that shares the failed start's reason", () => {
     // Its recovery advice (boot the simulator again) is not in the capture state.
     const restart =

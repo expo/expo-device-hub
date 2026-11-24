@@ -21,10 +21,21 @@ with it, and manage which devices are running from one place.
 - Interact directly — tap, swipe, scroll, and type into the device.
 - Boot, shut down, and add devices without opening Xcode or Android Studio.
 - Follows your system light/dark theme, and can flip the device's appearance too.
+- Folds the iPhone Duo: pick a pose or drag the hinge on a live 3D model of the device, or
+  watch its active display flat in 2D.
+- Folds Android emulators whose hinge moves from 0 to 180 degrees, such as the Pixel Fold:
+  pick Fully folded, Partially open, or Fully open, or set any angle in between.
 - Feed an Android emulator's camera a PNG from the inspector's Camera section.
 
 > iOS simulators require macOS with Xcode. Android emulators require the Android SDK
 > (`emulator`, `adb`).
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/expo-device-hub-dashboard-dark-2x.png">
+    <img alt="The Expo Device Hub dashboard with the device lists, the current app, and an iPhone Duo that is partially open in the 3D preview" src="assets/expo-device-hub-dashboard-light-2x.png" width="838">
+  </picture>
+</p>
 
 ## Use in an Expo app
 
@@ -142,6 +153,24 @@ registers the plugin against itself, so the standalone app still gets the real
 > so hot reload covers the UI. After changing anything under
 > [`src/server`](packages/expo-device-hub/src/server), rebuild it with
 > `bun run build:server`.
+
+### CI and Xcode support
+
+The published packages build serve-sim's native code with Xcode 26, so they work for
+users on Xcode 26 and Xcode 27. [LLP 0014](llp/0014-serve-sim-xcode-support-and-ci.decision.md)
+has the full support statement.
+
+| When                                               | What runs                                                               |
+| -------------------------------------------------- | ----------------------------------------------------------------------- |
+| Every push to a PR                                 | Checks: lint and typecheck                                              |
+| Every push to a PR that is ready for review        | serve-sim tests: the Xcode 26 build on the iOS 26 and iOS 27 Simulators |
+| Every push to a draft PR with the `ci-ready` label | serve-sim tests, as above                                               |
+| Every push to a PR with the `xcode-27` label       | Also an Xcode 27 build, tested on the iOS 27 Simulator                  |
+| Every night on `main`                              | The Xcode 27 build, tested on the iOS 27 Simulator                      |
+
+The serve-sim tests run only when a PR changes serve-sim or its CI files, and they use
+several macOS machines. Open a PR as a draft while you iterate, and add `ci-ready`
+only when you want a run.
 
 ## hub-client
 

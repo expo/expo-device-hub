@@ -2,6 +2,7 @@ import { type AgentInteraction } from "@expo/hub-client";
 
 import { argentInteractionMessage } from "../argent-interaction-protocol";
 import { ArgentInteractionLog } from "./argent-interaction-log";
+import { SERVER_SINGLE_DEVICE, isSessionDevice } from "./single-device";
 
 const POLL_INTERVAL_MS = 100;
 
@@ -33,7 +34,17 @@ export class ArgentInteractionBroadcaster {
 
   constructor(options: ArgentInteractionBroadcasterOptions = {}) {
     const log = new ArgentInteractionLog();
-    this.#read = options.read ?? (() => log.read());
+    this.#read =
+      options.read ??
+      (async () => {
+        const interactions = await log.read();
+        const policy = SERVER_SINGLE_DEVICE;
+        return policy
+          ? interactions.filter(({ deviceId }) =>
+              isSessionDevice(policy, policy.platform, deviceId),
+            )
+          : interactions;
+      });
     this.#intervalMs = options.intervalMs ?? POLL_INTERVAL_MS;
     this.#schedule = options.schedule ?? setTimeout;
     this.#cancelSchedule = options.cancelSchedule ?? clearTimeout;

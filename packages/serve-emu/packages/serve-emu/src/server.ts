@@ -2,15 +2,16 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import type { ServerWebSocket } from "bun";
+import { DEFAULT_IDLE_REPEAT_MS } from "./grpc-session.ts";
 import {
   CameraInputError,
   cameraLaunchIsWired,
   handleCameraRequest,
   readCameraWiring,
 } from "./camera.ts";
-import { screenshotResponse } from "./screenshot-response.ts";
+import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
 import { getExecSnapshot } from "./exec.ts";
-import { getFoldStatus, setFoldPosture } from "./fold.ts";
+import { applyFoldRequest, getFoldStatus } from "./fold.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
 import {
   getFontWeight,
@@ -32,9 +33,9 @@ import {
   setNightMode,
   setReduceMotion,
   setSoftwareKeyboard,
+  getDisplayOrientation,
   setUserRotation,
   type NightMode,
-  type OrientationMode,
 } from "./adb.ts";
 import {
   findAccessibilityNode,
@@ -55,7 +56,7 @@ import {
 } from "./app-management.ts";
 import { listPermissions, resetPermissions } from "./app-permissions.ts";
 import { getForegroundApp } from "./app-info.ts";
-import { readAppIcon } from "./apk-icon.ts";
+import { readAppDetails } from "./apk-icon.ts";
 import { terminalTransitionAllowed, type SessionStatus } from "./session-status.ts";
 import { FRAME_META_HEADER_BYTES, epochNowMs, writeFrameMetaHeader } from "./shared/frame-meta.ts";
 import {
@@ -95,7 +96,7 @@ import {
   DeviceSessionManager,
   SessionChangedError,
 } from "./device-session-context.ts";
-import type { DeviceSessionState } from "./device-session-state.ts";
+import type { DeviceSessionState, DeviceSessionStateOptions } from "./device-session-state.ts";
 import { routePlaybackErrorResponse } from "./route-playback-api.ts";
 import { JsonResponseTracker } from "./json-response.ts";
 import { parseSessionPageQuery } from "./session-api.ts";
@@ -123,6 +124,8 @@ import {
   streamEncoderSettingsEqual,
   StreamSettingsUnavailableError,
   viewerTransportsFor,
+  webSocketVideoAllowed,
+  STREAM_TRANSPORT_LOCKED,
   type StreamEncoderSettings,
   type StreamEncoderSettingsPatch,
   type StreamSettings,
@@ -150,7 +153,10 @@ import {
   isGrpcImageMode,
   isInputSource,
   isStreamMode,
+  isOrientationMode,
+  ORIENTATION_MODE_ERROR,
   parseDisplayDensityScale,
+  parseFoldRequest,
   parseFontScale,
   parseStreamModeRequest,
   STREAM_MODES,
@@ -320,6 +326,10 @@ export type ServerDependencies = {
   readCameraWiring?: typeof readCameraWiring;
   loadAccessibility?: (serial: string, signal: AbortSignal) => Promise<AccessibilitySnapshot>;
   setLocation?: (serial: string, fix: GeoFix, signal: AbortSignal) => Promise<void>;
+  /** Read the display pose, like `setLocation`, for each device's state; adb by default. */
+  readOrientation?: DeviceSessionStateOptions["readOrientation"];
+  /** Lock or free the rotation for each device's state; adb by default. */
+  applyRotation?: DeviceSessionStateOptions["applyRotation"];
   createInputQueue?: (session: ScrcpySession) => ControlInputQueue;
   recoveryClock?: RecoveryWatchdogClock;
   createUploadManager?: (options: UploadManagerOptions) => UploadManager;
@@ -550,8 +560,15 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       serial,
       generation,
       stream,
-      applyLocation: setLocation,
-      deviceState,
+      ...(deviceState
+        ? { deviceState }
+        : {
+            applyLocation: setLocation,
+            readOrientation:
+              dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
+            applyRotation:
+              dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
+          }),
     });
     context.registerCleanup(() =>
       uploads.cancelGeneration(
@@ -630,6 +647,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       inputSource: context.stream.inputSource,
       grpcCapture: context.stream.diagnostics?.().grpcCapture ?? null,
       size: { width: context.screen.width, height: context.screen.height },
+      pose: context.deviceState.orientation.current(),
       clients: context.clients.size,
       videoClients: Array.from(context.clients).filter((client) => client.video).length,
       stream: redactedStreamSettings(streamSettings),
@@ -1530,6 +1548,10 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     ok: true as const,
     serial: context.serial,
     mode: context.stream.mode,
+    repeatFrameMs:
+      context.stream.mode === "grpc-screenshot"
+        ? opts.repeatFrameMs || DEFAULT_IDLE_REPEAT_MS
+        : (opts.repeatFrameMs ?? SCRCPY_DEFAULTS.repeatFrameMs),
     grpcImageMode: grpcImageModeForContext(context),
     encoder: encoderForContext(context),
     encoderName: context.stream.diagnostics?.().grpcCapture?.encoderName ?? null,
@@ -1824,6 +1846,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               width: requestContext.screen.width,
               height: requestContext.screen.height,
             },
+            pose: await requestContext.deviceState.orientation.fresh(),
             status: requestContext.status,
             clients: requestContext.clients.size,
             stream: streamSettings,
@@ -1953,6 +1976,13 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       if (url.pathname === "/webrtc/offer") {
         if (req.method !== "POST") {
           return new Response("method not allowed", { status: 405 });
+        }
+        const requestedSerial = url.searchParams.get("device")?.trim();
+        if (requestedSerial && requestedSerial !== requestContext.serial) {
+          return Response.json(
+            { ok: false, code: "device_mismatch", error: "selected device is not active" },
+            { status: 409 },
+          );
         }
         try {
           const offer = parseWebRtcOffer(
@@ -2140,17 +2170,11 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               throw new Error("orientation payload must be an object");
             }
             const orientation = (payload as Record<string, unknown>).orientation;
-            if (
-              orientation !== "auto" &&
-              orientation !== "portrait" &&
-              orientation !== "landscape"
-            ) {
-              throw new Error("orientation must be auto, portrait, or landscape");
-            }
+            if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
             return Response.json({
               ok: true,
               orientation: await runForContext(requestContext, (context) =>
-                setUserRotation(context.serial, orientation as OrientationMode),
+                context.deviceState.setOrientation(orientation),
               ),
             });
           } catch (err) {
@@ -2177,14 +2201,11 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
               throw new Error("fold payload must be an object");
             }
-            const posture = (payload as Record<string, unknown>).posture;
-            if (posture !== "closed" && posture !== "opened") {
-              throw new Error("posture must be closed or opened");
-            }
+            const fold = parseFoldRequest(payload as Record<string, unknown>);
             return Response.json({
               ok: true,
               fold: await runForContext(requestContext, (context) =>
-                setFoldPosture(context.serial, posture),
+                applyFoldRequest(context.serial, fold),
               ),
             });
           } catch (err) {
@@ -2509,10 +2530,16 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           return new Response("method not allowed", { status: 405 });
         }
         try {
-          const png = await runForContext(requestContext, (context) =>
-            screencapPng(context.serial),
+          return await screenshotResponse(
+            () =>
+              runForContext(requestContext, (context) =>
+                captureScreenshot(
+                  () => screencapPng(context.serial),
+                  context.deviceState.orientation,
+                ),
+              ),
+            url,
           );
-          return await screenshotResponse(png, url);
         } catch (err) {
           return errorResponse(err);
         }
@@ -2719,9 +2746,9 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           return Response.json({
             ok: true,
             packageName: pkg,
-            icon: await runForContext(requestContext, (context) =>
-              readAppIcon(context.serial, pkg),
-            ),
+            ...(await runForContext(requestContext, (context) =>
+              readAppDetails(context.serial, pkg),
+            )),
           });
         } catch (err) {
           return errorResponse(err);
@@ -2834,6 +2861,12 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
         }
         const frameMeta = url.searchParams.get("frame-meta") === "1";
         const video = url.searchParams.get("video") !== "0";
+        if (video && !webSocketVideoAllowed(streamSettings, requestContext.stream.meta.codecId)) {
+          return new Response(
+            JSON.stringify({ error: STREAM_TRANSPORT_LOCKED, transport: streamSettings.transport }),
+            { status: 409, headers: { "Content-Type": "application/json; charset=utf-8" } },
+          );
+        }
         const ok = srv.upgrade(req, {
           data: {
             id: nextId++,

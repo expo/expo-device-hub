@@ -27,11 +27,24 @@ requireE2E("hardware keyboard shift", ready);
 const describeWithSim = ready ? describe : describe.skip;
 
 function cli(...args: string[]): string {
-  return execFileSync("node", [CLI_PATH, ...args], {
-    env: { ...process.env },
+  const started = Date.now();
+  // serve-sim:ui times each step, so a slow CI run shows which one waited.
+  const result = spawnSync("node", [CLI_PATH, ...args], {
+    env: { ...process.env, DEBUG: "serve-sim:ui" },
     encoding: "utf8",
-    timeout: 15_000,
+    timeout: 60_000,
   });
+  const elapsed = Date.now() - started;
+  if (elapsed > 5_000)
+    console.log(`[shift-test] serve-sim ${args.join(" ")} took ${elapsed} ms:\n${result.stderr}`);
+  if (result.status === 0) return result.stdout;
+  // Keep the CLI's own output: CI otherwise shows only "Command failed".
+  const reason = result.error
+    ? result.error.message
+    : `status ${result.status}, signal ${result.signal}`;
+  throw new Error(
+    `serve-sim ${args.join(" ")} failed (${reason}):\n${result.stderr}${result.stdout}`,
+  );
 }
 
 function simctl(...args: string[]): string {
@@ -232,7 +245,7 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
 
   beforeEach(() => {
     cli("ui", "hardware-keyboard", "on", "-d", udid!);
-  });
+  }, 70_000);
 
   afterEach(async () => {
     for (const socket of sockets.splice(0)) socket.close();
@@ -240,7 +253,7 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
       cli("ui", "hardware-keyboard", "on", "-d", udid!);
     } catch {}
     await Bun.sleep(500);
-  });
+  }, 70_000);
 
   afterAll(() => {
     if (process.env.DEBUG?.includes("keyboard")) {

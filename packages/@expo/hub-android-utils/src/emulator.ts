@@ -30,6 +30,7 @@ export function buildEmulatorArgs(options: BootDeviceOptions, env = process.env)
     options.name,
     "-no-audio",
     "-no-window",
+    "-no-metrics",
     "-gpu",
     "auto",
     "-no-boot-anim",

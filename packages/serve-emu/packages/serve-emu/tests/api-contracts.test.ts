@@ -310,6 +310,12 @@ describe("API contracts", () => {
       streamMode: "grpc-screenshot",
       sessionGeneration: 4,
     });
+    expect("pose" in parseHealthResponse(health)).toBe(false);
+    expect(parseHealthResponse({ ...health, pose: null }).pose).toBeNull();
+    expect(parseHealthResponse({ ...health, pose: "portrait" }).pose).toBe("portrait");
+    expect(() => parseHealthResponse({ ...health, pose: 1 })).toThrow(
+      "health response.pose is invalid",
+    );
     expect(() => parseHealthResponse({ ...health, clientsDetail: [{}] })).toThrow(
       "clientsDetail[0].id",
     );

@@ -4,6 +4,7 @@ struct DeviceStateSnapshot: Codable, Equatable, Sendable {
     let generation: UInt64
     let revision: UInt64
     let state: CoreDeviceBridge.HingeState
+    var orientationObserved: Bool = false
 }
 
 struct DeviceMotionSample: Decodable, Sendable {
@@ -56,16 +57,20 @@ struct ObservedDeviceState {
     private(set) var revision: UInt64 = 0
     private(set) var state = CoreDeviceBridge.HingeState()
     private(set) var angleTimestamp: Double?
-    private var motionTimestamp: Double?
+    private(set) var motionTimestamp: Double?
     private(set) var orientationTimestamp: Double?
 
     init(generation: UInt64) { self.generation = generation }
 
-    var snapshot: DeviceStateSnapshot { .init(generation: generation, revision: revision, state: state) }
+    var snapshot: DeviceStateSnapshot {
+        .init(generation: generation, revision: revision, state: state,
+              orientationObserved: orientationTimestamp != nil)
+    }
 
     @discardableResult
     mutating func apply(_ update: DeviceStateUpdate, since startedAt: Double) -> Bool {
         let previous = state
+        let hadOrientationObservation = orientationTimestamp != nil
         switch update {
         case .angle(let sample):
             guard fresh(sample.timestamp, since: startedAt, after: angleTimestamp) else { return false }
@@ -87,7 +92,7 @@ struct ObservedDeviceState {
             orientationTimestamp = sample.timestamp
             state.orientation = sample.orientation
         }
-        if state != previous { revision &+= 1 }
+        if state != previous || hadOrientationObservation != (orientationTimestamp != nil) { revision &+= 1 }
         return true
     }
 
@@ -108,6 +113,7 @@ struct ObservedDeviceState {
 struct HingeControlEligibility {
     var angle: (value: Double, sentAt: Double)?
     var orientation: (value: String, sentAt: Double)?
+    var tableMode: (value: Bool, sentAt: Double)?
     private var orientationUncertainUntil: Double?
 
     mutating func recordOrientationRead(_ sample: PhysicalOrientationSample, since startedAt: Double) {
@@ -121,6 +127,9 @@ struct HingeControlEligibility {
     func state(observed: ObservedDeviceState) -> CoreDeviceBridge.HingeState {
         var state = observed.state
         if let angle, (observed.angleTimestamp ?? -.infinity) <= angle.sentAt { state.angle = angle.value }
+        if let tableMode, (observed.motionTimestamp ?? -.infinity) <= tableMode.sentAt {
+            state.tableMode = tableMode.value
+        }
         if let orientation {
             if let end = orientationUncertainUntil, orientation.sentAt <= end,
                (observed.orientationTimestamp ?? -.infinity) <= end {

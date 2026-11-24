@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { DEFAULT_IDLE_REPEAT_MS } from "./grpc-session.ts";
 import {
   getFontWeight,
   getDisplayDensity,
@@ -22,14 +23,31 @@ import {
   setNightMode,
   setReduceMotion,
   setSoftwareKeyboard,
+  getDisplayOrientation,
+  getDeviceSize,
   setUserRotation,
-  type OrientationMode,
   type NightModeStatus,
 } from "./adb.ts";
-import { screenshotResponse } from "./screenshot-response.ts";
+import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
 import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
-import { getFoldStatus, setFoldPosture } from "./fold.ts";
+import {
+  applyFoldRequest,
+  getFoldStatus,
+  openHingeSensor,
+  readFoldableDisplays,
+  readFoldState,
+  type FoldState,
+} from "./fold.ts";
+import { startFoldRecordingFeed, type FoldRecordingFeed } from "./fold-recording-feed.ts";
+import type { GrpcRecordingOutput } from "./grpc-recording-encoder.ts";
+import {
+  captureBox,
+  recordingCanvas,
+  screenForImage,
+  type RecordingPose,
+  type RecordingScreen,
+} from "./recording-canvas.ts";
 import {
   cameraLaunchIsWired,
   handleCameraRequest,
@@ -46,7 +64,7 @@ import {
 } from "./app-management.ts";
 import { listPermissions, resetPermissions } from "./app-permissions.ts";
 import { getForegroundApp } from "./app-info.ts";
-import { readAppIcon } from "./apk-icon.ts";
+import { readAppDetails } from "./apk-icon.ts";
 import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
 import { loadDeviceGrid } from "./device-grid.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
@@ -58,7 +76,7 @@ import {
   startEmulator,
   stopEmulator,
 } from "./emulator.ts";
-import { DeviceSessionState } from "./device-session-state.ts";
+import { DeviceSessionState, type DeviceSessionStateOptions } from "./device-session-state.ts";
 import {
   ScreenRecording,
   ScreenRecordingConflictError,
@@ -77,6 +95,8 @@ import {
   StreamSettingsUnavailableError,
   streamEncoderSettingsEqual,
   viewerTransportsFor,
+  webSocketVideoAllowed,
+  STREAM_TRANSPORT_LOCKED,
   type StreamEncoderSettings,
   type StreamEncoderSettingsPatch,
   type StreamSettings,
@@ -118,7 +138,10 @@ import {
   INPUT_SOURCES,
   isGrpcImageMode,
   isInputSource,
+  isOrientationMode,
+  ORIENTATION_MODE_ERROR,
   parseDisplayDensityScale,
+  parseFoldRequest,
   parseFontScale,
   parseStreamModeRequest,
   type GrpcImageMode,
@@ -350,7 +373,23 @@ export type CreateAppDependencies = {
   createWebRtcPublisher?: typeof createWebRtcPublisher;
   clock?: AppClock;
   setLocation?: (serial: string, fix: GeoFix, signal: AbortSignal) => Promise<void>;
+  /** Read the display pose, like `setLocation`, for a new device state; adb by default. */
+  readOrientation?: DeviceSessionStateOptions["readOrientation"];
+  /** Lock or free the rotation for a new device state; adb by default. */
+  applyRotation?: DeviceSessionStateOptions["applyRotation"];
+  /** Read a foldable's two displays for its recording canvas; the emulator's config by default. */
+  readFoldableDisplays?: typeof readFoldableDisplays;
+  /** Read the hinge and posture over adb, at a foldable recording's start and as a fallback. */
+  readFoldState?: typeof readFoldState;
+  /** Open the hinge over gRPC while a foldable records; the emulator's controller by default. */
+  openHingeSensor?: typeof openHingeSensor;
+  /** Read the shown display's size for a native-size MMAP fold recording; adb by default. */
+  readDisplaySize?: typeof getDeviceSize;
 };
+
+function recordingPose(state: FoldState): RecordingPose {
+  return state.hingeAngle !== null ? { hingeAngle: state.hingeAngle } : {};
+}
 
 async function createAppInternal(opts: AppOptions, dependencies: CreateAppDependencies = {}) {
   throwIfAborted(opts.signal, "serve-emu app startup aborted");
@@ -393,6 +432,65 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     (dependencies.startScrcpy
       ? async (options) => adaptScrcpySession(await dependencies.startScrcpy!(options))
       : startEmuSession);
+  const recorder = opts.screenRecording;
+  const readFold = dependencies.readFoldState ?? readFoldState;
+  const readOrientation =
+    dependencies.readOrientation ?? ((serial: string) => getDisplayOrientation(serial));
+  // Set once the app reads the hinge for its recording.
+  let readFoldNow: () => void = () => {};
+  // @ref LLP 0018#fold-canvas — a foldable records on a fixed canvas, so a fold does not end the recording
+  let foldRecording: GrpcRecordingOutput | undefined;
+  if (recorder?.active && streamMode === "grpc-screenshot") {
+    const displays = await (dependencies.readFoldableDisplays ?? readFoldableDisplays)(
+      opts.serial,
+    ).catch(() => null);
+    if (displays) {
+      const [pose, orientation] = await Promise.all([
+        readFold(opts.serial).catch(() => null),
+        readOrientation(opts.serial).catch(() => null),
+      ]);
+      recorder.observePose({
+        ...(pose ? recordingPose(pose) : {}),
+        ...(orientation ? { orientation } : {}),
+      });
+      // Native-size MMAP capture sizes its box from the startup display. The shown size names it
+      // even in rear display mode, where an open device shows its outer display.
+      const nativeMmap = streamEncoderSettings.maxDimension === 0 && grpcImageMode === "mmap";
+      const shown = nativeMmap
+        ? await (dependencies.readDisplaySize ?? getDeviceSize)(opts.serial).catch(() => null)
+        : null;
+      const layout = recorder.foldCanvas(
+        recordingCanvas(
+          displays,
+          captureBox({
+            maxSize: streamEncoderSettings.maxDimension,
+            imageMode: grpcImageMode,
+            displays,
+            startup: shown
+              ? screenForImage(shown, displays)
+              : pose?.posture
+                ? // The closed device shows its outer display.
+                  pose.posture === "closed"
+                  ? "outer"
+                  : "inner"
+                : null,
+          }),
+        ),
+      );
+      let recordedScreen: RecordingScreen | null = null;
+      foldRecording = {
+        ...layout,
+        accept: (packet, geometry) => {
+          // A new display means a fold, so read the hinge now instead of at the next poll.
+          if (recordedScreen !== null && geometry.screen !== recordedScreen) readFoldNow();
+          recordedScreen = geometry.screen;
+          recorder.accept(packet, layout.canvas, "grpc-screenshot", geometry);
+        },
+        fail: (error) => recorder.fail(error),
+        active: () => recorder.active,
+      };
+    }
+  }
   let openedSession: EmuSession | null = null;
   try {
     openedSession = await openSession({
@@ -406,6 +504,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       grpcImageMode,
       encoder,
       inputSource,
+      ...(foldRecording ? { recording: foldRecording } : {}),
     });
     throwIfAborted(opts.signal, "serve-emu app startup aborted");
   } catch (error) {
@@ -419,6 +518,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   }
   if (!openedSession) throw new Error("stream source did not start");
   let session: EmuSession = openedSession;
+  if (recorder && session.feedsRecording) recorder.followFold();
 
   const clients = new Set<Client>();
   const screen: Screen = { width: session.meta.width, height: session.meta.height };
@@ -464,6 +564,9 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       applyLocation:
         dependencies.setLocation ??
         ((serial, fix, signal) => setEmulatorLocationAsync(serial, fix, signal)),
+      readOrientation: dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
+      applyRotation:
+        dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
     });
   try {
     deviceState.acquire(deviceStateOwner);
@@ -473,6 +576,19 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   }
   const sessionRecorder = deviceState.recorder;
   const routePlayback = deviceState.route;
+  // The hinge also moves through adb or the emulator's own controls, so the recording reads it.
+  let foldFeed: FoldRecordingFeed | null = null;
+  if (recorder && session.feedsRecording) {
+    foldFeed = startFoldRecordingFeed({
+      openSensor: (signal) =>
+        (dependencies.openHingeSensor ?? openHingeSensor)(opts.serial, signal),
+      readHingeOverAdb: async () => (await readFold(opts.serial)).hingeAngle,
+      orientation: () => deviceState.orientation.current(),
+      observe: (pose) => recorder.observePose(pose),
+      active: () => recorder.active,
+    });
+    readFoldNow = foldFeed.readNow;
+  }
 
   const health = () => ({
     ok: status === "streaming",
@@ -488,6 +604,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     grpcCapture: session.diagnostics?.().grpcCapture ?? null,
     codec: session.meta.codecId,
     size: { width: screen.width, height: screen.height },
+    pose: deviceState.orientation.current(),
     clients: clients.size,
     videoClients: Array.from(clients).filter((client) => client.video).length,
     frames: frameCount,
@@ -952,7 +1069,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
             markTerminal("error", "video stream ended");
             break;
           }
-          opts.screenRecording?.accept(f, screen, activeSession.mode);
+          // A session that encodes the recording itself sends these packets to viewers only.
+          if (!activeSession.feedsRecording) {
+            opts.screenRecording?.accept(f, screen, activeSession.mode);
+          }
           if (f.type === "session") {
             // The encoder restarted with a new size (device rotation). Adopt it so
             // touch packets keep matching the video size (scrcpy drops touches
@@ -1091,6 +1211,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       grpcImageMode,
       encoder,
       inputSource: nextInputSource,
+      ...(foldRecording ? { recording: foldRecording } : {}),
     });
 
   const replaceCapture = async (
@@ -1289,6 +1410,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           inputSource: session.inputSource,
           codec: session.meta.codecId,
           size: { width: screen.width, height: screen.height },
+          pose: await deviceState.orientation.fresh(),
           status,
           lastFrameAt: lastFrameMs > 0 ? new Date(lastFrameMs).toISOString() : null,
           lastError,
@@ -1624,7 +1746,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         return new Response("method not allowed", { status: 405 });
       }
       try {
-        return await screenshotResponse(await screencapPng(opts.serial), url);
+        return await screenshotResponse(
+          () => captureScreenshot(() => screencapPng(opts.serial), deviceState.orientation),
+          url,
+        );
       } catch (err) {
         return Response.json(
           { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -1734,12 +1859,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
             throw new Error("orientation payload must be an object");
           }
           const orientation = (payload as Record<string, unknown>).orientation;
-          if (orientation !== "auto" && orientation !== "portrait" && orientation !== "landscape") {
-            throw new Error("orientation must be auto, portrait, or landscape");
-          }
+          if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
           return Response.json({
             ok: true,
-            orientation: await setUserRotation(opts.serial, orientation as OrientationMode),
+            orientation: await deviceState.setOrientation(orientation),
           });
         } catch (err) {
           return Response.json(
@@ -1763,16 +1886,22 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         }
       }
       if (req.method === "POST") {
+        // A recording that takes the viewers' packets ends when the display size changes.
+        if (opts.screenRecording?.active && !session.feedsRecording) {
+          return Response.json(
+            { ok: false, error: "Cannot fold during this screen recording." },
+            { status: 409 },
+          );
+        }
         try {
           const payload = await readJsonBody(req);
           if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
             throw new Error("fold payload must be an object");
           }
-          const posture = (payload as Record<string, unknown>).posture;
-          if (posture !== "closed" && posture !== "opened") {
-            throw new Error("posture must be closed or opened");
-          }
-          return Response.json({ ok: true, fold: await setFoldPosture(opts.serial, posture) });
+          const fold = parseFoldRequest(payload as Record<string, unknown>);
+          const status = await applyFoldRequest(opts.serial, fold);
+          if (session.feedsRecording) opts.screenRecording?.observePose(recordingPose(status));
+          return Response.json({ ok: true, fold: status });
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -1908,7 +2037,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         return Response.json({
           ok: true,
           packageName: pkg,
-          icon: await readAppIcon(opts.serial, pkg),
+          ...(await readAppDetails(opts.serial, pkg)),
         });
       } catch (err) {
         return middlewareRequestFailure(err);
@@ -1996,6 +2125,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       socket.close(1013, `session is ${status}`);
       return;
     }
+    if ((meta.video ?? true) && !webSocketVideoAllowed(streamSettings, session.meta.codecId)) {
+      socket.close(1008, STREAM_TRANSPORT_LOCKED);
+      return;
+    }
     const client: Client = {
       touches: new ClientTouchState(inputTarget),
       id: nextClientId++,
@@ -2046,6 +2179,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   const stop = (): Promise<void> => {
     if (stopTask) return stopTask;
     stopRequested = true;
+    foldFeed?.stop();
     captureRestarting = false;
     captureRestartController?.abort(new Error("server stopping"));
     captureRestartController = null;
@@ -2737,6 +2871,10 @@ export function createRouter(
     ok: true,
     serial,
     mode: streamSessionForApp(app).mode,
+    repeatFrameMs:
+      streamSessionForApp(app).mode === "grpc-screenshot"
+        ? DEFAULT_IDLE_REPEAT_MS
+        : SCRCPY_DEFAULTS.repeatFrameMs,
     grpcImageMode: grpcImageModeForApp(
       app,
       grpcImageModeOverrides.get(serial) ?? defaults.grpcImageMode ?? DEFAULT_GRPC_IMAGE_MODE,

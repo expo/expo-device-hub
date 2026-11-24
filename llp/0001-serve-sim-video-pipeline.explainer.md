@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-14 (observed device state and recording geometry; recording reboot recovery)
+**Revised:** 2026-10-14 (observed device state and recording geometry; recording reboot recovery); 2026-10-23 (HTTP AVCC decoder configuration); 2026-10-31 (viewer frame placement: top-left, black bars right after the picture)
 **Related:** LLP 0002, LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -23,7 +23,7 @@ SimulatorKit active-panel IOSurface
        native size while recording, else the largest size a consumer needs
        |-> (recording) latest-frame mailbox -> hardware H.264 recorder
        |     -> MP4 + session.json
-       `-> viewer resize queue: scale/letterbox to the shared canvas
+       `-> viewer resize queue: scale to the shared canvas, picture top-left
              -> frame pump -> shared H.264 encoder -> H.264 WebRTC senders
                            `-> per-peer VP8 encoders -> VP8 WebRTC senders
 ```
@@ -55,6 +55,28 @@ recording-plus-WebRTC path uses the accelerated transfer. Neither a
 `CVPixelBuffer` wrapper nor a GPU transfer guarantees that the simulator is
 never delayed by a surface fence. Direct copy and viewer-scale latencies still
 need separate measurements.
+
+### HTTP AVCC decoder configuration
+
+`H264Encoder` requests low-latency rate control and falls back to default rate
+control after a drop, error, or timeout. The fallback protects motion
+throughput: in #437's benchmark, staying on low-latency rate control decoded
+about a third of the frames in a Metal-heavy scene. [confirmed: gwdp's
+benchmark in #437, 2026-10-23]
+
+Both modes disable frame reordering, but VideoToolbox's default-mode SPS omits
+the optional VUI. Chromium then infers a reorder window from the DPB size and
+holds about 14 frames before output: about 3 s on a still screen and about
+250 ms in motion. [observed: Chromium `media/gpu/h264_decoder.cc`,
+`UpdateMaxNumReorderFrames`; confirmed: gwdp's benchmark in #437, 2026-10-23] `avcCBlob` therefore adds a
+VUI with `max_num_reorder_frames = 0` when the SPS has none
+(`Sources/StreamingPolicy/H264SPSReorderLimit.swift`), following WebRTC's
+`SpsVuiRewriter`. It does so only when the session accepted
+`AllowFrameReordering = false`. An SPS that already has a VUI, an unsupported
+layout, or a malformed SPS passes through unchanged. VideoToolbox carries the
+SPS only in the format description, not in-band, so the description and the
+stream agree. The rewrite does not apply to the parameter sets that shared
+WebRTC sends.
 
 ## Capture recovery
 
@@ -149,6 +171,42 @@ it, a viewer offering VP8 uses the existing per-peer software path. An H.264-onl
 viewer can join at a lower level by shrinking the shared canvas to fit.
 The same VP8 path remains when the H.264 hardware probe fails. The recording
 encoder is independent of those fallbacks.
+
+### Viewer frame placement
+
+The shared canvas can have another shape than the active panel: an iPhone Duo
+session sizes it for the inner screen, so the cover screen does not fill it
+[observed: `FrameCapture.computeWebRTCEncodeCanvasSize()`]. The resizer then
+draws the picture at its own proportions from the canvas's top-left corner
+(`LetterboxPlacement.topLeft`) and rounds its size up to even numbers. The
+unused columns on the right or rows at the bottom are black bars that start
+right after the picture. Clients show the screen with `object-fit: cover` and
+`object-position: 0 0` in a box with the screen's proportions, so the unused
+area stays outside the box [confirmed: Krystof Woldrich, 2026-10-29].
+
+- Top-left, not centered: the unused area is only on the right or bottom, and
+  the client needs only the screen size to cut it. A centered picture has bars
+  on both sides that rounding makes uneven, which a centered `cover` crop does
+  not remove exactly.
+- Black right after the picture, as static as the old bars: they stay the same
+  while the picture changes. A browser that draws the frame
+  smaller can mix the first black column into the screen's edge, which showed
+  as a thin dark line [observed: iPhone Duo cover screen in expo-device-hub].
+  Repeating the picture's edge past it removes the line, but that area then
+  changes with the picture; the defect was the missing columns, not the line
+  [confirmed: Krystof Woldrich, 2026-10-31, after a review flagged lower Duo
+  throughput].
+- Metal needs an explicit `MPSScaleTransform`. With only a clip rect, MPS scales
+  the source to the whole canvas and the clip cuts the picture's right edge
+  [observed: 798 × 1136 frames lost 18 of 792 panel columns].
+- Recordings keep the centered placement and report their content rect
+  separately (see Saved MP4 layout contract).
+- With WebRTC viewers alone, the capture already has the canvas size and passes
+  through unchanged. While a recording runs, or an MJPEG or AVCC viewer is
+  attached, every device is resized; there the old centered placement left
+  2–4 px bars and a Metal cut of the same size, and the new placement leaves at
+  most 2 black rows at the bottom [observed: placement math for iPhone and iPad
+  screens].
 
 ## Session recording
 
@@ -362,6 +420,12 @@ A start refused before writer creation is an expected cancellation during shutdo
 [observed: `CaptureEngine.swift`, `WebRTCPublisher.swift`, and `src/device-session.ts`].
 
 ## Control and shutdown
+
+Preview shutdown stops the foreground-app log trackers before waiting for recording
+finalization. Pending restarts are cancelled, and subscriptions arriving during
+shutdown cannot start another tail. Exit cleanup repeats this stop as a fallback
+[observed: `src/foreground-tracker.ts`, `createForegroundTrackerCache`; `src/index.ts`,
+`serve` shutdown and exit handlers].
 
 The in-process preview server reports a recording-shutdown error after 65 seconds,
 including its PID. It keeps the writer, output and existing device state alive;

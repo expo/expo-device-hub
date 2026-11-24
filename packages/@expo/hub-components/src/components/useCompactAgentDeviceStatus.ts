@@ -1,11 +1,14 @@
 import { type RefObject, useLayoutEffect, useState } from "react";
 
 const DEVICE_ROW_GAP = 16;
-const DEVICE_NAME_STATUS_GAP = 8;
+/** The gap between the items before the version: the marks, the name, and the status. */
+const DEVICE_NAME_STATUS_GAP = 4;
 const AGENT_STATUS_GAP = 5;
 
 type CompactStatusWidths = {
   available: number;
+  /** Width of the marks before the name, with the gap after each one. */
+  leading?: number;
   name: number;
   version: number;
   badge: number;
@@ -14,7 +17,8 @@ type CompactStatusWidths = {
 
 export function shouldCompactAgentDeviceStatus(widths: CompactStatusWidths): boolean {
   return (
-    widths.name +
+    (widths.leading ?? 0) +
+      widths.name +
       DEVICE_NAME_STATUS_GAP +
       widths.badge +
       AGENT_STATUS_GAP +
@@ -50,9 +54,14 @@ export function useCompactAgentDeviceStatus({
       const style = window.getComputedStyle(button);
       const available =
         button.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      let leading = 0;
+      for (const mark of button.querySelectorAll<HTMLElement>("[data-device-leading]")) {
+        leading += mark.offsetWidth + DEVICE_NAME_STATUS_GAP;
+      }
       setCompact(
         shouldCompactAgentDeviceStatus({
           available,
+          leading,
           name: name.scrollWidth,
           version: version.scrollWidth,
           badge: badge.offsetWidth,

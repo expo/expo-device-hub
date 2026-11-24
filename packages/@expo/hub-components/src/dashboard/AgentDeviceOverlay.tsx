@@ -1,9 +1,8 @@
-import { Button, textSize } from "../primitives";
+import { Button, layer, scrim, textSize } from "../primitives";
 
-// Match the flat connection-state surface in @expo/hub-client/DeviceScreen.
-const DEVICE_STATUS_OVERLAY_BACKGROUND = "rgba(0, 0, 0, 0.55)";
-const DEVICE_STATUS_OVERLAY_TEXT = "rgba(255, 255, 255, 0.7)";
-const DEVICE_STATUS_OVERLAY_AGENT_TEXT = "rgba(218, 233, 255, 0.74)";
+// A dim layer over the live device screen, in the `scrim` colors. These are the
+// values of the connection overlay that hub-client's DeviceScreen drew before
+// LLP 0015; the loading and error states now come from `DeviceScreenStatus`.
 
 /** Unshaped hover notice; PhoneFrame clips it to the device screen. */
 export function AgentDeviceOverlay({
@@ -23,7 +22,7 @@ export function AgentDeviceOverlay({
       style={{
         position: "absolute",
         inset: 0,
-        zIndex: 2,
+        zIndex: layer.screenOverlay,
         display: visible ? "flex" : "none",
         alignItems: "center",
         justifyContent: "center",
@@ -31,7 +30,7 @@ export function AgentDeviceOverlay({
         boxSizing: "border-box",
         pointerEvents: "auto",
         textAlign: "center",
-        backgroundColor: DEVICE_STATUS_OVERLAY_BACKGROUND,
+        backgroundColor: scrim.background,
       }}
     >
       <div
@@ -44,10 +43,10 @@ export function AgentDeviceOverlay({
           gap: 12,
         }}
       >
-        <div style={{ color: DEVICE_STATUS_OVERLAY_AGENT_TEXT, ...textSize.sm, fontWeight: 600 }}>
+        <div style={{ color: scrim.agentText, ...textSize.sm, fontWeight: 600 }}>
           Agent is using this device
         </div>
-        <div style={{ maxWidth: 260, color: DEVICE_STATUS_OVERLAY_TEXT, ...textSize.xs }}>
+        <div style={{ maxWidth: 260, color: scrim.text, ...textSize.xs }}>
           Taking over might collide with what the agent is doing.
         </div>
         <Button

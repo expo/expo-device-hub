@@ -14,6 +14,11 @@ import {
   serveSimAllowsOrigin,
 } from "./serve-sim-options";
 import { FRAME_ANCESTORS, SESSION_TOKEN } from "./session-token";
+import {
+  SERVER_SINGLE_DEVICE,
+  singleDeviceRefusal,
+  refuseSingleDeviceSocket,
+} from "./single-device";
 
 export const SIM_PREFIX = "/vendor/serve-sim";
 /**
@@ -30,6 +35,9 @@ const middleware = simMiddleware({
   basePath: SIM_BASE_PATH,
   proxyHelpers: true,
   ...standaloneOptions,
+  ...(SERVER_SINGLE_DEVICE?.platform === "ios"
+    ? { device: SERVER_SINGLE_DEVICE.id, singleDevice: SERVER_SINGLE_DEVICE.id }
+    : {}),
   // The Hub's gate runs first and passes an authorized request on with the token as a bearer.
   ...(SESSION_TOKEN
     ? { execToken: SESSION_TOKEN, requirePreviewToken: true, frameAncestors: FRAME_ANCESTORS }
@@ -39,6 +47,14 @@ const middleware = simMiddleware({
 /** Whether serve-sim lets a page on `origin` read its responses. */
 export const simAllowsOrigin = (origin: URL): boolean =>
   serveSimAllowsOrigin(standaloneOptions.corsOrigins ?? [], origin);
+/**
+ * Waits for a clipboard setup that serve-sim's preview may still be running, then releases what it
+ * set up on the devices it opened.
+ * @ref LLP 0013#hub-shutdown
+ */
+export function shutdownServeSim(): Promise<void> {
+  return middleware.dispose();
+}
 
 const SERVE_SIM_STATE_DIR = join(tmpdir(), "serve-sim");
 const SPAWN_RETRY_COOLDOWN_MS = 30_000;
@@ -47,10 +63,11 @@ let spawnInFlight = false;
 let lastSpawnFailureAt = 0;
 
 export async function handleSimRequest(request: Request): Promise<Response | null> {
+  if (SERVER_SINGLE_DEVICE?.platform === "android") return singleDeviceRefusal();
   const url = new URL(request.url);
   const isPreviewRoot =
     request.method === "GET" && (url.pathname === SIM_PREFIX || url.pathname === `${SIM_PREFIX}/`);
-  if (isPreviewRoot) ensureHelperSpawned();
+  if (isPreviewRoot && !SERVER_SINGLE_DEVICE) ensureHelperSpawned();
 
   const response = await middleware(
     new Request(`${url.origin}${MOUNT_PATH}${url.pathname}${url.search}`, request),
@@ -65,6 +82,10 @@ export const simWebSocketHandler = (
   socket: { close(): void; on(event: "error", listener: () => void): unknown },
   request: Request,
 ): void => {
+  if (SERVER_SINGLE_DEVICE?.platform === "android") {
+    refuseSingleDeviceSocket(socket);
+    return;
+  }
   const url = new URL(request.url);
   const rewritten = new Request(`${url.origin}${MOUNT_PATH}${url.pathname}${url.search}`, request);
   const handled = middleware.handleWebSocket?.(rewritten, socket);

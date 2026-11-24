@@ -5,7 +5,7 @@ import { ServeSimBrandLink } from "./serve-sim-brand-link";
 export function DeviceSidebarToggle({ open, onClick }: { open: boolean; onClick: () => void }) {
   return (
     <div
-      className={`fixed top-3 left-3 z-30 flex items-center gap-1 p-1 [transition:opacity_0.18s_ease] ${open ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"}`}
+      className={`fixed top-[calc(env(safe-area-inset-top,0px)+12px)] sm:top-3 left-[max(12px,env(safe-area-inset-left,0px))] sm:left-3 z-30 flex items-center gap-1 p-1 [transition:opacity_0.18s_ease] ${open ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"}`}
     >
       <IconButton
         onClick={onClick}

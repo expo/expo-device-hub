@@ -4,6 +4,7 @@ import type { VideoPacket, ScrcpySession } from "../src/scrcpy.ts";
 import { startServer, type ServerDependencies } from "../src/server.ts";
 import type { RecoveryWatchdogClock } from "../src/session-recovery-watchdog.ts";
 import type { StreamSettings } from "../src/stream-settings.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -337,6 +338,7 @@ async function createHarness(
   let webRtcPublisherCreateCalls = 0;
   let openedWebRtcSettings: unknown;
   const dependencies: ServerDependencies = {
+    readOrientation: readNoOrientation,
     startScrcpy: async ({ serial }) => {
       startCalls.push(serial);
       const gate = startGates.get(serial);
@@ -813,6 +815,44 @@ describe("server recovery watchdog", () => {
       });
     } finally {
       harness.started.stop();
+    }
+  });
+
+  test("an offer retry cannot replace an explicitly selected device after a switch", async () => {
+    const publisher = new FakeWebRtcPublisher();
+    const gate = deferred<void>();
+    const harness = await createHarness({
+      serials: ["A", "B"],
+      webRtcPublisher: publisher,
+      webRtcPublisherGate: gate,
+    });
+    const offer = {
+      type: "offer",
+      sdp: "v=0\r\n",
+      sessionId: "00000000-0000-4000-8000-000000000009",
+      codec: "h264",
+    };
+    try {
+      const pending = harness.post("/webrtc/offer?device=A", offer);
+      await waitFor(() => harness.webRtcPublisherCreateCalls === 1);
+      expect((await harness.post("/api/devices/select", { serial: "B" })).status).toBe(200);
+      gate.resolve();
+      const stale = await pending;
+      expect(stale.status).toBe(409);
+      expect(await stale.json()).toMatchObject({ code: "session_changed" });
+
+      const retry = await harness.post("/webrtc/offer?device=A", offer);
+      expect(retry.status).toBe(409);
+      expect(await retry.json()).toMatchObject({ ok: false, code: "device_mismatch" });
+      expect(harness.webRtcPublisherCreateCalls).toBe(1);
+      expect(publisher.sessionId).toBeNull();
+
+      for (const path of ["/webrtc/offer?device=B", "/webrtc/offer"]) {
+        expect((await harness.post(path, offer)).status).toBe(200);
+      }
+    } finally {
+      gate.resolve();
+      await harness.started.stop();
     }
   });
 

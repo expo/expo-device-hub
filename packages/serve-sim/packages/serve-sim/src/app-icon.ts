@@ -40,25 +40,41 @@ export function appContainerFromResult(result: HostActionResult): string | null 
   throw new Error(result.stderr.trim() || "simctl could not look up the app");
 }
 
+/**
+ * The installed `.app` directory as simctl reports it. The server trusts this path because it asked
+ * simctl itself; no caller names it. On some hosts it is outside `ALLOWED_ROOTS`, for example a
+ * runtime mounted under `/private/var/run/com.apple.security.cryptexd/mnt`.
+ */
+export async function readAppContainer(
+  udid: string,
+  bundleId: string,
+  timeoutMs?: number,
+): Promise<string | null> {
+  return appContainerFromResult(
+    await runInvocation({
+      file: "xcrun",
+      args: ["simctl", "get_app_container", udid, bundleId, "app"],
+      timeoutMs,
+    }),
+  );
+}
+
+/** An Info.plist as JSON, or null when plutil cannot read it. */
+export async function readInfoPlist(path: string): Promise<unknown> {
+  const result = await runInvocation({
+    file: "plutil",
+    args: ["-convert", "json", "-o", "-", path],
+  });
+  try {
+    return result.exitCode === 0 ? JSON.parse(result.stdout) : null;
+  } catch {
+    return null;
+  }
+}
+
 const defaultDeps: AppIconDeps = {
-  appContainer: async (udid, bundleId) =>
-    appContainerFromResult(
-      await runInvocation({
-        file: "xcrun",
-        args: ["simctl", "get_app_container", udid, bundleId, "app"],
-      }),
-    ),
-  readInfoPlist: async (path) => {
-    const result = await runInvocation({
-      file: "plutil",
-      args: ["-convert", "json", "-o", "-", path],
-    });
-    try {
-      return result.exitCode === 0 ? JSON.parse(result.stdout) : null;
-    } catch {
-      return null;
-    }
-  },
+  appContainer: (udid, bundleId) => readAppContainer(udid, bundleId),
+  readInfoPlist,
   readIconFile: async (appPath, name) => {
     try {
       // Resolve links first: an app can ship an icon that is a symlink to any file on the host.

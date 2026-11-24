@@ -79,6 +79,8 @@ export const radius = {
   "2xl": "var(--expo-radius-2xl)",
   "3xl": "var(--expo-radius-3xl)",
   full: "var(--expo-radius-full)",
+  /** The card of a modal in the dashboard design: 40px, past the end of the styleguide's scale. */
+  modal: "var(--hub-radius-modal)",
 } as const;
 
 /** Box shadows. Tailwind: `shadow-*`. */
@@ -137,6 +139,126 @@ export const heading: Record<
   xs: { fontSize: 12, fontWeight: 600, lineHeight: 1.6, letterSpacing: "0" },
 };
 
+/**
+ * Status color sets. A status picks one tone, and every part of its UI (text,
+ * icon, border, surface) reads the color from that tone. Change a status color
+ * here, not in a component.
+ */
+export const tone = {
+  success: { text: text.success, icon: icon.success, border: border.success, bg: bg.success },
+  warning: { text: text.warning, icon: icon.warning, border: border.warning, bg: bg.warning },
+  danger: { text: text.danger, icon: icon.danger, border: border.danger, bg: bg.danger },
+  info: { text: text.info, icon: icon.info, border: border.info, bg: bg.info },
+} as const;
+
+export type Tone = keyof typeof tone;
+
+/**
+ * Durations and easings. The `.hub-pressable` rules in `theme.css` read `press`
+ * and `base` from the `--hub-motion-*` custom properties; keep both in step.
+ */
+export const motion = {
+  /** A press: the scale of a control under the pointer. */
+  press: "100ms",
+  /** A small state change: a tooltip, a chevron, a hover fill in a toast. */
+  fast: "120ms",
+  /** The default state change: hover fills and border colors. */
+  base: "150ms",
+  /** A panel that opens or closes: a sidebar section. */
+  panel: "200ms",
+  /** A device frame that changes its shape: a fold or a rotation. */
+  frame: "250ms",
+  ease: "ease",
+  /** Fast start, soft landing: content that enters or opens. */
+  easeOut: "cubic-bezier(0.16, 1, 0.3, 1)",
+  /** The standard curve for a value that moves between two states. */
+  easeInOut: "cubic-bezier(0.4, 0, 0.2, 1)",
+} as const;
+
+/** The selected item of a list: the info surface with its border, as in the dashboard design. */
+export const selection = {
+  bg: bg.info,
+  border: border.info,
+} as const;
+
+/**
+ * Colors of a control that is on. The semantic layer has no name for them; the
+ * website's `Switch` and slider use these palette steps.
+ */
+export const accent = {
+  /** The track of a switch that is on: `palette-blue10`. */
+  default: "var(--blue-10)",
+  /** The thumb of a slider: `palette-blue9`. */
+  thumb: "var(--blue-9)",
+  /** The knob of a switch that is on, and the ring of a slider thumb: `palette-white`. */
+  knob: "var(--expo-color-white)",
+  /** The knob of a switch that is off: white, and `palette-gray11` in the dark theme. */
+  knobOff: "var(--hub-switch-knob-off)",
+} as const;
+
+/** Opacity of a state, not of a color. */
+export const opacity = {
+  /** A control that cannot be used. */
+  disabled: 0.5,
+  /** A value that is out of date. */
+  stale: 0.55,
+} as const;
+
+/**
+ * Stacking order, lowest first. A layer inside the device frame or the stream
+ * panel stacks only against its siblings there; the page layers stack against
+ * each other.
+ */
+export const layer = {
+  /** Inside the device frame: the loading and error layer over the stream. */
+  screenStatus: 1,
+  /** Inside the device frame: the agent takeover prompt. */
+  screenOverlay: 2,
+  /** Inside the stream panel: the corner button of a phone layout. */
+  cornerButton: 3,
+  /** The sidebar resize handle. Above the stream, below the sidebar overlays. */
+  resizeHandle: 5,
+  /** The backdrop of a sidebar overlay. Its panel is one above. */
+  sidebarBackdrop: 10,
+  /** The backdrop of the topmost sidebar overlay. Its panel is one above. */
+  sidebarBackdropTopmost: 12,
+  /** The floating toggle of a closed sidebar. */
+  floatingToggle: 15,
+  /** The stream panel in a phone's full-screen presentation. */
+  presentation: 20,
+  /** The backdrop of a modal. */
+  dialogOverlay: 600,
+  /** The card of a modal. */
+  dialogContent: 601,
+  /** Menus and select lists, which can open from a dialog. */
+  popover: 605,
+  /** Tooltips and the server connection overlay, above every portal. */
+  top: 610,
+} as const;
+
+/**
+ * The glass of a device screen that has no picture: `palette-black` in both
+ * themes, as on the website.
+ */
+export const screenOff = "var(--expo-color-black)";
+
+/** Colors of a dim layer over live device content. They do not follow the theme. */
+export const scrim = {
+  /** The dim layer itself. */
+  background: "rgba(0, 0, 0, 0.55)",
+  /** Secondary text on the dim layer. */
+  text: "rgba(255, 255, 255, 0.7)",
+  /** Agent-colored text on the dim layer. */
+  agentText: "rgba(218, 233, 255, 0.74)",
+} as const;
+
+/** One line of text that ends in an ellipsis. The element needs `minWidth: 0` in a flex row. */
+export const truncate = {
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+} as const;
+
 export const tokens = {
   bg,
   text,
@@ -147,4 +269,11 @@ export const tokens = {
   font,
   textSize,
   heading,
+  tone,
+  selection,
+  accent,
+  motion,
+  opacity,
+  layer,
+  scrim,
 } as const;

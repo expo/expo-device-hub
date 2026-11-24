@@ -1,17 +1,27 @@
-import { type CSSProperties, useRef, useState } from "react";
+import { type CSSProperties, useRef } from "react";
 
-import { WarningIcon } from "./icons";
-import { bg, icon, radius, text, textSize } from "../theme/tokens";
+import { AndroidIcon, AppleIcon } from "./icons";
+import { bg, radius, selection, text, textSize, truncate } from "../theme/tokens";
 import { AgentDeviceStatus } from "./AgentDeviceStatus";
+import { PRESSABLE_CLASS, pressableStyle } from "./pressable";
+import { BUTTON_HEIGHTS } from "./Button";
+import { UnsupportedDeviceWarning } from "./UnsupportedDeviceWarning";
 import { useCompactAgentDeviceStatus } from "./useCompactAgentDeviceStatus";
 
+/** Height of a device row in the dashboard design. */
+export const DEVICE_LIST_ITEM_HEIGHT = 36;
+
 /**
- * A selectable row in the simulators list ("list button"). Selected rows use the
- * `hover` surface, idle rows the `subtle` surface — matching the Figma states.
+ * A selectable row in the simulators or emulators list, from the dashboard
+ * design: the platform mark, the device name, and the OS version at the right.
+ * An idle row is on the subtle surface. The selected row takes the selection
+ * surface with its border.
  */
 export type DeviceListItemProps = {
   name: string;
   version: string;
+  /** Picks the mark before the name: the Apple logo or the Android head. */
+  platform: "ios" | "android";
   /** Shows an accessible warning for a device type that Hub does not support or test. */
   unsupported?: boolean;
   usedByAgent?: boolean;
@@ -22,13 +32,12 @@ export type DeviceListItemProps = {
 export function DeviceListItem({
   name,
   version,
+  platform,
   unsupported = false,
   usedByAgent = false,
   selected = false,
   onClick,
 }: DeviceListItemProps) {
-  const [hovered, setHovered] = useState(false);
-  const [pressed, setPressed] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const nameRef = useRef<HTMLSpanElement>(null);
   const statusLabelRef = useRef<HTMLSpanElement>(null);
@@ -39,8 +48,14 @@ export function DeviceListItem({
     statusLabelRef,
     versionRef,
   });
+  const PlatformIcon = platform === "ios" ? AppleIcon : AndroidIcon;
 
   const style: CSSProperties = {
+    // A selected row keeps its fill under the pointer.
+    ...pressableStyle({
+      background: selected ? selection.bg : bg.subtle,
+      hoverBackground: selected ? selection.bg : bg.element,
+    }),
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
@@ -48,67 +63,62 @@ export function DeviceListItem({
     width: "100%",
     maxWidth: "100%",
     minWidth: 0,
+    height: DEVICE_LIST_ITEM_HEIGHT,
     boxSizing: "border-box",
-    padding: 16,
+    padding: "0 8px",
     overflow: "hidden",
-    border: "none",
-    borderRadius: radius.xl,
-    backgroundColor: selected ? bg.hover : hovered ? bg.element : "transparent",
+    // An idle row keeps the border's space, so selecting a row does not move its content.
+    border: `1px solid ${selected ? selection.border : "transparent"}`,
+    borderRadius: radius.lg,
     cursor: "pointer",
     textAlign: "left",
     fontFamily: "inherit",
-    transition: "background-color 150ms ease, transform 100ms ease",
-    transform: pressed ? "scale(0.98)" : undefined,
   };
 
-  return (
+  const row = (
     <button
       ref={buttonRef}
       type="button"
+      className={PRESSABLE_CLASS}
       style={style}
       onClick={onClick}
       aria-pressed={selected}
       aria-label={`${name}, ${version}${usedByAgent ? ", used by agent" : ""}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => {
-        setHovered(false);
-        setPressed(false);
-      }}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
     >
       <span
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 8,
+          gap: 4,
           flex: "1 1 auto",
           minWidth: 0,
           overflow: "hidden",
         }}
       >
+        <span
+          aria-hidden="true"
+          data-device-leading
+          style={{ display: "flex", flex: "0 0 auto", color: text.secondary }}
+        >
+          <PlatformIcon size={16} />
+        </span>
         {unsupported && (
           <span
-            role="img"
-            aria-label="Unsupported or untested device"
-            title="This device type is unsupported or untested."
-            style={{ display: "flex", flex: "0 0 auto", color: icon.warning }}
-          >
-            <WarningIcon size={16} />
-          </span>
+            aria-hidden="true"
+            data-device-leading
+            style={{ width: BUTTON_HEIGHTS["2xs"], flex: "0 0 auto" }}
+          />
         )}
         <span
           ref={nameRef}
           title={name}
           style={{
             ...textSize.sm,
+            ...truncate,
             minWidth: 0,
             flex: "1 1 auto",
             fontWeight: 500,
             color: text.default,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
           }}
         >
           {name}
@@ -123,7 +133,6 @@ export function DeviceListItem({
         ref={versionRef}
         style={{
           ...textSize.sm,
-          fontWeight: 500,
           color: text.secondary,
           whiteSpace: "nowrap",
           flexShrink: 0,
@@ -132,5 +141,15 @@ export function DeviceListItem({
         {version}
       </span>
     </button>
+  );
+
+  if (!unsupported) return row;
+
+  // @ref LLP 0000#device-support-warning — warning details must not select or boot the row
+  return (
+    <div style={{ position: "relative", minWidth: 0, width: "100%" }}>
+      {row}
+      <UnsupportedDeviceWarning name={name} />
+    </div>
   );
 }

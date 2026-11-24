@@ -1,47 +1,44 @@
 /**
- * `@expo/hub-components` — the dependency-free UI kit shared by Expo Hub and the
- * Expo dashboard website (`universe/server/website`).
+ * `@expo/hub-components` — the UI kit of the Expo Hub dashboard. It follows the
+ * design of the Expo dashboard website (`universe/server/website`) and uses the
+ * same `@expo/styleguide` design tokens. The website does not import this
+ * package; its only consumer is `expo-device-hub`.
  *
- * Components are ports of the website's `ui/components/*`, driving the same
- * `@expo/styleguide` design tokens. Two styling strategies coexist, matching the
- * originals:
- *   - Inline-style components ({@link Button}, {@link ControlButton}, …) read the
- *     typed tokens from `./theme/tokens` (CSS custom properties), so they work in
- *     any environment that defines the `--expo-theme-*` variables.
- *   - Radix + Tailwind components ({@link Dropdown}, {@link Dialog}, …) rely on the
- *     consumer providing the styleguide utility classes (the website's Tailwind
- *     preset, or Expo Hub's `global.css`).
+ * How a component is styled (the full rules are in `expo-device-hub/AGENTS.md`):
+ *   - Layout and colors are inline styles that read the typed tokens from
+ *     `./theme/tokens`.
+ *   - Hover, press and keyboard focus come from the `.hub-pressable` rules in
+ *     `./theme/theme.css` ({@link pressableStyle}), not from React state.
+ *   - The components ported 1:1 from the website ({@link Dropdown},
+ *     {@link DropdownItem}, the `Select` menu) keep the website's Tailwind
+ *     classes, which the consumer's stylesheet must generate (Expo Hub's
+ *     `global.css`).
  *
- * The CSS variables themselves are not bundled here — import them from the
- * consumer's design system, or use the `@expo/hub-components/theme.css` copy.
+ * Import `@expo/hub-components/theme.css` once: it defines the CSS variables
+ * and the component rules above.
  */
 
 // ── Components ──
+export {
+  ActivityIndicator,
+  LOADING_LABEL,
+  type ActivityIndicatorProps,
+} from "./components/ActivityIndicator";
 export { Button, type ButtonProps, type ButtonTheme, type ButtonSize } from "./components/Button";
 export { ControlButton, type ControlButtonProps } from "./components/ControlButton";
 export { DeviceListItem, type DeviceListItemProps } from "./components/DeviceListItem";
-export {
-  DialogRoot,
-  DialogContent,
-  DialogTitle,
-  DialogContentContainer,
-  DialogFooter,
-  DialogClose,
-} from "./components/Dialog";
-// Kept for the website: Expo Hub no longer renders `Dropdown`, `DropdownItem`,
-// `SegmentedControl`, `Switch`, or `StreamSection` (its inspector uses `Select`
-// pills, and the stream toolbar has no menu). Delete them once the website
-// confirms it does not import them either.
 export { Dropdown } from "./components/Dropdown";
 export { DropdownItem } from "./components/DropdownItem";
+export { IconButton, type IconButtonProps } from "./components/IconButton";
 export { Logo } from "./components/Logo";
-export { PillButton, type PillButtonProps } from "./components/PillButton";
+export { Modal, type ModalProps } from "./components/Modal";
 export { ResizeHandle } from "./components/ResizeHandle";
-export { SegmentedControl, type SegmentedControlOption } from "./components/SegmentedControl";
 export { Select, type SelectOption, type SelectProps } from "./components/Select";
 export { SidebarToggle } from "./components/SidebarToggle";
-export { Switch, type SwitchProps } from "./components/Switch";
+export { StatusDot, type StatusDotProps } from "./components/StatusDot";
+export { Tooltip, type TooltipProps } from "./components/Tooltip";
 export { cx } from "./components/cx";
+export { PRESSABLE_CLASS, pressableStyle, type PressableColors } from "./components/pressable";
 export { usePrefersReducedMotion } from "./components/usePrefersReducedMotion";
 export * from "./components/icons";
 
@@ -49,12 +46,18 @@ export * from "./components/icons";
 export * from "./theme/tokens";
 
 // ── Dashboard composites ──
-// These compose the primitives above into the Expo Hub dashboard layout. The
-// device stream is injected: `StreamPanel` / `PhoneFrame` take the `DeviceScreen`
-// component + `displayScreen` helper as props (typed from `@expo/hub-client`, a
-// types-only devDependency) so this library never imports the client at runtime.
-export { Sidebar } from "./dashboard/Sidebar";
-export { LogSidebar, type LogSidebarProps } from "./dashboard/LogSidebar";
+// These compose the primitives above into the Expo Hub dashboard layout. They
+// read a `DeviceClient` from props and take small helpers from `@expo/hub-client`,
+// a peer dependency, so the host's own copy serves both. The device stream is
+// injected: `StreamPanel` / `PhoneFrame` take the `DeviceScreen` component +
+// `displayScreen` helper as props. The 3D device preview is `DeviceModelScreen`
+// from `@expo/hub-client/models`, injected the same way, so only a consumer
+// that renders it loads three.js. This entry reads only the model catalog,
+// `@expo/hub-client/models/catalog`, which does not load it. Screen shapes are
+// `DeviceShape` from `@expo/hub-client/shapes`, also injected, so only a
+// consumer that passes it bundles the shape table.
+export { Sidebar, type SidebarProps } from "./dashboard/Sidebar";
+export { InspectorSections, type InspectorSectionsProps } from "./dashboard/InspectorSections";
 export { StreamPanel } from "./dashboard/StreamPanel";
 export {
   ScreenshotToast,
@@ -65,44 +68,56 @@ export {
 export { DeviceTitle, type DeviceTitleProps } from "./dashboard/DeviceTitle";
 export { EmptyState } from "./dashboard/EmptyState";
 export { DeviceSection, type DeviceSectionProps } from "./dashboard/DeviceSection";
-export { OutputSection } from "./dashboard/OutputSection";
 export { CurrentAppSection } from "./dashboard/CurrentAppSection";
 export {
+  DEVICE_SHAPE_2D_ONLY_DESCRIPTION,
   DeviceOptionsSection,
-  NO_DEVICE_FRAME_DESCRIPTION,
+  NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
-  type DeviceFrameOption,
+  type ScreenShapeOption,
 } from "./dashboard/DeviceOptionsSection";
-export { ActivityCharts, ActivitySection } from "./dashboard/ActivitySection";
+export { ActivityCharts } from "./dashboard/ActivityCharts";
 export { AccessibilitySection } from "./dashboard/AccessibilitySection";
 export { CameraSection } from "./dashboard/CameraSection";
+export { ClipboardSection } from "./dashboard/ClipboardSection";
+export {
+  ClipboardToast,
+  useClipboardToast,
+  type ClipboardRequest,
+  type ClipboardToastState,
+} from "./dashboard/ClipboardToast";
 export { LocationSection } from "./dashboard/LocationSection";
 export { PermissionsSection } from "./dashboard/PermissionsSection";
 export { EventsSection } from "./dashboard/EventsSection";
 export { LogsSection } from "./dashboard/LogsSection";
 export { CollapsibleSection } from "./dashboard/CollapsibleSection";
 export { KeyboardSection } from "./dashboard/KeyboardSection";
-export { PhoneFrame } from "./dashboard/PhoneFrame";
 export {
-  deviceFrameLayout,
-  deviceFrameRotation,
-  type DeviceFrameAsset,
-  type DeviceFrameAssets,
-  type DeviceFrameLayout,
-  type DeviceFrameRect,
-  type DeviceFrameRotation,
-} from "./dashboard/deviceFrame";
+  PhoneFrame,
+  type FoldPreviewMode,
+  type PhoneFrameFoldPreview,
+} from "./dashboard/PhoneFrame";
+export { MOBILE_CORNER_BUTTON_TOP, MOBILE_SIDEBAR_TOP_INSET } from "./dashboard/cornerButtons";
+export { DeviceScreenStatus, deviceScreenLoading } from "./dashboard/DeviceScreenStatus";
+export {
+  deviceScreenClipPath,
+  deviceScreenCornersClipPath,
+  type ScreenCornerRadiiCqw,
+} from "./dashboard/deviceScreenClipPath";
 export { LogControls } from "./dashboard/LogControls";
 export { LogList } from "./dashboard/LogList";
 export { LogRow } from "./dashboard/LogRow";
 export { StreamControls } from "./dashboard/StreamControls";
-export { StreamSection, type StreamModeAvailability } from "./dashboard/StreamSection";
+export { FoldSettings, type FoldPreviewOption } from "./dashboard/FoldSettings";
+export { FOLD_POSE_OPTIONS, selectedFoldPose } from "./dashboard/foldPoses";
+export { useModelPreviewMode } from "./dashboard/useModelPreviewMode";
 export {
   StreamOptionsSection,
   type StreamOptionsSectionProps,
 } from "./dashboard/StreamOptionsSection";
-export { RecentDevicesModal, type RecentDevicesModalProps } from "./dashboard/RecentDevicesModal";
+export { AddDeviceMenu, type AddDeviceMenuProps } from "./dashboard/AddDeviceMenu";
+export { NewDeviceModal, type NewDeviceModalProps } from "./dashboard/NewDeviceModal";
 export { BootErrorModal, type BootErrorModalProps } from "./dashboard/BootErrorModal";
 export {
   ServerConnectionOverlay,

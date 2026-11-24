@@ -1,21 +1,38 @@
 import { apiUrl } from "./android-api-url";
-import { type ScreenshotArtifact, type ScreenshotCapture } from "./types";
+import {
+  type ScreenshotArtifact,
+  type ScreenshotCapture,
+  type ScreenshotMetadata,
+  type ScreenshotOptions,
+} from "./types";
 
 type ScreenshotFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
-/** Capture a still PNG through serve-sim's or serve-emu's POST-only screenshot endpoint, along with whether it reached the session artifacts. */
+/** Capture a still image through serve-sim's or serve-emu's POST-only screenshot endpoint, along with whether it reached the session artifacts. */
 export async function fetchScreenshot(
   baseUrl: string,
   device?: string | null,
   fetchImpl: ScreenshotFetch = fetch,
+  options?: ScreenshotOptions,
 ): Promise<ScreenshotCapture | null> {
-  const url = `${apiUrl(baseUrl, "/api/screenshot")}${
+  let url = `${apiUrl(baseUrl, "/api/screenshot")}${
     device ? `?device=${encodeURIComponent(device)}` : ""
   }`;
+  for (const key of ["maxWidth", "format", "quality"] as const) {
+    const value = options?.[key];
+    if (value !== undefined) {
+      url += `${url.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(String(value))}`;
+    }
+  }
   try {
     const response = await fetchImpl(url, { method: "POST", cache: "no-store" });
     if (!response.ok) return null;
-    return { blob: await response.blob(), artifact: screenshotArtifact(response.headers) };
+    const metadata = screenshotMetadata(response.headers);
+    return {
+      blob: await response.blob(),
+      artifact: screenshotArtifact(response.headers),
+      ...(metadata ? { metadata } : {}),
+    };
   } catch {
     return null;
   }
@@ -31,4 +48,40 @@ function screenshotArtifact(headers: Headers): ScreenshotArtifact | null {
   if (status === "saved" || status === "disabled") return { status };
   console.warn(`Ignoring unknown X-Expo-Screenshot-Artifact value: ${status}`);
   return null;
+}
+
+function screenshotMetadata(headers: Headers): ScreenshotMetadata | undefined {
+  const header = headers.get("X-Expo-Screenshot-Metadata");
+  if (!header || header.length > 1024) return;
+  try {
+    const value: unknown = JSON.parse(header);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return;
+    const data = value as Record<string, unknown>;
+    const nonnegative = (value: unknown): value is number =>
+      typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+    if (
+      !nonnegative(data.width) ||
+      !nonnegative(data.height) ||
+      (data.screen !== undefined && data.screen !== "inner" && data.screen !== "outer")
+    )
+      return;
+    const rotation = data.displayRotation;
+    if (
+      rotation !== null &&
+      rotation !== "portrait" &&
+      rotation !== "portrait-upside-down" &&
+      rotation !== "landscape-left" &&
+      rotation !== "landscape-right"
+    )
+      return;
+    return {
+      width: data.width,
+      height: data.height,
+      ...(data.screen === undefined ? {} : { screen: data.screen }),
+      displayRotation: rotation,
+    };
+  } catch {
+    // Optional metadata must never prevent an otherwise successful PNG download.
+    return;
+  }
 }

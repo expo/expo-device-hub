@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, unlinkSync } from "fs";
 import { join } from "path";
+import { sleepSync } from "./runtime";
 import { stateDir } from "./state";
 
 export function cameraStateDir(): string {
@@ -149,4 +150,24 @@ export async function readCameraStatus(udid: string): Promise<CameraStatusReply>
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+export function stopCameraHelper(udid: string) {
+  const pf = cameraHelperPidFile(udid);
+  if (!existsSync(pf)) return;
+  const pid = Number(readFileSync(pf, "utf-8").trim());
+  if (Number.isFinite(pid) && isProcessAlive(pid)) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
+    // Give it a moment to clean up the shm region.
+    const start = Date.now();
+    while (isProcessAlive(pid) && Date.now() - start < 1500) sleepSync(50);
+  }
+  try {
+    unlinkSync(pf);
+  } catch {}
+  try {
+    unlinkSync(cameraHelperBundlesFile(udid));
+  } catch {}
 }

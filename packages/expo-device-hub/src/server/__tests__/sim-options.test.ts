@@ -23,13 +23,11 @@ describe("appleRuntimesToOptions", () => {
               value: "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
               label: "iPhone 17 Pro",
               supported: true,
-              deviceFrame: "ios:iphone-17-pro",
             },
             {
               value: "com.apple.CoreSimulator.SimDeviceType.iPhone-16",
               label: "iPhone 16",
               supported: true,
-              deviceFrame: null,
             },
           ],
         },
@@ -41,13 +39,11 @@ describe("appleRuntimesToOptions", () => {
               value: "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
               label: "iPhone 17 Pro",
               supported: true,
-              deviceFrame: "ios:iphone-17-pro",
             },
             {
               value: "com.apple.CoreSimulator.SimDeviceType.iPhone-16",
               label: "iPhone 16",
               supported: true,
-              deviceFrame: null,
             },
           ],
         },
@@ -77,13 +73,11 @@ describe("androidImagesToOptions", () => {
               value: "pixel_9",
               label: "Pixel 9",
               supported: true,
-              deviceFrame: "android:pixel-9",
             },
             {
               value: "pixel_10_pro",
               label: "Pixel 10 Pro",
               supported: true,
-              deviceFrame: "android:pixel-10-pro",
             },
           ],
         },
@@ -95,13 +89,11 @@ describe("androidImagesToOptions", () => {
               value: "pixel_9",
               label: "Pixel 9",
               supported: true,
-              deviceFrame: "android:pixel-9",
             },
             {
               value: "pixel_10_pro",
               label: "Pixel 10 Pro",
               supported: true,
-              deviceFrame: "android:pixel-10-pro",
             },
           ],
         },
@@ -109,15 +101,36 @@ describe("androidImagesToOptions", () => {
     });
   });
 
-  test("does not infer frame availability from the Pixel family name", () => {
+  test("marks Pixel Fold as supported independently of frame availability", () => {
     const models = androidImagesToOptions(
       [androidImage("android-36", "google_apis", "arm64-v8a")],
       [{ id: "pixel_fold", index: 0, name: "Pixel Fold", oem: "Google", tag: null }],
     ).runtimes[0]?.models;
 
-    expect(models).toEqual([
-      { value: "pixel_fold", label: "Pixel Fold", supported: false, deviceFrame: null },
-    ]);
+    expect(models).toEqual([{ value: "pixel_fold", label: "Pixel Fold", supported: true }]);
+  });
+
+  test("marks Pixel Tablet and the generic tablets as supported, not other tablets", () => {
+    const models = androidImagesToOptions(
+      [androidImage("android-36", "google_apis", "arm64-v8a")],
+      [
+        { id: "pixel_tablet", index: 0, name: "Pixel Tablet", oem: "Google", tag: null },
+        { id: "small_tablet", index: 1, name: "Small Tablet", oem: "Generic", tag: null },
+        { id: "medium_tablet", index: 2, name: "Medium Tablet", oem: "Generic", tag: null },
+        { id: "pixel_c", index: 3, name: "Pixel C", oem: "Google", tag: null },
+        { id: "Nexus 9", index: 4, name: "Nexus 9", oem: "Google", tag: null },
+      ],
+    ).runtimes[0]?.models;
+
+    expect(
+      Object.fromEntries(models?.map((model) => [model.value, model.supported]) ?? []),
+    ).toEqual({
+      pixel_tablet: true,
+      small_tablet: true,
+      medium_tablet: true,
+      pixel_c: false,
+      "Nexus 9": false,
+    });
   });
 
   test("pairs mobile and specialized images with compatible profile tags", () => {

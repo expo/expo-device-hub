@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
-import type { HingePhysicalOrientation, HingePose } from "./hinge-control";
+import { type HingePhysicalOrientation, type HingePose } from "./hinge-control";
 
 /** Resolve only after the native hinge operation has been acknowledged. */
 export async function sendHingeAngleToWs(
@@ -62,6 +62,7 @@ export type HingeStateReport = {
   hingePose?: HingePose | null;
   physicalOrientation?: HingePhysicalOrientation;
   tableMode?: boolean;
+  tableModeActive?: boolean;
   tableModeAvailable?: boolean;
 };
 
@@ -87,10 +88,34 @@ export async function readHingeStateFromWs(
       () => finish(new Error("Timed out waiting for the simulator's hinge state")),
       options.timeoutMs ?? 5000,
     );
+    let requested = false;
     ws.on("message", (data) => {
       const frame = Buffer.from(data as Buffer);
-      if (frame[0] !== 0x82) return;
-      let config: HingeStateReport & { supportsHingeAngle?: boolean };
+      if (frame[0] === 0x93 && requested) {
+        let reply: { ok?: boolean; state?: HingeStateReport; error?: string };
+        try {
+          reply = JSON.parse(frame.subarray(1).toString());
+        } catch {
+          finish(new Error("Invalid hinge state reply"));
+          return;
+        }
+        if (reply?.ok === false) finish(new Error(reply.error || "Hinge state is unavailable"));
+        else if (
+          reply?.ok === true &&
+          reply.state &&
+          typeof reply.state === "object" &&
+          !Array.isArray(reply.state)
+        )
+          finish(reply.state);
+        else finish(new Error("Invalid hinge state reply"));
+        return;
+      }
+      if (frame[0] !== 0x82 || requested) return;
+      let config: HingeStateReport & {
+        supportsHingeAngle?: boolean;
+        supportsHingeStateReadback?: boolean;
+        observedDeviceState?: HingeStateReport;
+      };
       try {
         config = JSON.parse(frame.subarray(1).toString());
       } catch {
@@ -102,6 +127,13 @@ export async function readHingeStateFromWs(
         finish(new Error("Hinge control is unavailable on this simulator"));
         return;
       }
+      if (config.supportsHingeStateReadback) {
+        requested = true;
+        ws.send(Buffer.from([0x13]));
+        return;
+      }
+      // Older helpers publish acknowledged commands in these fields; their
+      // observation stream may still contain the sample from before the command.
       const { hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable } = config;
       finish({ hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable });
     });

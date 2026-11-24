@@ -1,3 +1,4 @@
+import type { ScreenshotMetadata } from "../screenshot-metadata.ts";
 import { parseGesture, type Gesture } from "./control-contracts.ts";
 import {
   MAX_H264_BITRATE,
@@ -190,6 +191,8 @@ export type StreamModeRequest =
       inputSource?: InputSource;
     };
 export type StreamModeResponse = ApiSuccess<{
+  /** Effective idle repeat interval; 0 disables repeats. Older hosts omit this field. */
+  repeatFrameMs?: number;
   serial: string;
   mode: StreamMode;
   grpcImageMode: GrpcImageMode;
@@ -213,11 +216,41 @@ export type AvdStartResponse = ApiSuccess<{
 
 export type AvdStopResponse = ApiSuccess<{ serial: string }>;
 
-export type OrientationMode = "auto" | "portrait" | "landscape";
+/**
+ * How the display faces, named as serve-sim names iOS poses: by the interface orientation,
+ * like `UIInterfaceOrientation`. `landscape_left` has the bottom of the device on the left,
+ * so the device turned a quarter turn clockwise from portrait.
+ */
+export type ScreenOrientation = (typeof SCREEN_ORIENTATIONS)[number];
+export const SCREEN_ORIENTATIONS = [
+  "portrait",
+  "landscape_left",
+  "portrait_upside_down",
+  "landscape_right",
+] as const;
+/**
+ * `landscape` is `landscape_right`, the pose that rotation 1 shows on a phone, as before the
+ * four poses. `auto` follows the device sensor again.
+ */
+export type OrientationMode = "auto" | "landscape" | ScreenOrientation;
+export const ORIENTATION_MODES: readonly OrientationMode[] = [
+  "auto",
+  "landscape",
+  ...SCREEN_ORIENTATIONS,
+];
+export const ORIENTATION_MODE_ERROR = `orientation must be one of ${ORIENTATION_MODES.join(", ")}`;
+
+export function isOrientationMode(value: unknown): value is OrientationMode {
+  return (ORIENTATION_MODES as readonly unknown[]).includes(value);
+}
+
 export type OrientationStatus = {
   mode: "free" | "lock" | "unknown";
   rotation: number | null;
-  orientation: OrientationMode | "unknown";
+  /** `portrait` or `landscape` for a locked rotation, from the device's natural display. */
+  orientation: "auto" | "portrait" | "landscape" | "unknown";
+  /** The locked pose, or null when the rotation is free or unknown. Absent on older servers. */
+  pose?: ScreenOrientation | null;
   raw: string;
 };
 export type OrientationResponse = ApiSuccess<{ orientation: OrientationStatus }>;
@@ -227,8 +260,35 @@ export type FoldStatus = {
   supported: boolean;
   posture: FoldPosture | null;
   hingeAngle: number | null;
+  /**
+   * The angles the hinge moves through, from the emulator's hardware config;
+   * null without a hinge, or when serve-emu cannot read that config.
+   */
+  hingeRange: { min: number; max: number } | null;
 };
 export type FoldResponse = ApiSuccess<{ fold: FoldStatus }>;
+/** Fold or unfold fully, or move the hinge to an angle in degrees. */
+export type FoldRequest = { posture: "closed" | "opened" } | { hingeAngle: number };
+
+export function parseFoldRequest(body: Record<string, unknown>): FoldRequest {
+  if (body.hingeAngle === undefined) {
+    if (body.posture !== "closed" && body.posture !== "opened") {
+      throw new Error("posture must be closed or opened");
+    }
+    return { posture: body.posture };
+  }
+  if (body.posture !== undefined) throw new Error("set either posture or hingeAngle, not both");
+  // @ref LLP 0004#android-emulators — the 0–180° range serve-sim accepts for the iPhone Duo hinge
+  if (
+    typeof body.hingeAngle !== "number" ||
+    !Number.isFinite(body.hingeAngle) ||
+    body.hingeAngle < 0 ||
+    body.hingeAngle > 180
+  ) {
+    throw new Error("hingeAngle must be a number between 0 and 180");
+  }
+  return { hingeAngle: body.hingeAngle };
+}
 
 export type NightMode = "auto" | "dark" | "light";
 export type NightModeStatus = { mode: NightMode | "unknown"; raw: string };
@@ -439,10 +499,13 @@ const APP_ICON_MIME_TYPES = ["image/png", "image/webp", "image/jpeg", "image/gif
 export type AppIconMimeType = (typeof APP_ICON_MIME_TYPES)[number];
 /** `data` is base64, with no `data:` URL prefix. */
 export type AppIcon = { mimeType: AppIconMimeType; data: string };
-export type AppIconResponse = ApiSuccess<{
-  packageName: string;
+/** What `aapt2 dump badging` reads from one installed APK. */
+export type AppDetails = {
   icon: AppIcon | null;
-}>;
+  /** The default-locale `android:label`; `null` when the APK declares none. */
+  label: string | null;
+};
+export type AppIconResponse = ApiSuccess<{ packageName: string } & AppDetails>;
 
 export type FileImportResponse = ApiSuccess<{
   output: string;
@@ -461,6 +524,8 @@ export type ScreenshotBase64Response = ApiSuccess<{
   data: string;
   /** Absent from servers older than the artifact persistence feature. */
   artifact?: ScreenshotArtifactReport;
+  /** Absent on older servers; zero/null fields are unknown. */
+  metadata?: ScreenshotMetadata;
 }>;
 
 export type LogcatEventMap = {
@@ -521,6 +586,11 @@ export type HealthResponse = {
   grpcCapture?: GrpcCaptureDiagnostics | null;
   codec: string;
   size: DeviceSize;
+  /**
+   * The pose the display shows now, or null before the first adb read. Absent on older
+   * servers. `GET /api/orientation` reports the lock policy instead.
+   */
+  pose?: ScreenOrientation | null;
   clients: number;
   frames: number;
   sourceFps: number;
@@ -559,6 +629,11 @@ export type ApiInfoResponse = {
   stream: StreamSettings;
   /** Viewer-local transport choices. Optional while older servers remain supported. */
   viewerTransports?: ViewerTransports;
+  /**
+   * The pose the display shows now, or null before the first adb read. Absent on older
+   * servers. `GET /api/orientation` reports the lock policy instead.
+   */
+  pose?: ScreenOrientation | null;
 };
 
 export type EmptyResponse = ApiSuccess;
@@ -618,7 +693,7 @@ export type ApiContractMap = {
   };
   "/api/fold": {
     GET: EndpointContract<undefined, FoldResponse>;
-    POST: EndpointContract<{ posture: "closed" | "opened" }, FoldResponse>;
+    POST: EndpointContract<FoldRequest, FoldResponse>;
   };
   "/api/night-mode": {
     GET: EndpointContract<undefined, NightModeResponse>;
@@ -787,6 +862,14 @@ function oneOf<const Values extends readonly string[]>(
     : fail(`${name} is invalid`);
 }
 
+function nullableOneOf<const Values extends readonly string[]>(
+  value: unknown,
+  values: Values,
+  name: string,
+): Values[number] | null {
+  return value === null ? null : oneOf(value, values, name);
+}
+
 /** Parse the stable failure envelope; throws when a server violates the contract. */
 export function parseApiFailure(value: unknown): ApiFailure {
   try {
@@ -936,6 +1019,9 @@ export function parseApiInfoResponse(value: unknown): ApiInfoResponse {
     ...(root.viewerTransports === undefined
       ? {}
       : { viewerTransports: parseViewerTransports(root.viewerTransports) }),
+    ...(root.pose === undefined
+      ? {}
+      : { pose: nullableOneOf(root.pose, SCREEN_ORIENTATIONS, "API info response.pose") }),
   };
 }
 
@@ -1204,6 +1290,9 @@ function parseOrientationStatus(value: unknown): OrientationStatus {
       ["auto", "portrait", "landscape", "unknown"] as const,
       "orientation.orientation",
     ),
+    ...(item.pose === undefined
+      ? {}
+      : { pose: nullableOneOf(item.pose, SCREEN_ORIENTATIONS, "orientation.pose") }),
     raw: string(item.raw, "orientation.raw"),
   };
 }
@@ -1227,8 +1316,13 @@ export function parseFoldResponse(value: unknown): FoldResponse {
           "fold.posture",
         );
   const hingeAngle = fold.hingeAngle === null ? null : number(fold.hingeAngle, "fold.hingeAngle");
+  const range = fold.hingeRange === null ? null : record(fold.hingeRange, "fold.hingeRange");
+  const hingeRange = range && {
+    min: number(range.min, "fold.hingeRange.min"),
+    max: number(range.max, "fold.hingeRange.max"),
+  };
   if (typeof fold.supported !== "boolean") fail("fold.supported must be a boolean");
-  return { ok: true, fold: { supported: fold.supported, posture, hingeAngle } };
+  return { ok: true, fold: { supported: fold.supported, posture, hingeAngle, hingeRange } };
 }
 
 export function parseNightModeResponse(value: unknown): NightModeResponse {
@@ -1609,6 +1703,8 @@ export function parseAppIconResponse(value: unknown): AppIconResponse {
     ok: true,
     packageName: string(root.packageName, "app icon response.packageName"),
     icon: root.icon === null ? null : parseAppIcon(root.icon),
+    // A serve-emu from before the label was added sends no `label`.
+    label: root.label === undefined ? null : nullableString(root.label, "app icon response.label"),
   };
 }
 
@@ -1623,12 +1719,40 @@ export function parseFileImportResponse(value: unknown): FileImportResponse {
   };
 }
 
+function parseScreenshotMetadata(value: unknown): ScreenshotMetadata {
+  const item = record(value, "screenshot metadata");
+  const dimensions = {
+    width: number(item.width, "metadata.width"),
+    height: number(item.height, "metadata.height"),
+  };
+  if (Object.values(dimensions).some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    fail("screenshot metadata numbers must be nonnegative integers");
+  }
+  const displayRotation =
+    item.displayRotation === null
+      ? null
+      : oneOf(
+          item.displayRotation,
+          ["portrait", "portrait-upside-down", "landscape-left", "landscape-right"] as const,
+          "metadata.displayRotation",
+        );
+  return {
+    ...dimensions,
+    displayRotation,
+    ...(item.screen === undefined
+      ? {}
+      : { screen: oneOf(item.screen, ["inner", "outer"] as const, "metadata.screen") }),
+  };
+}
+
 export function parseScreenshotBase64Response(value: unknown): ScreenshotBase64Response {
   const root = record(value, "screenshot response");
   if (root.ok !== true) fail("screenshot response.ok must be true");
   if (root.mimeType !== "image/png") fail("screenshot response.mimeType must be image/png");
   const data = string(root.data, "screenshot response.data");
-  if (root.artifact === undefined) return { ok: true, mimeType: "image/png", data };
+  const metadata =
+    root.metadata === undefined ? {} : { metadata: parseScreenshotMetadata(root.metadata) };
+  if (root.artifact === undefined) return { ok: true, mimeType: "image/png", data, ...metadata };
   const artifact = record(root.artifact, "screenshot response.artifact");
   const status = oneOf(
     artifact.status,
@@ -1639,6 +1763,7 @@ export function parseScreenshotBase64Response(value: unknown): ScreenshotBase64R
     ok: true,
     mimeType: "image/png",
     data,
+    ...metadata,
     artifact:
       status === "failed"
         ? { status, error: string(artifact.error, "screenshot response.artifact.error") }
@@ -1864,6 +1989,9 @@ export function parseHealthResponse(value: unknown): HealthResponse {
         }),
     codec: string(root.codec, "health response.codec"),
     size: parseDeviceSize(root.size, "health response.size"),
+    ...(root.pose === undefined
+      ? {}
+      : { pose: nullableOneOf(root.pose, SCREEN_ORIENTATIONS, "health response.pose") }),
     clients: number(root.clients, "health response.clients"),
     frames: number(root.frames, "health response.frames"),
     sourceFps: number(root.sourceFps, "health response.sourceFps"),

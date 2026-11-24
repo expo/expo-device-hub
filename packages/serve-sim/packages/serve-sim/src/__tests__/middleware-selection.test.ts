@@ -31,6 +31,11 @@ const states: ServeSimState[] = [
 ];
 
 describe("selectServeSimState", () => {
+  test("matches Simulator UUIDs regardless of helper-state casing", () => {
+    const lower = { ...states[0]!, device: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" };
+    expect(selectServeSimState([lower], lower.device.toUpperCase())).toBe(lower);
+  });
+
   test("keeps existing first-state behavior when no device is requested", () => {
     expect(selectServeSimState(states)?.device).toBe("DEVICE-A");
   });
@@ -45,6 +50,21 @@ describe("selectServeSimState", () => {
 });
 
 describe("previewConfigForState", () => {
+  test("identifies hosted EAS workers without treating local builds as hosted", () => {
+    const previousRunner = process.env.EAS_BUILD_RUNNER;
+    try {
+      delete process.env.EAS_BUILD_RUNNER;
+      expect(previewConfigForState(states[0]!, "/preview", "token-xyz").isRunningOnEAS).toBe(false);
+      process.env.EAS_BUILD_RUNNER = "local-build-plugin";
+      expect(previewConfigForState(states[0]!, "/preview", "token-xyz").isRunningOnEAS).toBe(false);
+      process.env.EAS_BUILD_RUNNER = "eas-build";
+      expect(previewConfigForState(states[0]!, "/preview", "token-xyz").isRunningOnEAS).toBe(true);
+    } finally {
+      if (previousRunner === undefined) delete process.env.EAS_BUILD_RUNNER;
+      else process.env.EAS_BUILD_RUNNER = previousRunner;
+    }
+  });
+
   test("advertises input admission only for helpers that support it", () => {
     expect(
       previewConfigForState(states[0]!, "/preview", "token-xyz").inputAdmission,
@@ -67,6 +87,7 @@ describe("previewConfigForState", () => {
     expect(previewConfigForState(state, "/preview", "token-xyz")).toEqual({
       ...state,
       basePath: "/preview",
+      isRunningOnEAS: process.env.EAS_BUILD_RUNNER === "eas-build",
       logsEndpoint: "/preview/logs?device=DEVICE-B",
       crashesEndpoint: "/preview/crashes?device=DEVICE-B",
       appStateEndpoint: "/preview/appstate?device=DEVICE-B",

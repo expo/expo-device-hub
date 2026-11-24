@@ -2,10 +2,10 @@
 
 **Type:** Explainer
 **Status:** Draft
-**Systems:** HubClient
+**Systems:** HubClient, ServeEmu
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-14 (Codex, directed by Gabe Debes)
+**Revised:** 2026-10-16 (Codex, directed by Gabe Debes); 2026-10-16 (Claude Code, directed by Krystof Woldrich: serve-emu locked transport); 2026-10-21 (Claude Code, directed by Krystof Woldrich: inactive iPhone Duo panels, from #248; the client streams the panels into elements that a consumer attaches; iOS keeps the last frame as a poster, see LLP 0015); 2026-11-03 (Claude Code, directed by Krystof Woldrich: Duo panel resume and helper replacement, from #248)
 **Related:** LLP 0000, LLP 0002
 
 ## Summary
@@ -28,22 +28,26 @@ HubClient must recover from WebRTC failures the same way as the serve-sim browse
 ## Signaling deadlines
 
 - A close request (`POST /webrtc/close`) stops waiting after 2 s. A close that never answers must not block the next codec attempt. Page-unload closes use `sendBeacon` or `keepalive` and have no deadline [observed: `closeWebRtcSession` in `webrtc-negotiation.ts`].
-- A `409` from `/webrtc/offer` is retried only when it means that offer setup is busy: `webrtc_session_busy` in `code` or `error`, or a `409` with no named error from an older server. Every other named `409` goes back to the caller at once, because retrying cannot clear it [observed: `isSignalingBusy` in `webrtc-negotiation.ts`].
-- serve-sim names the busy state in `error`, and serve-emu names it in `code`. Both are accepted [observed: `device-session.ts` in serve-sim, `server.ts` in serve-emu, `webrtc-negotiation.test.ts`].
+- A `409` from `/webrtc/offer` retries when `code` or `error` names temporary offer contention (`webrtc_session_busy`), capture changing during publisher setup (`webrtc_stream_changed`), or a device-session generation change (`session_changed`). Older unnamed conflicts retain the legacy retry behavior. Other named conflicts return unchanged to the caller. Retries share the existing finite budget and teardown cancellation [observed: `isRetryableOfferConflict` and `postWebRtcOffer` in `webrtc-negotiation.ts`].
+- serve-sim and the serve-emu middleware mounted by Device Hub put the busy name in `error`; standalone serve-emu uses `code` alongside a human-readable `error`. Both fields are accepted [observed: `device-session.ts` in serve-sim, `middleware.ts` and `server.ts` in serve-emu, `webrtc-negotiation.test.ts`].
+- Standalone serve-emu refuses an offer whose explicit `device` selector differs from its active serial with `409 device_mismatch`. A retry after a device switch cannot negotiate video for that different device; offers without a selector continue to use the active device [observed: `/webrtc/offer` in `packages/serve-emu/packages/serve-emu/src/server.ts`].
 - Reading the `409` body stays inside the offer deadline, because a body can stall after its headers arrive [observed: `postWebRtcOffer`].
 
-serve-sim's client uses the same 2 s close deadline and the same busy rule [observed: `webrtc-negotiation.ts`].
+serve-sim's client uses the same 2 s close deadline, but its conflict classifier checks only `error` and retries only `webrtc_session_busy` or unnamed errors. HubClient also reads `code`, so an unknown named code without an `error` is final here, and it accepts the two temporary Android restart codes above [observed: `webrtc-negotiation.ts` in both clients].
 
 ## Locked transport
 
 serve-sim locks a WebRTC server to WebRTC and refuses its HTTP streams with `409 stream_transport_locked` (LLP 0002). The iOS client treats a session whose `/api` advertises `streamSettings.transport: "webrtc"` as locked [observed: `transportLocked` in `useIosDevice.ts`].
 
 - A locked session never uses an HTTP stream [observed: `iosStreamCapabilities` in `useIosDevice.ts`].
-- When the codec ladder is exhausted, the client shows the error "No supported WebRTC codec…" and also starts the ladder again from the requested codec. The wait starts at 2 s, doubles up to 30 s, and resets after 90 s without a codec failure. Every codec failure counts, not only an exhausted ladder [observed: `createLadderBackoff` in `webrtc-fallback.ts`, the failure effect in `useIosDevice.ts`].
+- When the codec ladder is exhausted, the client shows the error "No supported WebRTC codec… Retrying..." and also starts the ladder again from the requested codec. The wait starts at 2 s, doubles up to 30 s, and resets after 90 s without a codec failure. Every codec failure counts, not only an exhausted ladder [observed: `createLadderBackoff` in `webrtc-fallback.ts`, the failure effect in `useIosDevice.ts`].
 - A `404` from `/webrtc/offer` is retried as temporary on a locked session, because the session has no other transport [observed: `isRetryableWebRtcOfferStatus` in `useWebRtcStream.ts`].
+- Unlike serve-sim, which retries offer `404`s on every session, HubClient returns an unlocked session's `404` as a permanent WebRTC failure and permits its existing HTTP fallback. Locked sessions retain WebRTC and retry [observed: `isRetryableWebRtcOfferStatus` in `useWebRtcStream.ts`, `webRtcFallbackDecision` in `webrtc-fallback.ts`, and `offerFailureIsTransient` in serve-sim's `webrtc-failure-policy.ts`].
 - Choosing a codec again resets the backoff [observed: `setWebRtcCodec` in `useIosDevice.ts`].
 
 serve-sim's client restarts the ladder with the same backoff, and it also counts every codec failure [observed: `hooks/use-ladder-restart.ts`, `client.tsx`].
+
+serve-emu's `--transport webrtc` also refuses a video WebSocket with `stream_transport_locked`, and its `/api` then lists only `webrtc` in `viewerTransports.available`. The Android client offers H.264 only when that list has `websocket`. It waits for `/api` before it starts video, so an H.264 choice on a locked host falls back to WebRTC. If `/api` fails or does not answer within 3 s, an H.264 viewer opens the video WebSocket anyway; a WebRTC viewer keeps waiting, because it needs the host's ICE settings [observed: `streamMetadataFailed` in `useAndroidDevice.ts`]. An older serve-emu without the list keeps the WebSocket video [observed: `androidModeAvailability` in `useAndroidDevice.ts`].
 
 ## Bounded stats reads
 
@@ -70,8 +74,8 @@ One poll per peer reads stats once a second. The watchdog and the stats panel sh
 
 - The watchdog judges only a connected peer that has shown a frame, in a visible tab.
 - It resets on `visibilitychange`, and after a poll gap longer than 8 s, because sleep does not always send `visibilitychange`.
-- An idle Android stream may send no frames. serve-emu's scrcpy source repeats no frames by default, while its gRPC screenshot source repeats the last frame every 500 ms. The Android adapter sets `expectContinuousFrames: false`, so an idle stream is not a stall with either source [observed: `useAndroidDevice.ts`; `SCRCPY_DEFAULTS.repeatFrameMs` in serve-emu `scrcpy.ts`, `DEFAULT_IDLE_REPEAT_MS` in `grpc-session.ts`].
-- During automatic recovery, Android keeps the last frame as a poster, but only on the video element that the adapter attached [observed: `preserveWebRtcFrame` in `useAndroidDevice.ts`].
+- Android sets `expectContinuousFrames` from its active source: `true` for `grpc-screenshot` when its advertised effective `repeatFrameMs` is positive and at most half the 8 s stall window (4 s), reserving the other half for capture-timer quantization and encode/delivery latency; `false` for scrcpy, slow custom repeats, or missing/invalid cadence metadata. gRPC defaults to 500 ms; scrcpy repeats no frames by default. Idle scrcpy remains valid; a gRPC stream with no new frames receives the normal stall recovery. A source-policy change updates the existing watchdog and invalidates its samples and pending verdicts without renegotiating the peer. During a switch the adapter uses the committed pending source; a late HTTP response or later sidebar update cannot replace an already healthy peer [observed: `useAndroidDevice.ts`, the layout effect in `useWebRtcStream.ts` and `setExpectContinuousFrames` in `playback-stall-watchdog.ts`; `SCRCPY_DEFAULTS.repeatFrameMs` in serve-emu `scrcpy.ts`, `DEFAULT_IDLE_REPEAT_MS` in `grpc-session.ts`, and `/api/stream-mode` in serve-emu `middleware.ts` and `server.ts`].
+- During automatic recovery, iOS and Android keep the last frame as a poster, but only on the video element that the adapter attached, and only for the current screen session. A transport retry is not an error to show; [LLP 0015](0015-hub-screen-loading.explainer.md#temporary-drops) explains what the screen shows meanwhile [observed: `preserveVideoFrame` in `video-frame-poster.ts`, `preserveWebRtcFrame` in `useIosDevice.ts` and `useAndroidDevice.ts`, `retrying` in `useWebRtcStream.ts`].
 
 serve-sim's client has the same watchdog [observed: `hooks/playback-stall-watchdog.ts`].
 
@@ -81,10 +85,23 @@ Hidden tabs slow timers and pause video, so the client does not judge a stream w
 
 - The first-frame timeout stops while the tab is hidden, and starts again when the tab is visible. A grace period that was already used stays used [observed: `useWebRtcStream.ts`].
 - When no video RTP arrives before the first frame, the client asks serve-sim's per-session stats (2 s limit, cancelled on teardown) whether the encoder produced frames. If it did, the client retries the transport and keeps the codec [observed: `requestWebRtcServerStats` in `useWebRtcStream.ts`; `webRtcFailureDisposition` in `webrtc-fallback.ts`].
-- On iOS and Android, the currently owned paused video plays again when the tab returns; retired surfaces and rejected play attempts do not replace the peer [observed: the media attachment effects in `useIosDevice.ts` and `useAndroidDevice.ts`].
+- On iOS and Android, the currently owned paused video plays again when the tab returns; retired surfaces and rejected play attempts do not replace the peer. The iPhone Duo's 3D panel videos do the same [observed: the media attachment effects in `useIosDevice.ts`, `useAndroidDevice.ts`, and `useDuoPanelStreams.ts`].
 - Replacing an iOS or Android video element reattaches the existing stream without renegotiating its peer or reconnecting input [observed: stateful `webRtcVideoElement` in both adapters].
 
 serve-sim's client pauses diagnosis, keeps a used grace, and checks the sender in the same way. HubClient also sends the session token with the sender request and reads only its own session [observed: `hooks/use-webrtc-stream.ts`; `requestWebRtcServerStats` in `stream-stats.ts`].
+
+## Inactive Duo panels
+
+While a consumer attaches an element to each of an iPhone Duo's `displays`, as the 3D preview in `@expo/hub-client/models` does, the client keeps a WebRTC peer open for both physical panels. iOS keeps the inactive panel silent until a fold hands off to it, so its silence is not a failure. Each panel passes `judgeStalls: true` only while it is the active display [observed: `duo/useDuoPanelStreams.ts`, `useWebRtcStream.ts`]:
+
+- With `judgeStalls: false`, the first-frame timeout does not arm and the playback watchdog does not judge the peer. Turning it off clears a pending timeout and resets the stall samples.
+- A first-frame verdict whose reads finish after the panel turned inactive is dropped.
+- Turning it on arms the first-frame timeout on the existing peer, without renegotiating.
+- The active panel's codec failures walk the same codec ladder as the flat stream [observed: `ladderFailure` in `useIosDevice.ts`].
+- The flat stream is disabled while the panels stream, so a ladder restart, or a reselect of the failed codec, restarts the panels' WebRTC sessions instead. A locked VP8 session has no other codec, so this restart is its only recovery [observed: `restartLadderStream` and `restartGeneration` in `useIosDevice.ts`, `useDuoPanelStreams.ts`].
+- A replaced helper at the same URL (a new pid or exec token) gives both panels new readers and WebRTC sessions, as it does for the flat stream. A panel handoff keeps them [observed: `session` from `videoSessionKey` in `useIosDevice.ts`, `useDuoPanelStreams.ts`].
+
+serve-sim's client uses the same rule [observed: `judgeStalls` in `hooks/use-webrtc-stream.ts` and `components/duo-panel-streams.tsx`].
 
 ## Capture reboot
 
@@ -98,7 +115,7 @@ This ports the browser recovery behavior added to serve-sim in #333; it needs a 
 
 ## H.264 offer level
 
-Chrome offers H.264 level 3.1 by default, which is too low for large simulator screens. iOS offers raise the asymmetric `profile-level-id` to level 5.2 when it is lower. Android offers are unchanged [observed: `webrtc-sdp-level.ts`, `raiseH264Level` in `useIosDevice.ts`]. The level policy is in [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md#signaling-lifecycle), and serve-sim's client sends the same level [observed: `webrtc-sdp-level.ts`].
+Chrome offers H.264 level 3.1 by default, which is too low for large simulator screens. iOS offers, including the iPhone Duo's panel streams, raise the asymmetric `profile-level-id` to level 5.2 when it is lower. Android offers are unchanged [observed: `webrtc-sdp-level.ts`, `raiseH264Level` in `useIosDevice.ts` and `duo/useDuoPanelStreams.ts`]. The level policy is in [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md#signaling-lifecycle), and serve-sim's client sends the same level [observed: `webrtc-sdp-level.ts`].
 
 ## Open questions
 

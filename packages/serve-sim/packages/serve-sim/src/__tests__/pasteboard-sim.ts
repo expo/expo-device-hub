@@ -1,16 +1,21 @@
 import { execFileSync, spawnSync } from "child_process";
 import { simctlSync } from "../simctl";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import type { KeyEvent } from "../text-to-keys";
-import { foregroundTracker } from "../foreground-tracker";
+import { foregroundTracker, frontmostAppFromRecentLogs } from "../foreground-tracker";
 import {
   clearLaunchState,
   enableCapabilities,
   removeCapabilityLoader,
   removeCapabilityLoaderSync,
 } from "../launch-manager";
-import { locateSimpbArtifact, locatePasteboardTool } from "../sim-pasteboard";
+import {
+  locateSimpbArtifact,
+  locatePasteboardTool,
+  readPasteboardViaSimctl,
+} from "../sim-pasteboard";
 import {
   CLIPBOARD_CAPABILITY,
   locatePasteboardReaderDylib,
@@ -48,6 +53,56 @@ export function writeTestPasteboard(
     env,
     stdio: ["pipe", "ignore", "pipe"],
   });
+}
+
+/** Wait until the running fixture has focused and selected its text; on iOS 27 that can take seconds. */
+export async function waitForFixtureSelection(udid: string): Promise<void> {
+  const pid = runningPid(udid, FIXTURE_BUNDLE);
+  if (pid == null) throw new Error(`${FIXTURE_BUNDLE} is not running`);
+  const container = simctlSync(["get_app_container", udid, FIXTURE_BUNDLE, "data"]).trim();
+  const marker = join(container, "tmp", "serve-sim-copy-fixture.selected");
+  const selected = () => {
+    try {
+      return readFileSync(marker, "utf8") === String(pid);
+    } catch {
+      return false;
+    }
+  };
+  const deadline = Date.now() + 15_000;
+  while (!selected()) {
+    if (Date.now() > deadline)
+      throw new Error(`${FIXTURE_BUNDLE} (pid ${pid}) did not select its text within 15 s`);
+    await Bun.sleep(100);
+  }
+}
+
+/**
+ * After a write, `simctl pbpaste` can return empty text for a while on a freshly booted simulator,
+ * although apps in the simulator already read the new text. Call this between a write and a read
+ * that can go through `pbpaste`. Without a GUI login `pbpaste` fails, so the wait ends at once.
+ */
+export async function waitForHostPasteboard(
+  udid: string,
+  text: string,
+  timeoutMs = 5_000,
+): Promise<void> {
+  // @ref LLP 0010#simctl-pbpaste-can-lag-a-write — serve-sim reads do not wait; only the tests do
+  if (process.env.SERVE_SIM_SKIP_PBPASTE === "1") return;
+  const deadline = Date.now() + timeoutMs;
+  let seen: string;
+  while (true) {
+    try {
+      seen = (await readPasteboardViaSimctl(udid)).text;
+    } catch {
+      return;
+    }
+    if (seen === text) return;
+    if (Date.now() > deadline) break;
+    await Bun.sleep(100);
+  }
+  throw new Error(
+    `simctl pbpaste did not return the written text within ${timeoutMs} ms (last read: ${JSON.stringify(seen.slice(0, 40))})`,
+  );
 }
 
 export function runningPid(udid: string, bundleId: string): number | null {
@@ -128,9 +183,107 @@ async function waitForLaunch(udid: string, bundleId: string, pid: number | null)
     }
     await Bun.sleep(100);
   }
+  const history = await frontmostAppFromRecentLogs(udid).catch(() => null);
+  const diagnostics = await captureLaunchDiagnostics(udid, bundleId, pid);
   throw new Error(
-    `${bundleId} launched (pid ${pid}) but the foreground tracker never saw it (peek=${JSON.stringify(foregroundTracker.peek(udid))})`,
+    `${bundleId} launched (pid ${pid}) but the foreground tracker never saw it ` +
+      `(peek=${JSON.stringify(foregroundTracker.peek(udid))}, SpringBoard log history=${JSON.stringify(history)}, ` +
+      `diagnostics in ${diagnostics})`,
   );
+}
+
+// CI uploads this folder, so a launch that never comes forward leaves a screenshot and logs.
+const DIAGNOSTICS_DIR =
+  process.env.SERVE_SIM_E2E_DIAGNOSTICS_DIR ?? join(tmpdir(), "serve-sim-e2e-diagnostics");
+
+async function captureLaunchDiagnostics(
+  udid: string,
+  bundleId: string,
+  pid: number,
+): Promise<string> {
+  const dir = join(DIAGNOSTICS_DIR, `${bundleId}-${pid}-${Date.now()}`);
+  mkdirSync(dir, { recursive: true });
+  const notes: string[] = [];
+  const xcrun = (name: string, args: string[], file?: string): string => {
+    try {
+      const out = execFileSync("xcrun", args, {
+        encoding: "utf8",
+        timeout: 20_000,
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      if (file) writeFileSync(join(dir, file), out);
+      return out;
+    } catch (error: unknown) {
+      notes.push(
+        `${name} failed: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`,
+      );
+      return "";
+    }
+  };
+  xcrun("screenshot", ["simctl", "io", udid, "screenshot", join(dir, "screen.png")]);
+  const springboard = xcrun(
+    "SpringBoard log",
+    [
+      "simctl",
+      "spawn",
+      udid,
+      "log",
+      "show",
+      "--last",
+      "3m",
+      "--style",
+      "compact",
+      "--predicate",
+      `process == "SpringBoard" AND (eventMessage CONTAINS "${bundleId}" OR eventMessage CONTAINS ":${pid}]")`,
+    ],
+    "springboard.log",
+  );
+  const launchd = xcrun(
+    "launchctl list",
+    ["simctl", "spawn", udid, "launchctl", "list"],
+    "launchctl.txt",
+  );
+  let labels: string[] = [];
+  try {
+    // Isolate native AX work so a stalled traversal can be killed with the diagnostic process.
+    const ax = execFileSync(
+      process.execPath,
+      [
+        "-e",
+        "const { axDescribeAsync } = await import(process.argv[1]); console.log(await axDescribeAsync(process.argv[2])); process.exit(0);",
+        join(import.meta.dir, "..", "native.ts"),
+        udid,
+      ],
+      { encoding: "utf8", timeout: 10_000, killSignal: "SIGKILL", maxBuffer: 16 * 1024 * 1024 },
+    );
+    writeFileSync(join(dir, "ax.json"), ax);
+    labels = [
+      ...new Set(
+        [...ax.matchAll(/"(?:AXLabel|AXValue)"\s*:\s*"([^"]{1,80})"/g)].map((match) => match[1]!),
+      ),
+    ];
+  } catch (error: unknown) {
+    notes.push(`AX describe failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  console.log(
+    [
+      `[launch diagnostics] ${bundleId} pid ${pid}: ${dir}`,
+      ...notes,
+      `launchd: ${
+        launchd
+          .split("\n")
+          .filter((line) => line.includes(bundleId))
+          .join(" | ") || "no job"
+      }`,
+      `on screen: ${labels.slice(0, 30).join(" | ") || "no AX labels"}`,
+      "SpringBoard lines:",
+      ...springboard
+        .split("\n")
+        .filter((line) => line.includes(bundleId) || line.includes(`:${pid}]`))
+        .slice(-20),
+    ].join("\n"),
+  );
+  return dir;
 }
 
 function launchedPid(output: string): number | null {
