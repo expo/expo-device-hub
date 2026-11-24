@@ -65,7 +65,13 @@ export {
   useScreenshotToast,
   type ScreenshotToastState,
 } from "./dashboard/ScreenshotToast";
-export { DeviceTitle, type DeviceTitleProps } from "./dashboard/DeviceTitle";
+export {
+  CPU_RENDERING_STATUS_LABEL,
+  CPU_RENDERING_TEXT,
+  CPU_RENDERING_TITLE,
+  DeviceTitle,
+  type DeviceTitleProps,
+} from "./dashboard/DeviceTitle";
 export { EmptyState } from "./dashboard/EmptyState";
 export { DeviceSection, type DeviceSectionProps } from "./dashboard/DeviceSection";
 export { CurrentAppSection } from "./dashboard/CurrentAppSection";
@@ -113,6 +119,7 @@ export { FoldSettings, type FoldPreviewOption } from "./dashboard/FoldSettings";
 export { FOLD_POSE_OPTIONS, selectedFoldPose } from "./dashboard/foldPoses";
 export { useModelPreviewMode } from "./dashboard/useModelPreviewMode";
 export {
+  type DeviceRendering,
   StreamOptionsSection,
   type StreamOptionsSectionProps,
 } from "./dashboard/StreamOptionsSection";

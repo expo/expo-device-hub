@@ -12,6 +12,7 @@ try {
     writable: true,
   });
   await import("@radix-ui/react-popover");
+  await import("@radix-ui/react-dialog");
 } finally {
   if (original) Object.defineProperty(globalThis, "document", original);
   else Reflect.deleteProperty(globalThis, "document");
