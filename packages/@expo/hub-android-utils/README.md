@@ -85,6 +85,8 @@ if (created) {
   detached so it keeps running after the parent exits. Returns as soon as the
   process is spawned — not once Android has finished booting — so wait for boot
   with adb using the returned `value.serial` (`emulator-<port>`).
+  `audio: true` removes `-no-audio`, so that microphone injection through the
+  emulator's `injectAudio` gRPC call works. It never adds `-allow-host-audio`.
   `extraArgs` appends emulator flags after `-port`, verbatim.
   `EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS` appends more, with quotes or backslashes
   preserving spaces within one argument (for example, `-data "/tmp/my data.img"`).

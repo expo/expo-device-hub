@@ -41,6 +41,28 @@ describe("buildEmulatorArgs", () => {
     ]);
   });
 
+  test("keeps -no-audio when audio is false or omitted", () => {
+    expect(buildEmulatorArgs({ name: "x", port: 5554, audio: false })).toContain("-no-audio");
+    expect(buildEmulatorArgs({ name: "x", port: 5554 })).toContain("-no-audio");
+  });
+
+  test("removes -no-audio, and never adds host audio, when audio is true", () => {
+    const args = buildEmulatorArgs({ name: "x", port: 5554, audio: true });
+    expect(args).not.toContain("-no-audio");
+    expect(args).not.toContain("-allow-host-audio");
+    expect(args).toEqual([
+      "-avd",
+      "x",
+      "-no-window",
+      "-no-metrics",
+      "-gpu",
+      "auto",
+      "-no-boot-anim",
+      "-port",
+      "5554",
+    ]);
+  });
+
   test("stringifies the port for -port", () => {
     const args = buildEmulatorArgs({ name: "x", port: 5556 });
     expect(args[args.indexOf("-port") + 1]).toBe("5556");

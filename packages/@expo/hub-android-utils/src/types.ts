@@ -108,6 +108,13 @@ export interface BootDeviceOptions {
   port: number;
   /** Extra `emulator` flags appended after `-port <port>`, passed through verbatim. */
   extraArgs?: readonly string[];
+  /**
+   * Start the emulator with its audio system on. Default `false` → `emulator -no-audio`.
+   * Microphone injection (`EmulatorController.injectAudio`) needs it: with `-no-audio`, the
+   * emulator drops injected audio with no error. This never adds `-allow-host-audio`, so the
+   * host microphone is never a source.
+   */
+  audio?: boolean;
 }
 
 /** How a spawned emulator process ended (see {@link BootedDevice.exited}). */
