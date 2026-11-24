@@ -13,6 +13,10 @@ const gumDevkits = {
     name: "macos-arm64",
     checksum: "23374b9182189b3cfa3c1d6879c8c8784c9c0a2b22d6258c4bf375cc31592bb4",
   },
+  "linux-x64": {
+    name: "linux-x86_64",
+    checksum: "76970e3b058c6d718c209bb5bf474075b86a987052bd46aa2ee200c2ffc64861",
+  },
 };
 const devkit = gumDevkits[target];
 const archiveName = `frida-gum-devkit-${fridaVersion}-${devkit.name}.tar.xz`;

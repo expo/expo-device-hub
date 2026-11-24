@@ -6,7 +6,7 @@
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-04
 **Revised:** 2026-11-04 (added the EAS macOS VM results); 2026-11-05 (source files moved to a shared C++ layout; rotation); 2026-11-06 (fixes from two deep reviews: replaced record, output limits, touch rotation, install lock, agent log, private socket directory); all by Claude Code, directed by Krystof Woldrich; 2026-11-14 (native exception boundaries, bounded command reads, consumer event ordering, locked last-post reads, install/socket checks and renderer dispatch startup ordering), by Codex (gpt-6.1-sol), directed by Krystof Woldrich
-**Related:** LLP 0000, LLP 0008, LLP 0009, LLP 0016
+**Related:** LLP 0000, LLP 0008, LLP 0009, LLP 0016, LLP 0021 (Linux)
 
 > File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
 
@@ -90,7 +90,7 @@ The consumer sends `K` for a keyframe, `S` and three big-endian u32 values (long
 - After hello, `S`, and configured, frames follow. A resized record is always followed by a configured record and an IDR.
 - A consumer that knows the rotation sends `R` before `S`. The agent starts streaming on `S`, so the first session is already upright. A new connection starts at rotation 0.
 - One consumer at a time. A new connection replaces the old one; records from an old connection are dropped. Consumers can reconnect without restarting the emulator, which PR #107 could not do. Before it closes the old connection, the agent sends it a replaced record, best effort on the non-blocking socket [observed: `sendReplaced` in `src/native/agent.cpp`].
-- On a static screen the renderer posts nothing. When a consumer needs a frame (new settings, `K`), the agent captures the last posted color buffer itself. A frame that the render thread captured meanwhile is older than that frame and is dropped, so timestamps keep increasing [observed: `encoderLoop`].
+- On a static screen the renderer posts nothing. When a consumer needs a frame (new settings, `K`), the agent captures the last posted color buffer itself. A frame that a post captured meanwhile is older than that frame and is dropped, so timestamps keep increasing [observed: `encoderLoop`]. On Linux, the frame of a post is read later, on a capture thread ([LLP 0021](0021-emulator-capture-linux.explainer.md#frame-path)).
 - A keyframe request received during the encoder's idle wait wakes it immediately rather than waiting for the one-second idle timeout. A request already pending at loop entry keeps the 40 ms retry delay, so a too-early on-demand capture cannot spin. Output-drain requests publish under the encoder wait mutex after releasing the output mutex, and every loop consumes the output request even when a consumer also requested a keyframe [observed: `waitForEncoderWork`, `encoderLoop` and `flushOutput`; `tests/encoder-wake.test.cpp`].
 - Under backpressure (8 MB queued), the agent drops delta frames until the next keyframe, and requests the keyframe once the queue drains to half. Keyframes and control records are never dropped; a consumer whose queue grows past 32 MB stopped reading, and the agent closes it [observed: `sendRecord` and `flushOutput`].
 - The encoder thread catches exceptions, so an unexpected size cannot end QEMU through `std::terminate`. The stream size keeps a short edge of at least 2 [observed: `encoderLoop`, `streamSize` in `src/native/protocol.h`].
