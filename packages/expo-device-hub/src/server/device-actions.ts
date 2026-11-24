@@ -310,6 +310,8 @@ async function bootAndroidHubDevice(
   const bootedResult = await bootAndroidEmulator({
     name: avdName,
     port: allocated.value,
+    // @ref LLP 0026#android — serve-emu injects microphone audio, which -no-audio drops.
+    audio: true,
     extraArgs: seedError === null ? cameraFeeds.launchArgs(serial) : undefined,
   });
   const booted = bootedResult.value;

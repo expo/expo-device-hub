@@ -22,13 +22,15 @@ function parseExtraArgs(value: string): string[] {
 /**
  * Build the `emulator` arguments for a boot.
  * Let the emulator choose the GPU backend that best matches the host.
+ * Audio is off (`-no-audio`) unless `options.audio` is `true`.
  * `EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS` is appended last, with shell-style quoting.
  */
 export function buildEmulatorArgs(options: BootDeviceOptions, env = process.env): string[] {
   return [
     "-avd",
     options.name,
-    "-no-audio",
+    // @ref LLP 0026#android — injected microphone audio needs the emulator's audio system on.
+    ...(options.audio ? [] : ["-no-audio"]),
     "-no-window",
     "-no-metrics",
     "-gpu",

@@ -129,7 +129,7 @@ describe("bootHubDevice camera feeds", () => {
     });
   });
 
-  test("spawns with the launch args for the allocated serial", async () => {
+  test("spawns with audio and the launch args for the allocated serial", async () => {
     scenario.port = 5570;
 
     await bootHubDevice(bootRequest(), cameraFeeds());
@@ -137,6 +137,7 @@ describe("bootHubDevice camera feeds", () => {
     expect(scenario.spawned).toEqual({
       name: "Pixel_9",
       port: 5570,
+      audio: true,
       extraArgs: feedArgs("emulator-5570"),
     });
   });
