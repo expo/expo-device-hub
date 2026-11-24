@@ -1,0 +1,15 @@
+# Downloaded devkits and generated binaries.
+/deps/
+/dist/
+/build/
+/artifacts/
+
+# Capture output and compilation intermediates.
+*.log
+*.sock
+*.h264
+*.mp4
+*.o
+*.a
+*.dSYM/
+.DS_Store

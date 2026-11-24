@@ -1,0 +1,39 @@
+<section id="macos-frame-rate-view" data-viz-composition>
+  <div data-viz-container></div>
+  <script type="application/json" data-viz-chart>
+    {
+      "id": "macos-frame-rate",
+      "title": "Capture frame rate · M2",
+      "description": "20-second sessions · 60 FPS requested · November 4, 2026",
+      "height": 230,
+      "spec": {
+        "type": "horizontalBar",
+        "y": "Stream size",
+        "x": ["Host GPU", "Auto (software)"],
+        "xLabel": "Encoded stream packets per second",
+        "xDomain": [0, 65],
+        "showValues": true,
+        "showLegend": true,
+        "sortOrder": "original",
+        "valueFormat": {
+          "style": "decimal",
+          "minimumFractionDigits": 2,
+          "maximumFractionDigits": 2
+        }
+      },
+      "columns": ["Stream size", "Host GPU", "Auto (software)"],
+      "rows": [
+        ["570 × 1280", 59.33, 33.36],
+        ["1080 × 2424", 59.84, 32.06]
+      ]
+    }
+  </script>
+</section>
+<script type="module">
+  import { mountChart } from "https://persistent.oaistatic.com/plugins/visualize/charts/1.2.3/element.js";
+  const root = document.getElementById("macos-frame-rate-view");
+  mountChart(
+    root.querySelector("[data-viz-container]"),
+    JSON.parse(root.querySelector("[data-viz-chart]").textContent),
+  );
+</script>

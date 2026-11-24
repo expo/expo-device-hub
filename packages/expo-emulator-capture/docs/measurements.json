@@ -1,0 +1,276 @@
+{
+  "host": "Mac mini M2, 8 CPU cores, 8 GB RAM, macOS 27.2",
+  "emulator": "37.2.7",
+  "device": "Pixel 10",
+  "scope": "Historical exploratory measurements, not a fresh benchmark of current PR570 head. No Linux results.",
+  "captureBenchmark": {
+    "method": "20 s sessions, 60 FPS requested, stream packet rate from the agent socket; repeated source images not counted separately. Default production read/copy paths only.",
+    "rows": [
+      {
+        "label": "native-auto",
+        "renderer": "auto",
+        "size": [1080, 2424],
+        "streamFps": 32.06,
+        "rendererFps": 32.0,
+        "captureMs": 26.29,
+        "encodeMs": 12.41,
+        "raw": "native-auto [none]: stream 32.06 fps; renderer 32.0 posts/s; 30.9 fps, capture 26.29 ms, encode 12.41 ms, encoder thread 2% CPU"
+      },
+      {
+        "label": "scaled-auto",
+        "renderer": "auto",
+        "size": [570, 1280],
+        "streamFps": 33.36,
+        "rendererFps": 33.4,
+        "captureMs": 24.7,
+        "encodeMs": 6.42,
+        "raw": "scaled-auto [none]: stream 33.36 fps; renderer 33.4 posts/s; 33.2 fps, capture 24.70 ms, encode 6.42 ms, encoder thread 2% CPU"
+      },
+      {
+        "label": "native-host",
+        "renderer": "host",
+        "size": [1080, 2424],
+        "streamFps": 59.84,
+        "rendererFps": 60.0,
+        "captureMs": 0.1,
+        "encodeMs": 9.65,
+        "raw": "native-host [none]: stream 59.84 fps; renderer 60.0 posts/s; 59.7 fps, capture 0.10 ms, encode 9.65 ms, encoder thread 4% CPU"
+      },
+      {
+        "label": "scaled-host",
+        "renderer": "host",
+        "size": [570, 1280],
+        "streamFps": 59.33,
+        "rendererFps": 60.0,
+        "captureMs": 0.09,
+        "encodeMs": 5.17,
+        "raw": "scaled-host [none]: stream 59.33 fps; renderer 60.0 posts/s; 58.8 fps, capture 0.09 ms, encode 5.17 ms, encoder thread 4% CPU"
+      }
+    ]
+  },
+  "cpuBenchmark": {
+    "platform": "macOS",
+    "host": "Mac mini M2, 8 CPU cores, 8 GB RAM, macOS 27.2",
+    "device": "Pixel 10",
+    "emulator": "37.2.7",
+    "systemImage": "Android 37.0 arm64",
+    "date": "2026-11-05",
+    "renderer": "-gpu host for every included case",
+    "requestedEncoding": {
+      "fps": 60,
+      "bitrate": 8000000
+    },
+    "metric": "System-wide busy CPU, in core equivalents (CPU seconds per wall-clock second), sampled with iostat. Streaming overhead subtracts the same app-action script with no stream.",
+    "noStreamBaselineCores": 1.008,
+    "method": "Three rotated-order rounds per case on one emulator boot; about 31 seconds of the same Settings/Chrome/recents/home/notification script per measured window. Agent preloaded for every included case, inactive when no consumer. gRPC uses rgb888 and ffmpeg x264; capture uses the agent CLI recorder and VideoToolbox.",
+    "limitations": [
+      "Historical experiment, not a fresh measurement of current PR 570.",
+      "Includes background system activity and kernel CPU.",
+      "Recordings do not have identical frame counts: capture approximately 970 versus gRPC approximately 1050 in 42 seconds; CPU was not normalized per output frame.",
+      "Capture consumed through the CLI recorder; no complete Hub/WebRTC/browser CPU comparison.",
+      "Single Mac and device; performance/efficiency core scheduling and background activity vary."
+    ],
+    "provenance": {
+      "repository": "krystofwoldrich-agent/emulator-capture-findings",
+      "commit": "4428de313141bd146907efa11283dd9fb1c3859b",
+      "source": "data/mac-cpu/results.jsonl",
+      "methodology": "mac-cpu.md and data/mac-cpu/cpu-test.sh"
+    },
+    "summary": [
+      {
+        "size": "570x1280",
+        "grpcSystemBusyCores": 1.6053333333333333,
+        "captureSystemBusyCores": 1.256,
+        "grpcAboveBaselineCores": 0.5973333333333333,
+        "captureAboveBaselineCores": 0.248,
+        "overheadReductionPercent": 58.48214285714286,
+        "totalSystemReductionPercent": 21.760797342192685
+      },
+      {
+        "size": "1080x2424",
+        "grpcSystemBusyCores": 2.323,
+        "captureSystemBusyCores": 1.328,
+        "grpcAboveBaselineCores": 1.315,
+        "captureAboveBaselineCores": 0.32000000000000006,
+        "overheadReductionPercent": 75.66539923954372,
+        "totalSystemReductionPercent": 42.83254412397761
+      }
+    ],
+    "runs": [
+      {
+        "label": "idle-r1",
+        "wallSeconds": 31.07,
+        "systemBusyCores": 1.157,
+        "emulatorCores": 0.668,
+        "consumerCores": 0.0,
+        "consumerParts": {}
+      },
+      {
+        "label": "idle-r2",
+        "wallSeconds": 31.05,
+        "systemBusyCores": 0.904,
+        "emulatorCores": 0.612,
+        "consumerCores": 0.0,
+        "consumerParts": {}
+      },
+      {
+        "label": "idle-r3",
+        "wallSeconds": 31.08,
+        "systemBusyCores": 0.963,
+        "emulatorCores": 0.62,
+        "consumerCores": 0.0,
+        "consumerParts": {}
+      },
+      {
+        "label": "grpc-1280-r1",
+        "wallSeconds": 31.04,
+        "systemBusyCores": 1.563,
+        "emulatorCores": 0.773,
+        "consumerCores": 0.318,
+        "consumerParts": {
+          "adb": 0.0,
+          "bun": 0.118,
+          "ffmpeg": 0.2
+        }
+      },
+      {
+        "label": "grpc-1280-r2",
+        "wallSeconds": 31.11,
+        "systemBusyCores": 1.592,
+        "emulatorCores": 0.783,
+        "consumerCores": 0.316,
+        "consumerParts": {
+          "adb": 0.0,
+          "bun": 0.117,
+          "ffmpeg": 0.199
+        }
+      },
+      {
+        "label": "grpc-1280-r3",
+        "wallSeconds": 31.03,
+        "systemBusyCores": 1.661,
+        "emulatorCores": 0.744,
+        "consumerCores": 0.315,
+        "consumerParts": {
+          "adb": 0.0,
+          "bun": 0.116,
+          "ffmpeg": 0.198
+        }
+      },
+      {
+        "label": "grpc-full-r1",
+        "wallSeconds": 31.03,
+        "systemBusyCores": 2.491,
+        "emulatorCores": 1.053,
+        "consumerCores": 0.79,
+        "consumerParts": {
+          "adb": 0.0,
+          "bun": 0.242,
+          "ffmpeg": 0.548
+        }
+      },
+      {
+        "label": "grpc-full-r2",
+        "wallSeconds": 31.07,
+        "systemBusyCores": 2.243,
+        "emulatorCores": 1.011,
+        "consumerCores": 0.776,
+        "consumerParts": {
+          "adb": 0.0,
+          "bun": 0.233,
+          "ffmpeg": 0.543
+        }
+      },
+      {
+        "label": "grpc-full-r3",
+        "wallSeconds": 31.05,
+        "systemBusyCores": 2.235,
+        "emulatorCores": 1.013,
+        "consumerCores": 0.78,
+        "consumerParts": {
+          "adb": 0.0,
+          "bun": 0.234,
+          "ffmpeg": 0.546
+        }
+      },
+      {
+        "label": "cap-full-r1",
+        "wallSeconds": 31.13,
+        "systemBusyCores": 1.349,
+        "emulatorCores": 0.93,
+        "consumerCores": 0.005,
+        "consumerParts": {
+          "node": 0.005
+        }
+      },
+      {
+        "label": "cap-full-r2",
+        "wallSeconds": 31.11,
+        "systemBusyCores": 1.315,
+        "emulatorCores": 0.885,
+        "consumerCores": 0.005,
+        "consumerParts": {
+          "node": 0.005
+        }
+      },
+      {
+        "label": "cap-full-r3",
+        "wallSeconds": 31.09,
+        "systemBusyCores": 1.32,
+        "emulatorCores": 0.885,
+        "consumerCores": 0.005,
+        "consumerParts": {
+          "node": 0.005
+        }
+      },
+      {
+        "label": "cap-1280-r1",
+        "wallSeconds": 31.09,
+        "systemBusyCores": 1.256,
+        "emulatorCores": 0.914,
+        "consumerCores": 0.005,
+        "consumerParts": {
+          "node": 0.005
+        }
+      },
+      {
+        "label": "cap-1280-r2",
+        "wallSeconds": 31.04,
+        "systemBusyCores": 1.203,
+        "emulatorCores": 0.859,
+        "consumerCores": 0.005,
+        "consumerParts": {
+          "node": 0.005
+        }
+      },
+      {
+        "label": "cap-1280-r3",
+        "wallSeconds": 31.01,
+        "systemBusyCores": 1.309,
+        "emulatorCores": 0.871,
+        "consumerCores": 0.005,
+        "consumerParts": {
+          "node": 0.005
+        }
+      }
+    ]
+  },
+  "screenshot": {
+    "date": "2026-11-17",
+    "hubCommit": "8b08dff78a1a21d287861aa6c1b757781d18ed7a",
+    "device": "Pixel 9 Pro Fold",
+    "source": "Emulator capture",
+    "transport": "WebRTC",
+    "codec": "H.264",
+    "app": "Expo Services",
+    "appId": "dev.expo.services",
+    "appVersion": "1.0.3",
+    "appBuildNumber": 14,
+    "buildId": "1414a765-a0c0-4ffd-a3bd-042da97bc589",
+    "arrangement": "Set by Krystof Woldrich; captured unchanged",
+    "variants": {
+      "dark": "device-hub-emulator-capture.png",
+      "light": "device-hub-emulator-capture-light.png"
+    }
+  }
+}

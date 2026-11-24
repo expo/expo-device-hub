@@ -27,6 +27,10 @@ const OPTION_COPY = {
     label: "gRPC screenshot",
     description: "Emulator host capture",
   },
+  "emulator-capture": {
+    label: "Emulator capture",
+    description: "Capture agent inside the emulator",
+  },
 } satisfies Record<
   StreamMode,
   {
@@ -432,7 +436,14 @@ export function StreamModePanel() {
       >
         <legend className="visually-hidden">Stream source</legend>
         <div className="stream-mode-options">
-          {OPTIONS.map((option) => {
+          {OPTIONS.filter(
+            // Only a host that knows about the capture agent reports this mode at all.
+            (option) =>
+              option.mode !== "emulator-capture" ||
+              availableModes.includes(option.mode) ||
+              loaded?.unavailableModes?.[option.mode] !== undefined,
+          ).map((option) => {
+            const unavailableReason = loaded?.unavailableModes?.[option.mode];
             const disabled =
               busy ||
               deviceSession.transitioning ||
@@ -452,7 +463,11 @@ export function StreamModePanel() {
                 />
                 <span>
                   <strong>{option.label}</strong>
-                  <small>{option.description}</small>
+                  <small>
+                    {!availableModes.includes(option.mode) && unavailableReason
+                      ? unavailableReason
+                      : option.description}
+                  </small>
                 </span>
               </label>
             );
