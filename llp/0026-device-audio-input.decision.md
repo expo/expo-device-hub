@@ -90,9 +90,10 @@ Reasons:
 
 1. **Start the emulator with audio.** Remove `-noaudio` for device-session emulators only. Builds, Maestro, and other test runs keep it.
 2. **Open the stream about 2 s after an app starts to record.** serve-emu detects recording with `adb shell dumpsys media.audio_policy` (an `AudioRecord` client with `State: Active` and `AUDIO_SOURCE_MIC`). A stream that opened with no recording, or too soon after it started, crashed the emulator (`audio_forwarder_enable` SIGSEGV). Adding a 2 s wait fixed it. The first 2 s of the first recording in a session are lost.
-3. **One stream per emulator session, never closed while nothing records.** After a stream ends with no recording, every later stream records silence or hangs until the emulator restarts. So serve-emu keeps one stream open and sends silence when there is no source.
-4. **`MODE_REAL_TIME`, paced by serve-emu**, at most about 100 ms ahead. In the default mode, the stream blocks when the app stops recording, and the client hangs.
-5. **Format:** mono, 16-bit PCM, 44.1 kHz. The guest records at 44100 Hz.
+3. **One stream per emulator session, never closed while nothing records.** After a stream ends with no recording, every later stream records silence or hangs until the emulator restarts. So serve-emu keeps one stream open, and sends silence while an app records and there is no source.
+4. **Write only while an app records.** While the stream is open and nothing records, serve-emu sends no packets. It polls the recording state and starts to write again when an app records, with no new wait. Realtime packets that nothing reads made the next recording noise `[observed: 2026-11-24, API 37, emulator 37.2.13, one run with serve-emu's injector and one with the CoinFlip script]`. With no packets while nothing records, the second recording was a clean tone in two runs `[observed]`.
+5. **`MODE_REAL_TIME`, paced by serve-emu**, at most about 100 ms ahead. In the default mode, the stream blocks when the app stops recording, and the client hangs.
+6. **Format:** mono, 16-bit PCM, 44.1 kHz. The guest records at 44100 Hz.
 
 These Android rules come from a small number of local runs and one Linux run. They must be repeated on the Linux image before serve-emu ships the feature.
 
