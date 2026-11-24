@@ -2,14 +2,17 @@
 // Capture agent preloaded into the Android Emulator's QEMU process
 // (DYLD_INSERT_LIBRARIES on macOS, LD_PRELOAD on Linux). It hooks gfxstream's
 // display post, copies posted color buffers out of the renderer, encodes them to
-// H.264, and serves one consumer on a Unix socket.
+// H.264, and serves two consumers on a Unix socket: the live stream and the recording, each
+// with its own encoder.
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <pthread.h>
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
@@ -26,17 +29,18 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 #include "encoder.h"
 #include "encoder-wake.h"
+#include "lag-tail.h"
+#include "socket-input.h"
 #include "callback.h"
 #include "frame-source.h"
 #include "frida-gum.h"
 #include "gfxstream.h"
 #include "log.h"
-#include "lag-tail.h"
 #include "protocol.h"
-#include "socket-input.h"
 
 // The package version; the build passes it from package.json.
 #ifndef EXPO_EMULATOR_CAPTURE_VERSION
@@ -84,15 +88,23 @@ const char* programName() { return program_invocation_short_name; }
 
 using Clock = std::chrono::steady_clock;
 constexpr int kNativeFps = 60;
-// Above this, delta frames are dropped; a keyframe is requested once the queue drains to half.
-constexpr size_t kMaxQueuedOutputBytes = 8 * 1024 * 1024;
-// Keyframes and control records are never dropped. A consumer whose queue grows past this
-// stopped reading, and the agent closes it.
-constexpr size_t kMaxBufferedOutputBytes = 32 * 1024 * 1024;
+// Per role: above the first limit, delta frames are dropped, and a keyframe is requested once the
+// queue drains to half. Keyframes and control records are never dropped; a consumer whose queue
+// grows past the second limit stopped reading, and the agent closes it. The recording's consumer
+// writes to a local disk, so it gets more room before frames go missing from the file.
+constexpr size_t kMaxQueuedOutputBytes[kRoleCount] = {8 * 1024 * 1024, 64 * 1024 * 1024};
+constexpr size_t kMaxBufferedOutputBytes[kRoleCount] = {32 * 1024 * 1024, 128 * 1024 * 1024};
 constexpr int kSocketBufferBytes = 4 * 1024 * 1024;
 constexpr size_t kMaxPendingFrames = 2;
 // Lag read: each post copies the frame of the post before, which the renderer has finished.
-// The capture worker also reads the last post at its LagTail deadline.
+// The frame of a post that stays the last one for this long is copied on the capture thread
+// (the tail rule), so a still screen shows its newest frame.
+
+// One consumer per role, and a few connections that have not sent 'S' yet.
+constexpr size_t kMaxConnections = kRoleCount + 4;
+// @ref LLP 0018#recording-keyframes — keyframes at most a second apart, as serve-sim's recorder
+constexpr int kRecordingKeyFrameIntervalSeconds = 1;
+constexpr int kStreamKeyFrameIntervalSeconds = 10;
 
 std::string jsonEscape(const std::string& text) {
   std::string out;
@@ -106,59 +118,15 @@ std::string jsonEscape(const std::string& text) {
 
 struct OutputRecord {
   std::vector<uint8_t> bytes;  // Header and payload.
-  uint64_t generation = 0;
-  bool droppable = false;  // Delta frames may be dropped under backpressure.
+  bool droppable = false;      // Delta frames may be dropped under backpressure.
 };
 
 struct PendingFrame {
   CapturedFrame frame;
   uint64_t ptsUs = 0;
-};
-
-double threadCpuSeconds() {
-  timespec time{};
-  if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time) != 0) return 0;
-  return double(time.tv_sec) + double(time.tv_nsec) / 1e9;
-}
-
-// Encoder thread timings, logged every 10 seconds while a consumer streams.
-struct EncoderStats {
-  // The agent's counters: all posts, and the render thread's time inside them.
-  const std::atomic<uint64_t>* posts = nullptr;
-  const std::atomic<uint64_t>* postUs = nullptr;
-  uint64_t frames = 0, postsSince = 0, postUsSince = 0;
-  double captureMs = 0, waitMs = 0, readMs = 0, encodeMs = 0, convertMs = 0;
-  double threadCpu = threadCpuSeconds();
-  Clock::time_point since = Clock::now();
-
-  void reset() {
-    auto postCounter = posts;
-    auto postTime = postUs;
-    *this = EncoderStats{};
-    posts = postCounter;
-    postUs = postTime;
-    postsSince = posts ? posts->load() : 0;
-    postUsSince = postUs ? postUs->load() : 0;
-  }
-  void record(const CapturedFrame& frame, double frameEncodeMs, double frameConvertMs) {
-    frames++;
-    captureMs += frame.captureMs;
-    waitMs += frame.waitMs;
-    readMs += frame.readMs;
-    encodeMs += frameEncodeMs;
-    convertMs += frameConvertMs;
-    double wall = std::chrono::duration<double>(Clock::now() - since).count();
-    if (wall < 10) return;
-    double cpu = threadCpuSeconds();
-    uint64_t postCount = posts ? posts->load() - postsSince : 0;
-    double postMs = postUs ? double(postUs->load() - postUsSince) / 1000 : 0;
-    logLine("stats: %.1f fps, posts %.1f/s, render thread %.2f ms per post, capture %.2f ms "
-            "(wait %.2f, read %.2f), encode %.2f ms (convert %.2f), encoder thread %.0f%% CPU",
-            frames / wall, postCount / wall, postCount ? postMs / double(postCount) : 0,
-            captureMs / frames, waitMs / frames, readMs / frames, encodeMs / frames,
-            convertMs / frames, (cpu - threadCpu) / wall * 100);
-    reset();
-  }
+  // When the frame's own post entered, in microseconds since the agent started; -1 for a frame
+  // that the agent captured on demand.
+  int64_t postUs = -1;
 };
 
 enum class ReadMode { Auto, Post, Lag, LagAsync };
@@ -172,6 +140,171 @@ const char* readModeName(ReadMode mode) {
   }
 }
 
+double threadCpuSeconds() {
+  timespec time{};
+  if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time) != 0) return 0;
+  return double(time.tv_sec) + double(time.tv_nsec) / 1e9;
+}
+
+// Names the calling thread, so per-thread CPU in /proc or a profiler shows the agent's threads.
+// On Linux, the threads that x264 starts take the name of the encoder thread.
+void nameThread(const char* name) {
+#if defined(__APPLE__)
+  pthread_setname_np(name);
+#else
+  pthread_setname_np(pthread_self(), name);  // At most 15 characters.
+#endif
+}
+
+int64_t threadId() {
+#if defined(__APPLE__)
+  uint64_t id = 0;
+  pthread_threadid_np(nullptr, &id);
+  return int64_t(id);
+#else
+  return int64_t(syscall(SYS_gettid));
+#endif
+}
+
+// A counter that other threads add to; a stats line reports what it gained since reset().
+struct CounterSince {
+  const std::atomic<uint64_t>* counter = nullptr;
+  uint64_t since = 0;
+  void reset() { since = counter ? counter->load() : 0; }
+  double gained() const { return counter ? double(counter->load() - since) : 0; }
+};
+
+// One role's timings and counts, logged every 10 seconds by its encoder thread while it encodes.
+// The counters come from the posts, the capture thread and the encoder thread.
+struct EncoderStats {
+  CounterSince posts, postUs, wholePostUs, offered, pacerSkipped, queueFull, outputDropped,
+      encodedBytes;
+  uint64_t frames = 0, superseded = 0, stale = 0, latencyFrames = 0;
+  double captureMs = 0, waitMs = 0, readMs = 0, encodeMs = 0, convertMs = 0, latencyMs = 0,
+         maxLatencyMs = 0;
+  double threadCpu = threadCpuSeconds();
+  Clock::time_point since = Clock::now();
+
+  void reset() {
+    frames = superseded = stale = latencyFrames = 0;
+    captureMs = waitMs = readMs = encodeMs = convertMs = latencyMs = maxLatencyMs = 0;
+    threadCpu = threadCpuSeconds();
+    since = Clock::now();
+    for (CounterSince* counter : {&posts, &postUs, &wholePostUs, &offered, &pacerSkipped,
+                                  &queueFull, &outputDropped, &encodedBytes})
+      counter->reset();
+  }
+  // latencyMs: from the frame's post to the end of its encode; negative when not known.
+  void record(int role, const CapturedFrame& frame, double frameEncodeMs, double frameConvertMs,
+              double frameLatencyMs) {
+    frames++;
+    captureMs += frame.captureMs;
+    waitMs += frame.waitMs;
+    readMs += frame.readMs;
+    encodeMs += frameEncodeMs;
+    convertMs += frameConvertMs;
+    if (frameLatencyMs >= 0) {
+      latencyFrames++;
+      latencyMs += frameLatencyMs;
+      maxLatencyMs = std::max(maxLatencyMs, frameLatencyMs);
+    }
+    double wall = std::chrono::duration<double>(Clock::now() - since).count();
+    if (wall < 10) return;
+    double cpu = threadCpuSeconds();
+    double postCount = posts.gained();
+    logLine("stats (%s): %.1f fps, posts %.1f/s, render thread %.2f ms per post (whole post "
+            "%.2f), capture %.2f ms (wait %.2f, read %.2f), encode %.2f ms (convert %.2f), "
+            "encoder thread %.0f%% CPU, offered %.1f/s, dropped %.1f/s pacer, %.1f/s queue, "
+            "%.1f/s superseded, %.1f/s stale, %.1f/s output, %.2f Mbit/s, post to encoded "
+            "%.1f ms (max %.1f)",
+            roleName(role), frames / wall, postCount / wall,
+            postCount ? postUs.gained() / 1000 / postCount : 0,
+            postCount ? wholePostUs.gained() / 1000 / postCount : 0, captureMs / frames,
+            waitMs / frames, readMs / frames, encodeMs / frames, convertMs / frames,
+            (cpu - threadCpu) / wall * 100, offered.gained() / wall, pacerSkipped.gained() / wall,
+            queueFull.gained() / wall, superseded / wall, stale / wall,
+            outputDropped.gained() / wall, encodedBytes.gained() * 8 / wall / 1e6,
+            latencyFrames ? latencyMs / double(latencyFrames) : 0, maxLatencyMs);
+    reset();
+  }
+};
+
+// The capture thread's line: every read of a frame, wherever it ran, and the thread's own CPU.
+struct CaptureStats {
+  CounterSince reads, captureUs, waitUs, readUs, tails, replaced;
+  double threadCpu = threadCpuSeconds();
+  Clock::time_point since = Clock::now();
+
+  void reset() {
+    threadCpu = threadCpuSeconds();
+    since = Clock::now();
+    for (CounterSince* counter : {&reads, &captureUs, &waitUs, &readUs, &tails, &replaced})
+      counter->reset();
+  }
+  void maybeLog(bool active, const char* readMode, int64_t renderThread) {
+    if (!active) {
+      reset();
+      return;
+    }
+    double wall = std::chrono::duration<double>(Clock::now() - since).count();
+    if (wall < 10) return;
+    double count = reads.gained();
+    logLine("stats (capture): read %s, reads %.1f/s (tails %.1f/s, replaced requests %.1f/s), "
+            "capture %.2f ms (wait %.2f, read %.2f), capture thread %.0f%% CPU, render thread "
+            "tid %lld",
+            readMode, count / wall, tails.gained() / wall, replaced.gained() / wall,
+            count ? captureUs.gained() / 1000 / count : 0,
+            count ? waitUs.gained() / 1000 / count : 0, count ? readUs.gained() / 1000 / count : 0,
+            (threadCpuSeconds() - threadCpu) / wall * 100, (long long)renderThread);
+    reset();
+  }
+};
+
+// One socket connection. The serve() thread owns the descriptor and the commands; the output
+// fields are guarded by outputMutex_, because the encoder threads queue records.
+struct Connection {
+  int fd = -1;
+  uint64_t generation = 0;  // Unique for each connection.
+  int role = -1;            // Assigned by the first 'S'; -1 before.
+  // Requested before the first 'S'.
+  int requestedRole = kRoleStream;  // A consumer without 'U' is a stream consumer.
+  int rotation = 0;
+  int canvasWidth = 0, canvasHeight = 0;
+  int helloWidth = 0, helloHeight = 0;  // The native size that hello announced.
+  std::vector<uint8_t> commands;
+  std::deque<OutputRecord> output;
+  size_t outputBytes = 0;
+  size_t outputOffset = 0;  // Bytes of output.front() already written.
+  bool dropUntilKey = false;
+  bool keyAfterDrain = false;  // Request a keyframe once the queue drains to half.
+  bool stalled = false;
+};
+
+// What one role encodes, and for which connection. Guarded by encodeMutex_ unless noted.
+struct RoleState {
+  std::condition_variable wake;
+  std::deque<PendingFrame> pending;
+  StreamSettings settings;
+  int rotation = 0;                       // The stream's display rotation; the recording keeps 0.
+  int canvasWidth = 0, canvasHeight = 0;  // The recording's canvas; 0 until known.
+  bool settingsChanged = false;
+  bool keyRequested = false;
+  uint64_t generation = 0;  // The connection that this role serves; 0 when none.
+  int announcedWidth = 0, announcedHeight = 0;  // Native size the consumer knows.
+  // Read by the render thread without encodeMutex_.
+  std::atomic<bool> active{false};
+  std::atomic<int> fps{kNativeFps};
+  std::atomic<bool> keyNeededByOutput{false};
+  // The last keyframe's timestamp, from the encoder thread and the encoder's callback.
+  std::atomic<uint64_t> lastKeyPts{0};
+  FramePacer pacer;  // Post and capture threads, under pacerMutex_.
+  uint64_t tailSequence = 0;  // Last tail delivered to this role, under pacerMutex_.
+  // For the stats line: frames queued for this role, posts that its pacer skipped, frames that
+  // found its queue full, delta frames that its output dropped, and its encoded bytes.
+  std::atomic<uint64_t> offered{0}, pacerSkipped{0}, queueFull{0}, outputDropped{0},
+      encodedBytes{0};
+};
+
 class Agent {
  public:
   bool initialize(GumModule* backend, std::string& error);
@@ -179,24 +312,31 @@ class Agent {
   bool listen(const std::string& path, std::string& error);
   void serve();
   void onPost(uint32_t handle, bool needLockAndBind);
+  void onPostLeft(int64_t enteredNs);
 
  private:
-  void encoderLoop();
+  void encoderLoop(int role);
   void captureLoop();
   void capturePost(uint32_t handle, bool needLockAndBind);
+  void deliver(PendingFrame& pending, const bool (&take)[kRoleCount]);
+  bool deliverTail(uint32_t handle, int64_t postUs, const bool (&take)[kRoleCount]);
   ReadMode effectiveReadMode() const;
   void chooseCaptureModes();
   std::string sessionOption(const char* file, const char* variable) const;
   bool captureNow(PendingFrame& out);
+  bool readFrame(uint32_t handle, CapturedFrame& out, std::string& error);
   void accept();
-  void readCommands();
-  void flushOutput();
-  void sendReplaced();
-  void disconnect(const char* reason);
+  void readCommands(Connection& connection);
+  void assignRole(Connection& connection, const StreamSettings& settings);
+  void flushOutput(Connection& connection);
+  void sendReplaced(Connection& connection);
+  void disconnect(uint64_t generation, const char* reason);
+  Connection* find(uint64_t generation);
   void sendRecord(uint64_t generation, uint32_t flags, uint32_t width, uint32_t height,
                   uint32_t fps, const uint8_t* payload, size_t length, uint64_t ptsUs = 0,
                   bool droppable = false);
   uint64_t nextPts();
+  uint64_t clockUs() const;
   void wake();
   std::string helloJson();
 
@@ -204,57 +344,50 @@ class Agent {
   std::unique_ptr<FrameSource> frames_;
   Clock::time_point start_ = Clock::now();
 
-  // Capture state shared with the render thread.
-  std::atomic<bool> active_{false};
-  std::atomic<int> captureFps_{kNativeFps};
   std::atomic<uint64_t> posts_{0}, captured_{0}, skippedLocked_{0}, droppedBusy_{0},
       captureErrors_{0};
-  std::mutex postMutex_;  // Guards pacer_ if more than one thread posts.
+  std::mutex postMutex_;  // Serializes concurrent posts and their previous handle.
   std::mutex pacerMutex_;  // Shared by posts and tail reads.
-  FramePacer pacer_;
-  std::atomic<uint64_t> postUs_{0};  // The render thread's time inside captured posts.
+  std::atomic<uint64_t> postUs_{0};  // The render thread's time in the agent, in captured posts.
+  std::atomic<uint64_t> wholePostUs_{0};  // The render thread's time in every whole post.
+  std::atomic<int64_t> renderThread_{0};  // The thread of the last post.
+  // Every read of a frame: the whole capture, its 1x1 wait read (with the probe on, Linux) and
+  // its full read (Linux).
+  std::atomic<uint64_t> reads_{0}, captureUs_{0}, waitUs_{0}, readUs_{0};
 
   // How posts read frames, chosen at each consumer's settings (see chooseCaptureModes()).
   std::atomic<ReadMode> readMode_{ReadMode::Auto};
-  uint32_t previousHandle_ = 0;  // Lag read; guarded by postMutex_.
-  LagTail tail_;  // Guarded by asyncMutex_, including the worker wait.
+  uint32_t previousHandle_ = 0;  // Lag read; guarded by postMutex_, as previousPostUs_.
+  int64_t previousPostUs_ = -1;
   std::atomic<uint64_t> lagTails_{0};
-  // Lag + async: the newest copy request from the render thread, guarded by asyncMutex_.
+  // Lag read: what captureLoop() reads next, guarded by asyncMutex_. A request is the newest
+  // frame for the roles that took it; the tail is the last post's frame, read once no post
+  // came for the LagTail delay.
   std::mutex asyncMutex_;
   std::condition_variable asyncWake_;
   uint32_t asyncHandle_ = 0;
   uint64_t asyncPts_ = 0;
+  int64_t asyncPostUs_ = -1;
+  bool asyncTake_[kRoleCount] = {};
+  LagTail tail_;  // Guarded by asyncMutex_, including worker waits.
   std::atomic<uint64_t> asyncReplaced_{0};  // Requests replaced before captureLoop() took them.
 
-  // Encoder thread inputs, guarded by encodeMutex_. Only the encoder thread
-  // owns the H264Encoder; its callbacks never take encodeMutex_.
+  // Encoder thread inputs. Only each role's encoder thread owns its H264Encoder; the
+  // encoders' callbacks never take encodeMutex_.
   std::mutex encodeMutex_;
-  std::condition_variable encodeWake_;
-  std::deque<PendingFrame> pending_;
-  StreamSettings settings_;
-  int rotation_ = 0;  // Android display rotation from the consumer's 'R'; 0 to 3.
-  bool settingsChanged_ = false;
-  bool keyRequested_ = false;
-  uint64_t generation_ = 0;  // Changes with every consumer connection.
-  int announcedWidth_ = 0, announcedHeight_ = 0;  // Native size the consumer knows.
-  std::atomic<bool> keyNeededByOutput_{false};
+  RoleState roles_[kRoleCount];
   uint64_t lastPts_ = 0;
   std::mutex ptsMutex_;
 
-  // Socket state; the serve() thread owns the descriptors.
+  // Socket state. The serve() thread owns the descriptors and changes connections_ under
+  // outputMutex_, so encoder threads can find a connection by generation.
   std::string path_;
   int listener_ = -1;
-  int client_ = -1;
   int socketLock_ = -1;
   int wakePipe_[2] = {-1, -1};
-  std::vector<uint8_t> commands_;
   std::mutex outputMutex_;
-  std::deque<OutputRecord> output_;
-  size_t outputBytes_ = 0;
-  size_t outputOffset_ = 0;  // Bytes of output_.front() already written.
-  std::atomic<uint64_t> clientGeneration_{0};
-  bool dropUntilKey_ = false;
-  bool keyAfterDrain_ = false;  // Request a keyframe once the queue drains to half.
+  std::vector<std::unique_ptr<Connection>> connections_;
+  uint64_t nextGeneration_ = 0;
   std::atomic<bool> outputStalled_{false};
 };
 
@@ -267,11 +400,21 @@ void unlinkBoundSocket() {
   if (boundSocketPath[0]) unlink(boundSocketPath);
 }
 
+int64_t steadyNs() {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch())
+      .count();
+}
+
 void onPostEnter(GumInvocationContext* context, gpointer) {
+  *GUM_IC_GET_INVOCATION_DATA(context, int64_t) = steadyNs();
   // FrameBuffer::Impl::postImpl(this, handle, callback, needLockAndBind, repaint).
   auto handle = uint32_t(uintptr_t(gum_invocation_context_get_nth_argument(context, 1)));
   bool needLockAndBind = uintptr_t(gum_invocation_context_get_nth_argument(context, 3)) & 0xff;
   agent->onPost(handle, needLockAndBind);
+}
+
+void onPostLeave(GumInvocationContext* context, gpointer) {
+  agent->onPostLeft(*GUM_IC_GET_INVOCATION_DATA(context, int64_t));
 }
 
 bool Agent::initialize(GumModule* backend, std::string& error) {
@@ -290,13 +433,19 @@ bool Agent::initialize(GumModule* backend, std::string& error) {
   fcntl(wakePipe_[1], F_SETFL, O_NONBLOCK);
   fcntl(wakePipe_[0], F_SETFD, FD_CLOEXEC);
   fcntl(wakePipe_[1], F_SETFD, FD_CLOEXEC);
-  std::thread([this] {
-    guardCallback("encoder stopped", [this] { encoderLoop(); });
-  }).detach();
+  for (int role = 0; role < kRoleCount; role++)
+    std::thread([this, role] {
+      guardCallback("encoder stopped", [this, role] { encoderLoop(role); });
+    }).detach();
   std::thread([this] {
     guardCallback("capture stopped", [this] { captureLoop(); });
   }).detach();
   return true;
+}
+
+// The whole post: the agent's part, the renderer's lock and the emulator's own post work.
+void Agent::onPostLeft(int64_t enteredNs) {
+  wholePostUs_ += uint64_t(std::max<int64_t>(0, steadyNs() - enteredNs) / 1000);
 }
 
 void Agent::onPost(uint32_t handle, bool needLockAndBind) {
@@ -326,7 +475,10 @@ ReadMode Agent::effectiveReadMode() const {
 
 void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
   posts_++;
-  if (!active_.load(std::memory_order_relaxed)) return;
+  renderThread_.store(threadId(), std::memory_order_relaxed);
+  bool anyActive = false;
+  for (const RoleState& role : roles_) anyActive |= role.active.load(std::memory_order_relaxed);
+  if (!anyActive) return;
   if (!needLockAndBind) {
     // @ref LLP 0020#hook-point — the caller already holds the non-recursive FrameBuffer lock
     skippedLocked_++;
@@ -349,128 +501,229 @@ void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
   int64_t elapsedUs =
       std::chrono::duration_cast<std::chrono::microseconds>(entered - start_).count();
   ReadMode mode = effectiveReadMode();
-  bool lag = mode == ReadMode::Lag || mode == ReadMode::LagAsync;
+  const bool lag = mode == ReadMode::Lag || mode == ReadMode::LagAsync;
   uint32_t readHandle = handle;
+  int64_t readPostUs = elapsedUs;
   if (lag) {
-    // The frame of this post waits for the next post, or for the capture worker's tail rule.
+    // The frame of this post waits for the next post, or for the tail rule in captureLoop().
     readHandle = previousHandle_;
+    readPostUs = previousPostUs_;
     previousHandle_ = handle;
+    previousPostUs_ = elapsedUs;
   }
-  bool take = false;
+  // @ref LLP 0023#agent-protocol-3 — one copy for every role that takes the post
+  // Each role paces itself, so the copy runs at the highest rate of the active roles.
+  bool take[kRoleCount] = {};
+  bool anyTaken = false;
   if (readHandle) {
     std::lock_guard<std::mutex> guard(pacerMutex_);
-    take = pacer_.take(elapsedUs, captureFps_.load());
+    for (int role = 0; role < kRoleCount; role++) {
+      RoleState& state = roles_[role];
+      if (!state.active.load()) continue;
+      take[role] = state.pacer.take(elapsedUs, state.fps.load());
+      if (!take[role]) state.pacerSkipped++;
+      anyTaken |= take[role];
+    }
   }
-  if (take) {
+  if (anyTaken) {
     std::lock_guard<std::mutex> guard(encodeMutex_);
-    if (pending_.size() >= kMaxPendingFrames) {
-      droppedBusy_++;
-      take = false;
+    anyTaken = false;
+    for (int role = 0; role < kRoleCount; role++) {
+      if (take[role] && roles_[role].pending.size() >= kMaxPendingFrames) {
+        droppedBusy_++;
+        roles_[role].queueFull++;
+        take[role] = false;
+      }
+      anyTaken |= take[role];
     }
   }
   if (lag) {
     {
-      // Publish the deadline and its previous-frame request together. The worker
-      // cannot claim this tail and then receive older work from the same post.
       std::lock_guard<std::mutex> guard(asyncMutex_);
       tail_.post(handle, elapsedUs);
-      if (mode == ReadMode::LagAsync && take) {
+      if (mode == ReadMode::LagAsync && anyTaken) {
+        // captureLoop() copies the frame, so the post does not wait for the read. A newer
+        // request replaces one that it has not taken, for the roles of both.
         if (asyncHandle_) asyncReplaced_++;
         asyncHandle_ = readHandle;
         asyncPts_ = nextPts();
+        asyncPostUs_ = readPostUs;
+        for (int role = 0; role < kRoleCount; role++) asyncTake_[role] |= take[role];
       }
     }
     asyncWake_.notify_one();
     if (mode == ReadMode::LagAsync) return;
   }
-  if (!take) return;
+  if (!anyTaken) return;
   PendingFrame pending;
   std::string error;
-  if (!frames_->capture(readHandle, pending.frame, error)) {
+  if (!readFrame(readHandle, pending.frame, error)) {
     if (captureErrors_++ % 300 == 0) logLine("frame capture failed: %s", error.c_str());
     return;
   }
   pending.ptsUs = nextPts();
+  pending.postUs = readPostUs;
   captured_++;
-  {
-    std::lock_guard<std::mutex> guard(encodeMutex_);
-    pending_.push_back(std::move(pending));
-  }
-  encodeWake_.notify_one();
+  deliver(pending, take);
 }
 
-// Lag + async: copies the frame of the post before on its own thread. The frame source
-// serializes reads, and the renderer's read takes the FrameBuffer lock itself.
+// Queues one captured frame for every active role that took it.
+void Agent::deliver(PendingFrame& pending, const bool (&take)[kRoleCount]) {
+  bool queued[kRoleCount] = {};
+  {
+    std::lock_guard<std::mutex> guard(encodeMutex_);
+    for (int role = 0; role < kRoleCount; role++) {
+      RoleState& state = roles_[role];
+      if (!take[role] || !state.active) continue;
+      if (state.pending.size() >= kMaxPendingFrames) {
+        droppedBusy_++;
+        state.queueFull++;
+        continue;
+      }
+      state.pending.push_back(pending);
+      state.offered++;
+      queued[role] = true;
+    }
+  }
+  for (int role = 0; role < kRoleCount; role++)
+    if (queued[role]) roles_[role].wake.notify_one();
+}
+
+// The tail rule: no post came after the last one, so no post reads its frame. Every active role
+// gets it within its pacing budget, replacing an old pending frame if its queue is full.
+bool Agent::deliverTail(uint32_t handle, int64_t postUs, const bool (&take)[kRoleCount]) {
+  PendingFrame pending;
+  std::string error;
+  if (!readFrame(handle, pending.frame, error)) {
+    if (captureErrors_++ % 300 == 0) logLine("tail capture failed: %s", error.c_str());
+    return false;
+  }
+  pending.ptsUs = nextPts();
+  captured_++;
+  pending.postUs = postUs;
+  lagTails_++;
+  bool queued[kRoleCount] = {};
+  {
+    std::lock_guard<std::mutex> guard(encodeMutex_);
+    for (int role = 0; role < kRoleCount; role++) {
+      RoleState& state = roles_[role];
+      if (!take[role] || !state.active) continue;
+      if (state.pending.size() >= kMaxPendingFrames) {
+        state.pending.pop_front();
+        state.queueFull++;
+      }
+      state.pending.push_back(pending);
+      state.offered++;
+      queued[role] = true;
+    }
+  }
+  for (int role = 0; role < kRoleCount; role++)
+    if (queued[role]) roles_[role].wake.notify_one();
+  return true;
+}
+
+// Lag read: copies the frame of the post before on its own thread (lag + async), and the last
+// post's frame by the tail rule (lag and lag + async). One read serves every role that took the
+// frame. The frame source serializes reads, and the renderer's read takes the FrameBuffer lock
+// itself.
 void Agent::captureLoop() {
+  nameThread("expo-cap-read");
+  CaptureStats stats;
+  stats.reads.counter = &reads_;
+  stats.captureUs.counter = &captureUs_;
+  stats.waitUs.counter = &waitUs_;
+  stats.readUs.counter = &readUs_;
+  stats.tails.counter = &lagTails_;
+  stats.replaced.counter = &asyncReplaced_;
+  stats.reset();
   for (;;) {
     uint32_t handle = 0;
     uint64_t ptsUs = 0;
+    int64_t postUs = -1;
+    bool take[kRoleCount] = {};
     std::optional<LagTail::Request> tail;
     {
+      // Wakes at least every second for the stats line.
+      auto statsAt = Clock::now() + std::chrono::seconds(1);
       std::unique_lock<std::mutex> lock(asyncMutex_);
       for (;;) {
-        int64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                            Clock::now() - start_).count();
-        // Prefer a due tail over queued work so a stalled capture worker eventually
-        // delivers the final frame even if it still has an older request.
-        tail = tail_.takeIfDue(nowUs);
+        auto now = Clock::now();
+        tail = tail_.takeIfDue(std::chrono::duration_cast<std::chrono::microseconds>(
+                                  now - start_).count());
         if (tail) {
           handle = tail->handle;
-          asyncHandle_ = 0;  // Older queued work cannot follow this newer frame.
+          postUs = tail->postUs;
+          asyncHandle_ = 0;
+          for (bool& role : asyncTake_) role = false;
           break;
         }
         if (asyncHandle_) {
           handle = asyncHandle_;
           ptsUs = asyncPts_;
+          postUs = asyncPostUs_;
+          for (int role = 0; role < kRoleCount; role++) {
+            take[role] = asyncTake_[role];
+            asyncTake_[role] = false;
+          }
           asyncHandle_ = 0;
           break;
         }
+        auto wakeAt = statsAt;
         if (tail_.pending())
-          asyncWake_.wait_until(lock, start_ + std::chrono::microseconds(tail_.dueUs()));
-        else
-          asyncWake_.wait(lock);
+          wakeAt = std::min(wakeAt, start_ + std::chrono::microseconds(tail_.dueUs()));
+        if (now >= statsAt) break;
+        asyncWake_.wait_until(lock, wakeAt);
       }
     }
     const auto retryTail = [&] {
       if (!tail) return;
       std::lock_guard<std::mutex> guard(asyncMutex_);
-      tail_.retry(*tail, std::chrono::duration_cast<std::chrono::microseconds>(
-                            Clock::now() - start_).count());
+      tail_.retry(*tail, int64_t(clockUs()));
     };
     try {
-      if (!active_.load(std::memory_order_relaxed)) continue;
+      bool anyActive = false;
+      for (const RoleState& role : roles_) anyActive |= role.active.load();
+      stats.maybeLog(anyActive, readModeName(effectiveReadMode()), renderThread_.load());
+      if (!anyActive || (!handle && !tail)) continue;
       if (tail) {
-        // Release the wait lock before taking the pacer lock, matching the post's
-        // pacer -> async order. Keep postMutex_ exclusive to concurrent posts, so
-        // a tail cannot make a final post fail its try-lock and lose its handle.
-        std::lock_guard<std::mutex> pacerGuard(pacerMutex_);
-        std::lock_guard<std::mutex> tailGuard(asyncMutex_);
-        int64_t nowUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                            Clock::now() - start_).count();
-        if (!tail_.pace(*tail, pacer_, nowUs, captureFps_.load())) continue;
+        ReadMode mode = effectiveReadMode();
+        if (mode == ReadMode::Lag || mode == ReadMode::LagAsync) {
+          bool anyTaken = false;
+          {
+            // Match the post's pacer -> async lock order after releasing the wait lock.
+            // Keep the posts' try-lock free so a final post cannot lose its handle.
+            std::lock_guard<std::mutex> pacerGuard(pacerMutex_);
+            std::lock_guard<std::mutex> tailGuard(asyncMutex_);
+            int64_t nowUs = int64_t(clockUs());
+            for (int role = 0; role < kRoleCount; role++) {
+              RoleState& state = roles_[role];
+              if (!state.active || state.tailSequence == tail->sequence) continue;
+              take[role] = tail_.pace(*tail, state.pacer, nowUs, state.fps.load());
+              anyTaken |= take[role];
+            }
+          }
+          if (anyTaken) {
+            if (!deliverTail(handle, postUs, take)) {
+              retryTail();
+            } else {
+              std::lock_guard<std::mutex> pacerGuard(pacerMutex_);
+              for (int role = 0; role < kRoleCount; role++)
+                if (take[role]) roles_[role].tailSequence = tail->sequence;
+            }
+          }
+        }
+        continue;
       }
       PendingFrame pending;
       std::string error;
-      if (!frames_->capture(handle, pending.frame, error)) {
+      if (!readFrame(handle, pending.frame, error)) {
         if (captureErrors_++ % 300 == 0) logLine("frame capture failed: %s", error.c_str());
-        retryTail();
         continue;
       }
-      pending.ptsUs = tail ? nextPts() : ptsUs;
-      if (tail) lagTails_++;
+      pending.ptsUs = ptsUs;
+      pending.postUs = postUs;
       captured_++;
-      {
-        std::lock_guard<std::mutex> guard(encodeMutex_);
-        if (pending_.size() >= kMaxPendingFrames) {
-          droppedBusy_++;
-          if (!tail) continue;
-          // The final frame supersedes old queued frames; dropping it would leave
-          // a static screen showing the penultimate post indefinitely.
-          pending_.pop_front();
-        }
-        pending_.push_back(std::move(pending));
-      }
-      encodeWake_.notify_one();
+      deliver(pending, take);
     } catch (...) {
       // An exception must not leave this thread: std::terminate would end QEMU.
       captureErrors_++;
@@ -479,19 +732,32 @@ void Agent::captureLoop() {
   }
 }
 
+uint64_t Agent::clockUs() const {
+  return uint64_t(
+      std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start_).count());
+}
+
 uint64_t Agent::nextPts() {
   std::lock_guard<std::mutex> guard(ptsMutex_);
-  uint64_t now = uint64_t(
-      std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start_).count());
-  lastPts_ = std::max(now, lastPts_ + 1);
+  lastPts_ = std::max(clockUs(), lastPts_ + 1);
   return lastPts_;
+}
+
+// Reads a frame and counts it for the capture stats line.
+bool Agent::readFrame(uint32_t handle, CapturedFrame& out, std::string& error) {
+  if (!frames_->capture(handle, out, error)) return false;
+  reads_++;
+  captureUs_ += uint64_t(out.captureMs * 1000);
+  waitUs_ += uint64_t(out.waitMs * 1000);
+  readUs_ += uint64_t(out.readMs * 1000);
+  return true;
 }
 
 bool Agent::captureNow(PendingFrame& out) {
   uint32_t handle = lastPostedHandle(g_);
   if (!handle) return false;
   std::string error;
-  if (!frames_->capture(handle, out.frame, error)) {
+  if (!readFrame(handle, out.frame, error)) {
     logLine("on-demand capture failed: %s", error.c_str());
     return false;
   }
@@ -500,46 +766,77 @@ bool Agent::captureNow(PendingFrame& out) {
   return true;
 }
 
-void Agent::encoderLoop() {
+std::string configuredJson(int role, const CapturedFrame& frame, const H264Encoder& encoder,
+                           int rotation, const Rect* contentRect, uint64_t fromPts) {
+  std::string details = std::string("{\"role\":\"") + roleName(role) + "\",\"framePath\":\"" +
+                        framePathName(frame.path) + "\",\"hardwareEncoder\":" +
+                        (encoder.hardware() ? "true" : "false") + ",\"encoder\":\"" +
+                        jsonEscape(encoder.encoderId()) +
+                        "\",\"rotation\":" + std::to_string(rotation);
+  if (contentRect) {
+    // Where the native frame sits on the recording canvas, from the frame at fromPts on.
+    details += ",\"contentRect\":{\"x\":" + std::to_string(contentRect->x) +
+               ",\"y\":" + std::to_string(contentRect->y) +
+               ",\"width\":" + std::to_string(contentRect->width) +
+               ",\"height\":" + std::to_string(contentRect->height) +
+               "},\"fromPts\":" + std::to_string(fromPts);
+  }
+  return details + "}";
+}
+
+void Agent::encoderLoop(int role) {
+  RoleState& state = roles_[role];
+  const bool recording = role == kRoleRecording;
+  nameThread(recording ? "expo-enc-record" : "expo-enc-stream");
   // Owned by this thread alone. Resetting it waits for its VideoToolbox
   // callbacks, so never reset it while holding encodeMutex_.
   std::unique_ptr<H264Encoder> encoder;
   EncoderStats stats;
   uint64_t encoderGeneration = 0;
   int encoderNativeWidth = 0, encoderNativeHeight = 0;
+  int encoderWidth = 0, encoderHeight = 0;
   auto lastFrameAt = Clock::now() - std::chrono::hours(1);
   uint64_t lastEncodedPts = 0;
   std::string lastConfigureError;
-  stats.posts = &posts_;
-  stats.postUs = &postUs_;
+  stats.posts.counter = &posts_;
+  stats.postUs.counter = &postUs_;
+  stats.wholePostUs.counter = &wholePostUs_;
+  stats.offered.counter = &state.offered;
+  stats.pacerSkipped.counter = &state.pacerSkipped;
+  stats.queueFull.counter = &state.queueFull;
+  stats.outputDropped.counter = &state.outputDropped;
+  stats.encodedBytes.counter = &state.encodedBytes;
   stats.reset();
   for (;;) {
     try {
       PendingFrame pending;
       bool havePending = false, configure = false, forceKey = false, active = false;
       StreamSettings settings;
-      int rotation = 0;
+      int rotation = 0, canvasWidth = 0, canvasHeight = 0;
       uint64_t generation;
       int announcedWidth, announcedHeight;
       {
         std::unique_lock<std::mutex> lock(encodeMutex_);
-        waitForEncoderWork(encodeWake_, lock, keyRequested_, keyNeededByOutput_,
-                           [&] { return !pending_.empty() || settingsChanged_; });
-        active = active_;
-        generation = generation_;
-        configure = settingsChanged_;
-        settingsChanged_ = false;
-        settings = settings_;
-        rotation = rotation_;
-        while (!pending_.empty()) {  // Keep only the newest frame.
-          pending = std::move(pending_.front());
-          pending_.pop_front();
+        waitForEncoderWork(state.wake, lock, state.keyRequested, state.keyNeededByOutput,
+                           [&] { return !state.pending.empty() || state.settingsChanged; });
+        active = state.active;
+        generation = state.generation;
+        configure = state.settingsChanged;
+        state.settingsChanged = false;
+        settings = state.settings;
+        rotation = state.rotation;
+        canvasWidth = state.canvasWidth;
+        canvasHeight = state.canvasHeight;
+        while (!state.pending.empty()) {  // Keep only the newest frame.
+          if (havePending) stats.superseded++;
+          pending = std::move(state.pending.front());
+          state.pending.pop_front();
           havePending = true;
         }
-        forceKey = keyNeededByOutput_.exchange(false) || keyRequested_;
-        keyRequested_ = false;
-        announcedWidth = announcedWidth_;
-        announcedHeight = announcedHeight_;
+        forceKey = state.keyNeededByOutput.exchange(false) || state.keyRequested;
+        state.keyRequested = false;
+        announcedWidth = state.announcedWidth;
+        announcedHeight = state.announcedHeight;
       }
       if (!active || generation != encoderGeneration || configure) {
         encoder.reset();  // Waits for packets of the old session.
@@ -554,36 +851,74 @@ void Agent::encoderLoop() {
       if (!havePending) {
         if (forceKey || !encoder) {
           std::lock_guard<std::mutex> guard(encodeMutex_);
-          keyRequested_ = true;  // Retry once a frame is available.
+          state.keyRequested = true;  // Retry once a frame is available.
         }
         continue;
       }
-      // A frame that the render thread captured while this thread captured a newer one on
-      // demand is older than the last encoded frame; consumers need increasing timestamps.
+      // A frame that a post or the capture thread captured while this thread captured a newer
+      // one on demand is older than the last encoded frame; consumers need increasing timestamps.
       if (pending.ptsUs <= lastEncodedPts) {
+        stats.stale++;
         if (forceKey) {
           std::lock_guard<std::mutex> guard(encodeMutex_);
-          keyRequested_ = true;  // For the next frame.
+          state.keyRequested = true;  // For the next frame.
         }
         continue;
       }
       lastFrameAt = Clock::now();
-      if (!encoder || pending.frame.width != encoderNativeWidth ||
-          pending.frame.height != encoderNativeHeight) {
+      bool resized =
+          pending.frame.width != encoderNativeWidth || pending.frame.height != encoderNativeHeight;
+      // The stream follows the native size. The recording keeps its canvas and places each
+      // frame on it, so a fold does not change its size or its encoder.
+      if (!encoder || (resized && !recording)) {
         encoder.reset();
-        auto [uprightWidth, uprightHeight] =
-            uprightSize(pending.frame.width, pending.frame.height, rotation);
-        auto [width, height] = streamSize(uprightWidth, uprightHeight, settings.maxSize);
+        int width, height;
+        if (recording) {
+          if (canvasWidth == 0) {
+            // A recording consumer without 'C' gets the first frame's size as its canvas.
+            std::tie(canvasWidth, canvasHeight) =
+                streamSize(pending.frame.width, pending.frame.height, settings.maxSize);
+            std::lock_guard<std::mutex> guard(encodeMutex_);
+            if (generation == state.generation) {
+              state.canvasWidth = canvasWidth;
+              state.canvasHeight = canvasHeight;
+            }
+          }
+          width = canvasWidth;
+          height = canvasHeight;
+          rotation = 0;  // The recording keeps the panel orientation.
+        } else {
+          auto [uprightWidth, uprightHeight] =
+              uprightSize(pending.frame.width, pending.frame.height, rotation);
+          std::tie(width, height) = streamSize(uprightWidth, uprightHeight, settings.maxSize);
+        }
         uint32_t fps = uint32_t(settings.fps);
+        state.lastKeyPts = 0;
         auto next = createH264Encoder(
-            [this, generation, width = uint32_t(width), height = uint32_t(height),
+            [this, &state, generation, width = uint32_t(width), height = uint32_t(height),
              fps](EncodedPacket&& packet) {
+              if (packet.key) {
+                uint64_t previous = state.lastKeyPts.load();
+                while (packet.ptsUs > previous &&
+                       !state.lastKeyPts.compare_exchange_weak(previous, packet.ptsUs)) {
+                }
+              }
+              state.encodedBytes += packet.data.size();
               sendRecord(generation, packet.key ? kKeyFrame : kFrame, width, height, fps,
                          packet.data.data(), packet.data.size(), packet.ptsUs, !packet.key);
             },
             [](const std::string& message) { logLine("%s", message.c_str()); });
+        EncoderConfig config;
+        config.width = width;
+        config.height = height;
+        config.fps = settings.fps;
+        config.bitRate = settings.bitRate;
+        config.rotation = rotation;
+        config.keyFrameIntervalSeconds =
+            recording ? kRecordingKeyFrameIntervalSeconds : kStreamKeyFrameIntervalSeconds;
+        config.letterbox = recording;
         std::string error;
-        if (!next->configure(width, height, settings.fps, settings.bitRate, rotation, error)) {
+        if (!next->configure(config, error)) {
           // A missing encoder fails every 200 ms until the host changes; log each error once.
           if (error != lastConfigureError) logLine("%s", error.c_str());
           lastConfigureError = error;
@@ -591,55 +926,86 @@ void Agent::encoderLoop() {
           continue;
         }
         lastConfigureError.clear();
+        encoder = std::move(next);
+        encoderWidth = width;
+        encoderHeight = height;
+        encoderNativeWidth = encoderNativeHeight = 0;  // Announce the native size below.
+        resized = true;
+        stats.reset();
+        logLine("%s: encoding %dx%d@%d at rotation %d, %s encoder %s", roleName(role), width,
+                height, settings.fps, rotation, encoder->hardware() ? "hardware" : "software",
+                encoder->encoderId().c_str());
+      }
+      if (resized) {
+        uint32_t fps = uint32_t(settings.fps);
         if (pending.frame.width != announcedWidth || pending.frame.height != announcedHeight) {
           {
             std::lock_guard<std::mutex> guard(encodeMutex_);
-            if (generation == generation_) {
-              announcedWidth_ = pending.frame.width;
-              announcedHeight_ = pending.frame.height;
+            if (generation == state.generation) {
+              state.announcedWidth = pending.frame.width;
+              state.announcedHeight = pending.frame.height;
             }
           }
           sendRecord(generation, kResized, uint32_t(pending.frame.width),
                      uint32_t(pending.frame.height), fps, nullptr, 0);
         }
-        std::string details = std::string("{\"framePath\":\"") + framePathName(pending.frame.path) +
-                              "\",\"hardwareEncoder\":" + (next->hardware() ? "true" : "false") +
-                              ",\"encoder\":\"" + jsonEscape(next->encoderId()) +
-                              "\",\"rotation\":" + std::to_string(rotation) + "}";
-        sendRecord(generation, kConfigured, uint32_t(width), uint32_t(height), fps,
+        Rect placement;
+        if (recording)
+          placement =
+              placeOnCanvas(pending.frame.width, pending.frame.height, encoderWidth, encoderHeight);
+        std::string details =
+            configuredJson(role, pending.frame, *encoder, recording ? 0 : rotation,
+                           recording ? &placement : nullptr, pending.ptsUs);
+        sendRecord(generation, kConfigured, uint32_t(encoderWidth), uint32_t(encoderHeight), fps,
                    reinterpret_cast<const uint8_t*>(details.data()), details.size());
-        logLine("streaming %dx%d@%d from %dx%d native at rotation %d, %s frames, %s encoder %s",
-                width, height, settings.fps, pending.frame.width, pending.frame.height, rotation,
-                framePathName(pending.frame.path), next->hardware() ? "hardware" : "software",
-                next->encoderId().c_str());
-        encoder = std::move(next);
+        logLine("%s: %dx%d native, %s frames", roleName(role), pending.frame.width,
+                pending.frame.height, framePathName(pending.frame.path));
         encoderNativeWidth = pending.frame.width;
         encoderNativeHeight = pending.frame.height;
-        forceKey = true;
-        stats.reset();
+        forceKey = true;  // A resized and a configured record are followed by an IDR.
       }
+      if (recording && !forceKey) {
+        // gfxstream posts only when the screen changes, so a count of frames does not bound
+        // the time between keyframes; the timestamps do. Half a frame allows for jitter.
+        uint64_t interval = uint64_t(kRecordingKeyFrameIntervalSeconds) * 1'000'000 -
+                            uint64_t(500'000 / std::max(1, settings.fps));
+        forceKey = pending.ptsUs - state.lastKeyPts.load() >= interval;
+      }
+      if (forceKey) state.lastKeyPts = pending.ptsUs;
       std::string error;
       auto encodeStart = Clock::now();
       bool encoded = encoder->encode(pending.frame, pending.ptsUs, forceKey, error);
       lastEncodedPts = pending.ptsUs;
-      stats.record(pending.frame,
-                   std::chrono::duration<double, std::milli>(Clock::now() - encodeStart).count(),
-                   encoder->lastConvertMs());
+      auto encodeEnd = Clock::now();
+      stats.record(role, pending.frame,
+                   std::chrono::duration<double, std::milli>(encodeEnd - encodeStart).count(),
+                   encoder->lastConvertMs(),
+                   pending.postUs < 0 ? -1
+                                      : std::chrono::duration<double, std::milli>(
+                                            encodeEnd - (start_ + std::chrono::microseconds(
+                                                                      pending.postUs)))
+                                            .count());
       pending.frame.pixels = FramePixels();  // Back to the frame source's pool.
       if (!encoded) {
         logLine("%s", error.c_str());
         if (forceKey) {
           std::lock_guard<std::mutex> guard(encodeMutex_);
-          keyRequested_ = true;
+          state.keyRequested = true;
         }
       }
     } catch (const std::exception& error) {
       // An exception must not leave this thread: std::terminate would end QEMU.
-      logLine("encoder error: %s", error.what());
+      logLine("%s encoder error: %s", roleName(role), error.what());
       encoder.reset();
       std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
   }
+}
+
+Connection* Agent::find(uint64_t generation) {
+  for (auto& connection : connections_)
+    if (connection->generation == generation) return connection.get();
+  return nullptr;
 }
 
 void Agent::sendRecord(uint64_t generation, uint32_t flags, uint32_t width, uint32_t height,
@@ -650,27 +1016,34 @@ void Agent::sendRecord(uint64_t generation, uint32_t flags, uint32_t width, uint
     return;
   }
   OutputRecord record;
-  record.generation = generation;
   record.droppable = droppable;
   record.bytes.resize(kHeaderBytes + length);
   encodeHeader(record.bytes.data(), uint32_t(length), ptsUs, flags, width, height, fps);
   if (length) memcpy(record.bytes.data() + kHeaderBytes, payload, length);
   {
     std::lock_guard<std::mutex> guard(outputMutex_);
-    if (generation != clientGeneration_) return;
-    if (flags == kKeyFrame) dropUntilKey_ = keyAfterDrain_ = false;
-    if (droppable && dropUntilKey_) return;
-    if (droppable && outputBytes_ + record.bytes.size() > kMaxQueuedOutputBytes) {
-      // The consumer is behind: drop delta frames until the next keyframe, and ask for it
-      // only once the queue drains, so a consumer that stopped reading gets no keyframes.
-      dropUntilKey_ = keyAfterDrain_ = true;
+    Connection* connection = find(generation);
+    if (!connection) return;
+    int role = connection->role < 0 ? kRoleStream : connection->role;
+    if (flags == kKeyFrame) connection->dropUntilKey = connection->keyAfterDrain = false;
+    if (droppable && connection->dropUntilKey) {
+      roles_[role].outputDropped++;
       return;
     }
-    if (outputBytes_ + record.bytes.size() > kMaxBufferedOutputBytes) {
+    if (droppable &&
+        connection->outputBytes + record.bytes.size() > kMaxQueuedOutputBytes[role]) {
+      // The consumer is behind: drop delta frames until the next keyframe, and ask for it
+      // only once the queue drains, so a consumer that stopped reading gets no keyframes.
+      connection->dropUntilKey = connection->keyAfterDrain = true;
+      roles_[role].outputDropped++;
+      return;
+    }
+    if (connection->outputBytes + record.bytes.size() > kMaxBufferedOutputBytes[role]) {
+      connection->stalled = true;
       outputStalled_ = true;  // serve() closes the consumer.
     } else {
-      outputBytes_ += record.bytes.size();
-      output_.push_back(std::move(record));
+      connection->outputBytes += record.bytes.size();
+      connection->output.push_back(std::move(record));
     }
   }
   wake();
@@ -684,12 +1057,14 @@ void Agent::wake() {
 
 std::string Agent::helloJson() {
   // posts counts every display post since the agent started, with or without a
-  // consumer, so two hellos give the renderer's frame rate without capture.
+  // consumer, so two hellos give the renderer's frame rate without capture. clockUs is the
+  // agent's timestamp clock now, so a consumer can place frame timestamps on its own clock.
   std::string hello =
       std::string("{\"protocol\":") + std::to_string(kProtocolVersion) + ",\"version\":\"" +
       EXPO_EMULATOR_CAPTURE_VERSION + "\",\"platform\":\"" + kPlatform + "\",\"gpuAvailable\":" +
       (g_.gpuEntryPointsAvailable() && !frames_->gpuUnavailable() ? "true" : "false") +
-      ",\"renderer\":\"" + jsonEscape(g_.path) + "\",\"posts\":" + std::to_string(posts_.load());
+      ",\"renderer\":\"" + jsonEscape(g_.path) + "\",\"posts\":" + std::to_string(posts_.load()) +
+      ",\"clockUs\":" + std::to_string(clockUs());
   // A consumer that sees encoderError stops: no session can start until the host has the
   // encoder (on Linux, x264 build 165).
   std::string encoderError = h264EncoderProblem();
@@ -752,16 +1127,23 @@ bool Agent::listen(const std::string& path, std::string& error) {
 }
 
 void Agent::serve() {
+  std::vector<pollfd> fds;
+  std::vector<uint64_t> generations;
   for (;;) {
     try {
-      pollfd fds[3] = {{listener_, POLLIN, 0}, {wakePipe_[0], POLLIN, 0}, {client_, 0, 0}};
-      nfds_t count = 2;
-      if (client_ >= 0) {
+      fds.clear();
+      generations.clear();
+      fds.push_back({listener_, POLLIN, 0});
+      fds.push_back({wakePipe_[0], POLLIN, 0});
+      {
         std::lock_guard<std::mutex> guard(outputMutex_);
-        fds[2].events = short(POLLIN | (output_.empty() ? 0 : POLLOUT));
-        count = 3;
+        for (auto& connection : connections_) {
+          fds.push_back({connection->fd,
+                         short(POLLIN | (connection->output.empty() ? 0 : POLLOUT)), 0});
+          generations.push_back(connection->generation);
+        }
       }
-      if (poll(fds, count, 1000) < 0) {
+      if (poll(fds.data(), nfds_t(fds.size()), 1000) < 0) {
         if (errno == EINTR) continue;
         logLine("poll failed: %s", strerror(errno));
         return;
@@ -771,22 +1153,40 @@ void Agent::serve() {
         while (read(wakePipe_[0], drain, sizeof(drain)) > 0) {
         }
       }
-      if (outputStalled_.exchange(false)) disconnect("consumer stopped reading");
-      if (client_ >= 0 && count == 3) {
-        if (fds[2].revents & (POLLERR | POLLNVAL)) {
-          disconnect("socket error");
+      if (outputStalled_.exchange(false)) {
+        std::vector<uint64_t> stalled;
+        {
+          std::lock_guard<std::mutex> guard(outputMutex_);
+          for (auto& connection : connections_)
+            if (connection->stalled) stalled.push_back(connection->generation);
+        }
+        for (uint64_t generation : stalled) disconnect(generation, "consumer stopped reading");
+      }
+      if (fds[0].revents & POLLIN) accept();
+      for (size_t index = 0; index < generations.size(); index++) {
+        Connection* connection = find(generations[index]);
+        if (!connection) continue;  // Replaced or closed meanwhile.
+        short revents = fds[index + 2].revents;
+        if (revents & (POLLERR | POLLNVAL)) {
+          disconnect(connection->generation, "socket error");
           continue;
         }
-        if (fds[2].revents & (POLLIN | POLLHUP)) readCommands();
-        if (client_ >= 0) flushOutput();
+        if (revents & (POLLIN | POLLHUP)) {
+          readCommands(*connection);
+          connection = find(generations[index]);
+          if (!connection) continue;
+        }
+        flushOutput(*connection);
       }
-      // Handle the polled consumer before replacing it. Its POLLERR/POLLHUP belongs to
-      // the old connection and must never disconnect a newly accepted consumer.
-      if (fds[0].revents & POLLIN) accept();
     } catch (const std::exception& error) {
       // An exception must not leave this thread either: std::terminate would end QEMU.
       logLine("socket error: %s", error.what());
-      disconnect("agent error");
+      std::vector<uint64_t> all;
+      {
+        std::lock_guard<std::mutex> guard(outputMutex_);
+        for (auto& connection : connections_) all.push_back(connection->generation);
+      }
+      for (uint64_t generation : all) disconnect(generation, "agent error");
     }
   }
 }
@@ -794,9 +1194,17 @@ void Agent::serve() {
 void Agent::accept() {
   int next = ::accept(listener_, nullptr, nullptr);
   if (next < 0) return;
-  if (client_ >= 0) {
-    sendReplaced();
-    disconnect("replaced by a new consumer");
+  // A connection takes a role only with its first 'S', so a connection that never sends it
+  // replaces nobody. Keep a few of them; the oldest goes first.
+  if (connections_.size() >= kMaxConnections) {
+    uint64_t oldest = 0;
+    for (auto& connection : connections_) {
+      if (connection->role < 0) {
+        oldest = connection->generation;
+        break;
+      }
+    }
+    if (oldest) disconnect(oldest, "too many consumers without settings");
   }
   fcntl(next, F_SETFD, FD_CLOEXEC);
   fcntl(next, F_SETFL, O_NONBLOCK);
@@ -806,29 +1214,21 @@ void Agent::accept() {
   setsockopt(next, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
 #endif
   setsockopt(next, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
-  client_ = next;
-  commands_.clear();
-  uint64_t generation;
-  {
-    std::lock_guard<std::mutex> guard(encodeMutex_);
-    generation = ++generation_;
-    rotation_ = 0;  // A new consumer starts upright until it sends 'R'.
-  }
-  {
-    std::lock_guard<std::mutex> guard(outputMutex_);
-    clientGeneration_ = generation;
-    dropUntilKey_ = false;
-  }
+  auto connection = std::make_unique<Connection>();
+  connection->fd = next;
   int width = 0, height = 0;
   void* fb = g_.getFB();
   if (!fb || !colorBufferSize(g_, lastPostedHandle(g_), width, height)) {
     width = fb ? g_.frameBufferWidth(fb) : 0;
     height = fb ? g_.frameBufferHeight(fb) : 0;
   }
+  connection->helloWidth = width;
+  connection->helloHeight = height;
+  uint64_t generation;
   {
-    std::lock_guard<std::mutex> guard(encodeMutex_);
-    announcedWidth_ = width;
-    announcedHeight_ = height;
+    std::lock_guard<std::mutex> guard(outputMutex_);
+    generation = connection->generation = ++nextGeneration_;
+    connections_.push_back(std::move(connection));
   }
   std::string hello = helloJson();
   sendRecord(generation, kHello, uint32_t(width), uint32_t(height), kNativeFps,
@@ -836,166 +1236,267 @@ void Agent::accept() {
   logLine("consumer connected; native %dx%d", width, height);
 }
 
-void Agent::readCommands() {
+// @ref LLP 0023#agent-protocol-3 — a consumer replaces only the consumer of its own role
+// The connection's first 'S' gives it its role. A consumer of that role that was there
+// before gets a replaced record and closes; the other role goes on.
+void Agent::assignRole(Connection& connection, const StreamSettings& settings) {
+  int role = connection.requestedRole;
+  uint64_t generation = connection.generation;
+  uint64_t previous;
   {
-    ssize_t n = readCommandBatch(client_, commands_);
+    std::lock_guard<std::mutex> guard(encodeMutex_);
+    previous = roles_[role].generation;
+  }
+  if (previous != 0 && previous != generation) {
+    if (Connection* replaced = find(previous)) {
+      sendReplaced(*replaced);
+      disconnect(previous, "replaced by a new consumer");
+    }
+  }
+  Connection* self = find(generation);
+  if (!self) return;
+  {
+    std::lock_guard<std::mutex> guard(outputMutex_);
+    self->role = role;
+  }
+  RoleState& state = roles_[role];
+  {
+    std::lock_guard<std::mutex> guard(encodeMutex_);
+    state.generation = generation;
+    state.settings = settings;
+    state.rotation = role == kRoleStream ? self->rotation : 0;
+    state.canvasWidth = role == kRoleRecording ? self->canvasWidth : 0;
+    state.canvasHeight = role == kRoleRecording ? self->canvasHeight : 0;
+    state.announcedWidth = self->helloWidth;
+    state.announcedHeight = self->helloHeight;
+    state.pending.clear();
+    state.settingsChanged = true;
+    state.keyRequested = true;
+    state.keyNeededByOutput = false;
+    state.fps = settings.fps;
+    state.active = true;
+  }
+  state.wake.notify_one();
+  logLine("consumer is the %s", roleName(role));
+}
+
+void Agent::readCommands(Connection& connection) {
+  const uint64_t generation = connection.generation;
+  {
+    ssize_t n = readCommandBatch(connection.fd, connection.commands);
     if (n == 0) {
-      disconnect("consumer closed the socket");
+      disconnect(generation, "consumer closed the socket");
       return;
     }
     if (n < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return;
-      disconnect("read failed");
+      disconnect(generation, "read failed");
       return;
     }
   }
-  while (!commands_.empty()) {
-    if (commands_[0] == kCommandKeyFrame) {
-      commands_.erase(commands_.begin());
-      {
-        std::lock_guard<std::mutex> guard(encodeMutex_);
-        keyRequested_ = true;
+  std::vector<uint8_t>& commands = connection.commands;
+  while (!commands.empty()) {
+    const int role = connection.role;
+    RoleState* state = role >= 0 ? &roles_[role] : nullptr;
+    if (commands[0] == kCommandKeyFrame) {
+      commands.erase(commands.begin());
+      if (state) {
+        {
+          std::lock_guard<std::mutex> guard(encodeMutex_);
+          state->keyRequested = true;
+        }
+        state->wake.notify_one();
       }
-      encodeWake_.notify_one();
       continue;
     }
-    if (commands_[0] == kCommandRotation) {
-      if (commands_.size() < kRotationCommandBytes) return;
+    if (commands[0] == kCommandRotation) {
+      if (commands.size() < kRotationCommandBytes) return;
       int rotation = 0;
-      if (!parseRotation(commands_.data(), rotation)) {
-        disconnect("invalid rotation");
+      if (!parseRotation(commands.data(), rotation)) {
+        disconnect(generation, "invalid rotation");
         return;
       }
-      commands_.erase(commands_.begin(), commands_.begin() + kRotationCommandBytes);
-      {
-        std::lock_guard<std::mutex> guard(encodeMutex_);
-        if (rotation != rotation_) {
-          rotation_ = rotation;
-          settingsChanged_ = true;  // A new session at the upright size, from an IDR.
-          keyRequested_ = true;
+      commands.erase(commands.begin(), commands.begin() + kRotationCommandBytes);
+      if (!state) {
+        connection.rotation = rotation;
+      } else if (role == kRoleStream) {
+        {
+          std::lock_guard<std::mutex> guard(encodeMutex_);
+          if (rotation != state->rotation) {
+            state->rotation = rotation;
+            state->settingsChanged = true;  // A new session at the upright size, from an IDR.
+            state->keyRequested = true;
+          }
         }
+        state->wake.notify_one();
       }
-      encodeWake_.notify_one();
+      // The recording keeps the panel orientation and ignores rotations.
       continue;
     }
-    if (commands_[0] != kCommandSettings) {
-      disconnect("unknown command");
+    if (commands[0] == kCommandRole) {
+      if (commands.size() < kRoleCommandBytes) return;
+      int requested = 0;
+      if (!parseRole(commands.data(), requested) || (state && requested != role)) {
+        disconnect(generation, state ? "a consumer cannot change its role" : "invalid role");
+        return;
+      }
+      commands.erase(commands.begin(), commands.begin() + kRoleCommandBytes);
+      connection.requestedRole = requested;
+      continue;
+    }
+    if (commands[0] == kCommandCanvas) {
+      if (commands.size() < kCanvasCommandBytes) return;
+      int width = 0, height = 0;
+      if (!parseCanvas(commands.data(), width, height)) {
+        disconnect(generation, "invalid canvas");
+        return;
+      }
+      commands.erase(commands.begin(), commands.begin() + kCanvasCommandBytes);
+      if (!state) {
+        connection.canvasWidth = width;
+        connection.canvasHeight = height;
+      } else if (role == kRoleRecording) {
+        {
+          std::lock_guard<std::mutex> guard(encodeMutex_);
+          if (width != state->canvasWidth || height != state->canvasHeight) {
+            state->canvasWidth = width;
+            state->canvasHeight = height;
+            state->settingsChanged = true;
+            state->keyRequested = true;
+          }
+        }
+        state->wake.notify_one();
+      }
+      // The stream follows the native size and ignores a canvas.
+      continue;
+    }
+    if (commands[0] != kCommandSettings) {
+      disconnect(generation, "unknown command");
       return;
     }
-    if (commands_.size() < kSettingsCommandBytes) return;
+    if (commands.size() < kSettingsCommandBytes) return;
     StreamSettings settings;
-    if (!parseSettings(commands_.data(), settings)) {
-      disconnect("invalid settings");
+    if (!parseSettings(commands.data(), settings)) {
+      disconnect(generation, "invalid settings");
       return;
     }
-    commands_.erase(commands_.begin(), commands_.begin() + kSettingsCommandBytes);
+    commands.erase(commands.begin(), commands.begin() + kSettingsCommandBytes);
     chooseCaptureModes();
+    if (!state) {
+      assignRole(connection, settings);
+      // A replaced consumer is gone, and this one may be too if the replace failed.
+      if (!find(generation)) return;
+      continue;
+    }
     {
       std::lock_guard<std::mutex> guard(encodeMutex_);
-      settings_ = settings;
-      settingsChanged_ = true;
-      keyRequested_ = true;
-      captureFps_ = settings.fps;
-      active_ = true;
+      state->settings = settings;
+      state->settingsChanged = true;
+      state->keyRequested = true;
+      state->fps = settings.fps;
     }
-    encodeWake_.notify_one();
+    state->wake.notify_one();
   }
 }
 
-void Agent::flushOutput() {
+void Agent::flushOutput(Connection& connection) {
   for (;;) {
     const uint8_t* data;
     size_t remaining;
     {
       std::lock_guard<std::mutex> guard(outputMutex_);
-      while (!output_.empty() && output_.front().generation != clientGeneration_) {
-        outputBytes_ -= output_.front().bytes.size();
-        output_.pop_front();
-        outputOffset_ = 0;
-      }
-      if (output_.empty()) return;
-      data = output_.front().bytes.data() + outputOffset_;
-      remaining = output_.front().bytes.size() - outputOffset_;
+      if (connection.output.empty()) return;
+      data = connection.output.front().bytes.data() + connection.outputOffset;
+      remaining = connection.output.front().bytes.size() - connection.outputOffset;
     }
-    ssize_t n = send(client_, data, remaining, kSendFlags);
+    ssize_t n = send(connection.fd, data, remaining, kSendFlags);
     if (n < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return;
-      disconnect("write failed");
+      disconnect(connection.generation, "write failed");
       return;
     }
-    bool requestKey = false;
+    int requestRole = -1;
     {
       std::lock_guard<std::mutex> guard(outputMutex_);
-      outputOffset_ += size_t(n);
-      if (outputOffset_ == output_.front().bytes.size()) {
-        outputBytes_ -= output_.front().bytes.size();
-        output_.pop_front();
-        outputOffset_ = 0;
-        if (keyAfterDrain_ && outputBytes_ <= kMaxQueuedOutputBytes / 2) {
-          keyAfterDrain_ = false;
-          requestKey = true;
+      connection.outputOffset += size_t(n);
+      if (connection.outputOffset == connection.output.front().bytes.size()) {
+        connection.outputBytes -= connection.output.front().bytes.size();
+        connection.output.pop_front();
+        connection.outputOffset = 0;
+        int role = connection.role < 0 ? kRoleStream : connection.role;
+        if (connection.keyAfterDrain &&
+            connection.outputBytes <= kMaxQueuedOutputBytes[role] / 2) {
+          connection.keyAfterDrain = false;
+          if (connection.role >= 0) requestRole = role;
         }
       }
     }
-    if (requestKey) {
-      // Publish under the waiter's mutex so a notification cannot be lost between
-      // its predicate check and sleep. Never hold outputMutex_ while taking it.
+    if (requestRole >= 0) {
+      // Publish under the waiter's mutex after releasing outputMutex_.
       std::lock_guard<std::mutex> guard(encodeMutex_);
-      keyNeededByOutput_ = true;
-      encodeWake_.notify_one();
+      roles_[requestRole].keyNeededByOutput = true;
+      roles_[requestRole].wake.notify_one();
     }
   }
 }
 
 // @ref LLP 0020#socket-protocol — a replaced consumer learns why it closes
-// Tells the current consumer that a new one replaces it, so that it does not take the agent
+// Tells a consumer that a new one of its role replaces it, so that it does not take the agent
 // back at once: two consumers would otherwise replace each other in a loop. Best effort on the
 // non-blocking socket: it finishes a partly sent record first, and a consumer that stopped
 // reading gets only the close.
-void Agent::sendReplaced() {
+void Agent::sendReplaced(Connection& connection) {
   std::vector<uint8_t> bytes;
   {
     std::lock_guard<std::mutex> guard(outputMutex_);
-    if (outputOffset_ > 0 && !output_.empty())
-      bytes.assign(output_.front().bytes.begin() + ptrdiff_t(outputOffset_),
-                   output_.front().bytes.end());
+    if (connection.outputOffset > 0 && !connection.output.empty())
+      bytes.assign(connection.output.front().bytes.begin() + ptrdiff_t(connection.outputOffset),
+                   connection.output.front().bytes.end());
   }
   size_t start = bytes.size();
   bytes.resize(start + kHeaderBytes);
   encodeHeader(bytes.data() + start, 0, 0, kReplaced, 0, 0, 0);
   size_t sent = 0;
   while (sent < bytes.size()) {
-    ssize_t n = send(client_, bytes.data() + sent, bytes.size() - sent, kSendFlags);
+    ssize_t n = send(connection.fd, bytes.data() + sent, bytes.size() - sent, kSendFlags);
     if (n < 0 && errno == EINTR) continue;
     if (n <= 0) return;
     sent += size_t(n);
   }
 }
 
-void Agent::disconnect(const char* reason) {
-  if (client_ < 0) return;
-  close(client_);
-  client_ = -1;
-  active_ = false;
-  {
-    std::lock_guard<std::mutex> guard(encodeMutex_);
-    generation_++;
-    keyRequested_ = false;
-  }
+void Agent::disconnect(uint64_t generation, const char* reason) {
+  std::unique_ptr<Connection> closed;
   {
     std::lock_guard<std::mutex> guard(outputMutex_);
-    clientGeneration_ = 0;
-    output_.clear();
-    outputBytes_ = 0;
-    outputOffset_ = 0;
-    dropUntilKey_ = keyAfterDrain_ = false;
+    for (auto it = connections_.begin(); it != connections_.end(); ++it) {
+      if ((*it)->generation == generation) {
+        closed = std::move(*it);
+        connections_.erase(it);
+        break;
+      }
+    }
   }
-  outputStalled_ = false;
-  encodeWake_.notify_one();
+  if (!closed) return;
+  close(closed->fd);
+  if (closed->role >= 0) {
+    RoleState& state = roles_[closed->role];
+    {
+      std::lock_guard<std::mutex> guard(encodeMutex_);
+      if (state.generation == generation) {
+        state.generation = 0;
+        state.active = false;
+        state.keyRequested = false;
+        state.pending.clear();  // Back to the frame source's pool.
+      }
+    }
+    state.wake.notify_one();
+  }
   logLine(
-      "consumer disconnected: %s (posts=%llu captured=%llu busy=%llu locked=%llu errors=%llu "
+      "%s consumer disconnected: %s (posts=%llu captured=%llu busy=%llu locked=%llu errors=%llu "
       "tails=%llu replaced=%llu)",
-      reason, (unsigned long long)posts_.load(), (unsigned long long)captured_.load(),
+      closed->role >= 0 ? roleName(closed->role) : "unassigned", reason,
+      (unsigned long long)posts_.load(), (unsigned long long)captured_.load(),
       (unsigned long long)droppedBusy_.load(), (unsigned long long)skippedLocked_.load(),
       (unsigned long long)captureErrors_.load(), (unsigned long long)lagTails_.load(),
       (unsigned long long)asyncReplaced_.load());
@@ -1023,16 +1524,21 @@ void Agent::chooseCaptureModes() {
                                         : ReadMode::Auto;
   CaptureOptions options;
   options.probe = sessionOption(".probe", "EXPO_EMULATOR_CAPTURE_PROBE") == "1";
-  {
-    std::lock_guard<std::mutex> postGuard(postMutex_);
-    previousHandle_ = 0;
-  }
-  readMode_ = mode;
-  {
+  bool anyActive = false;
+  for (const RoleState& role : roles_) anyActive |= role.active.load();
+  if (!anyActive || mode != readMode_.load()) {
+    // The frame of the post before belongs to an earlier session or read; the next post starts
+    // again. A settings change for a running role keeps it, so the other role loses no frame.
+    {
+      std::lock_guard<std::mutex> postGuard(postMutex_);
+      previousHandle_ = 0;
+    }
     std::lock_guard<std::mutex> guard(asyncMutex_);
     tail_.reset();
     asyncHandle_ = 0;
+    for (bool& role : asyncTake_) role = false;
   }
+  readMode_ = mode;
   frames_->setOptions(options);
   logLine("capture modes: read %s, probe %s", readModeName(mode), options.probe ? "on" : "off");
 }
@@ -1063,6 +1569,7 @@ void removeFromPreload() {
 }
 
 void runAgent(std::string socketPath) {
+  nameThread("expo-cap-socket");
   gum_init_embedded();
   GumModule* backend = nullptr;
   for (int attempt = 0; attempt < 1200 && !backend; attempt++) {
@@ -1081,7 +1588,8 @@ void runAgent(std::string socketPath) {
   }
   // initialize() waits for FrameBuffer and resolves dispatch before the hook is installed.
   GumInterceptor* interceptor = gum_interceptor_obtain();
-  GumInvocationListener* listener = gum_make_call_listener(onPostEnter, nullptr, nullptr, nullptr);
+  GumInvocationListener* listener =
+      gum_make_call_listener(onPostEnter, onPostLeave, nullptr, nullptr);
   if (gum_interceptor_attach(interceptor, agent->postTarget(), listener, nullptr) !=
       GUM_ATTACH_OK) {
     logLine("capture disabled: could not hook the renderer's display post");

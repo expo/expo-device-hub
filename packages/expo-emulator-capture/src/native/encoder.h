@@ -15,6 +15,22 @@ struct EncodedPacket {
   bool key = false;
 };
 
+struct EncoderConfig {
+  // The output size: the stream size, or the recording's canvas.
+  int width = 0;
+  int height = 0;
+  int fps = 60;
+  int bitRate = 12'000'000;
+  // Android's display rotation (0 to 3): frames hold the picture turned that many quarter turns
+  // clockwise in the panel's orientation, and the encoder turns them back to upright.
+  int rotation = 0;
+  // The longest time between keyframes, also on a static screen.
+  int keyFrameIntervalSeconds = 10;
+  // Place each frame on the output size with placeOnCanvas (protocol.h), with black borders,
+  // instead of scaling it to fill. The recording keeps one size through a fold this way.
+  bool letterbox = false;
+};
+
 // Encodes captured frames to Constrained Baseline H.264 at the configured size.
 // Only one thread uses an encoder; packets reach the sink in encode order.
 class H264Encoder {
@@ -24,12 +40,9 @@ class H264Encoder {
   virtual ~H264Encoder() = default;
 
   // Creates a session; callbacks from an earlier session have finished on return.
-  // width and height are the stream size. rotation is Android's display rotation
-  // (0 to 3): frames hold the picture turned that many quarter turns clockwise in
-  // the panel's orientation, and the encoder turns them back to upright.
-  virtual bool configure(int width, int height, int fps, int bitRate, int rotation,
-                         std::string& error) = 0;
-  // Turns and scales a frame of any size to the configured size and encodes it.
+  virtual bool configure(const EncoderConfig& config, std::string& error) = 0;
+  // Turns and scales a frame of any size to the configured size, or places it on the canvas when
+  // the config letterboxes, and encodes it.
   virtual bool encode(const CapturedFrame& frame, uint64_t ptsUs, bool forceKey,
                       std::string& error) = 0;
   // Waits for queued frames, then releases the session.

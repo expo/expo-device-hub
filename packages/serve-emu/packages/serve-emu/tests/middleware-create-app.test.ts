@@ -15,7 +15,7 @@ import {
   type StartEmuSessionOptions,
 } from "../src/stream-session.ts";
 import type { WebRtcPublisher, WebRtcPublisherSessionStats } from "../src/webrtc-publisher.ts";
-import { readNoOrientation } from "./fixtures/orientation.ts";
+import { readNoOrientation, watchNoOrientationEvents } from "./fixtures/orientation.ts";
 
 const SESSION_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -970,6 +970,8 @@ test("a foldable's gRPC capture records on the fold canvas and reports that it f
     },
     {
       readOrientation: async () => "landscape_left",
+      readShownOrientation: async () => ({ orientation: "landscape_left", settling: false }),
+      watchOrientationEvents: watchNoOrientationEvents,
       readFoldableDisplays: async () => FOLD_DISPLAYS,
       readFoldState: async () => ({ supported: true, posture: "opened", hingeAngle: 180 }),
       openHingeSensor: async () => {
@@ -1033,6 +1035,92 @@ test("a foldable's gRPC capture records on the fold canvas and reports that it f
   expect(sensorClosed).toBe(true);
 });
 
+test("a fold recording names the pose that the display shows after a Hub rotation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "create-app-fold-rotation-"));
+  const recorder = await foldRecorder(root);
+  const { session } = fakeScrcpySession(1);
+  let recording: Parameters<NonNullable<CreateAppDependencies["startSession"]>>[0]["recording"];
+  // The top app keeps portrait under a landscape lock, as the launcher does.
+  let shown: "portrait" | "landscape_left" = "portrait";
+  const deviceState = new DeviceSessionState({
+    serial: session.serial,
+    applyLocation: async () => {},
+    readOrientation: async () => shown,
+    applyRotation: async () => ({
+      mode: "lock",
+      rotation: 3,
+      orientation: "landscape",
+      pose: "landscape_left",
+      raw: "lock 3",
+    }),
+  });
+  const app = await createApp(
+    {
+      serial: session.serial,
+      streamMode: "grpc-screenshot",
+      maxSize: 960,
+      screenRecording: recorder,
+      deviceState,
+    },
+    {
+      readOrientation: async () => shown,
+      readShownOrientation: async () => ({ orientation: shown, settling: false }),
+      watchOrientationEvents: watchNoOrientationEvents,
+      readFoldableDisplays: async () => FOLD_DISPLAYS,
+      readFoldState: async () => ({ supported: true, posture: "opened", hingeAngle: 180 }),
+      openHingeSensor: async () => ({
+        readAngle: async () => 180,
+        watchPostures: (_onChange, signal) =>
+          new Promise((resolve) => signal.addEventListener("abort", () => resolve())),
+        close: () => {},
+      }),
+      startSession: async (options) => {
+        recording = options.recording;
+        return { ...adaptScrcpySession(session), mode: "grpc-screenshot", feedsRecording: true };
+      },
+    },
+  );
+  const frame = () => {
+    const pts = BigInt(Math.round(performance.now() * 1000));
+    recording!.accept(
+      { type: "frame", data: FOLD_KEYFRAME, pts, isConfig: false, isKey: true },
+      {
+        width: 2076,
+        height: 2152,
+        screen: "inner",
+        contentRect: { x: 0, y: 0, width: 926, height: 960 },
+      },
+    );
+  };
+  const rotate = () =>
+    app.handleRequest(
+      new Request("http://middleware.test/api/orientation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orientation: "landscape" }),
+      }),
+    );
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    frame();
+    await recorder.ready;
+    expect((await rotate()).status).toBe(200);
+    // Longer than the 100 ms hinge read, which took the requested pose before this fix.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    frame();
+    await recorder.finish();
+    const manifest = JSON.parse(await readFile(join(root, "session", "session.json"), "utf8"));
+    expect(
+      manifest.deviceStates.map(
+        (entry: { state: { orientation?: string } }) => entry.state.orientation,
+      ),
+    ).toEqual(["portrait"]);
+  } finally {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("refuses a fold while the recording takes the viewers' packets", async () => {
   const root = await mkdtemp(join(tmpdir(), "create-app-fold-locked-"));
   const recorder = await foldRecorder(root);
@@ -1084,6 +1172,8 @@ test("a native-size MMAP fold recording sizes its canvas from the shown display"
     },
     {
       readOrientation: readNoOrientation,
+      readShownOrientation: readNoOrientation,
+      watchOrientationEvents: watchNoOrientationEvents,
       readFoldableDisplays: async () => FOLD_DISPLAYS,
       readFoldState: async () => ({ supported: true, posture: "opened", hingeAngle: 180 }),
       readDisplaySize: async () => ({ width: 1080, height: 2424 }),

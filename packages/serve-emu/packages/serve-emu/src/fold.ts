@@ -118,9 +118,9 @@ async function readHingeRange(
  * The hardware config that the emulator writes at launch, or null when this
  * host cannot read it, for example when adb reaches an emulator on another host.
  */
-async function readHardwareConfig(
+export async function readHardwareConfig(
   serial: string,
-  runExec: typeof execText,
+  runExec: typeof execText = execText,
 ): Promise<string | null> {
   const avdPath = await readEmuConsoleValue(serial, ["avd", "path"], runExec);
   if (!avdPath) return null;

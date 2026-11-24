@@ -14,7 +14,8 @@ enum class FramePath { Gpu, Cpu };
 inline const char* framePathName(FramePath path) { return path == FramePath::Gpu ? "gpu" : "cpu"; }
 
 #if defined(__APPLE__)
-// An owned reference to a 32BGRA, IOSurface-backed pixel buffer.
+// An owned reference to a 32BGRA, IOSurface-backed pixel buffer. A copy retains the same buffer,
+// so the stream and the recording share one captured frame; both only read it.
 class FramePixels {
  public:
   FramePixels() = default;
@@ -28,8 +29,17 @@ class FramePixels {
     }
     return *this;
   }
-  FramePixels(const FramePixels&) = delete;
-  FramePixels& operator=(const FramePixels&) = delete;
+  FramePixels(const FramePixels& other) : buffer_(other.buffer_) {
+    if (buffer_) CVPixelBufferRetain(buffer_);
+  }
+  FramePixels& operator=(const FramePixels& other) {
+    if (this != &other) {
+      reset();
+      buffer_ = other.buffer_;
+      if (buffer_) CVPixelBufferRetain(buffer_);
+    }
+    return *this;
+  }
   ~FramePixels() { reset(); }
 
   void reset() {
@@ -49,7 +59,8 @@ struct RgbaImage {
   int width = 0;
   int height = 0;
 };
-// Shared with the frame source's pool, which reuses an image once no frame holds it.
+// Shared with the frame source's pool, which reuses an image once no frame holds it, and between
+// the stream and the recording, which only read it.
 using FramePixels = std::shared_ptr<RgbaImage>;
 #endif
 

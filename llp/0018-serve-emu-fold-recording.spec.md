@@ -5,7 +5,8 @@
 **Systems:** ServeEmu, HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-11
-**Related:** LLP 0001, LLP 0013, LLP 0016
+**Revised:** 2026-11-14 ([Orientation readings](#orientation-readings): the timeline names the pose that the screen shows, not a rotation request), by Claude Code (Claude Opus 5.5), after an agent found the fault in a test recording
+**Related:** LLP 0001, LLP 0013, LLP 0016, LLP 0023
 
 > File paths such as `src/…` are relative to `packages/serve-emu/packages/serve-emu`, unless the text gives a path from the repository root.
 
@@ -94,11 +95,27 @@ The screen comes from the captured image: the display whose proportions are clos
 
 The emulator has no hinge angle stream: `streamPhysicalModel` and `streamSensor` return gRPC status 12, `UNIMPLEMENTED`, on emulator 36.6.11. `getPhysicalModel` with `HINGE_ANGLE0` answers in about 0.25 ms, against about 45 ms for the two adb commands that the recording used before, and `streamNotification` pushes a `Posture` message each time the emulator's posture changes [observed: a local probe of the Pixel 9 Pro Fold emulator, 2026-11-12]. A fold through adb, agent-device or the emulator's own controls does not pass through serve-emu, so the recording reads the hinge itself.
 
-While a foldable records, serve-emu reads the angle over gRPC every 100 ms, as serve-sim's hinge monitor asks for 100 ms updates ([LLP 0001](0001-serve-sim-video-pipeline.explainer.md#device-state-metadata)), keeps the posture stream open, and reads at once when a posture change arrives, after each `/api/fold` command, and when the recorded display changes [observed: `startFoldRecordingFeed` in `src/fold-recording-feed.ts`; `readFoldNow` in `src/middleware.ts`]. In the local probe, each pushed change came 0–90 ms before the next 100 ms read. Each read also takes the orientation from the device state's reader, which a rotation through `/api/orientation` sets at once and which reads adb in the background when its value is older than a second [observed: `createDisplayOrientationReader` in `src/display-orientation.ts`]. Only a change adds a reading to the history that frames look up.
+While a foldable records, serve-emu reads the angle over gRPC every 100 ms, as serve-sim's hinge monitor asks for 100 ms updates ([LLP 0001](0001-serve-sim-video-pipeline.explainer.md#device-state-metadata)), keeps the posture stream open, and reads at once when a posture change arrives, after each `/api/fold` command, and when the recorded display changes [observed: `startFoldRecordingFeed` in `src/fold-recording-feed.ts`; `readFoldNow` in `src/middleware.ts`]. In the local probe, each pushed change came 0–90 ms before the next 100 ms read. The orientation has its own reads ([Orientation readings](#orientation-readings)). Only a change adds a reading to the history that frames look up.
 
 When the recording starts, serve-emu reads the hinge and posture over adb and the orientation once; the posture names the startup display for native-size MMAP capture. Until the gRPC endpoint opens, and after a gRPC read fails, the feed reads the hinge over adb every second [observed: `readHingeOverAdb` and `ADB_HINGE_READ_MS`]. A read or a timer is always pending, so the feed sees a recording that ends within one interval; it then stops and closes the gRPC client with its posture stream, also when the live stream goes on [observed: `running` in `src/fold-recording-feed.ts`].
 
 As in serve-sim, a state enters the timeline only after the muxer accepts its frame, the first entry has `timeMs: 0`, unchanged states are left out, a change of the display or the orientation keeps the time of its first accepted frame, a hinge-only change waits 250 ms after the previous entry, and the final state stays [observed: `#recordState` in `src/screen-recording.ts`]. The fragmented MP4 writes a fragment only when the next one starts, at a keyframe at least one second later, so an accepted frame can still be missing from the file. While the recording runs, `session.json` is therefore rewritten whenever a finished fragment brings more entries into the file, and it lists only those, compared by each frame's exact sample time rather than the rounded `timeMs`; a killed process leaves the timeline of the frames in its partial file. The complete manifest lists every entry [observed: `persistedUntil` from mediabunny's `onMoof` in `createMp4Writer`, `#statesInFile` and `#publishStates`]. A recording without the fold canvas has no `deviceStates`.
+
+#### Orientation readings
+
+`orientation` names the pose that the screen shows, not the pose that a rotation asks for. A rotation through `/api/orientation` locks Android's user rotation, but the top app can refuse it: the Pixel launcher stays in portrait under a landscape lock, and `dumpsys window displays` keeps `mRotation=0` [observed: Pixel 10 and Medium Phone, emulator 37.2.7, Android 17, 2026-11-14]. Before 2026-11-14 the recording took the requested pose from the device state's reader at once, so such a lock gave a wrong entry for about two seconds [observed: `createDisplayOrientationReader` at `d693fdcb`; the recordings of [LLP 0023](0023-android-recording-independent-of-stream.rfc.md#test-plan-and-results), run 6].
+
+The reading comes from `dumpsys window displays`: the default display's rotation, named from the natural size [observed: `getShownOrientation` in `src/adb.ts`]. When an app opens in another orientation, or the launcher comes back from a turned app, Android shows that activity in the new rotation first and changes the display rotation only when the transition ends. Meanwhile `dumpsys window displays` names the activity as `mFixedRotationLaunchingApp`, and its `CurrentConfiguration` in `dumpsys activity activities` has the new rotation [observed: Gmail with `ROTATION_270` while the display had `mRotation=0`, Medium Phone, 2026-11-14]. The reading then takes the rotation of that activity [observed: `parseFixedRotationApp`, `parseActivityRotation`]. Without this step, the entries for such transitions came 0.5 to 1.6 s after the first turned frame [observed: LLP 0023, run 6].
+
+While a recording runs, serve-emu reads the shown pose:
+
+- once before the first frame;
+- at once after each event in the device's events log that can turn the screen: `configuration_changed`, which each display rotation writes, also a half turn, and the task and activity events with which an app opens or closes [observed: `ORIENTATION_EVENT_TAGS` and `watchOrientationEvents` in `src/adb.ts`]. On the Pixel 10, `configuration_changed` came 11 to 45 ms after Android's own log line for the rotation [observed: logcat, 2026-11-14];
+- at once after each rotation through `/api/orientation`;
+- every 100 ms while an activity shows turned before the display, so that the timeline sees the display follow, or the turn end without a display rotation;
+- every second otherwise, as a fallback when the event stream misses a turn. The stream opens again one second after it ends.
+
+One read runs at a time, and an event during a read reads again when it ends, because that read can have started before the turn [observed: `startRecordingOrientationFeed` in `src/recording-orientation-feed.ts`]. A read takes 24 to 40 ms of the guest's time for `dumpsys window displays` [observed: probe, Pixel 10, 2026-11-14], so the events, not a faster poll, give the speed. Each reading keeps the time at which it arrived, as the hinge readings do. `/api` and `/health` still report the locked pose at once after `/api/orientation`, for the HubClient controls; only the recording reads as described here [observed: `DeviceSessionState.setOrientation`].
 
 ## Fold during a recording
 
@@ -106,10 +123,15 @@ The recording status that `/api` reports has `followsFold: true` once the gRPC s
 
 serve-emu also answers `POST /api/fold` with 409 while a recording runs that takes the stream's packets, so a direct API call cannot end it [observed: the `/api/fold` route in `src/middleware.ts`].
 
+## With the emulator capture agent
+
+When the emulator capture agent records the device, the recording is independent ([LLP 0023](0023-android-recording-independent-of-stream.rfc.md#recording-source-in-serve-emu)): the agent places each frame on the canvas and encodes it, and the gRPC recording encoder above is not used. The canvas is the same bounding box, in the agent's integer size steps, which can differ by two pixels from `captureSize`; the placement, the `deviceStates` timeline, the hinge feed and the one-second keyframes are the same. The frame times come from the agent's clock, moved onto the host's monotonic clock, so the pose readings apply to them as described here [observed: `startCaptureRecordingSource` in `src/capture-recording-source.ts`].
+
 ## Limits
 
 - Rotation still ends a recording that takes the stream's packets, and HubClient still locks it during every recording.
-- `hingeAngle` lags a fold by up to 100 ms, or a second when the feed reads over adb. A rotation from outside serve-emu reaches `orientation` up to about a second late. The display switch itself is exact, because it comes from the frames.
+- `hingeAngle` lags a fold by up to 100 ms, or a second when the feed reads over adb. The display switch itself is exact, because it comes from the frames.
+- An `orientation` entry comes up to about 0.4 s before the frames show the turn. Android changes the rotation, or names the turned activity, before the app draws in the new pose; a cold-started app shows its first window later still [observed: LLP 0023, run 6]. When the event stream is down, a turn reaches the timeline within about a second.
 - Timed keyframes use the time at which ffmpeg's filter takes each frame, not its capture time. ffmpeg takes a frame within milliseconds unless its input is busy.
 - In Android's rear display mode, an open device shows its outer display. Its hinge angle then contradicts the shown display, so those entries leave `hingeAngle` out.
 - The timeline has no `physicalOrientation` or `tableMode`, which serve-sim reads from Apple's motion stream. The emulator's gRPC controller has no such stream.

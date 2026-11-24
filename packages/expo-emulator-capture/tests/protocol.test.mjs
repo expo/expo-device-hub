@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { defaultSocketPath } from "../src/paths.mjs";
 import {
+  canvasCommand,
   FLAGS,
   HEADER_BYTES,
   RecordReader,
+  ROLE_PROTOCOL,
+  roleCommand,
   rotationCommand,
   settingsCommand,
 } from "../src/protocol.mjs";
@@ -73,6 +76,34 @@ describe("rotationCommand", () => {
     expect(() => rotationCommand(4)).toThrow(RangeError);
     expect(() => rotationCommand(-1)).toThrow(RangeError);
     expect(() => rotationCommand(1.5)).toThrow(RangeError);
+  });
+});
+
+describe("roleCommand", () => {
+  test("encodes the U command with the consumer role", () => {
+    expect(ROLE_PROTOCOL).toBe(3);
+    expect([...roleCommand("stream")]).toEqual([0x55, 0, 0, 0, 0]);
+    expect([...roleCommand("recording")]).toEqual([0x55, 0, 0, 0, 1]);
+    expect([...roleCommand(1)]).toEqual([0x55, 0, 0, 0, 1]);
+  });
+
+  test("rejects unknown roles", () => {
+    expect(() => roleCommand("viewer")).toThrow(RangeError);
+    expect(() => roleCommand(2)).toThrow(RangeError);
+  });
+});
+
+describe("canvasCommand", () => {
+  test("encodes the C command with the canvas size", () => {
+    expect([...canvasCommand({ width: 2076, height: 2424 })]).toEqual([
+      0x43, 0, 0, 0x08, 0x1c, 0, 0, 0x09, 0x78,
+    ]);
+  });
+
+  test("rejects odd, too small and too large edges", () => {
+    expect(() => canvasCommand({ width: 1079, height: 2424 })).toThrow(RangeError);
+    expect(() => canvasCommand({ width: 0, height: 2424 })).toThrow(RangeError);
+    expect(() => canvasCommand({ width: 1080, height: 4098 })).toThrow(RangeError);
   });
 });
 
