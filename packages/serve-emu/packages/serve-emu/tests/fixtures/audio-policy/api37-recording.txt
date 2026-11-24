@@ -1,0 +1,787 @@
+Supported System Usages:
+  AUDIO_USAGE_CALL_ASSISTANT, AUDIO_USAGE_NOTIFICATION_VIBRATION, AUDIO_USAGE_RINGTONE_VIBRATION
+UID Policy:
+	mObserverRegistered=True
+	Assistants UIDs: 
+		UID[0]=10163
+	Active Assistants UIDs: 
+		No UIDs present.
+	Accessibility UIDs: 
+		No UIDs present.
+	Input Method Service UID=10172
+	Is RTT Enabled: False
+AudioCommandThread: 0xb4000072e6e0c2f0
+- Commands:
+   Command Time        Status      Wait pParam
+  Last Command
+   06      008205.068  00000000000 0    0xb400007306e1cdd0
+OutputCommandThread: 0xb4000072e6e0ab90
+- Commands:
+   Command Time        Status      Wait pParam
+  Last Command
+   13      008205.068  00000000000 0    0xb4000071d6e1bbb0
+
+AudioPolicyManager Dump: 0xb400007216e08820
+ Primary Output I/O handle: 13
+ Phone state: AUDIO_MODE_NORMAL
+ Force use for communications: 0
+ Force use for media: 0
+ Force use for record: 0
+ Force use for dock: 9
+ Force use for system: 0
+ Force use for HDMI system audio: 0
+ Force use for encoded surround output: 0
+ Force use for vibrate ringing: 0
+ TTS output not available
+ Master mono: off
+ Communication Strategy id: 1
+ Config source: /vendor/etc/audio_policy_configuration.xml
+
+ Available output devices (2):
+  1. Port ID: 2; "Speaker"; {AUDIO_DEVICE_OUT_SPEAKER, @:}
+     Encapsulation modes: 0, metadata types: 0
+     Port Hal ID: 0
+   - Profiles (1):
+      1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+         AUDIO_ENCAPSULATION_TYPE_NONE
+  2. Port ID: 5; "Telephony Tx"; {AUDIO_DEVICE_OUT_TELEPHONY_TX, @:}
+     Encapsulation modes: 0, metadata types: 0
+     Port Hal ID: 0
+   - Profiles (1):
+      1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+         AUDIO_ENCAPSULATION_TYPE_NONE
+
+ Available input devices (4):
+  1. Port ID: 8; "Built-In Mic"; {AUDIO_DEVICE_IN_BUILTIN_MIC, @:bottom}
+     Encapsulation modes: 0, metadata types: 0
+     Port Hal ID: 0
+   - Profiles (2):
+      1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+         AUDIO_ENCAPSULATION_TYPE_NONE
+      2. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+         sampling rates: 8000, 11025, 16000, 32000, 44100, 48000
+         channel masks: 0x000c, 0x0010
+         AUDIO_ENCAPSULATION_TYPE_NONE
+     Preferred Config: format=0x1, channelMask=0x10, sampleRate=44100
+  2. Port ID: 10; "Telephony Rx"; {AUDIO_DEVICE_IN_TELEPHONY_RX, @:}
+     Encapsulation modes: 0, metadata types: 0
+     Port Hal ID: 0
+   - Profiles (2):
+      1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+         AUDIO_ENCAPSULATION_TYPE_NONE
+      2. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+         sampling rates: 8000, 11025, 16000, 32000, 44100, 48000
+         channel masks: 0x000c, 0x0010
+         AUDIO_ENCAPSULATION_TYPE_NONE
+  3. Port ID: 14; "Remote Submix In"; {AUDIO_DEVICE_IN_REMOTE_SUBMIX, @:0}
+     Encapsulation modes: 0, metadata types: 0
+     Port Hal ID: 0
+   - Profiles (1):
+      1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+         sampling rates: 48000
+         channel masks: 0x000c
+         AUDIO_ENCAPSULATION_TYPE_NONE
+  4. Port ID: 12; "FM Tuner"; {AUDIO_DEVICE_IN_FM_TUNER, @:}
+     Encapsulation modes: 0, metadata types: 0
+     Port Hal ID: 0
+   - Profiles (2):
+      1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+         AUDIO_ENCAPSULATION_TYPE_NONE
+      2. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+         sampling rates: 8000, 11025, 16000, 32000, 44100, 48000
+         channel masks: 0x000c, 0x0010
+         AUDIO_ENCAPSULATION_TYPE_NONE
+
+ Hardware modules (3):
+  1. Handle: 10; "primary"
+   - Output MixPorts (2):
+      1. "primary output"; 0x0002 (AUDIO_OUTPUT_FLAG_PRIMARY)
+         Port Hal ID: 0
+       - Profiles (1):
+          1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+             sampling rates: 8000, 11025, 16000, 32000, 44100, 48000
+             channel masks: 0x0001, 0x0003
+             AUDIO_ENCAPSULATION_TYPE_NONE
+       - Supported devices (1):
+        1. Port ID: 2; "Speaker"; {AUDIO_DEVICE_OUT_SPEAKER, @:}
+           Encapsulation modes: 0, metadata types: 0
+           Port Hal ID: 0
+       - maxOpenCount: 1; curOpenCount: 1
+       - maxActiveCount: 1; curActiveCount: 0
+       - recommendedMuteDurationMs: 0 ms
+      2. "telephony_tx"; 0x0000 (AUDIO_OUTPUT_FLAG_NONE)
+         Port Hal ID: 0
+       - Profiles (1):
+          1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+             sampling rates: 8000, 11025, 16000, 32000, 44100, 48000
+             channel masks: 0x0001, 0x0003
+             AUDIO_ENCAPSULATION_TYPE_NONE
+       - Supported devices (1):
+        1. Port ID: 5; "Telephony Tx"; {AUDIO_DEVICE_OUT_TELEPHONY_TX, @:}
+           Encapsulation modes: 0, metadata types: 0
+           Port Hal ID: 0
+       - maxOpenCount: 1; curOpenCount: 1
+       - maxActiveCount: 1; curActiveCount: 0
+       - recommendedMuteDurationMs: 0 ms
+   - Input MixPorts (3):
+      1. "primary input"; 0x0000 (AUDIO_INPUT_FLAG_NONE)
+         Port Hal ID: 0
+       - Profiles (1):
+          1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+             sampling rates: 8000, 11025, 16000, 32000, 44100, 48000
+             channel masks: 0x000c, 0x0010
+             AUDIO_ENCAPSULATION_TYPE_NONE
+       - Supported devices (1):
+        1. Port ID: 8; "Built-In Mic"; {AUDIO_DEVICE_IN_BUILTIN_MIC, @:bottom}
+           Encapsulation modes: 0, metadata types: 0
+           Port Hal ID: 0
+           Preferred Config: format=0x1, channelMask=0x10, sampleRate=44100
+       - maxOpenCount: 1; curOpenCount: 1
+       - maxActiveCount: 1; curActiveCount: 1
+       - recommendedMuteDurationMs: 0 ms
+      2. "telephony_rx"; 0x0000 (AUDIO_INPUT_FLAG_NONE)
+         Port Hal ID: 0
+       - Profiles (1):
+          1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+             sampling rates: 8000, 11025, 16000, 32000, 44100, 48000
+             channel masks: 0x000c, 0x0010
+             AUDIO_ENCAPSULATION_TYPE_NONE
+       - Supported devices (1):
+        1. Port ID: 10; "Telephony Rx"; {AUDIO_DEVICE_IN_TELEPHONY_RX, @:}
+           Encapsulation modes: 0, metadata types: 0
+           Port Hal ID: 0
+       - maxOpenCount: 1; curOpenCount: 0
+       - maxActiveCount: 1; curActiveCount: 0
+       - recommendedMuteDurationMs: 0 ms
+      3. "fm_tuner"; 0x0000 (AUDIO_INPUT_FLAG_NONE)
+         Port Hal ID: 0
+       - Profiles (1):
+          1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+             sampling rates: 8000, 11025, 16000, 32000, 44100, 48000
+             channel masks: 0x000c, 0x0010
+             AUDIO_ENCAPSULATION_TYPE_NONE
+       - Supported devices (1):
+        1. Port ID: 12; "FM Tuner"; {AUDIO_DEVICE_IN_FM_TUNER, @:}
+           Encapsulation modes: 0, metadata types: 0
+           Port Hal ID: 0
+       - maxOpenCount: 1; curOpenCount: 0
+       - maxActiveCount: 1; curActiveCount: 0
+       - recommendedMuteDurationMs: 0 ms
+   - Declared devices (5):
+    1. Port ID: 2; "Speaker"; {AUDIO_DEVICE_OUT_SPEAKER, @:}
+       Encapsulation modes: 0, metadata types: 0
+       Port Hal ID: 0
+     - Profiles (1):
+        1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+           AUDIO_ENCAPSULATION_TYPE_NONE
+    2. Port ID: 5; "Telephony Tx"; {AUDIO_DEVICE_OUT_TELEPHONY_TX, @:}
+       Encapsulation modes: 0, metadata types: 0
+       Port Hal ID: 0
+     - Profiles (1):
+        1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+           AUDIO_ENCAPSULATION_TYPE_NONE
+    3. Port ID: 8; "Built-In Mic"; {AUDIO_DEVICE_IN_BUILTIN_MIC, @:bottom}
+       Encapsulation modes: 0, metadata types: 0
+       Port Hal ID: 0
+     - Profiles (2):
+        1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+           AUDIO_ENCAPSULATION_TYPE_NONE
+        2. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+           sampling rates: 8000, 11025, 16000, 32000, 44100, 48000
+           channel masks: 0x000c, 0x0010
+           AUDIO_ENCAPSULATION_TYPE_NONE
+       Preferred Config: format=0x1, channelMask=0x10, sampleRate=44100
+    4. Port ID: 10; "Telephony Rx"; {AUDIO_DEVICE_IN_TELEPHONY_RX, @:}
+       Encapsulation modes: 0, metadata types: 0
+       Port Hal ID: 0
+     - Profiles (2):
+        1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+           AUDIO_ENCAPSULATION_TYPE_NONE
+        2. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+           sampling rates: 8000, 11025, 16000, 32000, 44100, 48000
+           channel masks: 0x000c, 0x0010
+           AUDIO_ENCAPSULATION_TYPE_NONE
+    5. Port ID: 12; "FM Tuner"; {AUDIO_DEVICE_IN_FM_TUNER, @:}
+       Encapsulation modes: 0, metadata types: 0
+       Port Hal ID: 0
+     - Profiles (2):
+        1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+           AUDIO_ENCAPSULATION_TYPE_NONE
+        2. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+           sampling rates: 8000, 11025, 16000, 32000, 44100, 48000
+           channel masks: 0x000c, 0x0010
+           AUDIO_ENCAPSULATION_TYPE_NONE
+   - Audio Routes (5):
+      1. Mix; Sink: "Speaker"
+         Sources: "primary output"
+      2. Mix; Sink: "primary input"
+         Sources: "Built-In Mic"
+      3. Mix; Sink: "telephony_rx"
+         Sources: "Telephony Rx"
+      4. Mix; Sink: "Telephony Tx"
+         Sources: "telephony_tx"
+      5. Mix; Sink: "fm_tuner"
+         Sources: "FM Tuner"
+  2. Handle: 18; "r_submix"
+   - Output MixPorts (1):
+      1. "r_submix output"; 0x0000 (AUDIO_OUTPUT_FLAG_NONE)
+         Port Hal ID: 0
+       - Profiles (1):
+          1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+             sampling rates: 48000
+             channel masks: 0x0003
+             AUDIO_ENCAPSULATION_TYPE_NONE
+       - Supported devices (1):
+        1. "Remote Submix Out"; {AUDIO_DEVICE_OUT_REMOTE_SUBMIX, @:0}
+           Encapsulation modes: 0, metadata types: 0
+           Port Hal ID: 0
+       - maxOpenCount: 1; curOpenCount: 0
+       - maxActiveCount: 1; curActiveCount: 0
+       - recommendedMuteDurationMs: 0 ms
+   - Input MixPorts (1):
+      1. "r_submix input"; 0x0000 (AUDIO_INPUT_FLAG_NONE)
+         Port Hal ID: 0
+       - Profiles (1):
+          1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+             sampling rates: 48000
+             channel masks: 0x000c
+             AUDIO_ENCAPSULATION_TYPE_NONE
+       - Supported devices (1):
+        1. Port ID: 14; "Remote Submix In"; {AUDIO_DEVICE_IN_REMOTE_SUBMIX, @:0}
+           Encapsulation modes: 0, metadata types: 0
+           Port Hal ID: 0
+       - maxOpenCount: 1; curOpenCount: 0
+       - maxActiveCount: 1; curActiveCount: 0
+       - recommendedMuteDurationMs: 0 ms
+   - Declared devices (2):
+    1. "Remote Submix Out"; {AUDIO_DEVICE_OUT_REMOTE_SUBMIX, @:0}
+       Encapsulation modes: 0, metadata types: 0
+       Port Hal ID: 0
+     - Profiles (1):
+        1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+           sampling rates: 48000
+           channel masks: 0x0003
+           AUDIO_ENCAPSULATION_TYPE_NONE
+    2. Port ID: 14; "Remote Submix In"; {AUDIO_DEVICE_IN_REMOTE_SUBMIX, @:0}
+       Encapsulation modes: 0, metadata types: 0
+       Port Hal ID: 0
+     - Profiles (1):
+        1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+           sampling rates: 48000
+           channel masks: 0x000c
+           AUDIO_ENCAPSULATION_TYPE_NONE
+   - Audio Routes (2):
+      1. Mix; Sink: "Remote Submix Out"
+         Sources: "r_submix output"
+      2. Mix; Sink: "r_submix input"
+         Sources: "Remote Submix In"
+  3. Handle: 26; "bluetooth"
+   - Output MixPorts (2):
+      1. "a2dp output"; 0x0000 (AUDIO_OUTPUT_FLAG_NONE)
+         Port Hal ID: 0
+       - Profiles (1):
+          1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+             AUDIO_ENCAPSULATION_TYPE_NONE
+       - Supported devices (3):
+        1. "BT A2DP Out"; {AUDIO_DEVICE_OUT_BLUETOOTH_A2DP, @:}
+           Encapsulation modes: 0, metadata types: 0
+           Port Hal ID: 0
+        2. "BT A2DP Headphones"; {AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES, @:}
+           Encapsulation modes: 0, metadata types: 0
+           Port Hal ID: 0
+        3. "BT A2DP Speaker"; {AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER, @:}
+           Encapsulation modes: 0, metadata types: 0
+           Port Hal ID: 0
+       - maxOpenCount: 1; curOpenCount: 0
+       - maxActiveCount: 1; curActiveCount: 0
+       - recommendedMuteDurationMs: 0 ms
+       - mixerBehaviors: 0
+      2. "hearing aid output"; 0x0000 (AUDIO_OUTPUT_FLAG_NONE)
+         Port Hal ID: 0
+       - Profiles (1):
+          1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+             sampling rates: 16000, 24000
+             channel masks: 0x0003
+             AUDIO_ENCAPSULATION_TYPE_NONE
+       - Supported devices (1):
+        1. "BT Hearing Aid Out"; {AUDIO_DEVICE_OUT_HEARING_AID, @:}
+           Encapsulation modes: 0, metadata types: 0
+           Port Hal ID: 0
+       - maxOpenCount: 1; curOpenCount: 0
+       - maxActiveCount: 1; curActiveCount: 0
+       - recommendedMuteDurationMs: 0 ms
+   - Declared devices (4):
+    1. "BT A2DP Out"; {AUDIO_DEVICE_OUT_BLUETOOTH_A2DP, @:}
+       Encapsulation modes: 0, metadata types: 0
+       Port Hal ID: 0
+     - Profiles (1):
+        1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+           sampling rates: 44100, 48000, 88200, 96000
+           channel masks: 0x0003
+           AUDIO_ENCAPSULATION_TYPE_NONE
+    2. "BT A2DP Headphones"; {AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES, @:}
+       Encapsulation modes: 0, metadata types: 0
+       Port Hal ID: 0
+     - Profiles (1):
+        1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+           sampling rates: 44100, 48000, 88200, 96000
+           channel masks: 0x0003
+           AUDIO_ENCAPSULATION_TYPE_NONE
+    3. "BT A2DP Speaker"; {AUDIO_DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER, @:}
+       Encapsulation modes: 0, metadata types: 0
+       Port Hal ID: 0
+     - Profiles (1):
+        1. ""; AUDIO_FORMAT_PCM_16_BIT (0x1)
+           sampling rates: 44100, 48000, 88200, 96000
+           channel masks: 0x0003
+           AUDIO_ENCAPSULATION_TYPE_NONE
+    4. "BT Hearing Aid Out"; {AUDIO_DEVICE_OUT_HEARING_AID, @:}
+       Encapsulation modes: 0, metadata types: 0
+       Port Hal ID: 0
+     - Profiles (1):
+        1. ""; [dynamic format][dynamic channels][dynamic rates]; AUDIO_FORMAT_DEFAULT (0x0)
+           AUDIO_ENCAPSULATION_TYPE_NONE
+   - Audio Routes (4):
+      1. Mix; Sink: "BT A2DP Out"
+         Sources: "a2dp output"
+      2. Mix; Sink: "BT A2DP Headphones"
+         Sources: "a2dp output"
+      3. Mix; Sink: "BT A2DP Speaker"
+         Sources: "a2dp output"
+      4. Mix; Sink: "BT Hearing Aid Out"
+         Sources: "hearing aid output"
+
+ Outputs (2):
+  1. Port ID: 1; I/O handle: 13; IOProfile name:primary output; Latency: 91; 0x0002 (AUDIO_OUTPUT_FLAG_PRIMARY)
+     AUDIO_FORMAT_PCM_16_BIT; 48000; Channel mask: 0x3
+     Devices: {AUDIO_DEVICE_OUT_SPEAKER, @:}
+     Global active count: 0
+   - Product Strategies (2):
+      id 0: - ActivityCount: 0, StopTime: 8205008474946, 
+      id 3: - ActivityCount: 0, StopTime: 6331102848684, 
+   - Volume Activities (14):
+      id 1: - ActivityCount: 0, StopTime: 0, , Volume: 0.000, MuteCount: 00
+      id 2: - ActivityCount: 0, StopTime: 0, , Volume: -4.800, MuteCount: 00
+      id 3: - ActivityCount: 0, StopTime: 0, , Volume: -26.475, MuteCount: 00
+      id 4: - ActivityCount: 0, StopTime: 0, , Volume: -10.765, MuteCount: 00
+      id 5: - ActivityCount: 0, StopTime: 0, , Volume: -11.118, MuteCount: 00
+      id 6: - ActivityCount: 0, StopTime: 8180421141977, , Volume: 0.000, MuteCount: 00
+      id 7: - ActivityCount: 0, StopTime: 6331102848684, , Volume: -8.700, MuteCount: 00
+      id 8: - ActivityCount: 0, StopTime: 0, , Volume: 0.000, MuteCount: 00
+      id 9: - ActivityCount: 0, StopTime: 0, , Volume: 0.000, MuteCount: 00
+      id 10: - ActivityCount: 0, StopTime: 0, , Volume: -8.700, MuteCount: 00
+      id 11: - ActivityCount: 0, StopTime: 8205008474946, , Volume: -11.118, MuteCount: 00
+      id 12: - ActivityCount: 0, StopTime: 0, , Volume: 0.000, MuteCount: 01
+      id 13: - ActivityCount: 0, StopTime: 0, , Volume: -17.939, MuteCount: 00
+      id 14: - ActivityCount: 0, StopTime: 0, , Volume: 0.000, MuteCount: 00
+   - AudioTrack clients (2):
+      1. Port ID: 15; Session ID: 9; uid 1000; State: Inactive
+         AUDIO_FORMAT_PCM_16_BIT; 48000; Channel mask: 0x3
+         Attributes: { Content type: AUDIO_CONTENT_TYPE_SONIFICATION Usage: AUDIO_USAGE_ASSISTANCE_SONIFICATION Source: AUDIO_SOURCE_DEFAULT Flags: 0x900 Tags:  }
+         Stream: 1; Flags: 00000004; Refcount: 0; InternalMute: No
+         DAP Primary Mix: 0x0
+         Uid 1000
+      2. Port ID: 91; Session ID: 97; uid 10235; State: Inactive
+         AUDIO_FORMAT_PCM_16_BIT; 44100; Channel mask: 0x1
+         Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_MEDIA Source: AUDIO_SOURCE_INVALID Flags: 0xa00 Tags:  }
+         Stream: 3; Flags: 00000008; Refcount: 0; InternalMute: No
+         DAP Primary Mix: 0x0
+         Uid 10235
+  2. Port ID: 4; I/O handle: 21; IOProfile name:telephony_tx; Latency: 1; 0x0000 (AUDIO_OUTPUT_FLAG_NONE)
+     AUDIO_FORMAT_PCM_16_BIT; 48000; Channel mask: 0x3
+     Devices: {AUDIO_DEVICE_OUT_TELEPHONY_TX, @:}
+     Global active count: 0
+   - Volume Activities (4):
+      id 8: - ActivityCount: 0, StopTime: 0, , Volume: 0.000, MuteCount: 00
+      id 9: - ActivityCount: 0, StopTime: 0, , Volume: 0.000, MuteCount: 00
+      id 12: - ActivityCount: 0, StopTime: 0, , Volume: 0.000, MuteCount: 01
+      id 14: - ActivityCount: 0, StopTime: 0, , Volume: 0.000, MuteCount: 00
+
+ Inputs (1):
+  1. Port ID: 92; 0x0000 (AUDIO_INPUT_FLAG_NONE); I/O handle: 190
+     AUDIO_FORMAT_PCM_16_BIT; 44100; Channel mask: 0x10
+     Devices: AUDIO_DEVICE_IN_BUILTIN_MIC, @:bottom
+     AudioRecord Clients (1):
+      1. Port ID: 93; Session ID: 225; uid 10235; State: Active
+         AUDIO_FORMAT_PCM_16_BIT; 44100; Channel mask: 0x10
+         Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_UNKNOWN Source: AUDIO_SOURCE_MIC Flags: 0x0 Tags:  }
+         Source: 1; Flags: 00000000; is soundtrigger: 0
+
+
+ Total Effects CPU: 0.000000 MIPS, Total Effects memory: 0 KB, Max memory used: 0 KB
+
+ Audio Patches (3):
+  1. owner uid 1041; handle  3; HAL handle 724
+     [src  1] Mix Port ID: 1; I/O handle: 13;
+     [sink 1] Device Port ID: 2; {AUDIO_DEVICE_OUT_SPEAKER, @:}
+  2. owner uid 1041; handle  6; HAL handle 20
+     [src  1] Mix Port ID: 4; I/O handle: 21;
+     [sink 1] Device Port ID: 5; {AUDIO_DEVICE_OUT_TELEPHONY_TX, @:}
+  3. owner uid 1041; handle 94; HAL handle 732
+     [src  1] Device Port ID: 8; {AUDIO_DEVICE_IN_BUILTIN_MIC, @:bottom}
+     [sink 1] Mix Port ID: 92; I/O handle: 190;
+
+ Audio Policy Mix:
+
+ Audio sources (0):
+ AllowedCapturePolicies:
+ Preferred mixer audio configuration:
+
+Policy Engine dump:
+  Product Strategies dump:
+    -STRATEGY_MEDIA (id: 0)
+      Selected Device: {AUDIO_DEVICE_OUT_SPEAKER, @:}
+       Group: 6 stream: AUDIO_STREAM_MUSIC
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_MEDIA Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       Group: 6 stream: AUDIO_STREAM_MUSIC
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_GAME Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       Group: 6 stream: AUDIO_STREAM_MUSIC
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_ASSISTANCE_NAVIGATION_GUIDANCE Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       Group: 6 stream: AUDIO_STREAM_MUSIC
+        Attributes: { Any }
+       Group: 11 stream: AUDIO_STREAM_SYSTEM
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_ASSISTANCE_SONIFICATION Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+
+    -STRATEGY_PHONE (id: 1)
+      Selected Device: {AUDIO_DEVICE_OUT_SPEAKER, @:}
+       Group: 13 stream: AUDIO_STREAM_VOICE_CALL
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_VOICE_COMMUNICATION Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+
+    -STRATEGY_SONIFICATION (id: 2)
+      Selected Device: {AUDIO_DEVICE_OUT_SPEAKER, @:}
+       Group: 10 stream: AUDIO_STREAM_RING
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_NOTIFICATION_TELEPHONY_RINGTONE Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       Group: 2 stream: AUDIO_STREAM_ALARM
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_ALARM Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+
+    -STRATEGY_SONIFICATION_RESPECTFUL (id: 3)
+      Selected Device: {AUDIO_DEVICE_OUT_SPEAKER, @:}
+       Group: 7 stream: AUDIO_STREAM_NOTIFICATION
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_NOTIFICATION Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       Group: 7 stream: AUDIO_STREAM_NOTIFICATION
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_NOTIFICATION_EVENT Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+
+    -STRATEGY_DTMF (id: 4)
+      Selected Device: {AUDIO_DEVICE_OUT_SPEAKER, @:}
+       Group: 4 stream: AUDIO_STREAM_DTMF
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_VOICE_COMMUNICATION_SIGNALLING Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+
+    -STRATEGY_ENFORCED_AUDIBLE (id: 5)
+      Selected Device: {AUDIO_DEVICE_OUT_SPEAKER, @:}
+       Group: 5 stream: AUDIO_STREAM_ENFORCED_AUDIBLE
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_UNKNOWN Source: AUDIO_SOURCE_INVALID Flags: 0x1 Tags:  }
+
+    -STRATEGY_TRANSMITTED_THROUGH_SPEAKER (id: 6)
+      Selected Device: {AUDIO_DEVICE_OUT_SPEAKER, @:}
+       Group: 12 stream: AUDIO_STREAM_TTS
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_UNKNOWN Source: AUDIO_SOURCE_INVALID Flags: 0x8 Tags:  }
+       Group: 12 stream: AUDIO_STREAM_TTS
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_ULTRASOUND Usage: AUDIO_USAGE_UNKNOWN Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       Group: 12 stream: AUDIO_STREAM_TTS
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_SPEAKER_CLEANUP Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       Group: 12 stream: AUDIO_STREAM_TTS
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_NOTIFICATION_VIBRATION Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       Group: 12 stream: AUDIO_STREAM_TTS
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_RINGTONE_VIBRATION Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+
+    -STRATEGY_ACCESSIBILITY (id: 7)
+      Selected Device: {AUDIO_DEVICE_OUT_SPEAKER, @:}
+       Group: 1 stream: AUDIO_STREAM_ACCESSIBILITY
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_ASSISTANCE_ACCESSIBILITY Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+
+    -STRATEGY_REROUTING (id: 8)
+      Selected Device: {AUDIO_DEVICE_OUT_SPEAKER, @:}
+       Group: 9 stream: AUDIO_STREAM_REROUTING
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_VIRTUAL_SOURCE Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags: reserved_internal_strategy }
+
+    -STRATEGY_CALL_ASSISTANT (id: 9)
+      Selected Device: {AUDIO_DEVICE_OUT_TELEPHONY_TX, @:}
+       Group: 14 stream: AUDIO_STREAM_CALL_ASSISTANT
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_CALL_ASSISTANT Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+
+    -STRATEGY_PATCH (id: 10)
+      Selected Device: {Empty device types, @:}
+       Group: 8 stream: AUDIO_STREAM_PATCH
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_UNKNOWN Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags: reserved_internal_strategy }
+
+    -STRATEGY_ASSISTANT (id: 11)
+      Selected Device: {AUDIO_DEVICE_OUT_SPEAKER, @:}
+       Group: 3 stream: AUDIO_STREAM_ASSISTANT
+        Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_ASSISTANT Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+
+  Device role per product strategy dump:
+    Strategy(1) Device Role(1) Devices(AUDIO_DEVICE_OUT_SPEAKER, @:)
+    Strategy(7) Device Role(1) Devices(AUDIO_DEVICE_OUT_SPEAKER, @:)
+
+  Device role per capture preset dump:
+
+  Volume Groups dump:
+    -AUDIO_STREAM_ACCESSIBILITY (id: 1)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_ACCESSIBILITY(10)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_ASSISTANCE_ACCESSIBILITY Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       DEVICE_CATEGORY_HEADSET : { (  0, -5800),  ( 20, -4000),  ( 60, -1700),  (100,     0) }
+       DEVICE_CATEGORY_SPEAKER : { (  0, -5800),  ( 20, -4000),  ( 60, -1700),  (100,     0) }
+       DEVICE_CATEGORY_EARPIECE : { (  0, -5800),  ( 20, -4000),  ( 60, -1700),  (100,     0) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  0, -5800),  ( 20, -4000),  ( 60, -1700),  (100,     0) }
+       DEVICE_CATEGORY_HEARING_AID : { (  0, -12700),  ( 20, -8000),  ( 60, -4000),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          01         15         0002 : 15, 40000000 : 06, 
+
+
+    -AUDIO_STREAM_ALARM (id: 2)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_ALARM(4)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_ALARM Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       DEVICE_CATEGORY_HEADSET : { (  0, -4950),  ( 33, -3350),  ( 66, -1700),  (100,     0) }
+       DEVICE_CATEGORY_SPEAKER : { (  0, -2970),  ( 33, -2010),  ( 66, -1020),  (100,     0) }
+       DEVICE_CATEGORY_EARPIECE : { (  0, -4950),  ( 33, -3350),  ( 66, -1700),  (100,     0) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  0, -5800),  ( 20, -4000),  ( 60, -2100),  (100, -1000) }
+       DEVICE_CATEGORY_HEARING_AID : { (  0, -12700),  ( 20, -8000),  ( 60, -4000),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          01         07         0002 : 06, 40000000 : 06, 
+
+
+    -AUDIO_STREAM_ASSISTANT (id: 3)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_ASSISTANT(11)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_ASSISTANT Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       DEVICE_CATEGORY_HEADSET : { (  1, -5000),  ( 20, -3500),  ( 60, -1500),  (100,     0) }
+       DEVICE_CATEGORY_SPEAKER : { (  1, -4700),  ( 20, -3200),  ( 60, -1500),  (100,     0) }
+       DEVICE_CATEGORY_EARPIECE : { (  1, -4700),  ( 20, -3200),  ( 60, -1500),  (100,     0) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  1, -4700),  ( 20, -3200),  ( 60, -1500),  (100,     0) }
+       DEVICE_CATEGORY_HEARING_AID : { (  1, -12700),  ( 20, -8000),  ( 60, -4000),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          00         15         0002 : 05, 40000000 : 05, 
+
+
+    -AUDIO_STREAM_DTMF (id: 4)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_DTMF(8)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_VOICE_COMMUNICATION_SIGNALLING Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       DEVICE_CATEGORY_HEADSET : { (  1, -3000),  ( 33, -2600),  ( 66, -2200),  (100, -1800) }
+       DEVICE_CATEGORY_SPEAKER : { (  1, -2400),  ( 33, -1800),  ( 66, -1200),  (100,  -600) }
+       DEVICE_CATEGORY_EARPIECE : { (  1, -2400),  ( 33, -1800),  ( 66, -1200),  (100,  -600) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  1, -5800),  ( 20, -4000),  ( 60, -2100),  (100, -1000) }
+       DEVICE_CATEGORY_HEARING_AID : { (  1, -12700),  ( 20, -8000),  ( 60, -4000),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          00         15         0002 : 11, 40000000 : 11, 
+
+
+    -AUDIO_STREAM_ENFORCED_AUDIBLE (id: 5)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_ENFORCED_AUDIBLE(7)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_UNKNOWN Source: AUDIO_SOURCE_INVALID Flags: 0x1 Tags:  }
+       DEVICE_CATEGORY_HEADSET : { (  1, -3000),  ( 33, -2600),  ( 66, -2200),  (100, -1800) }
+       DEVICE_CATEGORY_SPEAKER : { (  1, -2400),  ( 33, -1800),  ( 66, -1200),  (100,  -600) }
+       DEVICE_CATEGORY_EARPIECE : { (  1, -2400),  ( 33, -1800),  ( 66, -1200),  (100,  -600) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  1, -5800),  ( 20, -4000),  ( 60, -2100),  (100, -1000) }
+       DEVICE_CATEGORY_HEARING_AID : { (  1, -12700),  ( 20, -8000),  ( 60, -4000),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          00         07         0002 : 05, 40000000 : 05, 
+
+
+    -AUDIO_STREAM_MUSIC (id: 6)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_MUSIC(3)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_MEDIA Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+                    { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_GAME Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+                    { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_ASSISTANCE_NAVIGATION_GUIDANCE Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+                    { Any }
+       DEVICE_CATEGORY_HEADSET : { (  1, -5800),  ( 20, -4000),  ( 60, -1700),  (100,     0) }
+       DEVICE_CATEGORY_SPEAKER : { (  1, -5800),  ( 20, -4000),  ( 60, -1700),  (100,     0) }
+       DEVICE_CATEGORY_EARPIECE : { (  1, -5800),  ( 20, -4000),  ( 60, -1700),  (100,     0) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  1, -5800),  ( 20, -4000),  ( 60, -1700),  (100,     0) }
+       DEVICE_CATEGORY_HEARING_AID : { (  1, -12700),  ( 20, -8000),  ( 60, -4000),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          00         15         0002 : 15, 40000000 : 05, 
+
+
+    -AUDIO_STREAM_NOTIFICATION (id: 7)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_NOTIFICATION(5)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_NOTIFICATION Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+                    { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_NOTIFICATION_EVENT Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       DEVICE_CATEGORY_HEADSET : { (  1, -4950),  ( 33, -3350),  ( 66, -1700),  (100,     0) }
+       DEVICE_CATEGORY_SPEAKER : { (  1, -2970),  ( 33, -2010),  ( 66, -1020),  (100,     0) }
+       DEVICE_CATEGORY_EARPIECE : { (  1, -4950),  ( 33, -3350),  ( 66, -1700),  (100,     0) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  1, -5800),  ( 20, -4000),  ( 60, -2100),  (100, -1000) }
+       DEVICE_CATEGORY_HEARING_AID : { (  1, -4950),  ( 33, -3350),  ( 66, -1700),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          00         07         0002 : 05, 40000000 : 05, 
+
+
+    -AUDIO_STREAM_PATCH (id: 8)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_PATCH(13)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_UNKNOWN Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags: reserved_internal_strategy }
+       DEVICE_CATEGORY_HEADSET : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_SPEAKER : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_EARPIECE : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_HEARING_AID : { (  0,     0),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          00         100         40000000 : 00, 
+
+
+    -AUDIO_STREAM_REROUTING (id: 9)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_REROUTING(12)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_VIRTUAL_SOURCE Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags: reserved_internal_strategy }
+       DEVICE_CATEGORY_HEADSET : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_SPEAKER : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_EARPIECE : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_HEARING_AID : { (  0,     0),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          00         100         40000000 : 00, 
+
+
+    -AUDIO_STREAM_RING (id: 10)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_RING(2)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_NOTIFICATION_TELEPHONY_RINGTONE Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       DEVICE_CATEGORY_HEADSET : { (  1, -4950),  ( 33, -3350),  ( 66, -1700),  (100,     0) }
+       DEVICE_CATEGORY_SPEAKER : { (  1, -2970),  ( 33, -2010),  ( 66, -1020),  (100,     0) }
+       DEVICE_CATEGORY_EARPIECE : { (  1, -4950),  ( 33, -3350),  ( 66, -1700),  (100,     0) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  1, -5800),  ( 20, -4000),  ( 60, -2100),  (100, -1000) }
+       DEVICE_CATEGORY_HEARING_AID : { (  1, -12700),  ( 20, -8000),  ( 60, -4000),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          00         07         0002 : 05, 40000000 : 05, 
+
+
+    -AUDIO_STREAM_SYSTEM (id: 11)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_SYSTEM(1)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_ASSISTANCE_SONIFICATION Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       DEVICE_CATEGORY_HEADSET : { (  1, -3000),  ( 33, -2600),  ( 66, -2200),  (100, -1800) }
+       DEVICE_CATEGORY_SPEAKER : { (  1, -2400),  ( 33, -1800),  ( 66, -1200),  (100,  -600) }
+       DEVICE_CATEGORY_EARPIECE : { (  1, -2400),  ( 33, -1800),  ( 66, -1200),  (100,  -600) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  1, -5800),  ( 20, -4000),  ( 60, -2100),  (100, -1000) }
+       DEVICE_CATEGORY_HEARING_AID : { (  1, -12700),  ( 20, -8000),  ( 60, -4000),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          00         07         0002 : 05, 40000000 : 05, 
+
+
+    -AUDIO_STREAM_TTS (id: 12)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_TTS(9)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_UNKNOWN Source: AUDIO_SOURCE_INVALID Flags: 0x8 Tags:  }
+                    { Content type: AUDIO_CONTENT_TYPE_ULTRASOUND Usage: AUDIO_USAGE_UNKNOWN Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+                    { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_SPEAKER_CLEANUP Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+                    { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_NOTIFICATION_VIBRATION Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+                    { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_RINGTONE_VIBRATION Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       DEVICE_CATEGORY_HEADSET : { (  0, -9600),  (100, -9600) }
+       DEVICE_CATEGORY_SPEAKER : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_EARPIECE : { (  0, -9600),  (100, -9600) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  0, -9600),  (100, -9600) }
+       DEVICE_CATEGORY_HEARING_AID : { (  0, -9600),  (100, -9600) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          00         15         0002 : 15, 40000000 : 05, 
+
+
+    -AUDIO_STREAM_VOICE_CALL (id: 13)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_VOICE_CALL(0)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_VOICE_COMMUNICATION Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       DEVICE_CATEGORY_HEADSET : { (  0, -4200),  ( 33, -2800),  ( 66, -1400),  (100,     0) }
+       DEVICE_CATEGORY_SPEAKER : { (  0, -2400),  ( 33, -1600),  ( 66,  -800),  (100,     0) }
+       DEVICE_CATEGORY_EARPIECE : { (  0, -2400),  ( 33, -1600),  ( 66,  -800),  (100,     0) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  1, -5800),  ( 20, -4000),  ( 60, -1700),  (100,     0) }
+       DEVICE_CATEGORY_HEARING_AID : { (  0, -12700),  ( 20, -8000),  ( 60, -4000),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          01         05         0002 : 02, 40000000 : 02, 
+
+
+    -AUDIO_STREAM_CALL_ASSISTANT (id: 14)
+      Volume Curves Streams/Attributes, Curve points Streams for device category (index, attenuation in millibel)
+       Streams: AUDIO_STREAM_CALL_ASSISTANT(14)  
+       Attributes: { Content type: AUDIO_CONTENT_TYPE_UNKNOWN Usage: AUDIO_USAGE_CALL_ASSISTANT Source: AUDIO_SOURCE_INVALID Flags: 0x0 Tags:  }
+       DEVICE_CATEGORY_HEADSET : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_SPEAKER : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_EARPIECE : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_EXT_MEDIA : { (  0,     0),  (100,     0) }
+       DEVICE_CATEGORY_HEARING_AID : { (  0,     0),  (100,     0) }
+        Can be muted  Index Min  Index Max  Index Cur [device : index]...
+        true          00         100         0002 : 05, 40000000 : 05, 
+
+
+  mUserIdZoneCriteria:
+
+Absolute volume devices with driving streams:
+   - device type: 0x20000002, driving stream 6
+   - device type: 0x20000001, driving stream 6
+   - device type: 0x8000000, driving stream 6
+   - device type: 0x10, driving stream 13
+   - device type: 0x20000004, driving stream 6
+   - device type: 0x20, driving stream 6
+   - device type: 0x20000000, driving stream 6
+
+Mmap policy:
+ - DEFAULT: {}
+
+Permission Controller Dump:
+Permission map: 
+RECORD_AUDIO: 1000, 1001, 2000, 10146, 10149, 10151, 10158, 10161, 10163, 10167, 10171, 10199, 10213, 10235
+MODIFY_AUDIO_ROUTING: 1000, 1002, 2000, 10146, 10149, 10151, 10163, 10199, 10213, 10229
+MODIFY_AUDIO_SETTINGS: 1000, 1001, 1002, 1013, 1047, 2000, 10121, 10149, 10151, 10159, 10161, 10162, 10163, 10168, 10178, 10181, 10184, 10186, 10188, 10199, 10213, 10235
+MODIFY_PHONE_STATE: 1000, 1001, 1002, 1027, 1073, 2000, 10132, 10146, 10149, 10151, 10153, 10158, 10161, 10165, 10192, 10194, 10199, 10210, 10213, 10220
+MODIFY_DEFAULT_AUDIO_EFFECTS: 1000, 2000, 10199, 10213
+WRITE_SECURE_SETTINGS: 1000, 1001, 1002, 1027, 2000, 10120, 10144, 10148, 10149, 10151, 10152, 10154, 10157, 10162, 10165, 10194, 10195, 10196, 10198, 10199, 10200, 10202, 10204, 10213, 10229
+CALL_AUDIO_INTERCEPTION: 1000, 2000, 10213
+ACCESS_ULTRASOUND: 1000
+CAPTURE_AUDIO_OUTPUT: 1000, 2000, 10149, 10151, 10161, 10163, 10199, 10213
+CAPTURE_MEDIA_OUTPUT: 1000, 2000, 10149, 10163
+CAPTURE_AUDIO_HOTWORD: 1000, 2000, 10149, 10163, 10213
+CAPTURE_TUNER_AUDIO_INPUT: 1000, 2000
+CAPTURE_VOICE_COMMUNICATION_OUTPUT: 1000, 2000, 10149, 10151
+BLUETOOTH_CONNECT: 1000, 1001, 1002, 1027, 1073, 2000, 10128, 10134, 10146, 10149, 10163, 10188, 10199, 10210, 10213
+BYPASS_CONCURRENT_RECORD_AUDIO_RESTRICTION: 1000
+MODIFY_AUDIO_SETTINGS_PRIVILEGED: 1000, 1002, 2000, 10149, 10154, 10162, 10199
+SCHEDULE_EXACT_ALARM: 1000, 1001, 1002, 1013, 1027, 1047, 1068, 1073, 2000, 4294967295
+USE_EXACT_ALARM: 1000, 2000, 10155, 10159, 10166, 10199, 10216
+Spatializer no supportted on this device
+
+IAudioPolicyService binder call profile
+3 getDeviceConnectionState n=12 ave=0.0599811 std=0.096479 min=0.005791 max=0.315457
+6 setForceUse n=73 ave=0.481593 std=1.77273 min=0.002166 max=10.5885
+8 getOutput n=59 ave=0.0603699 std=0.101496 min=0.008623 max=0.536124
+18 setDeviceAbsoluteVolumeEnabled n=8 ave=0.0209985 std=0.0201061 min=0.009916 max=0.065208
+20 setStreamVolumeIndex n=138 ave=0.0690777 std=0.146586 min=0.003832 max=1.42208
+26 getMaxVolumeIndexForGroup n=16 ave=0.0033655 std=0.00240825 min=0.002123 max=0.011249
+27 getMinVolumeIndexForGroup n=16 ave=0.0095845 std=0.0287911 min=0.002123 max=0.117541
+28 setMaxVolumeIndexForGroup n=11 ave=0.00327509 std=0.000838319 min=0.002457 max=0.004749
+29 setMinVolumeIndexForGroup n=11 ave=0.00441536 std=0.00209275 min=0.002707 max=0.008998
+30 setVolumeIndexForGroup n=24 ave=0.113172 std=0.155806 min=0.02254 max=0.710248
+33 getDevicesForAttributes n=252 ave=26.5309 std=51.7399 min=0.004916 max=165.635
+39 isStreamActive n=161 ave=0.0208176 std=0.131803 min=0.00254 max=1.59454
+40 isStreamActiveRemotely n=29 ave=0.00802428 std=0.0158381 min=0.002998 max=0.089498
+47 setSupportedSystemUsages n=1 ave=0.006541 min=0.006541 max=0.006541
+49 getOffloadSupport n=133 ave=0.107814 std=0.762052 min=0.001498 max=8.71975
+51 listAudioPorts n=625 ave=8.79552 std=26.5975 min=0.033956 max=165.49
+52 52 n=1 ave=0.321999 min=0.321999 max=0.321999
+56 listAudioPatches n=625 ave=1.79124 std=10.6979 min=0.005081 max=150.869
+58 registerClient n=22 ave=0.206338 std=0.728952 min=0.017623 max=3.46217
+59 setAudioPortCallbacksEnabled n=43 ave=0.0111011 std=0.0103465 min=0.001332 max=0.04354
+60 setAudioVolumeGroupCallbacksEnabled n=22 ave=0.0182297 std=0.0541527 min=0.000832 max=0.25879
+64 registerPolicyMixes n=2 ave=0.011311 std=0.0106943 min=0.003749 max=0.018873
+73 setMasterMono n=10 ave=0.0221112 std=0.0184018 min=0.004916 max=0.071165
+75 getStreamVolumeDB n=12 ave=0.00616825 std=0.00614492 min=0.00329 max=0.021998
+78 getHwOffloadFormatsSupportedForBluetoothMedia n=11 ave=0.124013 std=0.169605 min=0.014207 max=0.478748
+80 setAssistantServicesUids n=3 ave=0.009526 std=0.0055933 min=0.004915 max=0.015748
+81 setActiveAssistantServicesUids n=2 ave=0.0043735 std=0.00194525 min=0.002998 max=0.005749
+82 setA11yServicesUids n=234 ave=0.0712236 std=0.628054 min=0.003206 max=9.58025
+83 setCurrentImeUid n=3 ave=0.0132627 std=0.00267808 min=0.010208 max=0.015207
+84 isHapticPlaybackSupported n=1 ave=0.282331 min=0.282331 max=0.282331
+87 getAttributesForStreamType n=112 ave=0.00332289 std=0.00379474 min=0.000999 max=0.040124
+88 getStreamTypeForAttributes n=175 ave=1.24989 std=12.1271 min=0.001332 max=148.157
+89 listAudioProductStrategies n=1 ave=0.052416 min=0.052416 max=0.052416
+93 listAudioVolumeGroups n=1 ave=0.026373 min=0.026373 max=0.026373
+95 setRttEnabled n=2 ave=0.004498 std=0.00188515 min=0.003165 max=0.005831
+96 isCallScreenModeSupported n=1 ave=0.004081 min=0.004081 max=0.004081
+97 setDevicesRoleForStrategy n=36 ave=112.036 std=48.5057 min=47.5955 max=165.646
+99 clearDevicesRoleForStrategy n=34 ave=100.562 std=52.1251 min=46.1906 max=158.135
+106 registerSoundTriggerCaptureStateListener n=1 ave=0.01704 min=0.01704 max=0.01704
+115 getPermissionController n=1 ave=0.009373 min=0.009373 max=0.009373
+118 118 n=1 ave=0.006956 min=0.006956 max=0.006956
+1598311760 dump n=1 ave=0.676874 min=0.676874 max=0.676874
