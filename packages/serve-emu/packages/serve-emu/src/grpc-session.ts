@@ -21,6 +21,7 @@ import {
   type KeyboardEventRequest,
   type TouchPoint,
 } from "./emulator-grpc.ts";
+import { getDisplayRotation } from "./adb.ts";
 import { execText, type ExecResult } from "./exec.ts";
 import {
   H264Encoder,
@@ -887,19 +888,77 @@ export type GrpcDisplayGeometry = {
   mapTouch(unitX: number, unitY: number): { x: number; y: number };
 };
 
+type UnitPoint = { x: number; y: number };
+
+// @ref LLP 0008#touch-coordinates-in-grpc-mode -- frame, panel and display can each be turned
+// Turn 1 shows the panel's top on the left, for the frame and for Android's display alike.
+function turnPanelPoint(turns: number, point: UnitPoint): UnitPoint {
+  switch (((turns % 4) + 4) % 4) {
+    case 1:
+      return { x: point.y, y: 1 - point.x };
+    case 2:
+      return { x: 1 - point.x, y: 1 - point.y };
+    case 3:
+      return { x: 1 - point.y, y: point.x };
+    default:
+      return point;
+  }
+}
+
+/** The point on the unrotated panel under a point on a frame turned `turns` quarter turns. */
+function framePointToPanel(turns: number, point: UnitPoint): UnitPoint {
+  return turnPanelPoint(-turns, point);
+}
+
+/** A size measured on a frame or display turned `turns` quarter turns from the panel, or back. */
+function turnSize(
+  size: { width: number; height: number },
+  turns: number,
+): { width: number; height: number } {
+  return turns % 2 === 0 ? size : { width: size.height, height: size.width };
+}
+
+/**
+ * The gesture in a display's coordinates, for a gesture on a frame. Each point is turned back
+ * to the panel by the frame's rotation, then on by the display's.
+ */
+function gestureOnDisplay(
+  gesture: Gesture,
+  frameTurns: number,
+  displayTurns: number,
+): Gesture {
+  if (frameTurns === displayTurns) return gesture;
+  const map = (x: number, y: number) =>
+    turnPanelPoint(displayTurns, framePointToPanel(frameTurns, { x, y }));
+  switch (gesture.type) {
+    case "tap":
+    case "touch":
+      return { ...gesture, ...map(gesture.x, gesture.y) };
+    case "swipe": {
+      const from = map(gesture.x1, gesture.y1);
+      const to = map(gesture.x2, gesture.y2);
+      return { ...gesture, x1: from.x, y1: from.y, x2: to.x, y2: to.y };
+    }
+    default:
+      return gesture;
+  }
+}
+
 export function resolveGrpcDisplayGeometry(options: {
   inputWidth: number;
   inputHeight: number;
+  /** The unrotated panel size, which emulator gRPC touches address. */
   nativeWidth: number;
   nativeHeight: number;
+  /** The frame's `ImageFormat.rotation`. */
+  rotation?: number;
 }): GrpcDisplayGeometry {
   const croppedWidth = options.inputWidth - (options.inputWidth % 2);
   const croppedHeight = options.inputHeight - (options.inputHeight % 2);
   const encodedSize = { width: croppedWidth, height: croppedHeight };
-  const touchSize = {
-    width: options.nativeWidth,
-    height: options.nativeHeight,
-  };
+  const turns = options.rotation ?? 0;
+  // Android applies its own display rotation to these panel touches.
+  const touchSize = { width: options.nativeWidth, height: options.nativeHeight };
 
   const toPixel = (unit: number, size: number) =>
     Math.max(0, Math.min(size - 1, Math.round(unit * size)));
@@ -908,11 +967,10 @@ export function resolveGrpcDisplayGeometry(options: {
     encodedSize,
     touchSize,
     mapTouch(unitX, unitY) {
-      // Emulator screenshots are already oriented and touch coordinates use
-      // that same physical top-left coordinate space.
+      const panel = framePointToPanel(turns, { x: unitX, y: unitY });
       return {
-        x: toPixel(unitX, touchSize.width),
-        y: toPixel(unitY, touchSize.height),
+        x: toPixel(panel.x, touchSize.width),
+        y: toPixel(panel.y, touchSize.height),
       };
     },
   };
@@ -1187,7 +1245,7 @@ export class GrpcNativeTouchGeometryMonitor {
     ) {
       throw new Error("emulator returned invalid native touch dimensions");
     }
-    this.#onNativeSize({ width: image.width, height: image.height });
+    this.#onNativeSize(turnSize({ width: image.width, height: image.height }, image.rotation ?? 0));
     this.#displaySizeSignal = nextSignal;
   }
 }
@@ -1196,6 +1254,7 @@ export type GrpcSessionDependencies = {
   /** Override the stall deadline for deterministic runtime tests. */
   encoderDrainTimeoutMs?: number;
   readDisplaySizeSignal?: (serial: string, signal: AbortSignal) => Promise<string>;
+  readDisplayRotation?: (serial: string, signal: AbortSignal) => Promise<number>;
   startScrcpyControl?: typeof startScrcpyControl;
   runtime?: Partial<GrpcSessionRuntime>;
 };
@@ -1535,6 +1594,10 @@ export async function startGrpcSession(
     ...dependencies.runtime,
   };
   const readDisplaySizeSignal = dependencies.readDisplaySizeSignal ?? defaultReadDisplaySizeSignal;
+  const readDisplayRotation =
+    dependencies.readDisplayRotation ??
+    ((target: string, signal: AbortSignal) =>
+      getDisplayRotation(target, execText, { signal, lane: "interactive" }));
   const maxFps = positiveNumber(options.maxFps ?? SCRCPY_DEFAULTS.maxFps, "maxFps", 1_000);
   const bitRate = nonNegativeInteger(
     options.bitRate ?? SCRCPY_DEFAULTS.bitRate,
@@ -1612,7 +1675,7 @@ export async function startGrpcSession(
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let idleTimer: ReturnType<typeof setInterval> | null = null;
   let displaySizePollTimer: ReturnType<typeof setTimeout> | null = null;
-  let nativeTouchSize = { width: 0, height: 0 };
+  let nativePanelSize = { width: 0, height: 0 };
   let nativeTouchGeometryMonitor: GrpcNativeTouchGeometryMonitor | null = null;
   let sessionMeta: StreamMeta | null = null;
   let resolveFirstImage: ((image: EmuImage) => void) | null = null;
@@ -1750,8 +1813,9 @@ export async function startGrpcSession(
     return resolveGrpcDisplayGeometry({
       inputWidth: image.width,
       inputHeight: image.height,
-      nativeWidth: nativeTouchSize.width,
-      nativeHeight: nativeTouchSize.height,
+      nativeWidth: nativePanelSize.width,
+      nativeHeight: nativePanelSize.height,
+      rotation: image.rotation,
     });
   };
   encoderLifecycle = new GrpcEncoderLifecycle<GrpcSessionEncoder>((restart) => {
@@ -1880,14 +1944,6 @@ export async function startGrpcSession(
       encoder !== null &&
       encoder !== undefined &&
       (image.width !== encoder.width || image.height !== encoder.height);
-    const imageIsLandscape = image.width > image.height;
-    const nativeIsLandscape = nativeTouchSize.width > nativeTouchSize.height;
-    if (imageIsLandscape !== nativeIsLandscape) {
-      nativeTouchSize = {
-        width: nativeTouchSize.height,
-        height: nativeTouchSize.width,
-      };
-    }
     latest = image;
     if (resolveFirstImage) {
       const resolve = resolveFirstImage;
@@ -2052,12 +2108,46 @@ export async function startGrpcSession(
 
   const createScrcpyControls = (session: ScrcpyControlSession) => {
     const writer = new SocketControlWriter(session.controlSocket);
+    // One reading of both rotations serves a whole touch sequence, so its points stay together.
+    let sequenceTurns: { frame: number; display: number } | null = null;
+    const downPointers = new Set<number>();
+    const readTurns = async (signal: AbortSignal) => {
+      const frame = latest?.rotation ?? 0;
+      // scrcpy injects into Android's rotated display, whose rotation the frames do not carry.
+      // A failed read keeps the old assumption that the display follows the frame.
+      const display = await readDisplayRotation(serial, signal).catch(() => frame);
+      throwIfAborted(signal, "scrcpy input aborted");
+      return { frame, display };
+    };
     return new ControlInputQueue({
       dispatcher: {
         async dispatchGesture(gesture, _screen, signal) {
+          let turns = { frame: 0, display: 0 };
+          if (gesture.type === "tap" || gesture.type === "swipe") {
+            turns = await readTurns(signal);
+          } else if (gesture.type === "touch") {
+            const pointerId = gesture.pointerId ?? 0;
+            // A pointer that goes down again lost its `up`, so its sequence is over too.
+            if (
+              !sequenceTurns ||
+              (gesture.action === "down" &&
+                (downPointers.size === 0 || downPointers.has(pointerId)))
+            ) {
+              downPointers.clear();
+              sequenceTurns = await readTurns(signal);
+            }
+            turns = sequenceTurns;
+            if (gesture.action === "down") downPointers.add(pointerId);
+            if (gesture.action === "up") downPointers.delete(pointerId);
+            if (downPointers.size === 0) sequenceTurns = null;
+          }
           // With scrcpy video disabled, touch coordinates must target the native
           // display directly rather than the downscaled gRPC encoder output.
-          for (const step of compileGesture(gesture, nativeTouchSize).steps) {
+          const compiled = compileGesture(
+            gestureOnDisplay(gesture, turns.frame, turns.display),
+            turnSize(nativePanelSize, turns.display),
+          );
+          for (const step of compiled.steps) {
             if (step.delayMs > 0) {
               await runtime.sleep(step.delayMs, signal);
             }
@@ -2165,16 +2255,13 @@ export async function startGrpcSession(
         throw new Error("emulator display stayed inactive after requesting wakeup");
       }
     }
-    nativeTouchSize = {
-      width: probe.width,
-      height: probe.height,
-    };
+    nativePanelSize = turnSize({ width: probe.width, height: probe.height }, probe.rotation);
     nativeTouchGeometryMonitor = new GrpcNativeTouchGeometryMonitor({
       initialDisplaySizeSignal,
       readDisplaySizeSignal: (signal) => readDisplaySizeSignal(serial, signal),
       readNativeImage: (signal) => client.getScreenshot(probeFormat, signal),
       onNativeSize: (size) => {
-        nativeTouchSize = size;
+        nativePanelSize = size;
       },
     });
     if (inputSource === "scrcpy") {
