@@ -926,10 +926,15 @@ function gestureOnDisplay(
   gesture: Gesture,
   frameTurns: number,
   displayTurns: number,
+  screen: { width: number; height: number },
 ): Gesture {
   if (frameTurns === displayTurns) return gesture;
-  const map = (x: number, y: number) =>
-    turnPanelPoint(displayTurns, framePointToPanel(frameTurns, { x, y }));
+  // A turn maps a frame's 0 edge to the display's 1 edge, one pixel past the last.
+  const last = (unit: number, size: number) => Math.min(unit, (size - 1) / size);
+  const map = (x: number, y: number) => {
+    const point = turnPanelPoint(displayTurns, framePointToPanel(frameTurns, { x, y }));
+    return { x: last(point.x, screen.width), y: last(point.y, screen.height) };
+  };
   switch (gesture.type) {
     case "tap":
     case "touch":
@@ -1971,8 +1976,9 @@ export async function startGrpcSession(
     pressure: number,
     identifier: number,
     signal: AbortSignal,
+    pinned?: GrpcDisplayGeometry,
   ) => {
-    const geometry = currentGeometry();
+    const geometry = pinned ?? currentGeometry();
     if (!geometry) {
       throw new ControlInputRejectedError(
         "gRPC touch input is unavailable before the first video frame",
@@ -1996,10 +2002,12 @@ export async function startGrpcSession(
       signal,
     );
   };
+  // A tap or swipe keeps the frame's rotation it started on, so a turn cannot split it.
   const tapTouch = async (x: number, y: number, signal: AbortSignal) => {
-    await touch(x, y, TOUCH_PRESSURE, 0, signal);
+    const geometry = currentGeometry() ?? undefined;
+    await touch(x, y, TOUCH_PRESSURE, 0, signal, geometry);
     await runtime.sleep(20, signal);
-    await touch(x, y, 0, 0, signal);
+    await touch(x, y, 0, 0, signal, geometry);
   };
   const swipeTouch = async (
     x1: number,
@@ -2011,14 +2019,22 @@ export async function startGrpcSession(
   ) => {
     const duration = Math.max(80, durationMs);
     const steps = Math.max(8, Math.round(duration / 16));
-    await touch(x1, y1, TOUCH_PRESSURE, 0, signal);
+    const geometry = currentGeometry() ?? undefined;
+    await touch(x1, y1, TOUCH_PRESSURE, 0, signal, geometry);
     for (let index = 1; index < steps; index++) {
       const progress = index / steps;
       await runtime.sleep(duration / steps, signal);
-      await touch(x1 + (x2 - x1) * progress, y1 + (y2 - y1) * progress, TOUCH_PRESSURE, 0, signal);
+      await touch(
+        x1 + (x2 - x1) * progress,
+        y1 + (y2 - y1) * progress,
+        TOUCH_PRESSURE,
+        0,
+        signal,
+        geometry,
+      );
     }
     await runtime.sleep(duration / steps, signal);
-    await touch(x2, y2, 0, 0, signal);
+    await touch(x2, y2, 0, 0, signal, geometry);
   };
 
   const dispatchGesture = async (gesture: Gesture, signal: AbortSignal): Promise<void> => {
@@ -2143,9 +2159,10 @@ export async function startGrpcSession(
           }
           // With scrcpy video disabled, touch coordinates must target the native
           // display directly rather than the downscaled gRPC encoder output.
+          const screen = turnSize(nativePanelSize, turns.display);
           const compiled = compileGesture(
-            gestureOnDisplay(gesture, turns.frame, turns.display),
-            turnSize(nativePanelSize, turns.display),
+            gestureOnDisplay(gesture, turns.frame, turns.display, screen),
+            screen,
           );
           for (const step of compiled.steps) {
             if (step.delayMs > 0) {

@@ -2061,6 +2061,8 @@ describe("startGrpcSession integration", () => {
     { frameTurns: 3, displayTurns: 0, tap: { x: 0.25, y: 0.5 }, expected: { x: 0.5, y: 0.75 } },
     // The Hub's rotation lock turns the display while the emulator stays upright.
     { frameTurns: 0, displayTurns: 1, tap: { x: 0.25, y: 0.5 }, expected: { x: 0.5, y: 0.75 } },
+    // The frame's top edge is the display's right edge, whose last pixel is width - 1.
+    { frameTurns: 1, displayTurns: 0, tap: { x: 0.4, y: 0 }, expected: { x: 0.75, y: 0.4 } },
     // An app that follows the turned emulator.
     { frameTurns: 1, displayTurns: 1, tap: { x: 0.25, y: 0.5 }, expected: { x: 0.25, y: 0.5 } },
   ])(
@@ -2078,6 +2080,43 @@ describe("startGrpcSession integration", () => {
       }
     },
   );
+
+  test("sends gRPC touches on a turned frame to the panel, pinned for the whole tap", async () => {
+    const client = new FakeGrpcClient(integrationImage(1, 6, 4));
+    let turned = false;
+    const session = await startGrpcSession(
+      {
+        serial: "emulator-5554",
+        mode: "grpc-screenshot",
+        grpcImageMode: "png",
+        inputSource: "grpc",
+      },
+      {
+        readDisplaySizeSignal: async () => "physical:4x6",
+        runtime: {
+          ...integrationRuntime(client, []),
+          // The emulator turns upright between the tap's down and up.
+          async sleep() {
+            if (turned) return;
+            turned = true;
+            client.streamImage!(integrationImage(0), "stream", Date.now());
+          },
+        },
+      },
+    );
+    try {
+      await session.controls.enqueue({ type: "tap", x: 0.25, y: 0.5 }, { width: 1, height: 1 })
+        .completion;
+      expect(turned).toBe(true);
+      // The frame turned 1 puts the panel point (0.5, 0.25) of the 4x6 panel under (0.25, 0.5).
+      expect(client.touches).toEqual([
+        [{ x: 2, y: 2, identifier: 0, pressure: expect.any(Number) }],
+        [{ x: 2, y: 2, identifier: 0, pressure: 0 }],
+      ]);
+    } finally {
+      await session.close();
+    }
+  });
 
   test("reads the display rotation once per scrcpy touch sequence", async () => {
     let displayTurns = 0;
