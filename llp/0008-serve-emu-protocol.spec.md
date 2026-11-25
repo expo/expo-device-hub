@@ -5,7 +5,7 @@
 **Systems:** ServeEmu
 **Author:** Imported from expo/serve-emu in #78 (original authors are in that repo)
 **Date:** 2026-09-09
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/protocol.md`; links and paths updated); 2026-10-17 (upgrade checklist revalidates the omitted server-default arguments)
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/protocol.md`; links and paths updated); 2026-10-17 (upgrade checklist revalidates the omitted server-default arguments); 2026-11-25 (touch coordinates in gRPC mode follow the frame's and the display's rotations; Claude Code, directed by Illia Panasenko)
 **Related:** LLP 0009
 
 > File paths such as `src/…` are relative to `packages/serve-emu/packages/serve-emu`, unless the text gives a path from the repository root.
@@ -119,6 +119,16 @@ Codec-configuration packets contain SPS/PPS data. `serve-emu` caches the latest
 configuration and prepends it to key frames so that a browser joining or
 refreshing mid-stream can initialize its decoder. Slow clients drop frames until
 the next key frame and may request a video reset.
+
+## Touch coordinates in gRPC mode
+
+In `grpc-screenshot` mode, a touch passes through three coordinate spaces that can each be turned a different number of quarter turns:
+
+- The **frame** is the emulator's panel turned by its physical rotation, which every gRPC image reports in `ImageFormat.rotation`. Turning the emulator with `adb emu sensor set acceleration 9.81:0:0` makes rotation 1 and a 2400x1080 frame on a 1080x2400 panel [observed: local probe, API 34 emulator 37.2.13].
+- Emulator gRPC `sendTouch` takes **unrotated panel** pixels. The emulator does not apply its rotation; Android applies its own display rotation to the touch [observed: raw `ABS_MT_POSITION_X` in `getevent` scales x by the panel width at every rotation].
+- scrcpy's control-only server injects in **display** coordinates: the panel turned by Android's display rotation [observed: `dumpsys input` recent events].
+
+Android numbers both rotations the same way, so rotation 1 of the frame and of the display show the panel's top on the left. The two rotations differ whenever the foreground app does not follow the device. A portrait-locked launcher keeps display rotation 0 while the emulator is turned on its side, and `POST /api/orientation` locks the display rotation without turning the emulator. The frames do not carry the display rotation, so scrcpy input reads it with `dumpsys window displays` at the start of each tap, swipe or touch sequence and keeps it until the sequence's last pointer goes up, so one gesture never spans two coordinate spaces. A failed read falls back to assuming that the display follows the frame [observed: `createScrcpyControls` in `src/grpc-session.ts`]. A `wm size` override still scales scrcpy touches by the panel size rather than the display's.
 
 ## Control socket packets
 
