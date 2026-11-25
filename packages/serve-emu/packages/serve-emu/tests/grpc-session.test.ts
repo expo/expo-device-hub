@@ -287,6 +287,25 @@ describe("gRPC screenshot session helpers", () => {
     expect(geometry.mapTouch(1, 1)).toEqual({ x: 1079, y: 2399 });
   });
 
+  test("maps touches on a turned emulator's frame back to the unrotated panel", () => {
+    // A 1080x2400 panel turned by the emulator, as `adb emu sensor set acceleration` does.
+    const touch = (rotation: number, x: number, y: number) =>
+      resolveGrpcDisplayGeometry({
+        inputWidth: rotation % 2 === 0 ? 1080 : 2400,
+        inputHeight: rotation % 2 === 0 ? 2400 : 1080,
+        nativeWidth: 1080,
+        nativeHeight: 2400,
+        rotation,
+      }).mapTouch(x, y);
+
+    // Turn 1 shows the panel's top on the frame's left and its left edge at the bottom.
+    expect(touch(1, 0.82, 0.85)).toEqual({ x: 162, y: 1968 });
+    expect(touch(2, 0.15, 0.18)).toEqual({ x: 918, y: 1968 });
+    // Turn 3 shows the panel's top on the frame's right and its left edge at the top.
+    expect(touch(3, 0.18, 0.15)).toEqual({ x: 162, y: 1968 });
+    expect(touch(1, 0, 0)).toEqual({ x: 1079, y: 0 });
+  });
+
   test("drops MMAP notifications during cooldown without a trailing snapshot", () => {
     const clock = new FakeMmapSchedulerClock();
     const diagnostics = new GrpcCaptureDiagnosticsTracker({
@@ -1969,6 +1988,7 @@ describe("startGrpcSession integration", () => {
       },
       {
         readDisplaySizeSignal: async () => "physical:4x6",
+        readDisplayRotation: async () => 0,
         runtime: integrationRuntime(client, encoders),
         startScrcpyControl: () => controlReady,
       },
@@ -1988,6 +2008,107 @@ describe("startGrpcSession integration", () => {
     expect(client.keys).toEqual([]);
     await session.close();
     expect(controlCloseCalls).toBe(1);
+  });
+
+  // A 4x6 panel. `frameTurns` is the emulator's physical turn, `displayTurns` Android's.
+  const startScrcpyTurnSession = async (frameTurns: number, displayTurns: () => number) => {
+    const frame =
+      frameTurns % 2 === 0 ? integrationImage(frameTurns) : integrationImage(frameTurns, 6, 4);
+    const client = new FakeGrpcClient(frame);
+    const packets: Buffer[] = [];
+    let rotationReads = 0;
+    const controlSocket = Object.assign(new EventEmitter(), {
+      destroyed: false,
+      writable: true,
+      write(packet: Buffer, callback: (error?: Error | null) => void) {
+        packets.push(Buffer.from(packet));
+        callback();
+        return true;
+      },
+    });
+    const controlSession = {
+      transport: "scrcpy-control",
+      serial: "emulator-5554",
+      scid: "00000001",
+      localPort: 27_183,
+      controlSocket,
+      proc: new EventEmitter(),
+      async close() {},
+    } as unknown as ScrcpyControlSession;
+    const session = await startGrpcSession(
+      {
+        serial: "emulator-5554",
+        mode: "grpc-screenshot",
+        grpcImageMode: "png",
+        inputSource: "scrcpy",
+      },
+      {
+        readDisplaySizeSignal: async () => "physical:4x6",
+        readDisplayRotation: async () => {
+          rotationReads++;
+          return displayTurns();
+        },
+        runtime: integrationRuntime(client, []),
+        startScrcpyControl: async () => controlSession,
+      },
+    );
+    return { session, packets, rotationReads: () => rotationReads };
+  };
+
+  test.each([
+    // The emulator is turned while a portrait-locked app keeps the display upright.
+    { frameTurns: 1, displayTurns: 0, tap: { x: 0.25, y: 0.5 }, expected: { x: 0.5, y: 0.25 } },
+    { frameTurns: 3, displayTurns: 0, tap: { x: 0.25, y: 0.5 }, expected: { x: 0.5, y: 0.75 } },
+    // The Hub's rotation lock turns the display while the emulator stays upright.
+    { frameTurns: 0, displayTurns: 1, tap: { x: 0.25, y: 0.5 }, expected: { x: 0.5, y: 0.75 } },
+    // An app that follows the turned emulator.
+    { frameTurns: 1, displayTurns: 1, tap: { x: 0.25, y: 0.5 }, expected: { x: 0.25, y: 0.5 } },
+  ])(
+    "maps a scrcpy tap from a frame turned $frameTurns to a display turned $displayTurns",
+    async ({ frameTurns, displayTurns, tap, expected }) => {
+      const { session, packets } = await startScrcpyTurnSession(frameTurns, () => displayTurns);
+      try {
+        await session.controls.enqueue({ type: "tap", ...tap }, { width: 1, height: 1 }).completion;
+        const screen = displayTurns % 2 === 0 ? { width: 4, height: 6 } : { width: 6, height: 4 };
+        expect(packets).toEqual(
+          compileGesture({ type: "tap", ...expected }, screen).steps.map((step) => step.packet),
+        );
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
+  test("reads the display rotation once per scrcpy touch sequence", async () => {
+    let displayTurns = 0;
+    const { session, packets, rotationReads } = await startScrcpyTurnSession(1, () => displayTurns);
+    try {
+      const send = (action: "down" | "move" | "up", pointerId = 0) =>
+        session.controls.enqueue(
+          { type: "touch", action, x: 0.25, y: 0.5, pointerId },
+          { width: 1, height: 1 },
+        ).completion;
+      await send("down");
+      // A turn mid-sequence must not split one gesture across two coordinate spaces.
+      displayTurns = 1;
+      await send("move");
+      await send("down", 1);
+      await send("up", 1);
+      await send("up");
+      expect(rotationReads()).toBe(1);
+      // The frame turned 1 puts the panel point (0.5, 0.25) under (0.25, 0.5).
+      const sequence = { type: "touch", action: "down", x: 0.5, y: 0.25 } as const;
+      expect(packets[0]).toEqual(
+        compileGesture(sequence, { width: 4, height: 6 }).steps[0]!.packet,
+      );
+
+      await send("down");
+      // A pointer that goes down again starts a new sequence even without its `up`.
+      await send("down");
+      expect(rotationReads()).toBe(3);
+    } finally {
+      await session.close();
+    }
   });
 
   test("starts, routes hardware controls through gRPC keys, and closes resources", async () => {
