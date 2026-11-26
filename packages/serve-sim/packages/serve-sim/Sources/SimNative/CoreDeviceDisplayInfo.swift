@@ -24,16 +24,21 @@ enum CoreDeviceDisplayInfo {
         try await device.displayInfo(result)
         defer { SSCoreDeviceDestroyValue(result, infoMetadata) }
 
+        let type = unsafeBitCast(displayMetadata, to: Any.Type.self)
+        return states(from: result, displayType: type)
+    }
+
+    static func states(from result: UnsafeMutableRawPointer, displayType: Any.Type) -> [CoreDeviceDisplayState] {
         // Opening the actual runtime type lets Swift traverse and release
         // Array<Display> using its real stride and value witnesses.
         func readDisplays<T>(_: T.Type) -> [CoreDeviceDisplayState] {
             guard let array = SSCoreDeviceDisplays(result) else { return [] }
-            let values = unsafeBitCast(array, to: [T].self)
+            let values = takeOwnedValue(array, as: [T].self)
             return values.map { value in
                 var value = value
                 return withUnsafeMutablePointer(to: &value) { pointer in
                     let rawOrientation = SSCoreDeviceDisplayOrientation(pointer)
-                    let rotation = unsafeBitCast(rawOrientation, to: String.self)
+                    let rotation = takeOwnedValue(rawOrientation, as: String.self)
                     return CoreDeviceDisplayState(
                         screenID: SSCoreDeviceDisplayID(pointer),
                         isActive: SSCoreDeviceDisplayActive(pointer) == 1,
@@ -42,8 +47,17 @@ enum CoreDeviceDisplayInfo {
                 }
             }
         }
-        let type = unsafeBitCast(displayMetadata, to: Any.Type.self)
-        return _openExistential(type, do: readDisplays)
+        return _openExistential(displayType, do: readDisplays)
+    }
+
+    // The C shim returns the bits of an owned Swift getter result. Move the value
+    // into ARC once so its destruction balances the retain performed by the getter.
+    private static func takeOwnedValue<Bits: BitwiseCopyable, Value>(_ bits: Bits, as: Value.Type) -> Value {
+        precondition(MemoryLayout<Bits>.size == MemoryLayout<Value>.size)
+        return withUnsafeTemporaryAllocation(of: Value.self, capacity: 1) { storage in
+            withUnsafeBytes(of: bits) { UnsafeMutableRawBufferPointer(storage).copyMemory(from: $0) }
+            return storage.baseAddress!.move()
+        }
     }
 }
 
