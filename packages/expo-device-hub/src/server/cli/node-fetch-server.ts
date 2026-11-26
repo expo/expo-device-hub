@@ -120,6 +120,12 @@ export function toUpgradeRequest(request: IncomingMessage, route: string): Reque
 }
 
 export function writeFetchResponse(response: Response, res: ServerResponse): void {
+  // The client may have disconnected while the route was preparing its response.
+  // Its close event has already fired, so release the producer before attaching a pipe.
+  if (res.destroyed) {
+    void response.body?.cancel().catch(() => {});
+    return;
+  }
   res.statusCode = response.status;
   response.headers.forEach((value, name) => res.setHeader(name, value));
   if (!response.body) {

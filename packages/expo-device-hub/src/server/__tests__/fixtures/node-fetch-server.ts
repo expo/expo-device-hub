@@ -160,3 +160,45 @@ for (const [path, status, body] of [
     },
   );
 }
+
+for (const disconnect of ["before", "after"] as const) {
+  test(
+    `a disconnect ${disconnect} response handoff cancels the producer`,
+    { timeout: 2000 },
+    async (t) => {
+      const received = Promise.withResolvers<void>();
+      const cancelled = Promise.withResolvers<void>();
+      const streamingServer = createServer(async (_req, res) => {
+        const closed = once(res, "close");
+        received.resolve();
+        if (disconnect === "before") await closed;
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([1]));
+          },
+          cancel() {
+            cancelled.resolve();
+          },
+        });
+        writeFetchResponse(new Response(stream), res);
+      });
+      t.after(() => {
+        streamingServer.closeAllConnections();
+        streamingServer.close();
+      });
+      streamingServer.listen(0, "127.0.0.1");
+      await once(streamingServer, "listening");
+      const client = request({
+        host: "127.0.0.1",
+        port: (streamingServer.address() as AddressInfo).port,
+        agent: false,
+      });
+      client.on("error", () => {});
+      const ready = disconnect === "before" ? received.promise : once(client, "response");
+      client.end();
+      await ready;
+      client.destroy();
+      await cancelled.promise;
+    },
+  );
+}
