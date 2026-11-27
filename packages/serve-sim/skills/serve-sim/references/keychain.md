@@ -64,8 +64,8 @@ service is the app's bundle ID, so pass that as the key for an app that calls
 not supported.
 
 `keychain-swift` matches the account alone, as KeychainSwift does: `set` and `delete` remove that
-account in every service, also items that other libraries stored. `list` prints the keys of items
-without a service whose account starts with the prefix. Bool values are not supported.
+account in every service for non-synchronizable items, including ones stored by other libraries.
+`list` shows nonempty keys in the selected prefix for items without a service. Bool values are not supported.
 
 ## Errors
 
