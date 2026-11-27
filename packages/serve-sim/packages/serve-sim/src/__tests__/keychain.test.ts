@@ -5,6 +5,7 @@ import {
   keychainDeleteOperations,
   keychainKeys,
   keychainSetOperations,
+  listKeychainKeys,
 } from "../keychain";
 import { parseKeychainEntries } from "../keychain-cli";
 
@@ -148,4 +149,18 @@ describe("parseKeychainEntries", () => {
     expect(() => parseKeychainEntries([], "not json")).toThrow("JSON object of string");
     expect(() => parseKeychainEntries([], null)).toThrow("Pass key=value pairs");
   });
+});
+
+test("rejects an explicitly empty access group for set, delete, and list", async () => {
+  const options = { accessGroup: "" };
+  const format = "expo-secure-store";
+  expect(() => keychainSetOperations(format, [["token", "test"]], options)).toThrow(
+    "An access group cannot be empty",
+  );
+  expect(() => keychainDeleteOperations(format, ["token"], options)).toThrow(
+    "An access group cannot be empty",
+  );
+  await expect(
+    listKeychainKeys({ format, options, udid: "device", bundleId: "com.example.app" }),
+  ).rejects.toThrow("An access group cannot be empty");
 });

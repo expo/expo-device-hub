@@ -106,6 +106,7 @@ function assertKeychainRequest(
   options: KeychainFormatOptions,
 ): void {
   const definition = FORMATS[format];
+  if (options.accessGroup === "") throw new Error("An access group cannot be empty.");
   if (options.service === "") throw new Error("A service cannot be empty.");
   if (definition.service === "required" && options.service === undefined) {
     throw new Error(`The ${format} format needs a service.`);
