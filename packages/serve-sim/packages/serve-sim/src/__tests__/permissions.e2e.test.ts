@@ -179,7 +179,7 @@ describe.skipIf(!ready)("service-backed permissions (real Simulator)", () => {
         "data/Library/BulletinBoard/VersionedSectionInfo.plist",
       );
       const key = `sectionInfo.${BUNDLE.replaceAll(".", "\\.")}`;
-      function savedAllowsNotifications() {
+      function savedAuthorizationStatus() {
         const data = execFileSync("/usr/bin/plutil", ["-extract", key, "raw", "-o", "-", store], {
           encoding: "utf8",
           timeout: 5000,
@@ -193,18 +193,19 @@ describe.skipIf(!ready)("service-backed permissions (real Simulator)", () => {
             timeout: 5000,
           },
         );
-        return /<key>allowsNotifications<\/key>\s*<true\/>/.test(archive);
+        const status = archive.match(/<key>authorizationStatus<\/key>\s*<integer>(\d+)<\/integer>/);
+        return status ? Number(status[1]) : null;
       }
 
       cli("grant", "notifications", BUNDLE);
-      await eventually(() => savedAllowsNotifications(), "BulletinBoard saved the grant");
+      await eventually(() => savedAuthorizationStatus() === 2, "BulletinBoard saved the grant");
       try {
         execFileSync("/usr/bin/chflags", ["uchg", store], { timeout: 5000 });
         const flags = execFileSync("/usr/bin/stat", ["-f", "%Sf", store], { encoding: "utf8" });
         expect(flags.trim().split(",")).toContain("uchg");
         cli("revoke", "notifications", BUNDLE);
         expect(list().notifications.authorizationStatus).toBe(1);
-        await eventually(() => !savedAllowsNotifications(), "BulletinBoard saved the denial");
+        await eventually(() => savedAuthorizationStatus() === 1, "BulletinBoard saved the denial");
       } finally {
         execFileSync("/usr/bin/chflags", ["nouchg", store], { timeout: 5000 });
         cli("grant", "notifications", BUNDLE);
