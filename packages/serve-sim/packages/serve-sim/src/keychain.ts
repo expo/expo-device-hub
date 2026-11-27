@@ -10,15 +10,20 @@ import {
 // errSec* values from Security/SecBase.h.
 const SUCCESS = 0;
 const NOT_FOUND = -25300;
+const INVALID_ATTRIBUTES = -50;
 const STATUS_MESSAGES: Record<number, string> = {
   [-25299]: "an item with these attributes already exists",
   [NOT_FOUND]: "not found",
   [-34018]:
     "the app has no keychain entitlement or may not use this access group; build it with Xcode or EAS",
-  [-50]: "invalid attributes",
+  [INVALID_ATTRIBUTES]: "invalid attributes",
 };
 
-export function describeKeychainStatus(status: number): string {
+export function describeKeychainStatus(status: number, error?: string): string {
+  // Recognize the helper's ambiguity result without displaying app-provided error text.
+  if (status === INVALID_ATTRIBUTES && error === "select an accessGroup for this item") {
+    return "multiple access groups match this item. Specify --access-group in the CLI or accessGroup in Controls";
+  }
   return status === SUCCESS ? "ok" : (STATUS_MESSAGES[status] ?? `keychain error ${status}`);
 }
 
@@ -153,10 +158,10 @@ export function keychainDeleteOperations(
 }
 
 /** The first error, as a copy that stays is still read; else deleted when any copy went away. */
-export function deleteStatus(results: KeychainResult[]): number {
+export function deleteResult(results: KeychainResult[]): KeychainResult {
   const failure = results.find(({ status }) => status !== SUCCESS && status !== NOT_FOUND);
-  if (failure) return failure.status;
-  return results.some(({ status }) => status === SUCCESS) ? SUCCESS : NOT_FOUND;
+  if (failure) return failure;
+  return { status: results.some(({ status }) => status === SUCCESS) ? SUCCESS : NOT_FOUND };
 }
 
 /** The keys a format stored, from a `list` result, sorted and without duplicates. */
@@ -189,9 +194,13 @@ export type KeychainWriteSummary =
   | { applied: true; keys: KeychainKeyResult[] }
   | { applied: false };
 
-function keyResult(verb: "set" | "delete", key: string, status: number): KeychainKeyResult {
+function keyResult(
+  verb: "set" | "delete",
+  key: string,
+  { status, error }: KeychainResult,
+): KeychainKeyResult {
   const ok = status === SUCCESS || (verb === "delete" && status === NOT_FOUND);
-  return { key, status, ok, message: describeKeychainStatus(status) };
+  return { key, status, ok, message: describeKeychainStatus(status, error) };
 }
 
 export async function setKeychainValues(
@@ -207,7 +216,7 @@ export async function setKeychainValues(
   if (!outcome.applied) return { applied: false };
   return {
     applied: true,
-    keys: entries.map(([key], index) => keyResult("set", key, outcome.results[index]!.status)),
+    keys: entries.map(([key], index) => keyResult("set", key, outcome.results[index]!)),
   };
 }
 
@@ -227,7 +236,7 @@ export async function deleteKeychainValues(
   return {
     applied: true,
     keys: keys.map((key, index) =>
-      keyResult("delete", key, deleteStatus(results.splice(0, groups[index]!.length))),
+      keyResult("delete", key, deleteResult(results.splice(0, groups[index]!.length))),
     ),
   };
 }

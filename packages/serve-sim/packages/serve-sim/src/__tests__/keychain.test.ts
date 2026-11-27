@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
-  deleteStatus,
+  deleteResult,
   describeKeychainStatus,
   keychainDeleteOperations,
   keychainKeys,
@@ -113,10 +113,10 @@ describe("generic-password format", () => {
 });
 
 test("a delete succeeds when any alias went away and none failed", () => {
-  expect(deleteStatus([{ status: -25300 }, { status: 0 }, { status: -25300 }])).toBe(0);
-  expect(deleteStatus([{ status: -25300 }, { status: -25300 }])).toBe(-25300);
-  expect(deleteStatus([{ status: -25300 }, { status: -34018 }])).toBe(-34018);
-  expect(deleteStatus([{ status: 0 }, { status: -34018 }])).toBe(-34018);
+  expect(deleteResult([{ status: -25300 }, { status: 0 }, { status: -25300 }]).status).toBe(0);
+  expect(deleteResult([{ status: -25300 }, { status: -25300 }]).status).toBe(-25300);
+  expect(deleteResult([{ status: -25300 }, { status: -34018 }]).status).toBe(-34018);
+  expect(deleteResult([{ status: 0 }, { status: -34018 }]).status).toBe(-34018);
 });
 
 test("statuses read as words", () => {

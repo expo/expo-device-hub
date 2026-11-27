@@ -19,6 +19,7 @@ Shared options: `--format <expo-secure-store|generic-password>` (default `expo-s
 - `--from-file` reads a JSON object of string keys and values; `-` reads stdin. Prefer it to
   `key=value` arguments, which other processes can see.
 - `list` prints keys only. Values never leave the app.
+- If a write or delete matches in multiple access groups, pass `--access-group` with the group the app uses for that item.
 - With `--json`, `set` and `delete` print `{udid, bundleId, applied, keys: [{key, status, ok, message}]}`,
   or `{udid, bundleId, applied: false}` when the app did not answer and the change waits for its
   next start.
