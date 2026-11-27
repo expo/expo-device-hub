@@ -931,9 +931,16 @@ async function runProcedureAsync(
     }
     case "keychain.list": {
       const p = parseParams(action, raw);
-      return runKeychainAction(p.udid, prepareKeychain, async () =>
-        ok(JSON.stringify({ keys: await listKeychainKeys(keychainTarget(p)) })),
-      );
+      return runKeychainAction(p.udid, prepareKeychain, async () => {
+        const keys = await listKeychainKeys(keychainTarget(p));
+        if (keys === null) {
+          throw new Error(
+            `${p.bundleId} did not answer. Open it in a serve-sim session and retry; ` +
+              "an app opened before the session started needs a restart.",
+          );
+        }
+        return ok(JSON.stringify({ keys }));
+      });
     }
     case "app.file.upload":
       return runAppFileAction("upload", parseParams(action, raw));

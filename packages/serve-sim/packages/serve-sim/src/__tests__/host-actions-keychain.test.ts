@@ -81,10 +81,12 @@ describe("keychain host actions", () => {
     const list = spyOn(keychain, "listKeychainKeys").mockResolvedValueOnce(["a", "b"]);
     restores.push(() => list.mockRestore());
     expect(JSON.parse((await run("keychain.list")).stdout)).toEqual({ keys: ["a", "b"] });
-    list.mockRejectedValueOnce(new Error("com.example.app did not answer."));
+    list.mockResolvedValueOnce([]).mockResolvedValueOnce(null);
+    expect(JSON.parse((await run("keychain.list")).stdout)).toEqual({ keys: [] });
     const silent = await run("keychain.list");
     expect(silent.exitCode).toBe(1);
     expect(silent.stderr).toContain("did not answer");
+    expect(silent.stderr).toContain("Open it in a serve-sim session");
   });
 
   test("reports service errors on stderr", async () => {

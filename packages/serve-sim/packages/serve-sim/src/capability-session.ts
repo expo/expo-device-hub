@@ -103,7 +103,11 @@ export function createCapabilitySession(
     entry.work = (async () => {
       await earlier;
       if (enabled && !rebooted && (await isCapabilityArmed(udid, definition.name))) return;
-      await configureCapability(udid, definition, { enabled, relaunch: false });
+      await configureCapability(udid, definition, {
+        enabled,
+        relaunch: false,
+        preserveForeignOwner: true,
+      });
       if (enabled) {
         initializedHere.add(udid);
         releaseOnExit(udid);
@@ -152,6 +156,7 @@ export function createCapabilitySession(
             await configureCapability(udid, definition, {
               enabled: false,
               relaunch: false,
+              preserveForeignOwner: true,
             });
           }
           const remaining = Object.values(readLaunchState(udid)?.capabilities ?? {});

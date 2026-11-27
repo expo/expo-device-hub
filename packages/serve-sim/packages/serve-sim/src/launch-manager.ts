@@ -605,6 +605,8 @@ type ConfigureOptions = {
   bundleId?: string | null;
   options?: Record<string, string>;
   enabled: boolean;
+  /** Share an existing session's setup without replacing or removing its registration. */
+  preserveForeignOwner?: boolean;
 } & EnableOptions;
 
 /**
@@ -652,10 +654,22 @@ export async function configureCapability(
     enabled,
     relaunch = true,
     ownerPid = process.pid,
+    preserveForeignOwner = false,
   }: ConfigureOptions,
 ): Promise<void> {
   const context: CapabilityContext = { udid, bundleId, options, enabled };
   await withLaunchStateLock(udid, async () => {
+    if (preserveForeignOwner) {
+      const state = readLaunchState(udid);
+      const owner = state?.capabilities[definition.name]?.ownerPid;
+      if (state && owner != null && owner !== ownerPid) {
+        // The original owner keeps its record, including when a reboot cleared launchd.
+        if (enabled && !(await isCapabilityArmed(udid, definition.name))) {
+          await publishLaunchState(udid, state);
+        }
+        return;
+      }
+    }
     if (!enabled) {
       if (!hasForeignCapabilityOwner(udid, definition, ownerPid)) {
         await disableCapabilityUnlocked(udid, bundleId, definition.name, { relaunch: false });

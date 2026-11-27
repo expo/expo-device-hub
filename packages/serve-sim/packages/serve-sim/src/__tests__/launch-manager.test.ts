@@ -8,6 +8,7 @@ import {
   MAX_CONFIG_BYTES,
   childLaunchEnv,
   clearLaunchState,
+  configureCapability,
   formatCapabilityConfig,
   isCapabilityEnabled,
   listCapabilities,
@@ -24,6 +25,7 @@ import {
   isRunning,
 } from "../launch-manager";
 import { registerCapability, clearRegisteredCapabilities } from "../capabilities";
+import { withLaunchStateLock } from "../launch-state-lock";
 import { launchAppAsync } from "../launch-app";
 import { stateDir } from "../state";
 import { useTempStateDir, withShimsAsync } from "./helpers";
@@ -357,6 +359,40 @@ describe("releaseLaunchState", () => {
 });
 
 describe("session cleanup", () => {
+  test("a waiting session disable preserves a different process's published capability", async () => {
+    const definition = {
+      name: "probe",
+      scope: "userApps" as const,
+      defaultEnabled: true,
+      setEnabled: async () => {
+        throw new Error("foreign capability must not be stopped");
+      },
+    };
+    let disable: Promise<void> | undefined;
+    await withLaunchStateLock(UDID, async () => {
+      disable = configureCapability(UDID, definition, {
+        enabled: false,
+        relaunch: false,
+        preserveForeignOwner: true,
+      });
+      writeRawState(
+        JSON.stringify({
+          launchArgs: [],
+          capabilities: {
+            probe: {
+              name: "probe",
+              scope: "userApps",
+              dylib: "/probe.dylib",
+              ownerPid: process.ppid,
+            },
+          },
+        }),
+      );
+    });
+    await disable;
+    expect(readLaunchState(UDID)?.capabilities.probe?.ownerPid).toBe(process.ppid);
+  });
+
   test("keeps another armed session even with no capabilities", () => {
     writeRawState(
       JSON.stringify({
