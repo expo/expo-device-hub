@@ -1,6 +1,6 @@
-import { forwardRef, useState } from "react";
+import { forwardRef } from "react";
 
-import { bg, border, font, isFocusVisible, radius, text, textSize } from "../primitives";
+import { fieldControlProps, font, text } from "../primitives";
 
 /** A multi-line monospace field for text sent to or read from the device. */
 export const SidebarTextArea = forwardRef<
@@ -19,7 +19,7 @@ export const SidebarTextArea = forwardRef<
   { ariaLabel, placeholder, value, readOnly = false, disabled = false, onChange, onSubmit },
   ref,
 ) {
-  const [focused, setFocused] = useState(false);
+  const field = fieldControlProps({ disabled, interactive: false });
 
   return (
     <textarea
@@ -33,23 +33,18 @@ export const SidebarTextArea = forwardRef<
       autoComplete="off"
       spellCheck={false}
       onChange={(event) => onChange?.(event.currentTarget.value)}
-      onFocus={(event) => setFocused(isFocusVisible(event))}
-      onBlur={() => setFocused(false)}
       onKeyDown={(event) => {
         if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) onSubmit?.();
       }}
+      className={field.className}
       style={{
-        ...textSize.sm,
+        ...field.style,
         display: "block",
         width: "100%",
         boxSizing: "border-box",
         padding: "6px 10px",
-        border: `1px solid ${border.default}`,
-        borderRadius: radius.lg,
-        outline: "none",
-        backgroundColor: bg.element,
-        boxShadow: focused ? `0 0 0 2px ${border.secondary}` : "none",
-        color: text.default,
+        height: "auto",
+        cursor: disabled ? "default" : "text",
         caretColor: text.default,
         fontFamily: font.mono,
         resize: "vertical",

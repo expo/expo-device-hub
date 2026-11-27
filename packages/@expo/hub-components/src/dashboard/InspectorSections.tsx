@@ -186,8 +186,9 @@ export function InspectorSections({
       {section("permissions", (client) => (
         <PermissionsSection client={client} />
       ))}
-      {client?.capabilities.keychain && (
-        <KeychainSection key={`keychain:${device?.id}`} client={client} />
+      {/* Keychain access can be revoked during a session. Use the current client report. */}
+      {liveClient?.capabilities.keychain && (
+        <KeychainSection key={`keychain:${device?.id}`} client={liveClient} />
       )}
       {section("clipboard", (client) => (
         <ClipboardSection

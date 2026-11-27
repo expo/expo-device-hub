@@ -130,6 +130,24 @@ const rowLabels = () =>
     .findAll((node) => typeof node.type === "function" && node.type.name === "SidebarRow")
     .map((node) => node.props.label as string);
 
+test("hides the Keychain inspector when the current device disables it", async () => {
+  const access = {
+    ...STREAMING,
+    capabilities: { ...STREAMING.capabilities, keychain: true },
+    listKeychainKeys: async () => [],
+    setKeychainValues: async () => ({ applied: false }) as const,
+    deleteKeychainValues: async () => ({ applied: false }) as const,
+  };
+  await act(async () => {
+    renderer = create(<InspectorSections client={access} device={IPHONE} />);
+  });
+  const visible = () => renderer!.root.findAllByProps({ "aria-label": "Keychain" }).length > 0;
+  expect(visible()).toBe(true);
+  const off = { ...access, capabilities: { ...access.capabilities, keychain: false } };
+  await act(async () => renderer!.update(<InspectorSections client={off} device={IPHONE} />));
+  expect(visible()).toBe(false);
+});
+
 describe("useSteadyClient", () => {
   function Probe({ client, device }: { client: DeviceClient; device: Device }) {
     const steady = useSteadyClient(client, device);
