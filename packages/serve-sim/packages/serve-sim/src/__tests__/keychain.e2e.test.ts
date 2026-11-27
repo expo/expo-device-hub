@@ -6,25 +6,19 @@ import { execFileSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 
-import { capabilityLoaderPath, enableCapabilities, releaseSessionSync } from "../launch-manager";
-import {
-  KEYCHAIN_CAPABILITY,
-  locateKeychainDylib,
-  runKeychainOperations,
-  type KeychainOperation,
-} from "../sim-keychain";
+import { releaseSessionSync } from "../launch-manager";
+import { runKeychainOperations, type KeychainOperation } from "../sim-keychain";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
-import { useTempStateDir } from "./helpers";
+import { freePortAsync, useTempStateDir } from "./helpers";
 
 const PKG_DIR = join(import.meta.dir, "../..");
+const CLI = join(PKG_DIR, "dist/serve-sim.js");
 const FIXTURE = join(PKG_DIR, "dist/capability-loader/ServeSimLaunchFixture.app");
 const APP = "dev.expo.serve-sim.launch-fixture";
 const KEY = "accessToken";
 
 const udid = e2eDevice();
-const dylib = locateKeychainDylib();
-const ready =
-  udid !== null && existsSync(FIXTURE) && dylib !== null && existsSync(capabilityLoaderPath());
+const ready = udid !== null && existsSync(FIXTURE) && existsSync(CLI);
 requireE2E("keychain round trip", ready);
 
 function simctl(args: string[]): string {
@@ -94,19 +88,28 @@ const describeOrSkip = ready ? describe : describe.skip;
 
 describeOrSkip("keychain round trip", () => {
   let tempState: ReturnType<typeof useTempStateDir>;
+  let server: ReturnType<typeof Bun.spawn>;
 
   beforeAll(async () => {
     tempState = useTempStateDir();
+    expect(readInsert(udid!)).toBe("");
     try {
       simctl(["uninstall", udid!, APP]);
     } catch {}
     simctl(["install", udid!, FIXTURE]);
-    await enableCapabilities(
-      udid!,
-      null,
-      [{ name: KEYCHAIN_CAPABILITY, dylib: dylib!, scope: "userApps", loadDelayMs: 0 }],
-      { relaunch: false },
-    );
+    const port = await freePortAsync();
+    // The built npm entry point must arm the real helper without a capability flag.
+    server = Bun.spawn(["node", CLI, udid!, "--port", String(port), "--quiet"], {
+      env: { ...process.env },
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    const deadline = Date.now() + 60_000;
+    while (server.exitCode === null && server.signalCode === null && Date.now() < deadline) {
+      if (readInsert(udid!)) return;
+      await Bun.sleep(250);
+    }
+    throw new Error("Built serve-sim did not arm its capability loader");
   }, 120_000);
 
   afterAll(async () => {
@@ -115,7 +118,18 @@ describeOrSkip("keychain round trip", () => {
       await runKeychainOperations(udid!, APP, [{ op: "delete", ...ITEM }], { timeoutMs: 10_000 });
     } finally {
       terminate();
-      releaseSessionSync(udid!, process.pid, () => {});
+      if (server) {
+        server.kill("SIGTERM");
+        const deadline = Date.now() + 15_000;
+        while (server.exitCode === null && server.signalCode === null && Date.now() < deadline) {
+          await Bun.sleep(200);
+        }
+        if (server.exitCode === null && server.signalCode === null) {
+          server.kill("SIGKILL");
+          await server.exited;
+          releaseSessionSync(udid!, server.pid, () => {});
+        }
+      }
       try {
         simctl(["uninstall", udid!, APP]);
       } catch {}
@@ -125,7 +139,7 @@ describeOrSkip("keychain round trip", () => {
     expect(readInsert(udid!)).toBe("");
   }, 120_000);
 
-  test("a running app reads the item serve-sim writes", async () => {
+  test("the built CLI loads the Keychain helper by default and a running app reads the write", async () => {
     terminate();
     launch();
     const value = `live-${Date.now()}`;
@@ -290,5 +304,46 @@ describeOrSkip("keychain round trip", () => {
     });
     expect(outcome).toEqual({ applied: true, results: [{ status: 0 }] });
     await waitForLastSeen("status=-25300");
+  }, 30_000);
+
+  test("rejects ambiguous writes and deletes until an access group is selected", async () => {
+    const item = { ...ITEM, service: "group-scope-fixture" };
+    const groups = [
+      "SERVESIMFIX.dev.expo.serve-sim.launch-fixture",
+      "SERVESIMFIX.dev.expo.serve-sim.shared-fixture",
+    ];
+    for (const accessGroup of groups) {
+      expect(
+        await runKeychainOperations(udid!, APP, [{ ...set("before"), ...item, accessGroup }]),
+      ).toEqual({ applied: true, results: [{ status: 0 }] });
+    }
+    try {
+      for (const operation of [
+        { ...set("ambiguous"), ...item },
+        { op: "delete", ...item },
+      ] as const) {
+        const outcome = await runKeychainOperations(udid!, APP, [operation]);
+        expect(outcome).toMatchObject({
+          applied: true,
+          results: [{ status: -50, error: "select an accessGroup for this item" }],
+        });
+      }
+      const outcome = await runKeychainOperations(udid!, APP, [
+        { op: "list", service: item.service },
+      ]);
+      expect(
+        outcome.applied && outcome.results[0]?.items?.map((entry) => entry.accessGroup).sort(),
+      ).toEqual(groups);
+    } finally {
+      await runKeychainOperations(
+        udid!,
+        APP,
+        groups.map((accessGroup) => ({
+          op: "delete",
+          ...item,
+          accessGroup,
+        })),
+      );
+    }
   }, 30_000);
 });

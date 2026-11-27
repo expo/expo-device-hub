@@ -5,5 +5,10 @@
 	<!-- Xcode embeds this for simulator builds. Without it the app has no keychain access group. -->
 	<key>application-identifier</key>
 	<string>SERVESIMFIX.dev.expo.serve-sim.launch-fixture</string>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>SERVESIMFIX.dev.expo.serve-sim.launch-fixture</string>
+		<string>SERVESIMFIX.dev.expo.serve-sim.shared-fixture</string>
+	</array>
 </dict>
 </plist>

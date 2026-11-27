@@ -74,11 +74,47 @@ static NSMutableDictionary *itemQuery(NSDictionary *operation, NSString **error)
   return query;
 }
 
+static NSDictionary *result(OSStatus status, NSString *error) {
+  return error == nil ? @{@"status" : @(status)} : @{@"status" : @(status), @"error" : error};
+}
+
+// A query without an access group can match across all entitled groups. Pin a
+// mutation to the sole matching group, or ask the caller to select one.
+static OSStatus scopeMutation(NSMutableDictionary *query, NSString **error) {
+  id groupKey = (__bridge id)kSecAttrAccessGroup;
+  if (query[groupKey] != nil) return errSecSuccess;
+  NSMutableDictionary *lookup = [query mutableCopy];
+  lookup[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitAll;
+  lookup[(__bridge id)kSecReturnAttributes] = @YES;
+  CFTypeRef found = NULL;
+  OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)lookup, &found);
+  if (status != errSecSuccess) return status;
+  NSArray *matches = (__bridge_transfer NSArray *)found;
+  NSString *group = nil;
+  for (NSDictionary *match in matches) {
+    NSString *nextGroup = match[groupKey];
+    if (![nextGroup isKindOfClass:NSString.class] || nextGroup.length == 0) {
+      *error = @"keychain did not report an access group";
+      return errSecParam;
+    }
+    if (group != nil && ![group isEqualToString:nextGroup]) {
+      *error = @"select an accessGroup for this item";
+      return errSecParam;
+    }
+    group = nextGroup;
+  }
+  if (group == nil) return errSecItemNotFound;
+  query[groupKey] = group;
+  return errSecSuccess;
+}
+
 static NSDictionary *deleteItem(NSDictionary *operation) {
   NSString *error = nil;
   NSMutableDictionary *query = itemQuery(operation, &error);
   if (query == nil) return @{@"status" : @(errSecParam), @"error" : error};
-  return @{@"status" : @(SecItemDelete((__bridge CFDictionaryRef)query))};
+  OSStatus status = scopeMutation(query, &error);
+  if (status == errSecSuccess) status = SecItemDelete((__bridge CFDictionaryRef)query);
+  return result(status, error);
 }
 
 static NSDictionary *setItem(NSDictionary *operation) {
@@ -118,9 +154,15 @@ static NSDictionary *setItem(NSDictionary *operation) {
         && (group == nil || otherGroup == nil || [group isEqual:otherGroup])) {
       return @{@"status" : @(errSecParam), @"error" : @"replacement can match the item being set"};
     }
+    OSStatus status = scopeMutation(replacement, &error);
+    if (status == errSecItemNotFound) continue;
+    if (status != errSecSuccess) return result(status, error);
     [replacements addObject:replacement];
   }
-  OSStatus status = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)attributes);
+  OSStatus status = scopeMutation(query, &error);
+  if (status == errSecSuccess) {
+    status = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)attributes);
+  }
   if (status == errSecItemNotFound) {
     [query addEntriesFromDictionary:attributes];
     status = SecItemAdd((__bridge CFDictionaryRef)query, NULL);
@@ -132,7 +174,7 @@ static NSDictionary *setItem(NSDictionary *operation) {
     OSStatus removed = SecItemDelete((__bridge CFDictionaryRef)replacement);
     if (removed != errSecItemNotFound) status = removed;
   }
-  return @{@"status" : @(status)};
+  return result(status, error);
 }
 
 
