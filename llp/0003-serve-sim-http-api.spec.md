@@ -1050,7 +1050,9 @@ serve-emu's POST screenshot endpoint also takes serve-sim's optional JSON body
 `{"automation": true}` (at most 1 KiB). An empty body or `false` keeps the
 manual behavior. Invalid JSON, a JSON value that is not an object, unknown
 fields, and a non-boolean `automation` return 400; a larger body returns 413.
-Both are checked before the image options and before the capture. An automated
+The router validates the body after authentication and origin checks, before
+resolving or starting a device, and passes the parsed option to the app.
+Standalone requests validate before the image options and capture too. An automated
 capture returns the same image, metadata header, and timings, but it does not
 save the session artifact, and `X-Expo-Screenshot-Artifact` (and the base64
 JSON `artifact`) report `disabled`. serve-emu and the Hub record no screenshot
@@ -1059,7 +1061,8 @@ skips. Unlike serve-sim, serve-emu does not ask for a separate token for
 automation: when a session token is set, every route already requires it. The
 EAS worker sets `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` for a session and uploads
 the files saved there as session artifacts, so a periodic preview must not save
-one. [observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
+one. [observed: `packages/serve-emu/packages/serve-emu/src/middleware.ts`
+`routeRequest`, `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
 `packages/serve-emu/packages/serve-emu/src/screenshot-artifacts.ts`; no
 screenshot event log in serve-emu or `packages/expo-device-hub/src/server`;
 eas-cli `packages/build-tools/src/steps/utils/deviceSessionHost.ts` and

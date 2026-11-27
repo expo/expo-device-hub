@@ -24,6 +24,8 @@ import {
 /** serve-sim's route takes the same body under the same limit. */
 export const MAX_SCREENSHOT_REQUEST_BYTES = 1024;
 
+export type ParsedScreenshotRequest = { automation: boolean };
+
 /**
  * Read the optional `{automation}` JSON body before anything is captured. An empty body means a
  * manual capture. Other fields, other JSON values, and a non-boolean `automation` are rejected,
@@ -31,7 +33,7 @@ export const MAX_SCREENSHOT_REQUEST_BYTES = 1024;
  */
 export async function readScreenshotRequest(
   request: Request,
-): Promise<{ automation: boolean } | Response> {
+): Promise<ParsedScreenshotRequest | Response> {
   let body: Uint8Array;
   try {
     body = await readBodyLimited(request, MAX_SCREENSHOT_REQUEST_BYTES);
@@ -125,15 +127,11 @@ export async function captureScreenshot(
 export async function screenshotResponse(
   capture: () => Promise<{ png: Uint8Array; metadata?: ScreenshotMetadata }>,
   url: URL,
-  request?: Request,
+  request?: Request | ParsedScreenshotRequest,
 ): Promise<Response> {
   const started = performance.now();
-  let automation = false;
-  if (request) {
-    const parsed = await readScreenshotRequest(request);
-    if (parsed instanceof Response) return parsed;
-    automation = parsed.automation;
-  }
+  const parsed = request instanceof Request ? await readScreenshotRequest(request) : request;
+  if (parsed instanceof Response) return parsed;
   const width = url.searchParams.has("maxWidth")
     ? Number(url.searchParams.get("maxWidth"))
     : undefined;
@@ -170,7 +168,7 @@ export async function screenshotResponse(
         : png;
   }
   const encoded = performance.now();
-  const result: ScreenshotArtifactResult = automation
+  const result: ScreenshotArtifactResult = parsed?.automation
     ? { status: "disabled" }
     : await saveScreenshotArtifact(png);
   const saved = performance.now();

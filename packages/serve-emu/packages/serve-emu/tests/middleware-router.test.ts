@@ -912,6 +912,79 @@ describe("createRouter stream mode", () => {
     await idleRouter.stopAll();
   });
 
+  test.each([false, true])(
+    "rejects invalid screenshot bodies before resolving a device (device attached: %s)",
+    async (attached) => {
+      let deviceReads = 0;
+      const state = {
+        devices: attached ? [{ serial: "emulator-5554", state: "device" }] : [],
+        avds: [],
+        running: [],
+        created: [],
+        stopped: [],
+      } satisfies Parameters<typeof routerDependencies>[0];
+      const dependencies = routerDependencies(state);
+      const router = createRouter(
+        {},
+        {
+          ...dependencies,
+          listDevices: async () => {
+            deviceReads++;
+            return state.devices;
+          },
+        },
+      );
+      try {
+        const invalid = await router.handleRequest(post("/api/screenshot", { automation: 1 }));
+        expect(invalid.status).toBe(400);
+        expect(await invalid.json()).toEqual({ ok: false, error: "Invalid screenshot request" });
+
+        const oversized = await router.handleRequest(
+          new Request("http://router.test/api/screenshot", {
+            method: "POST",
+            body: " ".repeat(1_025),
+          }),
+        );
+        expect(oversized.status).toBe(413);
+        expect(await oversized.json()).toEqual({
+          ok: false,
+          error: "Screenshot request is too large",
+        });
+        expect(deviceReads).toBe(0);
+        expect(state.created).toEqual([]);
+      } finally {
+        await router.stopAll();
+      }
+    },
+  );
+
+  test("passes the parsed screenshot body to the selected device app", async () => {
+    const stopped: string[] = [];
+    const router = createRouter(
+      {},
+      {
+        listDevices: async () => [{ serial: "emulator-5554", state: "device" }],
+        createApp: async ({ serial }) => ({
+          ...fakeApp(serial, stopped),
+          handleRequest: async (request, screenshotRequest) => {
+            expect(serial).toBe("emulator-5554");
+            expect(request.bodyUsed).toBe(true);
+            expect(screenshotRequest).toEqual({ automation: true });
+            return new Response(null, { status: 204 });
+          },
+        }),
+      },
+    );
+    try {
+      const response = await router.handleRequest(
+        post("/api/screenshot?device=emulator-5554", { automation: true }),
+      );
+      expect(response.status).toBe(204);
+    } finally {
+      await router.stopAll();
+    }
+  });
+
   test("allows configured browser origins and origin-less agent mutations", async () => {
     const state = {
       devices: [{ serial: "emulator-5554", state: "device" }],
