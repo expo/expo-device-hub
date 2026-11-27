@@ -270,7 +270,7 @@ An older serve-sim without normalized permission readback reports an update erro
 
 The Hub allows 125 seconds for permission replies, covering serve-sim's default
 120-second execution budget. Queue waits or a raised `SERVE_SIM_ACTION_TIMEOUT_MS`
-can exceed it; the standalone preview has no corresponding client deadline.
+can exceed it.
 Lost replies retain pending ownership until a successful ordered readback.
 [observed: `exec-ws.ts`; serve-sim `host-actions-utils.ts`; `useAppPermissions.ts`]
 
