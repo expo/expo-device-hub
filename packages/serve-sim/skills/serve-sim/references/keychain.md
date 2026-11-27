@@ -52,10 +52,9 @@ groups, specify which group to use. `set` writes `:no-auth` and then removes the
 SecureStore's own `setItemAsync` does.
 
 `react-native-keychain` keeps one credential per service, as `setGenericPassword({ service })` does:
-`set` deletes every item in the service before it writes, and `delete` removes them all. Its default
+`set` clears the non-synchronizable items in the service before writing, and `delete` clears those same items. Its default
 service is the app's bundle ID, so pass that as the key for an app that calls
-`getGenericPassword()` without a service. `list` prints every generic-password service the app can
-read, as `getAllGenericPasswordServices` does. Internet credentials (`setInternetCredentials`) are
+`getGenericPassword()` without a service. `list` prints the generic-password services of matching non-synchronizable items. Internet credentials (`setInternetCredentials`) are
 not supported.
 
 ## Errors
