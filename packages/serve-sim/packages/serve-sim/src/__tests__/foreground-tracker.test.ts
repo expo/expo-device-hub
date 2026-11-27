@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "events";
 import type { ChildProcess } from "child_process";
-import { setTimeout as sleep } from "node:timers/promises";
 import {
   createForegroundTrackerCache,
   frontmostAppFromRecentLogs,
@@ -11,6 +10,7 @@ import {
   type ForegroundApp,
   type ForegroundTrackerDeps,
 } from "../foreground-tracker";
+import { runChildSuite } from "./fixtures/run-child-suite";
 import { withShimsAsync } from "./helpers";
 
 test("history lookup keeps the latest app after more than 16 MiB of logs", async () => {
@@ -107,7 +107,7 @@ function bootstrapChunk(bundleId: string, pid: number): Buffer {
 
 function trackerWithFakeStream(
   restartDelayMs = 1000,
-  recoverVisibility: ForegroundTrackerDeps["recoverVisibility"] | null = async () => null,
+  recoverVisibility: ForegroundTrackerDeps["recoverVisibility"] = async () => null,
 ) {
   const children: ReturnType<typeof fakeChild>[] = [];
   const cache = createForegroundTrackerCache({
@@ -117,7 +117,7 @@ function trackerWithFakeStream(
       return child as unknown as ChildProcess;
     },
     frontmostApp: async () => null, // no AX seed in tests; drive foreground purely from the feed
-    recoverVisibility: recoverVisibility ?? undefined,
+    recoverVisibility,
     restartDelayMs,
   });
   return { cache, children };
@@ -444,27 +444,6 @@ describe("createForegroundTrackerCache", () => {
     },
   );
 
-  test("completes a launch that starts in history and bootstraps on the replacement stream", async () => {
-    const app = { bundleId: "dev.expo.B", pid: 22 };
-    await withShimsAsync(
-      { xcrun: `#!/bin/sh\nprintf '%s' '${logChunk(app.bundleId, -1)}'\n` },
-      async () => {
-        const { cache, children } = trackerWithFakeStream(0, null);
-        const seen = Promise.withResolvers<ForegroundApp | null>();
-        const sub = cache.subscribe("UDID", seen.resolve);
-        try {
-          children[0]!.emit("exit");
-          await tick();
-          children[1]!.stdout.emit("data", bootstrapChunk(app.bundleId, app.pid));
-          const timeout = sleep(2000, null, { ref: false });
-          expect(await Promise.race([seen.promise, timeout])).toEqual(app);
-        } finally {
-          sub.unsubscribe();
-        }
-      },
-    );
-  });
-
   test("does not respawn after an intentional stop", async () => {
     const { cache, children } = trackerWithFakeStream(0);
     const sub = cache.subscribe("UDID");
@@ -564,3 +543,11 @@ describe("createForegroundTrackerCache", () => {
     sub.unsubscribe();
   });
 });
+
+test("recovers from a log stream exit in a separate process", async () => {
+  const { exitCode, output } = await runChildSuite("foreground-recovery.child.ts", {
+    timeoutMs: 10_000,
+  });
+  expect(exitCode, output).toBe(0);
+  expect(output).toContain("2 pass");
+}, 15_000);
