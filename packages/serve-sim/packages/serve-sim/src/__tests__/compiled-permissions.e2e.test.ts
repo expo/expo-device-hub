@@ -24,15 +24,17 @@ describe.skipIf(!ready)("compiled permission dispatch", () => {
       stdout: "ignore",
       stderr: Bun.file(stderrFile),
     });
+    const isRunning = () => child.exitCode === null && child.signalCode === null;
     try {
       const stateFile = join(dir, `server-${udid}.json`);
       const deadline = Date.now() + 60_000;
-      while (!existsSync(stateFile) && Date.now() < deadline && child.exitCode === null)
+      while (!existsSync(stateFile) && Date.now() < deadline && isRunning())
         await new Promise((r) => setTimeout(r, 100));
       if (!existsSync(stateFile)) {
         const stderr = readFileSync(stderrFile, "utf8").trim();
-        const reason =
-          child.exitCode === null ? "startup timed out" : `exit code ${child.exitCode}`;
+        let reason = "startup timed out";
+        if (child.signalCode !== null) reason = `terminated by ${child.signalCode}`;
+        else if (child.exitCode !== null) reason = `exit code ${child.exitCode}`;
         throw new Error(
           `Compiled serve-sim did not write its state (${reason}).\n${stderr}`.trim(),
         );
@@ -76,11 +78,13 @@ describe.skipIf(!ready)("compiled permission dispatch", () => {
         notifications: null,
       });
     } finally {
-      child.kill("SIGTERM");
-      await Promise.race([child.exited, new Promise((r) => setTimeout(r, 5000))]);
-      if (child.exitCode === null) {
-        child.kill("SIGKILL");
-        await child.exited;
+      if (isRunning()) {
+        child.kill("SIGTERM");
+        await Promise.race([child.exited, new Promise((r) => setTimeout(r, 5000))]);
+        if (isRunning()) {
+          child.kill("SIGKILL");
+          await child.exited;
+        }
       }
       rmSync(executable, { force: true });
       rmSync(dir, { recursive: true, force: true });
