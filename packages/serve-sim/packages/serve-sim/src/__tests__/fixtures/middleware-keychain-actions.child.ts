@@ -5,7 +5,7 @@ import * as launchManager from "../../launch-manager";
 import { simMiddleware } from "../../middleware";
 import * as simKeychain from "../../sim-keychain";
 import type { UpgradeHandlerWebSocket } from "../../socket/types";
-import { recordState, UDID, useTempStateDir } from "../helpers";
+import { installShims, recordState, UDID, useTempStateDir } from "../helpers";
 
 const OPTIONS = {
   basePath: "/",
@@ -157,6 +157,11 @@ test("unmanaged keychain actions leave setup to the owning process", async () =>
 test("a failed preview setup refuses actions during backoff and recovers after a retry", async () => {
   const state = useTempStateDir();
   const forget = recordState(UDID, process.pid, 3200);
+  const shims = installShims({
+    xcrun: `#!/bin/sh
+printf '%s\\n' '${JSON.stringify({ devices: { runtime: [{ udid: UDID, state: "Booted" }] } })}'
+`,
+  });
   let time = 0;
   let started!: () => void;
   let proceed!: () => void;
@@ -225,6 +230,7 @@ test("a failed preview setup refuses actions during backoff and recovers after a
     await middleware.dispose();
     for (const stub of [configure, armed, enabled, launchState, release, create, dylib, set, log])
       stub.mockRestore();
+    shims.restore();
     forget();
     state.restore();
   }
