@@ -27,7 +27,7 @@ export function createPermissionRequestQueue(clock: ExecClock = SYSTEM_CLOCK) {
     const deadline = kind === "write" ? clock.now() + WRITE_WAIT_TIMEOUT_MS : Infinity;
     const timeoutError = new ExecError(
       "deadline-exceeded",
-      "permission request timed out waiting after 10000ms",
+      `permission request timed out waiting after ${WRITE_WAIT_TIMEOUT_MS}ms`,
     );
     let expired = false;
     let timer: unknown;
