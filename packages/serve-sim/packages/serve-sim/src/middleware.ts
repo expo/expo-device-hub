@@ -3039,7 +3039,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         }
         const result = session
           ? await session.copyPasteboard()
-          : await readSimPasteboardResult(udid);
+          : await readSimPasteboardResult(udid, { appReader: clipboardOption !== false });
         respond(200, { ok: true, ...result });
       } catch (error) {
         // A failed Copy can still leave Command held; the viewer shows this beside the error.
@@ -3488,6 +3488,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     path: `${base}/exec-ws`,
     execToken,
     streamSettings,
+    appClipboardReader: clipboardOption !== false,
     prepareKeychain: async (udid) => {
       if (keychainOption === false) {
         throw new Error("The keychain capability is off on this server.");
