@@ -72,16 +72,21 @@ export interface KeychainItemAttributes {
   attributesAsData?: boolean;
 }
 
+/** The items a delete matches. Without an account, every item in the service. */
+export type KeychainItemQuery = Omit<KeychainItemAttributes, "account"> & { account?: string };
+
 export type KeychainOperation =
   | ({
       op: "set";
       data: string;
       accessible?: KeychainAccessible;
+      /** Deleted before the write: items the library removes when it stores this key. */
+      clears?: KeychainItemQuery[];
       /** Deleted once the set succeeds: other places the same library reads this key. */
       replaces?: KeychainItemAttributes[];
     } & KeychainItemAttributes)
-  | ({ op: "delete" } & KeychainItemAttributes)
-  | { op: "delete-aliases"; items: KeychainItemAttributes[] }
+  | ({ op: "delete" } & KeychainItemQuery)
+  | { op: "delete-aliases"; items: KeychainItemQuery[] }
   | { op: "list"; service?: string; accessGroup?: string };
 
 const KeychainListedItem = z.object({

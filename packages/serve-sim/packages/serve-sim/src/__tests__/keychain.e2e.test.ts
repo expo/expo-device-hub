@@ -11,7 +11,13 @@ import WebSocket from "ws";
 import type { HostActionResult } from "../host-actions";
 import { releaseSessionSync } from "../launch-manager";
 import { runKeychainOperations, type KeychainOperation } from "../sim-keychain";
-import { setKeychainValues, type KeychainTarget } from "../keychain";
+import {
+  deleteKeychainValues,
+  listKeychainKeys,
+  setKeychainValues,
+  type KeychainTarget,
+  type KeychainWriteSummary,
+} from "../keychain";
 import { stateFileForDevice, type ServeSimDeviceState } from "../state";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
 import { freePortAsync, useTempStateDir } from "./helpers";
@@ -268,6 +274,8 @@ describeOrSkip("keychain round trip", () => {
       { target: ITEM, replacement: { ...ITEM, accessGroup: group } },
       { target: { ...ITEM, accessGroup: group }, replacement: ITEM },
       { target: ITEM, replacement: { ...ITEM, attributesAsData: false } },
+      // A malformed wire request must not broaden a replacement to the whole service.
+      { target: ITEM, replacement: { service: ITEM.service } as typeof ITEM },
     ];
     for (const { target, replacement } of identities) {
       const value = `preserved-${Date.now()}`;
@@ -308,6 +316,30 @@ describeOrSkip("keychain round trip", () => {
     );
     expect(outcome).toEqual({ applied: true, results: [{ status: -34018 }] });
   }, 30_000);
+
+  test("failed or malformed clears leave the target unchanged", async () => {
+    const cases = [
+      { clears: [{ ...ITEM, accessGroup: "serve-sim.not-this-app" }], status: -34018 },
+      { clears: [ITEM, { ...ITEM, account: "not-base64!" }], status: -50 },
+    ];
+    for (const { clears, status } of cases) {
+      const value = `before-clear-${Date.now()}`;
+      expect(await runKeychainOperations(udid!, APP, [set(value)])).toEqual({
+        applied: true,
+        results: [{ status: 0 }],
+      });
+      expect(
+        await runKeychainOperations(udid!, APP, [{ ...set("must-not-write"), clears }]),
+      ).toMatchObject({
+        applied: true,
+        results: [{ status }],
+      });
+      terminate();
+      const after = seenValues().length;
+      launch();
+      await waitForLastSeen(`value=${value}`, { after });
+    }
+  }, 60_000);
 
   test("the app drops an expired request unread", async () => {
     const requests = join(dataContainer(), "tmp/serve-sim-keychain/requests");
@@ -418,6 +450,41 @@ describeOrSkip("keychain round trip", () => {
       await runKeychainOperations(udid!, APP, FIXTURE_DELETES);
     }
   }, 60_000);
+
+  test("does not start a set when a service-wide clear matches multiple access groups", async () => {
+    launch();
+    const service = "group-clear-fixture";
+    const targetService = "group-clear-target-fixture";
+    const entries = [
+      { ...ITEM, service, accessGroup: "SERVESIMFIX.dev.expo.serve-sim.launch-fixture" },
+      { ...ITEM, service, accessGroup: "SERVESIMFIX.dev.expo.serve-sim.shared-fixture" },
+    ];
+    try {
+      for (const entry of entries) {
+        expect(await runKeychainOperations(udid!, APP, [{ ...set("existing"), ...entry }])).toEqual(
+          { applied: true, results: [{ status: 0 }] },
+        );
+      }
+      expect(
+        await runKeychainOperations(udid!, APP, [
+          { ...set("should-not-be-added"), service: targetService, clears: [{ service }] },
+        ]),
+      ).toEqual({
+        applied: true,
+        results: [{ status: -50, error: "select an accessGroup for this item" }],
+      });
+      const listed = await runKeychainOperations(udid!, APP, [
+        { op: "list", service },
+        { op: "list", service: targetService },
+      ]);
+      expect(listed.applied && listed.results.map(({ items }) => items?.length)).toEqual([2, 0]);
+    } finally {
+      await runKeychainOperations(udid!, APP, [
+        ...entries.map((entry) => ({ op: "delete" as const, ...entry })),
+        { op: "delete", ...ITEM, service: targetService },
+      ]);
+    }
+  }, 30_000);
 
   const target = (): KeychainTarget => ({
     udid: udid!,
@@ -603,4 +670,32 @@ describeOrSkip("keychain round trip", () => {
       ws.terminate();
     }
   }, 60_000);
+
+  test("react-native-keychain keeps one credential per service", async () => {
+    const service = `dev.expo.serve-sim.e2e-${process.pid}`;
+    const credential = (username?: string): KeychainTarget => ({
+      ...target(),
+      format: "react-native-keychain",
+      options: username === undefined ? {} : { username },
+    });
+    const accounts = async () => {
+      const outcome = await runKeychainOperations(udid!, APP, [{ op: "list", service }], {
+        timeoutMs: 10_000,
+      });
+      return outcome.applied ? outcome.results[0]?.items?.map((item) => item.account) : null;
+    };
+    const ok: KeychainWriteSummary = {
+      applied: true,
+      keys: [{ key: service, status: 0, ok: true, message: "ok" }],
+    };
+    // Without a username the library stores an empty account.
+    expect(await setKeychainValues(credential(), [[service, "pw0"]])).toEqual(ok);
+    expect(await accounts()).toEqual([""]);
+    expect(await setKeychainValues(credential("alice"), [[service, "pw1"]])).toEqual(ok);
+    expect(await setKeychainValues(credential("bob"), [[service, "pw2"]])).toEqual(ok);
+    expect(await accounts()).toEqual([b64("bob")]);
+    expect(await listKeychainKeys(credential())).toContain(service);
+    expect(await deleteKeychainValues(credential(), [service])).toEqual(ok);
+    expect(await accounts()).toEqual([]);
+  }, 30_000);
 });
