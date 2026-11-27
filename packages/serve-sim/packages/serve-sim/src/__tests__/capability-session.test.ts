@@ -251,36 +251,46 @@ describe("capability session, through the clipboard capability", () => {
   });
 
   test("a disabled Keychain session leaves a live foreign owner alone and cleans stale state", async () => {
-    const definition = {
-      name: "keychain",
-      dylib: "/test/libSimKeychain.dylib",
-      scope: "userApps" as const,
-      bundleId: null,
-      ownerPid: process.ppid,
-    };
-    await enableCapabilities(UDID, null, [definition], { relaunch: false });
-    writeLaunchState(UDID, {
-      launchArgs: [],
-      capabilities: { keychain: definition },
-      sessionPids: [process.ppid],
+    const owner = Bun.spawn([process.execPath, "-e", "await Bun.stdin.text()"], {
+      stdin: "pipe",
+      stdout: "ignore",
+      stderr: "ignore",
     });
     const disabled = createCapabilitySession(keychainCapability, false);
     try {
+      const definition = {
+        name: "keychain",
+        dylib: "/test/libSimKeychain.dylib",
+        scope: "userApps" as const,
+        bundleId: null,
+        ownerPid: owner.pid,
+      };
+      await enableCapabilities(UDID, null, [definition], { relaunch: false });
+      writeLaunchState(UDID, {
+        launchArgs: [],
+        capabilities: { keychain: definition },
+        sessionPids: [owner.pid],
+      });
+      const launchFile = join(state.dir, `launch-${UDID}.json`);
+      const recordedOwner = readFileSync(launchFile, "utf8");
       const callLog = process.env.TEST_CLIPBOARD_CALLS!;
       const calls = readFileSync(callLog, "utf8");
       const initialization = disabled.initialize(UDID);
       await initialization;
       expect(readFileSync(callLog, "utf8")).toBe(calls);
-      expect(readLaunchState(UDID)?.sessionPids).toEqual([process.ppid]);
+      expect(readLaunchState(UDID)?.sessionPids).toEqual([owner.pid]);
       expect(disabled.initialize(UDID)).toBe(initialization);
 
-      writeLaunchState(UDID, {
-        launchArgs: [],
-        capabilities: { keychain: { ...definition, ownerPid: 2_147_483_647 } },
-      });
-      await disabled.initialize(UDID);
+      owner.stdin.end();
+      expect(await owner.exited).toBe(0);
+      expect(readFileSync(launchFile, "utf8")).toBe(recordedOwner);
+      const refreshed = disabled.initialize(UDID);
+      expect(refreshed).not.toBe(initialization);
+      await refreshed;
       expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe("");
     } finally {
+      if (owner.exitCode === null && owner.signalCode === null) owner.kill("SIGTERM");
+      await owner.exited;
       await disabled.dispose();
     }
   });
