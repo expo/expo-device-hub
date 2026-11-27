@@ -140,6 +140,20 @@ test("sets every key of a pasted JSON object", async () => {
   expect(s.text()).toContain("Set 2 keys in com.example.app.");
 });
 
+test("clears a draft when another app comes to the foreground", async () => {
+  const { client, calls } = keychainClient();
+  const s = await setup(client);
+  await s.type("Keychain key", "accessToken");
+  await s.type("Keychain value", "test-a");
+  await s.type("Keychain service", "app-a");
+  await s.rerender({ ...client, foregroundApp: { id: "com.example.second" } });
+  expect(s.field("Keychain key").props.value).toBe("");
+  expect(s.field("Keychain value").props.value).toBe("");
+  expect(s.field("Keychain service").props.value).toBe("");
+  await s.click("Set");
+  expect(calls.filter(({ fn }) => fn === "set")).toEqual([]);
+});
+
 test("keeps the result of a relaunch while the foreground app changes", async () => {
   let finish: (result: KeychainWriteResult) => void = () => {};
   const { client, calls } = keychainClient({
