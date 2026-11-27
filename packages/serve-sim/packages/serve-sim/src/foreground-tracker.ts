@@ -63,31 +63,41 @@ interface VisibilityState {
 
 const NO_VISIBILITY: VisibilityState = { visible: null, pending: null };
 
-/** The state after a relevant `log --style ndjson` line. Other lines return no observation. */
-function visibilityAfterLogLine(state: VisibilityState, line: string): VisibilityState | null {
-  let message: string;
+interface VisibilityEvent {
+  kind: "foreground" | "background" | "bootstrap";
+  app: ForegroundApp;
+}
+
+function parseVisibilityEvent(line: string): VisibilityEvent | null {
+  let message: unknown;
   try {
-    message = (JSON.parse(line) as { eventMessage?: string }).eventMessage ?? "";
+    message = (JSON.parse(line) as { eventMessage?: unknown })?.eventMessage;
   } catch {
     return null;
   }
+  if (typeof message !== "string") return null;
   const started = parseBootstrapLogMessage(message);
-  if (started) {
-    // SpringBoard does not repeat the visibility line with the real pid, so this line completes it.
-    return started.bundleId === state.pending ? { visible: started, pending: null } : null;
-  }
+  if (started && isUserFacingBundle(started.bundleId)) return { kind: "bootstrap", app: started };
   const change = parseVisibilityLogMessage(message);
   if (!change || !isUserFacingBundle(change.app.bundleId)) return null;
-  if (change.app.pid === -1) {
-    if (!change.foreground) {
-      return change.app.bundleId === state.pending ? { ...state, pending: null } : state;
-    }
-    return { visible: null, pending: change.app.bundleId };
+  return { kind: change.foreground ? "foreground" : "background", app: change.app };
+}
+
+function applyVisibility(state: VisibilityState, { kind, app }: VisibilityEvent): VisibilityState {
+  if (kind === "bootstrap") {
+    // SpringBoard does not repeat the visibility line with the real pid.
+    return app.bundleId === state.pending ? { visible: app, pending: null } : state;
   }
-  if (change.foreground) return { visible: change.app, pending: null };
+  if (kind === "foreground") {
+    return app.pid === -1
+      ? { visible: null, pending: app.bundleId }
+      : { visible: app, pending: null };
+  }
+  if (app.pid === -1) {
+    return app.bundleId === state.pending ? { ...state, pending: null } : state;
+  }
   // SpringBoard may background an old process after its replacement becomes foreground.
-  const cleared =
-    state.visible?.bundleId === change.app.bundleId && state.visible.pid === change.app.pid;
+  const cleared = state.visible?.bundleId === app.bundleId && state.visible.pid === app.pid;
   return cleared ? { ...state, visible: null } : state;
 }
 
@@ -97,6 +107,7 @@ const VISIBILITY_PREDICATE =
 
 const LINE_BUFFER_LIMIT = 1024 * 1024; // drop a pathological unbroken line rather than grow forever
 const RESTART_DELAY_MS = 1000; // bound the respawn rate when the log stream keeps dying (e.g. sim gone)
+const MAX_SEED_EVENTS = 256;
 
 /** Spawn the SpringBoard foreground-transition log stream for a device. */
 function spawnForegroundLogStream(udid: string): ChildProcess {
@@ -139,7 +150,7 @@ export async function frontmostAppViaAx(udid: string): Promise<ForegroundApp | n
 export interface ForegroundTrackerDeps {
   spawnLogStream?: (udid: string) => ChildProcess;
   frontmostApp?: (udid: string) => Promise<ForegroundApp | null>;
-  recoverForegroundApp?: (udid: string, signal: AbortSignal) => Promise<ForegroundApp | null>;
+  recoverVisibility?: (udid: string, signal: AbortSignal) => Promise<VisibilityState | null>;
   restartDelayMs?: number;
 }
 
@@ -151,7 +162,7 @@ class ForegroundTracker {
   private buf = "";
   private latest: ForegroundApp | null = null;
   private pending: string | null = null;
-  private seed: AbortController | null = null;
+  private seed: { controller: AbortController; events: VisibilityEvent[] } | null = null;
   private stopped = false;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<(app: ForegroundApp | null) => void>();
@@ -182,16 +193,16 @@ class ForegroundTracker {
     this.listeners.delete(listener);
   }
 
-  /** Begin tailing: seed the current app from the AX bridge, then spawn the log stream. */
+  /** Begin tailing and seed the current app from the AX bridge. */
   start(): void {
     if (this.child) return;
     this.stopped = false;
-    this.spawn(this.deps.frontmostApp);
+    this.spawn(async (udid) => ({ visible: await this.deps.frontmostApp(udid), pending: null }));
   }
 
   /** Attach the live log before seeding from an asynchronous snapshot. */
   private spawn(
-    snapshot: (udid: string, signal: AbortSignal) => Promise<ForegroundApp | null>,
+    snapshot: (udid: string, signal: AbortSignal) => Promise<VisibilityState | null>,
   ): void {
     const child = this.deps.spawnLogStream(this.udid);
     this.child = child;
@@ -204,11 +215,16 @@ class ForegroundTracker {
     child.on("error", onGone);
     child.on("exit", onGone);
 
-    const seed = new AbortController();
+    const events: VisibilityEvent[] = [];
+    const seed = { controller: new AbortController(), events };
     this.seed = seed;
-    void snapshot(this.udid, seed.signal)
-      .then((app) => {
-        if (!seed.signal.aborted && this.child === child && app) this.set(app);
+    void snapshot(this.udid, seed.controller.signal)
+      .then((state) => {
+        if (this.seed !== seed || this.child !== child || !state) return;
+        const next = events.reduce(applyVisibility, state);
+        this.seed = null;
+        this.pending = next.pending;
+        this.set(next.visible);
       })
       .catch(() => {})
       .finally(() => {
@@ -217,7 +233,7 @@ class ForegroundTracker {
   }
 
   private cancelSeed(): void {
-    this.seed?.abort();
+    this.seed?.controller.abort();
     this.seed = null;
   }
 
@@ -238,7 +254,7 @@ class ForegroundTracker {
       // @ref LLP 0003 — recover the foreground after replacing the visibility tail.
       // A quiet app won't generate a transition on the replacement stream.
       if (!this.stopped && !this.child && this.listeners.size > 0) {
-        this.spawn(this.deps.recoverForegroundApp);
+        this.spawn(this.deps.recoverVisibility);
       }
     }, this.deps.restartDelayMs);
   }
@@ -265,12 +281,18 @@ class ForegroundTracker {
     while ((nl = this.buf.indexOf("\n")) !== -1) {
       const line = this.buf.slice(0, nl).trim();
       this.buf = this.buf.slice(nl + 1);
-      if (!line) continue;
-      const previous = { visible: this.latest, pending: this.pending };
-      const next = visibilityAfterLogLine(previous, line);
-      if (!next) continue;
-      // A background event can invalidate a seed even while our visible app is already null.
-      this.cancelSeed();
+      const event = parseVisibilityEvent(line);
+      if (!event) continue;
+      if (this.seed) {
+        // A live foreground record is authoritative. If the buffer fills, drop the snapshot:
+        // replaying only part of the stream could restore an app that has already gone.
+        if (event.kind === "foreground" || this.seed.events.length === MAX_SEED_EVENTS) {
+          this.cancelSeed();
+        } else {
+          this.seed.events.push(event);
+        }
+      }
+      const next = applyVisibility({ visible: this.latest, pending: this.pending }, event);
       this.pending = next.pending;
       this.set(next.visible);
     }
@@ -314,7 +336,7 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
   const resolved: Required<ForegroundTrackerDeps> = {
     spawnLogStream: deps.spawnLogStream ?? spawnForegroundLogStream,
     frontmostApp: deps.frontmostApp ?? frontmostAppViaAx,
-    recoverForegroundApp: deps.recoverForegroundApp ?? frontmostAppFromRecentLogs,
+    recoverVisibility: deps.recoverVisibility ?? readForegroundVisibility,
     restartDelayMs: deps.restartDelayMs ?? RESTART_DELAY_MS,
   };
   const byUdid = new Map<string, ForegroundTracker>();
@@ -364,11 +386,11 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
 
 export const foregroundTracker = createForegroundTrackerCache();
 
-/** Recover the latest visible app when neither a live tracker nor AX can identify it. */
-export async function frontmostAppFromRecentLogs(
+/** Read the visibility state, including a launch that has not received its pid yet. */
+async function readForegroundVisibility(
   udid: string,
   signal?: AbortSignal,
-): Promise<ForegroundApp | null> {
+): Promise<VisibilityState | null> {
   if (signal?.aborted) return null;
   // A long-lived simulator can have more visibility history than a fixed execFile buffer.
   // Keep only the latest parsed state while log show streams its boot-long history.
@@ -393,7 +415,7 @@ export async function frontmostAppFromRecentLogs(
     let state = NO_VISIBILITY;
     let buffer = "";
     let settled = false;
-    const finish = (result: ForegroundApp | null) => {
+    const finish = (result: VisibilityState | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
@@ -403,22 +425,34 @@ export async function frontmostAppFromRecentLogs(
       child.kill("SIGKILL");
       finish(null);
     }, 15_000);
+    const consume = (line: string) => {
+      const event = parseVisibilityEvent(line);
+      if (event) state = applyVisibility(state, event);
+    };
     child.stdout?.setEncoding("utf8");
     child.stdout?.on("data", (chunk: string) => {
       buffer += chunk;
       let end: number;
       while ((end = buffer.indexOf("\n")) >= 0) {
-        state = visibilityAfterLogLine(state, buffer.slice(0, end)) ?? state;
+        consume(buffer.slice(0, end));
         buffer = buffer.slice(end + 1);
       }
       if (buffer.length > LINE_BUFFER_LIMIT) buffer = "";
     });
     child.once("error", () => finish(null));
     child.once("close", (code) => {
-      if (buffer) state = visibilityAfterLogLine(state, buffer) ?? state;
-      finish(code === 0 ? state.visible : null);
+      if (buffer) consume(buffer);
+      finish(code === 0 ? state : null);
     });
   });
+}
+
+/** Recover the latest visible app when neither a live tracker nor AX can identify it. */
+export async function frontmostAppFromRecentLogs(
+  udid: string,
+  signal?: AbortSignal,
+): Promise<ForegroundApp | null> {
+  return (await readForegroundVisibility(udid, signal))?.visible ?? null;
 }
 
 /** The current foreground app: live tracker, AX bridge, then recent SpringBoard history. */
