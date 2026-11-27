@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "timers/promises";
 import { z } from "zod";
 import type { CapabilityDefinition } from "./capabilities";
 import { debugKeychain } from "./debug";
-import { isCapabilityEnabled, isRunning, startApp, stopAppForRelaunch } from "./launch-manager";
+import { isCapabilityEnabled, isRunning, relaunchAppWithPreparation } from "./launch-manager";
 import { dirnameOf } from "./runtime";
 import { APP_NOT_INSTALLED, isContainerPath, simctl } from "./simctl";
 import { withStateLock } from "./state-lock";
@@ -81,6 +81,7 @@ export type KeychainOperation =
       replaces?: KeychainItemAttributes[];
     } & KeychainItemAttributes)
   | ({ op: "delete" } & KeychainItemAttributes)
+  | { op: "delete-aliases"; items: KeychainItemAttributes[] }
   | { op: "list"; service?: string; accessGroup?: string };
 
 const KeychainListedItem = z.object({
@@ -116,11 +117,13 @@ async function keychainLockPath(container: string): Promise<string> {
   return join(root, `${containerId}.lock`);
 }
 
+type RelaunchTarget = { udid: string; bundleId: string };
+
 /**
  * Sends operations to the keychain dylib inside the app that owns `container`. Resolves the
  * results, or null when nothing answered in time. With `keepQueued`, an unanswered request stays
- * for the app to apply when it next starts; otherwise it is withdrawn. `beforePublish` runs once the
- * request passed its checks, and `afterPublish` once it is in place, before the wait.
+ * for the app to apply when it next starts; otherwise it is withdrawn. A relaunch publishes the
+ * request between stopping and starting the app.
  */
 export async function requestKeychain(
   container: string,
@@ -128,13 +131,11 @@ export async function requestKeychain(
   {
     timeoutMs = ANSWER_TIMEOUT_MS,
     keepQueued = false,
-    beforePublish,
-    afterPublish,
+    relaunch,
   }: {
     timeoutMs?: number;
     keepQueued?: boolean;
-    beforePublish?: () => Promise<void>;
-    afterPublish?: () => Promise<void>;
+    relaunch?: RelaunchTarget;
   } = {},
 ): Promise<KeychainResult[] | null> {
   if (!isContainerPath(container)) throw new Error(`Not an app data container: ${container}`);
@@ -149,10 +150,7 @@ export async function requestKeychain(
     async () => {
       await fs.mkdir(join(mailbox, "requests"), { recursive: true, mode: 0o700 });
       await fs.mkdir(join(mailbox, "responses"), { recursive: true, mode: 0o700 });
-      return requestKeychainUnlocked(mailbox, operations, timeoutMs, keepQueued, {
-        beforePublish,
-        afterPublish,
-      });
+      return requestKeychainUnlocked(mailbox, operations, timeoutMs, keepQueued, relaunch);
     },
   );
 }
@@ -162,10 +160,7 @@ async function requestKeychainUnlocked(
   operations: KeychainOperation[],
   timeoutMs: number,
   keepQueued: boolean,
-  {
-    beforePublish,
-    afterPublish,
-  }: { beforePublish?: () => Promise<void>; afterPublish?: () => Promise<void> },
+  relaunch?: RelaunchTarget,
 ): Promise<KeychainResult[] | null> {
   const nonce = randomUUID();
   const body = JSON.stringify({ nonce, expiresAt: Date.now() + QUEUED_REQUEST_TTL_MS, operations });
@@ -187,20 +182,24 @@ async function requestKeychainUnlocked(
   const request = join(mailbox, "requests", name);
   const pending = join(mailbox, "requests", `.${name}.pending`);
   const answer = join(mailbox, "responses", `${nonce}.json`);
-  await beforePublish?.();
-  // The request can carry secrets: private to this user, and the app deletes it once claimed.
-  try {
-    await fs.writeFile(pending, body, { mode: 0o600 });
-    await fs.rename(pending, request);
-  } catch (error) {
-    await fs.rm(pending, { force: true });
-    throw error;
-  }
-  try {
-    await afterPublish?.();
-  } catch (error) {
-    await fs.rm(request, { force: true });
-    throw error;
+  const publish = async () => {
+    // The request can carry secrets: private to this user, and the app deletes it once claimed.
+    try {
+      await fs.writeFile(pending, body, { mode: 0o600 });
+      await fs.rename(pending, request);
+    } catch (error) {
+      await fs.rm(pending, { force: true });
+      throw error;
+    }
+  };
+  if (relaunch) {
+    // Hold the device lock through publication so the new process can take the request.
+    // Release it before polling; the per-container mailbox lock already serializes this request.
+    await relaunchAppWithPreparation(relaunch.udid, relaunch.bundleId, publish, () =>
+      fs.rm(request, { force: true }),
+    );
+  } else {
+    await publish();
   }
 
   const results = await waitForAnswer(answer, nonce, operations.length, timeoutMs);
@@ -312,38 +311,12 @@ export async function runKeychainOperations(
   }
   // A closed app cannot answer, so its request is queued or withdrawn without a wait.
   const closed = !relaunch && (await isRunning(udid, bundleId)) === false;
-  let restartPending = false;
-  const restart = async () => {
-    // One attempt, whether publication succeeded or failed.
-    restartPending = false;
-    await startApp(udid, bundleId);
-  };
   const results = await requestKeychain(container, operations, {
     timeoutMs: closed
       ? 0
       : (timeoutMs ?? (relaunch ? RELAUNCH_ANSWER_TIMEOUT_MS : ANSWER_TIMEOUT_MS)),
     keepQueued: keepQueued && !relaunch,
-    // Stopped first, so the old process cannot take the request and quit before it answers, and
-    // only once the request is valid, so a refused one leaves the app running.
-    beforePublish: relaunch
-      ? async () => {
-          await stopAppForRelaunch(udid, bundleId);
-          restartPending = true;
-        }
-      : undefined,
-    afterPublish: relaunch ? restart : undefined,
-  }).catch(async (error: unknown) => {
-    if (restartPending) {
-      try {
-        await restart();
-      } catch (restartError) {
-        throw new AggregateError(
-          [error, restartError],
-          `Could not publish the keychain request or restart ${bundleId}.`,
-        );
-      }
-    }
-    throw error;
+    relaunch: relaunch ? { udid, bundleId } : undefined,
   });
   if (!results && relaunch) {
     throw new Error(

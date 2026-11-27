@@ -737,6 +737,12 @@ if (args[3] === 'launchctl' && args[4] === 'list') {
     );
   });
 
+  test("still recognizes a label without an instance suffix", async () => {
+    await withShimsAsync({ xcrun: list(["UIKitApplication:com.example.app"]) }, async () =>
+      expect(await isRunning(UDID, "com.example.app")).toBe(true),
+    );
+  });
+
   test("is null when launchd cannot be asked", async () => {
     await withShimsAsync({ xcrun: "#!/bin/sh\nexit 1\n" }, async () =>
       expect(await isRunning(UDID, "com.example.app")).toBeNull(),

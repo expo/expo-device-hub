@@ -1,7 +1,7 @@
 import { Option, type Command } from "commander";
 import { readFileSync } from "fs";
 import { z } from "zod";
-import { findBootedDevice, resolveDevice } from "./device";
+import { resolveBootedDeviceAsync } from "./device";
 import {
   deleteKeychainValues,
   KEYCHAIN_FORMATS,
@@ -29,9 +29,8 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-function targetOf(bundleId: string, opts: KeychainCliOptions): KeychainTarget {
-  const udid = opts.device ? resolveDevice(opts.device) : findBootedDevice();
-  if (!udid) fail("No booted simulator. Boot one or pass -d <udid|name>.");
+async function targetOf(bundleId: string, opts: KeychainCliOptions): Promise<KeychainTarget> {
+  const udid = await resolveBootedDeviceAsync(opts.device ?? "booted");
   return {
     udid,
     bundleId,
@@ -155,7 +154,7 @@ export function registerKeychainCommands(
             ? null
             : readFileSync(opts.fromFile === "-" ? 0 : opts.fromFile, "utf8");
         const entries = parseKeychainEntries(pairs, fileText);
-        const target = targetOf(bundleId, opts);
+        const target = await targetOf(bundleId, opts);
         report(
           target,
           "set",
@@ -175,7 +174,7 @@ export function registerKeychainCommands(
     deviceOpt,
   ).action((bundleId: string, keys: string[], opts: KeychainCliOptions & { relaunch?: boolean }) =>
     run(async () => {
-      const target = targetOf(bundleId, opts);
+      const target = await targetOf(bundleId, opts);
       report(
         target,
         "delete",
@@ -193,7 +192,7 @@ export function registerKeychainCommands(
     deviceOpt,
   ).action((bundleId: string, opts: KeychainCliOptions) =>
     run(async () => {
-      const target = targetOf(bundleId, opts);
+      const target = await targetOf(bundleId, opts);
       const keys = await listKeychainKeys(target);
       if (keys === null) {
         fail(

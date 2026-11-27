@@ -1,10 +1,11 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, promises as fs, readdirSync, statSync } from "fs";
+import { existsSync, mkdtempSync, promises as fs, readdirSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { execFile, execFileSync } from "child_process";
 import { promisify } from "util";
 import * as launchManager from "../launch-manager";
+import { writeLaunchState } from "../launch-state";
 import * as simctlModule from "../simctl";
 import {
   MAX_KEYCHAIN_REQUEST_BYTES,
@@ -13,6 +14,7 @@ import {
   runKeychainOperations,
   type KeychainOperation,
 } from "../sim-keychain";
+import { useTempStateDir } from "./helpers";
 
 function container(): string {
   return mkdtempSync(join(tmpdir(), "serve-sim-keychain-"));
@@ -226,51 +228,93 @@ describe("requestKeychain", () => {
     );
   });
 
-  test("runs afterPublish once the request is in place, then waits", async () => {
+  test("validates before stopping the app and withdraws the request if starting fails", async () => {
     const root = container();
-    let seen: string[] = [];
-    const answered = answerOnce(root, ({ nonce }) => ({ nonce, results: [{ status: 0 }] }));
-    const results = await requestKeychain(root, [SET], {
-      timeoutMs: 3000,
-      afterPublish: async () => {
-        seen = readdirSync(mailbox(root).requests).filter((name) => name.endsWith(".json"));
-      },
-    });
-    await answered;
-    expect(seen).toHaveLength(1);
-    expect(results).toEqual([{ status: 0 }]);
-  });
-
-  test("withdraws the request when afterPublish fails", async () => {
-    const root = container();
-    await expect(
-      requestKeychain(root, [SET], {
-        afterPublish: async () => {
-          throw new Error("relaunch failed");
-        },
-      }),
-    ).rejects.toThrow("relaunch failed");
-    expect(readdirSync(mailbox(root).requests)).toEqual([]);
-  });
-
-  test("refuses a request over the size the app reads", async () => {
-    const root = container();
+    const state = useTempStateDir();
+    const relaunch = { udid: "KEYCHAIN-RELAUNCH", bundleId: "dev.test.keychain" };
     const huge = { ...SET, data: "A".repeat(MAX_KEYCHAIN_REQUEST_BYTES) };
-    let stopped = false;
-    await expect(
-      requestKeychain(root, [huge], {
-        beforePublish: async () => {
-          stopped = true;
-        },
-      }),
-    ).rejects.toThrow("Send fewer or smaller items");
-    // A relaunch stops the app in beforePublish, so a refused request leaves it running.
-    expect(stopped).toBe(false);
+    const simctl = spyOn(simctlModule, "simctl").mockImplementation(async (args) => {
+      if (args[0] === "launch") throw new Error("launch failed");
+      return "";
+    });
+    try {
+      await expect(requestKeychain(root, [huge], { relaunch })).rejects.toThrow(
+        "Send fewer or smaller items",
+      );
+      expect(simctl).not.toHaveBeenCalled();
+      await expect(requestKeychain(root, [SET], { relaunch })).rejects.toThrow("launch failed");
+      expect(simctl.mock.calls.map(([args]) => args[0])).toEqual(["terminate", "launch"]);
+      expect(readdirSync(mailbox(root).requests)).toEqual([]);
+    } finally {
+      simctl.mockRestore();
+      state.restore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   test("refuses a container that is not an absolute path", async () => {
     await expect(requestKeychain("(null)", [SET])).rejects.toThrow("Not an app data container");
   });
+});
+
+test("holds the device lock through publication and restart, then releases it before the answer", async () => {
+  const root = await fs.realpath(container());
+  const state = useTempStateDir();
+  const udid = "KEYCHAIN-RELAUNCH";
+  const bundleId = "dev.test.keychain";
+  writeLaunchState(udid, { bundleId, launchArgs: ["--original"], capabilities: {} });
+  const publishing = Promise.withResolvers<void>();
+  const allowPublication = Promise.withResolvers<void>();
+  const renameFile = fs.rename.bind(fs);
+  const rename = spyOn(fs, "rename").mockImplementation(async (from, to) => {
+    if (String(from).startsWith(`${mailbox(root).requests}/.`)) {
+      publishing.resolve();
+      await allowPublication.promise;
+    }
+    return renameFile(from, to);
+  });
+  const launches: string[][] = [];
+  const enabled = spyOn(launchManager, "isCapabilityEnabled").mockReturnValue(true);
+  const simctl = spyOn(simctlModule, "simctl").mockImplementation(async (args) => {
+    if (args[0] === "get_app_container") return root;
+    if (args[0] === "launch") {
+      expect(readdirSync(mailbox(root).requests).some((name) => name.endsWith(".json"))).toBe(true);
+      launches.push(args.slice(3));
+    }
+    return "";
+  });
+  const request = runKeychainOperations(udid, bundleId, [SET], {
+    relaunch: true,
+    timeoutMs: 3000,
+  }).then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+  try {
+    await Promise.race([
+      publishing.promise,
+      request.then((outcome) => {
+        throw new Error("The request ended before publishing", { cause: outcome });
+      }),
+    ]);
+    const lockedAtPublication = existsSync(join(state.dir, `launch-${udid}.lock`));
+    const competingLaunch = launchManager.launchApp(udid, { bundleId, launchArgs: ["--next"] });
+    allowPublication.resolve();
+    // The competing launch can finish even though the keychain request has no answer yet.
+    await competingLaunch;
+    await answerOnce(root, ({ nonce }) => ({ nonce, results: [{ status: 0 }] }));
+    expect(await request).toEqual({ value: { applied: true, results: [{ status: 0 }] } });
+    expect(lockedAtPublication).toBe(true);
+    expect(launches).toEqual([["--original"], ["--next"]]);
+  } finally {
+    allowPublication.resolve();
+    await request;
+    rename.mockRestore();
+    enabled.mockRestore();
+    simctl.mockRestore();
+    state.restore();
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 test.each([
@@ -281,21 +325,24 @@ test.each([
   },
 ])("$name", async ({ restartFailure }) => {
   const root = container();
+  const state = useTempStateDir();
   const enabled = spyOn(launchManager, "isCapabilityEnabled").mockReturnValue(true);
-  const getContainer = spyOn(simctlModule, "simctl").mockResolvedValue(root);
-  const stopped = spyOn(launchManager, "stopAppForRelaunch").mockImplementation(async () => {
+  const simctl = spyOn(simctlModule, "simctl").mockImplementation(async (args) => {
+    if (args[0] === "get_app_container") return root;
     // Simulate the mailbox becoming unwritable only after the app has stopped.
-    await fs.rm(mailbox(root).requests, { recursive: true });
-  });
-  const started = spyOn(launchManager, "startApp").mockImplementation(async () => {
-    if (restartFailure) throw restartFailure;
+    if (args[0] === "terminate") await fs.rm(mailbox(root).requests, { recursive: true });
+    if (args[0] === "launch" && restartFailure) throw restartFailure;
+    return "";
   });
   try {
     const error = await runKeychainOperations("UDID", "dev.test.keychain", [SET], {
       relaunch: true,
     }).catch((error: unknown) => error);
-    expect(stopped).toHaveBeenCalledTimes(1);
-    expect(started).toHaveBeenCalledTimes(1);
+    expect(simctl.mock.calls.map(([args]) => args[0])).toEqual([
+      "get_app_container",
+      "terminate",
+      "launch",
+    ]);
     if (restartFailure) {
       expect(error).toBeInstanceOf(AggregateError);
       const errors = (error as AggregateError).errors;
@@ -306,9 +353,9 @@ test.each([
     }
   } finally {
     enabled.mockRestore();
-    getContainer.mockRestore();
-    stopped.mockRestore();
-    started.mockRestore();
+    simctl.mockRestore();
+    state.restore();
+    await fs.rm(root, { recursive: true, force: true });
   }
 });
 

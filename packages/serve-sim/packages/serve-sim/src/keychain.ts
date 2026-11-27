@@ -24,6 +24,9 @@ export function describeKeychainStatus(status: number, error?: string): string {
   if (status === INVALID_ATTRIBUTES && error === "select an accessGroup for this item") {
     return "multiple access groups match this item. Specify --access-group in the CLI or accessGroup in Controls";
   }
+  if (status === INVALID_ATTRIBUTES && error === "unknown op") {
+    return "the app's Keychain helper is out of date. Restart serve-sim and reopen the app";
+  }
   return status === SUCCESS ? "ok" : (STATUS_MESSAGES[status] ?? `keychain error ${status}`);
 }
 
@@ -145,23 +148,18 @@ export function keychainSetOperations(
   });
 }
 
-/** One group of delete operations per key, in key order. */
+/** One delete operation per key, in key order. */
 export function keychainDeleteOperations(
   format: KeychainFormatName,
   keys: string[],
   options: KeychainFormatOptions,
-): KeychainOperation[][] {
+): KeychainOperation[] {
   assertKeychainRequest(format, keys, options);
-  return keys.map((key) =>
-    FORMATS[format].places(key, options).map((place) => ({ op: "delete", ...place })),
-  );
-}
-
-/** The first error, as a copy that stays is still read; else deleted when any copy went away. */
-export function deleteResult(results: KeychainResult[]): KeychainResult {
-  const failure = results.find(({ status }) => status !== SUCCESS && status !== NOT_FOUND);
-  if (failure) return failure;
-  return { status: results.some(({ status }) => status === SUCCESS) ? SUCCESS : NOT_FOUND };
+  return keys.map((key) => {
+    const items = FORMATS[format].places(key, options);
+    if (items.length === 1) return { op: "delete", ...items[0]! };
+    return { op: "delete-aliases", items };
+  });
 }
 
 /** The keys a format stored, from a `list` result, sorted and without duplicates. */
@@ -225,19 +223,15 @@ export async function deleteKeychainValues(
   keys: string[],
   { relaunch = false }: { relaunch?: boolean } = {},
 ): Promise<KeychainWriteSummary> {
-  const groups = keychainDeleteOperations(target.format, keys, target.options);
-  const outcome = await runKeychainOperations(target.udid, target.bundleId, groups.flat(), {
+  const operations = keychainDeleteOperations(target.format, keys, target.options);
+  const outcome = await runKeychainOperations(target.udid, target.bundleId, operations, {
     keepQueued: true,
     relaunch,
   });
   if (!outcome.applied) return { applied: false };
-  // One result per operation, in order, so each key takes the next group's worth.
-  const results = [...outcome.results];
   return {
     applied: true,
-    keys: keys.map((key, index) =>
-      keyResult("delete", key, deleteResult(results.splice(0, groups[index]!.length))),
-    ),
+    keys: keys.map((key, index) => keyResult("delete", key, outcome.results[index]!)),
   };
 }
 

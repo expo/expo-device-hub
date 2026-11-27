@@ -339,6 +339,8 @@ serve-sim keychain delete com.example.app refreshToken
 - `--service` matches SecureStore's `keychainService` option, and `--access-group` its `accessGroup`.
   `--format generic-password --service <name>` writes plain generic-password items for other
   libraries; the key becomes the account.
+- If several booted Simulators match the command, select one with `-d <udid>`. If a SecureStore
+  key's aliases span several access groups, select the intended group before deleting it.
 - The app must run in a serve-sim session, with the default `keychain` capability, and must have
   an `application-identifier` entitlement. Xcode and EAS simulator builds have one.
 - Biometric-protected items are not supported. Values passed as `key=value` arguments are

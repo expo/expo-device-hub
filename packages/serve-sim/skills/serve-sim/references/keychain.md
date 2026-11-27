@@ -20,6 +20,7 @@ Shared options: `--format <expo-secure-store|generic-password>` (default `expo-s
   `key=value` arguments, which other processes can see.
 - `list` prints keys only. Values never leave the app.
 - If a write or delete matches in multiple access groups, pass `--access-group` with the group the app uses for that item.
+- The command selects the Simulator automatically when exactly one is booted. Pass `-d <udid>` if multiple booted Simulators match.
 - With `--json`, `set` and `delete` print `{udid, bundleId, applied, keys: [{key, status, ok, message}]}`,
   or `{udid, bundleId, applied: false}` when the app did not answer and the change waits for its
   next start.
@@ -44,9 +45,10 @@ Shared options: `--format <expo-secure-store|generic-password>` (default `expo-s
 | `expo-secure-store` | Generic password, service `<keychainService>:no-auth`, account and generic = key bytes as data | `--service` = SecureStore `keychainService` (default `app`) |
 | `generic-password`  | Generic password, given service, account = key as a string                                     | `--service` required                                        |
 
-`delete` with `expo-secure-store` removes all three places SecureStore reads (`:no-auth`, `:auth`,
-and the legacy service). `set` writes `:no-auth` and then removes the other two, as SecureStore's own
-`setItemAsync` does.
+`delete` with `expo-secure-store` checks all three places SecureStore reads (`:no-auth`, `:auth`,
+and the legacy service) before deleting any alias. If the aliases match across multiple access
+groups, specify which group to use. `set` writes `:no-auth` and then removes the other two, as
+SecureStore's own `setItemAsync` does.
 
 ## Errors
 

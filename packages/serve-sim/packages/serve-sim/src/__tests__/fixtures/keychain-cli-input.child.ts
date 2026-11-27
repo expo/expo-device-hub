@@ -59,7 +59,7 @@ test("write summaries explain ambiguous access groups without echoing native err
     })
     .mockResolvedValueOnce({
       applied: true,
-      results: [{ status: 0 }, ambiguous, { status: -25300 }],
+      results: [ambiguous],
     });
   const target = {
     udid: "device",

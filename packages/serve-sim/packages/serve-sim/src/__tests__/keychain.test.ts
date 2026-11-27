@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  deleteResult,
   describeKeychainStatus,
   keychainDeleteOperations,
   keychainKeys,
@@ -53,13 +52,22 @@ describe("expo-secure-store format", () => {
     });
   });
 
-  test("delete removes every alias SecureStore reads", () => {
-    const [group] = keychainDeleteOperations("expo-secure-store", ["k"], {});
-    expect(group!.map((operation) => operation.op === "delete" && operation.service)).toEqual([
-      "app:no-auth",
-      "app:auth",
-      "app",
-    ]);
+  test("delete sends all aliases for each SecureStore key together", () => {
+    const operations = keychainDeleteOperations("expo-secure-store", ["k", "other"], {
+      accessGroup: "TEAM.group",
+    });
+    expect(operations).toEqual(
+      ["k", "other"].map((key) => ({
+        op: "delete-aliases",
+        items: ["app:no-auth", "app:auth", "app"].map((service) => ({
+          service,
+          account: b64(key),
+          generic: b64(key),
+          attributesAsData: true,
+          accessGroup: "TEAM.group",
+        })),
+      })),
+    );
   });
 
   test("refuses keys SecureStore refuses", () => {
@@ -112,17 +120,13 @@ describe("generic-password format", () => {
   });
 });
 
-test("a delete succeeds when any alias went away and none failed", () => {
-  expect(deleteResult([{ status: -25300 }, { status: 0 }, { status: -25300 }]).status).toBe(0);
-  expect(deleteResult([{ status: -25300 }, { status: -25300 }]).status).toBe(-25300);
-  expect(deleteResult([{ status: -25300 }, { status: -34018 }]).status).toBe(-34018);
-  expect(deleteResult([{ status: 0 }, { status: -34018 }]).status).toBe(-34018);
-});
-
 test("statuses read as words", () => {
   expect(describeKeychainStatus(0)).toBe("ok");
   expect(describeKeychainStatus(-34018)).toContain("no keychain entitlement");
   expect(describeKeychainStatus(-1)).toBe("keychain error -1");
+  expect(describeKeychainStatus(-50, "unknown op")).toContain(
+    "Restart serve-sim and reopen the app",
+  );
 });
 
 describe("parseKeychainEntries", () => {

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
+import { writeLaunchState } from "../launch-state";
 import { freePortAsync, useTempStateDir, withShimsAsync } from "./helpers";
 
 function expectStartupDiagnostics(stderr: string) {
@@ -30,6 +31,71 @@ beforeAll(async () => {
   entrypoint = build.outputs[0]!.path;
 });
 afterAll(() => rmSync(bundleDir, { recursive: true, force: true }));
+
+test.each([
+  { firstState: "Shutdown", device: "Fixture Phone", ambiguous: false },
+  { firstState: "Booted", device: "Fixture Phone", ambiguous: true },
+  { firstState: "Booted", device: undefined, ambiguous: true },
+])(
+  "Keychain CLI selects only a unique booted device ($firstState, $device)",
+  async ({ firstState, device, ambiguous }) => {
+    const state = useTempStateDir();
+    const selected = "11111111-2222-3333-4444-666666666666";
+    const devices = {
+      devices: {
+        iOS: [
+          { udid: UDID, state: firstState, name: "Fixture Phone" },
+          { udid: selected, state: "Booted", name: "Fixture Phone" },
+        ],
+      },
+    };
+    try {
+      writeLaunchState(selected, {
+        launchArgs: [],
+        capabilities: {
+          keychain: {
+            name: "keychain",
+            dylib: "/fixture.dylib",
+            scope: "userApps",
+            bundleId: null,
+            ownerPid: null,
+          },
+        },
+      });
+      await withShimsAsync(
+        {
+          xcrun: `#!/bin/sh
+if [ "$2" = list ]; then printf '%s\\n' '${JSON.stringify(devices)}'; exit 0; fi
+if [ "$2" = get_app_container ] && [ "$3" = '${selected}' ]; then exit 0; fi
+exit 1
+`,
+        },
+        async () => {
+          const result = Bun.spawnSync(
+            [
+              "node",
+              entrypoint,
+              "keychain",
+              "list",
+              "dev.example.fixture",
+              ...(device === undefined ? [] : ["-d", device]),
+            ],
+            { env: { ...process.env }, timeout: 10_000 },
+          );
+          expect(result.exitCode).toBe(1);
+          expect(result.stderr.toString()).toContain(
+            ambiguous
+              ? "Several booted simulators match; specify a simulator UDID."
+              : `dev.example.fixture is not installed on ${selected}`,
+          );
+        },
+      );
+    } finally {
+      state.restore();
+    }
+  },
+  20_000,
+);
 
 test.each(["none", "publish", "stop", "missing-loader", "lock-timeout", "rollback"] as const)(
   "plain default initialization handles %s",
