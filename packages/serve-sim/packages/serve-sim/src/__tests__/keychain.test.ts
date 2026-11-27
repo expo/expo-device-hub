@@ -191,11 +191,12 @@ describe("keychain-swift format", () => {
   test("lists its own items without the prefix", () => {
     const items = [
       { service: "", account: b64("app_a") },
+      { service: "", account: b64("app_") },
       { service: "", account: b64("b") },
       { service: "svc", account: b64("app_c") },
     ];
     expect(keychainKeys("keychain-swift", items, { keyPrefix: "app_" })).toEqual(["a"]);
-    expect(keychainKeys("keychain-swift", items, {})).toEqual(["app_a", "b"]);
+    expect(keychainKeys("keychain-swift", items, {})).toEqual(["app_", "app_a", "b"]);
   });
 
   test("takes a key prefix, which other formats refuse", () => {

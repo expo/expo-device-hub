@@ -177,7 +177,7 @@ const keychainSwift: KeychainFormat = {
   // Its own items have no service; other libraries' items with a matching account are left out.
   keyOf: (item, { keyPrefix = "" }) => {
     const account = fromB64(item.account);
-    return item.service === "" && account.startsWith(keyPrefix)
+    return item.service === "" && account.length > keyPrefix.length && account.startsWith(keyPrefix)
       ? account.slice(keyPrefix.length)
       : null;
   },
