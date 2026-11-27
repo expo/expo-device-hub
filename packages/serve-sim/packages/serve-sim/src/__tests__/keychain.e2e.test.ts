@@ -43,6 +43,19 @@ const ITEM = {
   generic: b64(KEY),
   attributesAsData: true,
 };
+const GROUP_ITEM = { ...ITEM, service: "group-scope-fixture" };
+const GROUP_FIXTURES = [
+  { accessGroup: "SERVESIMFIX.dev.expo.serve-sim.launch-fixture", value: "before-default-group" },
+  { accessGroup: "SERVESIMFIX.dev.expo.serve-sim.shared-fixture", value: "before-shared-group" },
+];
+const FIXTURE_DELETES: KeychainOperation[] = [
+  ...GROUP_FIXTURES.map(({ accessGroup }) => ({
+    op: "delete" as const,
+    ...GROUP_ITEM,
+    accessGroup,
+  })),
+  { op: "delete", ...ITEM },
+];
 const set = (value: string): Extract<KeychainOperation, { op: "set" }> => ({
   op: "set",
   ...ITEM,
@@ -114,8 +127,14 @@ describeOrSkip("keychain round trip", () => {
 
   afterAll(async () => {
     try {
+      // A failed readback relaunch can leave the app stopped during per-test cleanup.
       launch();
-      await runKeychainOperations(udid!, APP, [{ op: "delete", ...ITEM }], { timeoutMs: 10_000 });
+      const cleanup = await runKeychainOperations(udid!, APP, FIXTURE_DELETES, {
+        timeoutMs: 10_000,
+      });
+      expect(
+        cleanup.applied && cleanup.results.every(({ status }) => status === 0 || status === -25300),
+      ).toBe(true);
     } finally {
       terminate();
       if (server) {
@@ -308,32 +327,21 @@ describeOrSkip("keychain round trip", () => {
 
   test("rejects ambiguous writes, deletes, and replacements before changing any item", async () => {
     launch();
-    const item = { ...ITEM, service: "group-scope-fixture" };
-    const groups = [
-      {
-        accessGroup: "SERVESIMFIX.dev.expo.serve-sim.launch-fixture",
-        value: "before-default-group",
-      },
-      {
-        accessGroup: "SERVESIMFIX.dev.expo.serve-sim.shared-fixture",
-        value: "before-shared-group",
-      },
-    ];
     const targetValue = `before-replacement-${Date.now()}`;
     try {
       expect(await runKeychainOperations(udid!, APP, [set(targetValue)])).toEqual({
         applied: true,
         results: [{ status: 0 }],
       });
-      for (const { accessGroup, value } of groups) {
+      for (const { accessGroup, value } of GROUP_FIXTURES) {
         expect(
-          await runKeychainOperations(udid!, APP, [{ ...set(value), ...item, accessGroup }]),
+          await runKeychainOperations(udid!, APP, [{ ...set(value), ...GROUP_ITEM, accessGroup }]),
         ).toEqual({ applied: true, results: [{ status: 0 }] });
       }
       const operations: KeychainOperation[] = [
-        { ...set("ambiguous"), ...item },
-        { op: "delete", ...item },
-        { ...set("must-not-write"), replaces: [item] },
+        { ...set("ambiguous"), ...GROUP_ITEM },
+        { op: "delete", ...GROUP_ITEM },
+        { ...set("must-not-write"), replaces: [GROUP_ITEM] },
       ];
       for (const operation of operations) {
         const outcome = await runKeychainOperations(udid!, APP, [operation]);
@@ -342,12 +350,12 @@ describeOrSkip("keychain round trip", () => {
           results: [{ status: -50, error: "select an accessGroup for this item" }],
         });
       }
-      for (const { accessGroup, value } of groups) {
+      for (const { accessGroup, value } of GROUP_FIXTURES) {
         terminate();
         const after = seenValues().length;
         launch(
           "-ServeSimFixtureKeychainService",
-          item.service,
+          GROUP_ITEM.service,
           "-ServeSimFixtureKeychainAccessGroup",
           accessGroup,
         );
@@ -358,14 +366,7 @@ describeOrSkip("keychain round trip", () => {
       launch();
       await waitForLastSeen(`value=${targetValue}`, { after });
     } finally {
-      await runKeychainOperations(udid!, APP, [
-        ...groups.map(({ accessGroup }) => ({
-          op: "delete" as const,
-          ...item,
-          accessGroup,
-        })),
-        { op: "delete", ...ITEM },
-      ]);
+      await runKeychainOperations(udid!, APP, FIXTURE_DELETES);
     }
   }, 60_000);
 });
