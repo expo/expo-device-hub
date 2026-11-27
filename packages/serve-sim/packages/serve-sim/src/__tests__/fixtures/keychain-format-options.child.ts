@@ -51,7 +51,5 @@ test("KeychainAccess refuses missing context and then accepts default or explici
       bundleId: "com.example.app",
       service: " auth ",
     })[0],
-  ).toEqual([
-    { op: "delete", service: " auth ", account: Buffer.from("token").toString("base64") },
-  ]);
+  ).toEqual({ op: "delete", service: " auth ", account: Buffer.from("token").toString("base64") });
 });

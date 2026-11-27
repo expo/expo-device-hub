@@ -160,7 +160,7 @@ describe("keychain-access format", () => {
   test("delete removes the key's account in its service", () => {
     expect(
       keychainDeleteOperations("keychain-access", ["token"], { bundleId: "com.example.app" }),
-    ).toEqual([[{ op: "delete", service: "com.example.app", account: b64("token") }]]);
+    ).toEqual([{ op: "delete", service: "com.example.app", account: b64("token") }]);
   });
 
   test("needs a service or the bundle ID", () => {
