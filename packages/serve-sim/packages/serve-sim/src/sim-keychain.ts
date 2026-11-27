@@ -8,7 +8,6 @@ import { debugKeychain } from "./debug";
 import { isCapabilityEnabled } from "./launch-manager";
 import { dirnameOf } from "./runtime";
 import { APP_NOT_INSTALLED, isContainerPath, simctl } from "./simctl";
-import { stateDir } from "./state";
 import { withStateLock } from "./state-lock";
 
 const __dirname = dirnameOf(import.meta.url);
@@ -102,6 +101,19 @@ function mailboxOf(container: string): string {
   return join(container, "tmp", "serve-sim-keychain");
 }
 
+async function keychainLockPath(container: string): Promise<string> {
+  // All local writers share the lock even when their state directories differ.
+  const uid = process.getuid!();
+  const root = join("/tmp", `serve-sim-keychain-locks-${uid}`);
+  await fs.mkdir(root, { recursive: true, mode: 0o700 });
+  const directory = await fs.lstat(root);
+  if (!directory.isDirectory() || directory.uid !== uid || (directory.mode & 0o777) !== 0o700) {
+    throw new Error("The Keychain lock directory must be private and owned by this user.");
+  }
+  const containerId = createHash("sha256").update(container).digest("hex");
+  return join(root, `${containerId}.lock`);
+}
+
 /**
  * Sends operations to the keychain dylib inside the app that owns `container`. Resolves the
  * results, or null when nothing answered in time. With `keepQueued`, an unanswered request stays
@@ -118,10 +130,10 @@ export async function requestKeychain(
   if (!isContainerPath(container)) throw new Error(`Not an app data container: ${container}`);
   const canonicalContainer = await fs.realpath(container);
   const mailbox = mailboxOf(canonicalContainer);
-  const containerId = createHash("sha256").update(canonicalContainer).digest("hex");
+  const lock = await keychainLockPath(canonicalContainer);
   // Keep the host lock outside the app's temporary directory, which the app can clear.
   return withStateLock(
-    join(stateDir(), `keychain-${containerId}.lock`),
+    lock,
     60_000,
     () => new Error(`Timed out waiting for another keychain request in ${container}.`),
     async () => {

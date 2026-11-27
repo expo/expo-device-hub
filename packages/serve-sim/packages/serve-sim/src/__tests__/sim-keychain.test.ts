@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, promises as fs, readdirSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { execFileSync } from "child_process";
+import { execFile, execFileSync } from "child_process";
+import { promisify } from "util";
 import {
   MAX_KEYCHAIN_REQUEST_BYTES,
   QUEUED_REQUEST_TTL_MS,
@@ -61,7 +62,7 @@ describe("requestKeychain", () => {
     expect(readdirSync(mailbox(root).responses)).toEqual([]);
   });
 
-  test("serializes requests when the app clears its temp directory", async () => {
+  test("serializes across host state directories when the app clears temp", async () => {
     const root = container();
     const first = requestKeychain(root, [SET], { timeoutMs: 3000 });
     try {
@@ -70,7 +71,15 @@ describe("requestKeychain", () => {
       await fs.rm(join(root, "tmp"), { recursive: true });
       await fs.mkdir(mailbox(root).requests, { recursive: true });
       await fs.mkdir(mailbox(root).responses, { recursive: true });
-      const second = requestKeychain(root, [SET], { timeoutMs: 0, keepQueued: true });
+      const child = join(import.meta.dir, "fixtures/keychain-queue.child.ts");
+      const second = promisify(execFile)(
+        process.execPath,
+        [child, root, String(Date.now()), '["newer"]'],
+        {
+          env: { ...process.env, SERVE_SIM_STATE_DIR: join(root, "other-state") },
+          timeout: 5000,
+        },
+      );
       const completedEarly = await Promise.race([
         second.then(() => true),
         Bun.sleep(200).then(() => false),
@@ -80,7 +89,7 @@ describe("requestKeychain", () => {
         JSON.stringify({ nonce, results: [{ status: 0 }] }),
       );
       expect(await first).toEqual([{ status: 0 }]);
-      expect(await second).toBeNull();
+      await second;
       expect(completedEarly).toBe(false);
       expect(await waitForRequests(root)).toHaveLength(1);
     } finally {
