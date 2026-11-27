@@ -84,7 +84,7 @@ test("KeychainSwift refuses incompatible options and then preserves an exact pre
   ).toMatchObject({ account, clears: [{ account }] });
   expect(
     keychainDeleteOperations("keychain-swift", [" token "], { keyPrefix: " ks_ " })[0],
-  ).toEqual([{ op: "delete", account }]);
+  ).toEqual({ op: "delete", account });
 });
 
 test("KeychainSwift controls accept an explicit empty prefix for set, delete, and list", async () => {

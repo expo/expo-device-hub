@@ -184,7 +184,7 @@ describe("keychain-swift format", () => {
       },
     ]);
     expect(keychainDeleteOperations("keychain-swift", ["token"], {})).toEqual([
-      [{ op: "delete", account: b64("token") }],
+      { op: "delete", account: b64("token") },
     ]);
   });
 
