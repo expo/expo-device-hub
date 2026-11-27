@@ -134,6 +134,7 @@ describe("capability operation draining", () => {
           enabled: false,
           relaunch: false,
           preserveForeignOwner: true,
+          onPreservedOwner: expect.any(Function),
         });
       } finally {
         resume.resolve();
@@ -182,6 +183,7 @@ describe("capability operation draining", () => {
         enabled: false,
         relaunch: false,
         preserveForeignOwner: true,
+        onPreservedOwner: expect.any(Function),
       });
     } finally {
       resume.resolve();
@@ -263,6 +265,7 @@ describe("capability operation draining", () => {
         enabled: false,
         relaunch: false,
         preserveForeignOwner: true,
+        onPreservedOwner: expect.any(Function),
       });
     } finally {
       resume.resolve();
