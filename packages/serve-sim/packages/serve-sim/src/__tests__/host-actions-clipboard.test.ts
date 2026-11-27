@@ -37,6 +37,21 @@ describe("clipboard host actions", () => {
     expect(read).toHaveBeenCalledWith(UDID);
   });
 
+  test("passes the owning server's clipboard reader opt-out", async () => {
+    const read = spyOn(reader, "readSimPasteboardResult").mockResolvedValue({ text: "test" });
+    restores.push(() => read.mockRestore());
+    const result = await runHostActionAsync(
+      { action: "clipboard.read", params: { udid: UDID } },
+      "false",
+      undefined,
+      undefined,
+      undefined,
+      false,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(read).toHaveBeenCalledWith(UDID, { appReader: false });
+  });
+
   test("writes empty and multiline Unicode text without putting it in argv", async () => {
     const write = spyOn(pasteboard, "writeSimPasteboard").mockResolvedValue(undefined);
     restores.push(() => write.mockRestore());
