@@ -1,5 +1,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { writeLaunchState } from "../launch-state";
@@ -19,6 +27,13 @@ function expectStartupDiagnostics(stderr: string) {
 const bundleDir = mkdtempSync(join(tmpdir(), "serve-sim-caller-cli-node-"));
 const diagnostic = "SERVE_SIM_ADDITIONAL_DYLIBS needs absolute paths to existing dylibs";
 const UDID = "11111111-2222-3333-4444-555555555555";
+const keychainCapability = {
+  name: "keychain",
+  dylib: "/fixture.dylib",
+  scope: "userApps",
+  bundleId: null,
+  ownerPid: null,
+} as const;
 let entrypoint: string;
 beforeAll(async () => {
   const build = await Bun.build({
@@ -60,15 +75,7 @@ test.each([
     try {
       writeLaunchState(selected, {
         launchArgs: [],
-        capabilities: {
-          keychain: {
-            name: "keychain",
-            dylib: "/fixture.dylib",
-            scope: "userApps",
-            bundleId: null,
-            ownerPid: null,
-          },
-        },
+        capabilities: { keychain: keychainCapability },
       });
       await withShimsAsync(
         {
@@ -104,6 +111,57 @@ exit 1
   },
   20_000,
 );
+
+test("Keychain CLI withdraws an unanswered SecureStore delete and tells the caller to retry", async () => {
+  const state = useTempStateDir();
+  const bundleId = "dev.example.fixture";
+  const container = join(state.dir, "app");
+  const requests = join(container, "tmp", "serve-sim-keychain", "requests");
+  try {
+    mkdirSync(container);
+    writeLaunchState(UDID, {
+      launchArgs: [],
+      capabilities: { keychain: keychainCapability },
+    });
+    await withShimsAsync(
+      {
+        xcrun: `#!/bin/sh
+case "$2" in
+  get_app_container) printf '%s\\n' "$SERVE_SIM_TEST_APP_CONTAINER" ;;
+  spawn) exit 0 ;;
+  *) exit 1 ;;
+esac
+`,
+      },
+      async () => {
+        const command = ["node", entrypoint, "keychain", "delete", bundleId, "token"];
+        const target = ["-d", UDID, "--service", "auth", "--json"];
+        const deleteKey = (format: string) =>
+          Bun.spawnSync([...command, ...target, "--format", format], {
+            env: { ...process.env, SERVE_SIM_TEST_APP_CONTAINER: container },
+            timeout: 10_000,
+          });
+        const refused = deleteKey("expo-secure-store");
+        expect(refused.exitCode).toBe(1);
+        expect(refused.stdout.toString()).toBe("");
+        expect(refused.stderr.toString()).toContain("the delete was withdrawn");
+        expect(refused.stderr.toString()).toContain("pass --relaunch");
+        expect(readdirSync(requests)).toEqual([]);
+
+        const queued = deleteKey("generic-password");
+        expect(queued.exitCode).toBe(0);
+        expect(JSON.parse(queued.stdout.toString())).toEqual({
+          udid: UDID,
+          bundleId,
+          applied: false,
+        });
+        expect(readdirSync(requests)).toHaveLength(1);
+      },
+    );
+  } finally {
+    state.restore();
+  }
+}, 25_000);
 
 test.each(["none", "publish", "stop", "missing-loader", "lock-timeout", "rollback"] as const)(
   "plain default initialization handles %s",
