@@ -62,6 +62,13 @@ function exitReleaseFailure(error: unknown): string {
   return `${holder}. The loader can stay until the simulator reboots or serve-sim sets it up again.`;
 }
 
+interface DeviceSetup {
+  work: Promise<void>;
+  done: boolean;
+  checkedAt: number;
+  preservedOwnerPid?: number;
+}
+
 /**
  * Sets up one default capability on each device the middleware opens or starts, keeps it in place,
  * and releases it on `dispose()` or at exit.
@@ -77,7 +84,7 @@ export function createCapabilitySession(
   // Pages, /api polls, and config requests all call initialize(). After a setup succeeds, the launchd
   // check (two simctl spawns) runs at most once per RECHECK_MS per device. That check is what repairs
   // a reboot the middleware did not see.
-  const devices = new Map<string, { work: Promise<void>; done: boolean; checkedAt: number }>();
+  const devices = new Map<string, DeviceSetup>();
   // A failed setup waits before the next attempt, so a device that keeps failing is not retried and
   // logged on every request. Each failure doubles the wait; a reboot retries at once.
   const failures = new Map<string, { retryAt: number; delayMs: number; error: unknown }>();
@@ -92,7 +99,9 @@ export function createCapabilitySession(
       previous &&
       !rebooted &&
       (!previous.done ||
-        (!enabled && !isCapabilityEnabled(udid, definition.name)) ||
+        (!enabled &&
+          readLaunchState(udid)?.capabilities[definition.name]?.ownerPid ===
+            previous.preservedOwnerPid) ||
         (enabled &&
           now() - previous.checkedAt < RECHECK_MS &&
           isCapabilityEnabled(udid, definition.name)))
@@ -102,7 +111,7 @@ export function createCapabilitySession(
     // A reboot clears launchd, so configure the new boot after any setup that started before it.
     const earlier =
       rebooted && previous && !previous.done ? previous.work.catch(() => {}) : undefined;
-    const entry = { work: Promise.resolve(), done: false, checkedAt: 0 };
+    const entry: DeviceSetup = { work: Promise.resolve(), done: false, checkedAt: 0 };
     entry.work = (async () => {
       await earlier;
       if (enabled && !rebooted && (await isCapabilityArmed(udid, definition.name))) return;
@@ -110,7 +119,12 @@ export function createCapabilitySession(
         enabled,
         relaunch: false,
         preserveForeignOwner: enabled || preserveForeignOwnerOnDisable,
+        onPreservedOwner: (pid) => {
+          entry.preservedOwnerPid = pid;
+        },
       });
+      // A disabled preview must leave a live owner's loader and config untouched.
+      if (entry.preservedOwnerPid !== undefined) return;
       if (enabled) {
         initializedHere.add(udid);
         releaseOnExit(udid);

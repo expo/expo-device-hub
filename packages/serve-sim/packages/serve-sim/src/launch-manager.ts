@@ -607,6 +607,8 @@ type ConfigureOptions = {
   enabled: boolean;
   /** Share an existing session's setup without replacing or removing its registration. */
   preserveForeignOwner?: boolean;
+  /** Report the retained owner before releasing the device lock. */
+  onPreservedOwner?: (pid: number) => void;
 } & EnableOptions;
 
 /**
@@ -655,6 +657,7 @@ export async function configureCapability(
     relaunch = true,
     ownerPid = process.pid,
     preserveForeignOwner = false,
+    onPreservedOwner,
   }: ConfigureOptions,
 ): Promise<void> {
   const context: CapabilityContext = { udid, bundleId, options, enabled };
@@ -667,6 +670,7 @@ export async function configureCapability(
         if (enabled && !(await isCapabilityArmed(udid, definition.name))) {
           await publishLaunchState(udid, state);
         }
+        onPreservedOwner?.(owner);
         return;
       }
     }

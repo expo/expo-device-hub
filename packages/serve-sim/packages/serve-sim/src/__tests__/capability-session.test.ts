@@ -250,6 +250,41 @@ describe("capability session, through the clipboard capability", () => {
     expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain("/camera.dylib");
   });
 
+  test("a disabled Keychain session leaves a live foreign owner alone and cleans stale state", async () => {
+    const definition = {
+      name: "keychain",
+      dylib: "/test/libSimKeychain.dylib",
+      scope: "userApps" as const,
+      bundleId: null,
+      ownerPid: process.ppid,
+    };
+    await enableCapabilities(UDID, null, [definition], { relaunch: false });
+    writeLaunchState(UDID, {
+      launchArgs: [],
+      capabilities: { keychain: definition },
+      sessionPids: [process.ppid],
+    });
+    const disabled = createCapabilitySession(keychainCapability, false);
+    try {
+      const callLog = process.env.TEST_CLIPBOARD_CALLS!;
+      const calls = readFileSync(callLog, "utf8");
+      const initialization = disabled.initialize(UDID);
+      await initialization;
+      expect(readFileSync(callLog, "utf8")).toBe(calls);
+      expect(readLaunchState(UDID)?.sessionPids).toEqual([process.ppid]);
+      expect(disabled.initialize(UDID)).toBe(initialization);
+
+      writeLaunchState(UDID, {
+        launchArgs: [],
+        capabilities: { keychain: { ...definition, ownerPid: 2_147_483_647 } },
+      });
+      await disabled.initialize(UDID);
+      expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe("");
+    } finally {
+      await disabled.dispose();
+    }
+  });
+
   test("disposal waits for pending initialization before withdrawing it", async () => {
     let proceed!: () => void;
     const blocked = new Promise<void>((resolve) => {
