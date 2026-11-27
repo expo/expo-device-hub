@@ -58,6 +58,18 @@ describe("setIosKeychainValues", () => {
     });
   });
 
+  test("keeps the submitted values while the transport waits to send", async () => {
+    const values = { accessToken: "original" };
+    const run = async (_action: string, params?: HostActionParams) => {
+      await Promise.resolve();
+      expect(params?.values).toEqual({ accessToken: "original" });
+      return reply(APPLIED);
+    };
+    const result = setIosKeychainValues(run, UDID, APP, values);
+    values.accessToken = "changed";
+    expect(await result).toEqual(APPLIED);
+  });
+
   test("returns per-key failures that also failed the action", async () => {
     const failed: KeychainWriteResult = {
       applied: true,

@@ -131,7 +131,7 @@ export function setIosKeychainValues(
   return write(
     run,
     "keychain.set",
-    { ...target(udid, appId, options), values },
+    { ...target(udid, appId, options), values: { ...values } },
     options,
     "Could not set the keychain values.",
   );
