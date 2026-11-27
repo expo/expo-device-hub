@@ -6,6 +6,7 @@ import { CollapsibleSection } from "./collapsible-section";
 import { PERMISSION_SERVICES, type PermAction, type PermState } from "../utils/permissions";
 
 const PERMISSION_REFRESH_INTERVAL_MS = 5000;
+const PERMISSION_REQUEST_TIMEOUT_MS = 135_000;
 
 export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId: string | null }) {
   const [state, setState] = useState<PermState>({});
@@ -14,66 +15,72 @@ export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId:
   const pending = pendingWrites[targetKey] ?? null;
   const [readError, setReadError] = useState<string | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
-  const error = writeError ?? readError;
+  const error =
+    writeError && readError ? `${writeError}. Readback: ${readError}` : (writeError ?? readError);
   const [open, setOpen] = useState(false);
 
   const generation = useRef(0);
   const reading = useRef(new Set<string>());
   const writing = useRef(new Set<string>());
-  const refresh = useCallback(
-    async (force = false) => {
-      const own = generation.current;
-      const readKey = `${targetKey}:${own}`;
-      if (!bundleId || (!force && (reading.current.has(readKey) || writing.current.has(targetKey))))
-        return;
-      reading.current.add(readKey);
-      try {
-        const res = await runHostAction("permissions.list", { bundleId, udid });
-        if (res.exitCode !== 0) throw new Error(res.stderr.trim() || "Could not read permissions");
-        const payload = JSON.parse(res.stdout);
-        if (
-          !Array.isArray(payload.permissions) ||
-          !payload.permissions.every(
-            (p: any) =>
-              typeof p.id === "string" &&
-              ["granted", "denied", "limited", "undetermined"].includes(p.state),
-          )
+  const refresh = useCallback(async () => {
+    const own = generation.current;
+    const readKey = `${targetKey}:${own}`;
+    if (!bundleId || reading.current.has(readKey) || writing.current.has(targetKey)) return;
+    reading.current.add(readKey);
+    try {
+      const res = await runHostAction(
+        "permissions.list",
+        { bundleId, udid },
+        {
+          signal: AbortSignal.timeout(PERMISSION_REQUEST_TIMEOUT_MS),
+        },
+      );
+      if (res.exitCode !== 0) throw new Error(res.stderr.trim() || "Could not read permissions");
+      const payload = JSON.parse(res.stdout);
+      if (
+        !Array.isArray(payload.permissions) ||
+        !payload.permissions.every(
+          (p: any) =>
+            typeof p.id === "string" &&
+            ["granted", "denied", "limited", "undetermined"].includes(p.state),
         )
-          throw new Error("Invalid permissions response");
-        if (own !== generation.current) return;
-        const next: PermState = {};
-        for (const permission of payload.permissions) {
-          next[permission.id] =
-            permission.state === "granted"
-              ? "grant"
-              : permission.state === "denied"
-                ? "revoke"
-                : permission.state === "limited"
-                  ? "limited"
-                  : "reset";
-        }
-        // When-in-use does not imply always authorization.
-        next["location-always"] =
-          payload.location?.Authorization === 4
+      )
+        throw new Error("Invalid permissions response");
+      if (own !== generation.current) return;
+      const next: PermState = {};
+      for (const permission of payload.permissions) {
+        next[permission.id] =
+          permission.state === "granted"
             ? "grant"
-            : payload.location?.Authorization === 1
+            : permission.state === "denied"
               ? "revoke"
-              : payload.location?.Authorization == null || payload.location.Authorization === 0
-                ? "reset"
-                : undefined;
-        setState(next);
-        setReadError(null);
-      } catch (e) {
-        if (own === generation.current) {
-          setState({});
-          setReadError(e instanceof Error ? e.message : String(e));
-        }
-      } finally {
-        reading.current.delete(readKey);
+              : permission.state === "limited"
+                ? "limited"
+                : "reset";
       }
-    },
-    [bundleId, udid, targetKey],
-  );
+      // When-in-use does not imply always authorization.
+      next["location-always"] =
+        payload.location?.Authorization === 4
+          ? "grant"
+          : payload.location?.Authorization === 1
+            ? "revoke"
+            : payload.location?.Authorization == null || payload.location.Authorization === 0
+              ? "reset"
+              : undefined;
+      setState(next);
+      setReadError(null);
+      setPendingWrites((previous) => {
+        if (!(targetKey in previous)) return previous;
+        const next = { ...previous };
+        delete next[targetKey];
+        return next;
+      });
+    } catch (e) {
+      if (own === generation.current) setReadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      reading.current.delete(readKey);
+    }
+  }, [bundleId, udid, targetKey]);
 
   const latestTarget = useRef<{ key: string; refresh: typeof refresh } | null>(null);
   useEffect(() => {
@@ -85,14 +92,16 @@ export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId:
   }, [targetKey, refresh]);
 
   // @ref LLP 0013#app-permissions — collapsing the permission section must not erase a failed mutation
-  useEffect(() => setWriteError(null), [targetKey]);
+  useEffect(() => {
+    setState({});
+    setReadError(null);
+    setWriteError(null);
+  }, [targetKey]);
 
   useEffect(() => {
     generation.current++;
-    setState({});
-    setReadError(null);
     if (!open) return;
-    void refresh(true);
+    void refresh();
     const timer = setInterval(() => void refresh(), PERMISSION_REFRESH_INTERVAL_MS);
     const focus = () => void refresh();
     window.addEventListener("focus", focus);
@@ -108,7 +117,7 @@ export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId:
 
   const write = useCallback(
     async (key: string, run: () => ReturnType<typeof runHostAction>) => {
-      if (!bundleId || writing.current.has(targetKey)) return;
+      if (!bundleId || pending || writing.current.has(targetKey)) return;
       writing.current.add(targetKey);
       generation.current++;
       setPendingWrites((previous) => ({ ...previous, [targetKey]: key }));
@@ -122,29 +131,37 @@ export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId:
         if (latestTarget.current?.key === targetKey)
           setWriteError(error instanceof Error ? error.message : String(error));
       } finally {
+        writing.current.delete(targetKey);
         const current = latestTarget.current;
         if (current?.key === targetKey) {
           generation.current++;
-          await current.refresh(true);
+          await current.refresh();
         }
-        writing.current.delete(targetKey);
-        if (latestTarget.current)
-          setPendingWrites((previous) => {
-            const next = { ...previous };
-            delete next[targetKey];
-            return next;
-          });
       }
     },
-    [bundleId, targetKey],
+    [bundleId, pending, targetKey],
   );
 
   const apply = (service: string, action: PermAction) =>
     write(`${service}:${action}`, () =>
-      runHostAction("permissions.set", { action, service, bundleId: bundleId!, udid }),
+      runHostAction(
+        "permissions.set",
+        { action, service, bundleId: bundleId!, udid },
+        {
+          signal: AbortSignal.timeout(PERMISSION_REQUEST_TIMEOUT_MS),
+        },
+      ),
     );
   const resetAll = () =>
-    write("__all__", () => runHostAction("permissions.resetAll", { bundleId: bundleId!, udid }));
+    write("__all__", () =>
+      runHostAction(
+        "permissions.resetAll",
+        { bundleId: bundleId!, udid },
+        {
+          signal: AbortSignal.timeout(PERMISSION_REQUEST_TIMEOUT_MS),
+        },
+      ),
+    );
 
   if (!bundleId) {
     return <AppPermissionsLoading />;

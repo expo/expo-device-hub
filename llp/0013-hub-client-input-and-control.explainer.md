@@ -234,7 +234,11 @@ after a write, on focus and every five seconds while open. It reads services aga
 after reload instead of treating the command acknowledgement as state. It rejects
 retired reads, coalesces reads per target and keeps mutation failures visible
 when the permission section is collapsed and reopened. Mutation errors clear on target changes
-or a new write, while a successful refresh clears only read errors.
+or a new write, while a successful refresh clears only read errors. A failed
+read keeps the last confirmed rows for that target and shows its error alongside
+any mutation error. A pending write clears only after a successful readback.
+The preview waits up to 135 seconds per request so a silent socket cannot prevent
+later recovery reads.
 Location Always has a separate selection, including Reset for undetermined state.
 [observed: serve-sim `client/components/app-permissions-tool.tsx`;
 serve-sim `__tests__/fixtures/permissions-ui.child.ts`]

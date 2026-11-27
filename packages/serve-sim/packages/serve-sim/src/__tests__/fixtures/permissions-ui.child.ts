@@ -175,7 +175,7 @@ test("returning to an app with an outstanding write keeps it disabled until fres
     renderer.update(createElement(AppPermissionsTool, { udid: "one", bundleId: "app" })),
   );
   expect(pressed("Allow").props.disabled).toBe(true);
-  await reply("denied");
+  expect(requests).toHaveLength(0);
   await act(async () => write.resolve({ exitCode: 0, stdout: "ok", stderr: "" }));
   expect(pressed("Allow").props.disabled).toBe(true);
   await reply("granted");
@@ -282,7 +282,7 @@ test("a target change clears the previous app's mutation error", async () => {
   expect(JSON.stringify(renderer.toJSON())).not.toContain("old app grant failed");
 });
 
-test("a failed permission read clears stale rows and a later refresh clears its error", async () => {
+test("a failed permission read keeps the last rows until a refresh succeeds", async () => {
   await mount();
   await reply("granted");
   await act(async () => focus?.());
@@ -290,12 +290,32 @@ test("a failed permission read clears stale rows and a later refresh clears its 
     requests.shift()!.resolve({ exitCode: 1, stdout: "", stderr: "permission read failed" }),
   );
   expect(JSON.stringify(renderer.toJSON())).toContain("permission read failed");
-  for (const title of ["Allow", "Deny", "Reset"])
-    expect(pressed(title).props["aria-pressed"]).toBe(false);
+  expect(pressed("Allow").props["aria-pressed"]).toBe(true);
   await act(async () => focus?.());
   await reply("denied");
   expect(pressed("Deny").props["aria-pressed"]).toBe(true);
   expect(JSON.stringify(renderer.toJSON())).not.toContain("permission read failed");
+});
+
+test("a failed write and readback keep controls pending and show both errors", async () => {
+  await mount();
+  await reply("denied");
+  await act(async () => {
+    pressed("Allow").props.onClick();
+  });
+  await act(async () =>
+    requests.shift()!.resolve({ exitCode: 1, stdout: "", stderr: "grant failed" }),
+  );
+  await act(async () =>
+    requests.shift()!.resolve({ exitCode: 1, stdout: "", stderr: "list failed" }),
+  );
+  expect(pressed("Allow").props.disabled).toBe(true);
+  expect(JSON.stringify(renderer.toJSON())).toContain("grant failed. Readback: list failed");
+  await act(async () => focus?.());
+  await reply("denied");
+  expect(pressed("Allow").props.disabled).toBe(false);
+  expect(JSON.stringify(renderer.toJSON())).toContain("grant failed");
+  expect(JSON.stringify(renderer.toJSON())).not.toContain("list failed");
 });
 
 test("a failed old-target read cannot clear the new app's confirmed rows", async () => {
