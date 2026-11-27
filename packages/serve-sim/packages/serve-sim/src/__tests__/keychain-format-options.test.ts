@@ -5,9 +5,11 @@ test("keychain format-option refusals and valid credentials in a child process",
   const { exitCode, output } = await runChildSuite("keychain-format-options.child.ts", {
     timeoutMs: 20_000,
   });
-  expect(output).toContain("5 pass");
+  expect(output).toContain("11 pass");
   expect(output).toContain("react-native-keychain refuses a separate service option");
   expect(output).toContain("valid credentials preserve service and username");
   expect(output).toContain("KeychainAccess refuses missing context");
+  expect(output).toContain("KeychainSwift refuses incompatible options");
+  expect(output).toContain("KeychainSwift controls accept an explicit empty prefix");
   expect(exitCode).toBe(0);
 }, 30_000);

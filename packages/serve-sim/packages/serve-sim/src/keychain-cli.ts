@@ -19,6 +19,7 @@ interface KeychainCliOptions {
   accessGroup?: string;
   accessible?: KeychainAccessible;
   username?: string;
+  keyPrefix?: string;
   device?: string;
   json?: boolean;
 }
@@ -39,6 +40,7 @@ async function targetOf(bundleId: string, opts: KeychainCliOptions): Promise<Key
     options: {
       service: opts.service,
       username: opts.username,
+      keyPrefix: opts.keyPrefix,
       accessGroup: opts.accessGroup,
       accessible: opts.accessible,
     },
@@ -118,8 +120,9 @@ function withTargetOptions(command: Command, deviceOpt: readonly [string, string
     )
     .option(
       "--service <name>",
-      "expo-secure-store: its keychainService option (default app). generic-password: the item service. keychain-access: Keychain(service:) (default the bundle ID). react-native-keychain takes none; its keys are services",
+      "expo-secure-store: its keychainService option (default app). generic-password: the item service. keychain-access: Keychain(service:) (default the bundle ID). react-native-keychain and keychain-swift take none",
     )
+    .option("--key-prefix <prefix>", "keychain-swift: the app's KeychainSwift(keyPrefix:)")
     .option("--access-group <group>", "Keychain access group (default: the app's own)")
     .option(...deviceOpt)
     .option("-j, --json", "Print JSON");
