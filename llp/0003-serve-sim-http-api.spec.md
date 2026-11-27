@@ -572,7 +572,7 @@ These API actions use the authenticated `/exec-ws` channel and require a specifi
 Simulator UDID. Paths are relative to the selected app's **data** container;
 traversal and symlinks encountered during path checks, including in the container
 root or its ancestors, are refused, as are paths in serve-sim's keychain mailbox,
-`tmp/serve-sim-keychain` (LLP 0017). Keep the app
+`tmp/serve-sim-keychain` (LLP 0020). Keep the app
 stopped and prevent other tools from changing its directories during an operation.
 Requests are serialized with app controls on the same device; another device can
 proceed independently. The preview UI has no storage editor. These actions are

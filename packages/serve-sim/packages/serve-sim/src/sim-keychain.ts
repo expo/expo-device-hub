@@ -35,7 +35,7 @@ export function locateKeychainDylib(): string | null {
   return candidate ? resolve(candidate) : null;
 }
 
-// @ref LLP 0017#why-the-write-runs-inside-the-app — the dylib carries the app's entitlements
+// @ref LLP 0020#why-the-write-runs-inside-the-app — the dylib carries the app's entitlements
 export const keychainCapability: CapabilityDefinition = {
   name: KEYCHAIN_CAPABILITY,
   defaultEnabled: true,
@@ -148,7 +148,7 @@ async function requestKeychainUnlocked(
   // Expired requests still hold values; the app would drop them unread at its next start.
   await removeOlderThan(join(mailbox, "requests"), QUEUED_REQUEST_TTL_MS);
   await removeOlderThan(join(mailbox, "responses"), STALE_ANSWER_MS);
-  // @ref LLP 0017#the-mailbox — the app handles requests in name order
+  // @ref LLP 0020#the-mailbox — the app handles requests in name order
   // The shared queue keeps that order across processes, even when their clocks tie or go back.
   const order = (await fs.readdir(join(mailbox, "requests"))).reduce((next, name) => {
     const match = /^(\d{15})-.*\.json$/.exec(name);
