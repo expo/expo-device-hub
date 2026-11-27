@@ -61,6 +61,33 @@ describe("requestKeychain", () => {
     expect(readdirSync(mailbox(root).responses)).toEqual([]);
   });
 
+  test("serializes requests when the app clears its temp directory", async () => {
+    const root = container();
+    const first = requestKeychain(root, [SET], { timeoutMs: 3000 });
+    try {
+      const [name] = await waitForRequests(root);
+      const { nonce } = JSON.parse(await fs.readFile(join(mailbox(root).requests, name!), "utf8"));
+      await fs.rm(join(root, "tmp"), { recursive: true });
+      await fs.mkdir(mailbox(root).requests, { recursive: true });
+      await fs.mkdir(mailbox(root).responses, { recursive: true });
+      const second = requestKeychain(root, [SET], { timeoutMs: 0, keepQueued: true });
+      const completedEarly = await Promise.race([
+        second.then(() => true),
+        Bun.sleep(200).then(() => false),
+      ]);
+      await fs.writeFile(
+        join(mailbox(root).responses, `${nonce}.json`),
+        JSON.stringify({ nonce, results: [{ status: 0 }] }),
+      );
+      expect(await first).toEqual([{ status: 0 }]);
+      expect(await second).toBeNull();
+      expect(completedEarly).toBe(false);
+      expect(await waitForRequests(root)).toHaveLength(1);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("gives the request an expiry an hour out", async () => {
     const root = container();
     const before = Date.now();

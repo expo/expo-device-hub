@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { existsSync, promises as fs } from "fs";
 import { join, resolve } from "path";
 import { setTimeout as sleep } from "timers/promises";
@@ -8,6 +8,7 @@ import { debugKeychain } from "./debug";
 import { isCapabilityEnabled } from "./launch-manager";
 import { dirnameOf } from "./runtime";
 import { APP_NOT_INSTALLED, isContainerPath, simctl } from "./simctl";
+import { stateDir } from "./state";
 import { withStateLock } from "./state-lock";
 
 const __dirname = dirnameOf(import.meta.url);
@@ -115,15 +116,19 @@ export async function requestKeychain(
   }: { timeoutMs?: number; keepQueued?: boolean } = {},
 ): Promise<KeychainResult[] | null> {
   if (!isContainerPath(container)) throw new Error(`Not an app data container: ${container}`);
-  const mailbox = mailboxOf(container);
-  await fs.mkdir(join(mailbox, "requests"), { recursive: true, mode: 0o700 });
-  await fs.mkdir(join(mailbox, "responses"), { recursive: true, mode: 0o700 });
-  // Serialized so requests reach the app in the order they were made, also across processes.
+  const canonicalContainer = await fs.realpath(container);
+  const mailbox = mailboxOf(canonicalContainer);
+  const containerId = createHash("sha256").update(canonicalContainer).digest("hex");
+  // Keep the host lock outside the app's temporary directory, which the app can clear.
   return withStateLock(
-    join(mailbox, "lock"),
+    join(stateDir(), `keychain-${containerId}.lock`),
     60_000,
-    () => new Error(`Timed out waiting for another keychain request in ${container}`),
-    () => requestKeychainUnlocked(mailbox, operations, timeoutMs, keepQueued),
+    () => new Error(`Timed out waiting for another keychain request in ${container}.`),
+    async () => {
+      await fs.mkdir(join(mailbox, "requests"), { recursive: true, mode: 0o700 });
+      await fs.mkdir(join(mailbox, "responses"), { recursive: true, mode: 0o700 });
+      return requestKeychainUnlocked(mailbox, operations, timeoutMs, keepQueued);
+    },
   );
 }
 
