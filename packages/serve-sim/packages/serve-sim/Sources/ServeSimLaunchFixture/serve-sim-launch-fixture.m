@@ -4,6 +4,7 @@
 // delegate; the app delegate never sees them.
 
 #import <AVFoundation/AVFoundation.h>
+#import <Security/Security.h>
 #import <UIKit/UIKit.h>
 
 static void Record(NSString *kind, NSString *detail) {
@@ -53,6 +54,50 @@ static void RequestIfAsked(void) {
             Record(@"request", [NSString stringWithFormat:@"status=%ld bytes=%lu", (long)status,
                                                           (unsigned long)data.length]);
           }] resume];
+}
+
+// -ServeSimFixtureKeychain <key> reads the key the way expo-secure-store does and records each
+// value the app sees, so a test can tell what the app itself reads after serve-sim writes it.
+static NSString *ReadSecureStoreKey(NSString *key, NSString *service, NSString *accessGroup) {
+  NSData *account = [key dataUsingEncoding:NSUTF8StringEncoding];
+  NSMutableDictionary *query = [@{
+    (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
+    (__bridge id)kSecAttrService : service,
+    (__bridge id)kSecAttrGeneric : account,
+    (__bridge id)kSecAttrAccount : account,
+    (__bridge id)kSecMatchLimit : (__bridge id)kSecMatchLimitOne,
+    (__bridge id)kSecReturnData : @YES,
+  } mutableCopy];
+  if (accessGroup != nil) query[(__bridge id)kSecAttrAccessGroup] = accessGroup;
+  CFTypeRef found = NULL;
+  OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &found);
+  if (status != errSecSuccess) return [NSString stringWithFormat:@"status=%d", (int)status];
+  NSData *data = (__bridge_transfer NSData *)found;
+  return [@"value=" stringByAppendingString:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @""];
+}
+
+static NSString *LaunchArgument(NSString *name) {
+  NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
+  NSUInteger flag = [arguments indexOfObject:name];
+  return flag != NSNotFound && flag + 1 < arguments.count ? arguments[flag + 1] : nil;
+}
+
+static void WatchKeychainIfAsked(void) {
+  NSString *key = LaunchArgument(@"-ServeSimFixtureKeychain");
+  if (key == nil) return;
+  NSString *service = LaunchArgument(@"-ServeSimFixtureKeychainService") ?: @"app:no-auth";
+  NSString *accessGroup = LaunchArgument(@"-ServeSimFixtureKeychainAccessGroup");
+  __block NSString *last = nil;
+  void (^check)(void) = ^{
+    NSString *seen = ReadSecureStoreKey(key, service, accessGroup);
+    if ([seen isEqualToString:last]) return;
+    last = seen;
+    Record(@"keychain", seen);
+  };
+  check();
+  [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(__unused NSTimer *timer) {
+    check();
+  }];
 }
 
 // Recorded from +load so a launch that is terminated before
@@ -362,6 +407,7 @@ static void RecordScroll(NSString *kind, NSDictionary *data) {
     }];
   }
   RequestIfAsked();
+  WatchKeychainIfAsked();
   return YES;
 }
 

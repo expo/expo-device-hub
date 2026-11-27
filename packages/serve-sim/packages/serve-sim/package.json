@@ -37,6 +37,7 @@
     "dist/simpb/serve-sim-pasteboard",
     "dist/simpb/ServeSimPasteboard.app",
     "dist/simpb/libSimPasteboardReader.dylib",
+    "dist/simkc/libSimKeychain.dylib",
     "dist/simnet/libSimNetProxy.dylib",
     "src/ax-shared.ts",
     "src/ax.ts",

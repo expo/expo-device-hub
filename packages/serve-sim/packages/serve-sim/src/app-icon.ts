@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { join, sep } from "path";
 
 import { type HostActionResult, runInvocation } from "./host-actions-utils";
+import { APP_NOT_INSTALLED } from "./simctl";
 
 // `GET /api/apps/icon?bundleId=<id>`: the installed app's icon in one plain request, so a remote
 // client behind a tunnel needs neither the exec-ws socket nor its Origin check. The response
@@ -23,8 +24,6 @@ const BUNDLE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
 const ICON_NAME = /^(?!\.)[^/\\\n]{1,200}$/;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const MAX_ICON_BYTES = 2 * 1024 * 1024;
-// What `simctl get_app_container` prints for a bundle id the device does not have (ENOENT).
-const NOT_INSTALLED = "domain=NSPOSIXErrorDomain, code=2";
 
 /**
  * Map a `simctl get_app_container` result to the app path, or null for an app that is not
@@ -36,7 +35,7 @@ export function appContainerFromResult(result: HostActionResult): string | null 
     if (appPath) return appPath;
     throw new Error("simctl returned no app path");
   }
-  if (!result.timedOut && result.stderr.includes(NOT_INSTALLED)) return null;
+  if (!result.timedOut && result.stderr.includes(APP_NOT_INSTALLED)) return null;
   throw new Error(result.stderr.trim() || "simctl could not look up the app");
 }
 
