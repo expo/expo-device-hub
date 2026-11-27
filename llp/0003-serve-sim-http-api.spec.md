@@ -42,7 +42,9 @@ are server-sent event streams; the rest return JSON.
 Each `/appstate` message reports `{bundleId, pid, isReactNative, label}`. The named
 `foreground-cleared` event carries `null` when the tracker loses the current app or
 switches bundles before the new app's details are ready. The server skips older
-lookups after this event. The server reads
+lookups after this event. A restarted log stream uses a bounded SpringBoard history
+lookup to recover an app that stayed open. A live visibility event supersedes that
+lookup. The server reads
 `label` (`CFBundleDisplayName`, else `CFBundleName`, or `null`) from the bundle path that
 simctl reports (`src/foreground-app-details.ts`). A known React Native shell (Expo Go)
 is reported at once without `label`, so the reload control does not wait for simctl; its

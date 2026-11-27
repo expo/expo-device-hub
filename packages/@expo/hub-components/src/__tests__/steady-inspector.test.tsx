@@ -175,6 +175,10 @@ test("keeps an in-flight Keychain result while the same device reconnects", asyn
     .findAllByType(Button)
     .find(({ props }) => props.children === "Set");
   await act(async () => set!.props.onClick());
+  // Dashboard returns an idle client until its device list reconnects.
+  await act(async () => renderer!.update(inspector({ ...CONNECTING, status: "idle" })));
+  expect(keychain()?.props.open).toBe(true);
+  expect(renderer!.root.findAllByProps({ "aria-label": "Keychain key" })).toEqual([]);
   await act(async () => renderer!.update(inspector(CONNECTING)));
   expect(keychain()?.props.open).toBe(true);
   expect(renderer!.root.findAllByProps({ "aria-label": "Keychain key" })).toEqual([]);

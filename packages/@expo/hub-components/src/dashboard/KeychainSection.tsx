@@ -58,7 +58,10 @@ export function KeychainSection({
   if (available && !seenCapability) setSeenCapability(true);
   const reconnecting =
     seenCapability &&
-    (!client || client.status === "connecting" || client.status === "reconnecting");
+    (!client ||
+      client.status === "idle" ||
+      client.status === "connecting" ||
+      client.status === "reconnecting");
   const serviceChanged = service !== (query.service ?? "");
   const [formApp, setFormApp] = useState(appId);
   const activeFormApp = useRef(formApp);

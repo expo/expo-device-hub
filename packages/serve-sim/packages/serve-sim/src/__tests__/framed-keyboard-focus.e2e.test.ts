@@ -35,6 +35,9 @@ function simctl(...args: string[]): string {
 const STREAM_LAYER = `[...document.querySelectorAll("div")].find((d) => d.style.touchAction === "none" && d.getBoundingClientRect().width > 100)`;
 const HARDWARE_KEYBOARD_SWITCH = `document.querySelector('[role="switch"][aria-label="Hardware Keyboard"]')`;
 const TOOLS_BUTTON = `document.querySelector('[aria-label="Open tools panel"]')`;
+const HOME_BUTTON = `document.querySelector('button[aria-label="Home"]')`;
+const FOREGROUND_APP = `document.querySelector('[title="${APP}"]')`;
+const WAITING_FOR_FOREGROUND = `document.querySelector('[aria-label="Waiting for foreground app"]')`;
 const CLIPBOARD_BUTTON = `document.querySelector('[aria-label="Clipboard actions"]')`;
 const PASTE_MENU_ITEM = `[...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.includes("Paste from Device"))`;
 
@@ -186,7 +189,7 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
   /** The element's center once two reads agree and a hit test there reaches the element. */
   async function waitForClickable(
     expression: string,
-    sessionId: string,
+    sessionId?: string,
   ): Promise<{ x: number; y: number }> {
     const deadline = Date.now() + 30_000;
     let previous: string | undefined;
@@ -510,5 +513,87 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     expect(await cdp.evaluate<boolean>(`document.activeElement === ${TOOLS_BUTTON}`)).toBe(false);
     await typeKeys("zq");
     await waitFor(() => lastText(start), "zq");
+  }, 90_000);
+
+  test("Home clears the foreground app in the standalone preview over its control socket", async () => {
+    let socket: unknown;
+    let subscription: number | undefined;
+    let subscribed = false;
+    let homeRequest: number | undefined;
+    let homeExit: number | undefined;
+    let foregroundData = "";
+    cdp.onEvent = (method, params) => {
+      if (method !== "Network.webSocketFrameSent" && method !== "Network.webSocketFrameReceived")
+        return;
+      const frame = params.response as { opcode: number; payloadData: string };
+      if (frame.opcode !== 1) return;
+      let message: {
+        sub?: number;
+        path?: string;
+        action?: string;
+        id?: number;
+        exitCode?: number;
+        data?: string;
+      } | null;
+      try {
+        message = JSON.parse(frame.payloadData);
+      } catch {
+        return;
+      }
+      if (!message) return;
+      if (method === "Network.webSocketFrameSent") {
+        if (
+          homeRequest === undefined &&
+          message.sub !== undefined &&
+          message.path?.split("?")[0]?.endsWith("/appstate")
+        ) {
+          socket = params.requestId;
+          subscription = message.sub;
+        }
+        if (params.requestId === socket && message.action === "home.springboard")
+          homeRequest = message.id;
+      } else if (params.requestId === socket) {
+        if (message.sub === subscription && typeof message.data === "string") {
+          subscribed = true;
+          if (homeRequest !== undefined) foregroundData += message.data;
+        }
+        if (homeRequest !== undefined && message.id === homeRequest) homeExit = message.exitCode;
+      }
+    };
+    try {
+      await cdp.send("Network.enable");
+      await load(simUrl);
+      await waitForStream();
+      await waitFor(() => subscribed, true);
+      if (
+        !(await cdp.evaluate<boolean>(`${TOOLS_BUTTON}?.getAttribute("aria-pressed") === "true"`))
+      )
+        await clickOnce(await waitForClickable(TOOLS_BUTTON));
+      await launchTextField();
+      await waitForElement(FOREGROUND_APP);
+
+      // Remember the cleared state even if a following SpringBoard event replaces it quickly.
+      await cdp.evaluate(`(() => {
+        window.sawForegroundClear = false;
+        const observer = new MutationObserver(() => {
+          if (${FOREGROUND_APP} || !${WAITING_FOR_FOREGROUND}) return;
+          window.sawForegroundClear = true;
+          observer.disconnect();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      })()`);
+      await clickOnce(await waitForClickable(HOME_BUTTON));
+      await waitFor(() => homeExit, 0);
+      await waitFor(
+        () => foregroundData.includes("event: foreground-cleared\ndata: null\n\n"),
+        true,
+      );
+      expect(
+        await poll(() => cdp.evaluate<boolean>("window.sawForegroundClear"), Boolean, 10_000),
+      ).toBe(true);
+    } finally {
+      cdp.onEvent = undefined;
+      await cdp.send("Network.disable");
+    }
   }, 90_000);
 });

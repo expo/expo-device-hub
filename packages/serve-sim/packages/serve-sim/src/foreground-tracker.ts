@@ -63,21 +63,21 @@ interface VisibilityState {
 
 const NO_VISIBILITY: VisibilityState = { visible: null, pending: null };
 
-/** The state after one `log --style ndjson` line; a Background or Unknown line clears the app. */
-function visibilityAfterLogLine(state: VisibilityState, line: string): VisibilityState {
+/** The state after a relevant `log --style ndjson` line. Other lines return no observation. */
+function visibilityAfterLogLine(state: VisibilityState, line: string): VisibilityState | null {
   let message: string;
   try {
     message = (JSON.parse(line) as { eventMessage?: string }).eventMessage ?? "";
   } catch {
-    return state;
+    return null;
   }
   const started = parseBootstrapLogMessage(message);
   if (started) {
     // SpringBoard does not repeat the visibility line with the real pid, so this line completes it.
-    return started.bundleId === state.pending ? { visible: started, pending: null } : state;
+    return started.bundleId === state.pending ? { visible: started, pending: null } : null;
   }
   const change = parseVisibilityLogMessage(message);
-  if (!change || !isUserFacingBundle(change.app.bundleId)) return state;
+  if (!change || !isUserFacingBundle(change.app.bundleId)) return null;
   if (change.app.pid === -1) {
     if (!change.foreground) {
       return change.app.bundleId === state.pending ? { ...state, pending: null } : state;
@@ -139,6 +139,7 @@ export async function frontmostAppViaAx(udid: string): Promise<ForegroundApp | n
 export interface ForegroundTrackerDeps {
   spawnLogStream?: (udid: string) => ChildProcess;
   frontmostApp?: (udid: string) => Promise<ForegroundApp | null>;
+  recoverForegroundApp?: (udid: string, signal: AbortSignal) => Promise<ForegroundApp | null>;
   restartDelayMs?: number;
 }
 
@@ -150,7 +151,7 @@ class ForegroundTracker {
   private buf = "";
   private latest: ForegroundApp | null = null;
   private pending: string | null = null;
-  private heardFromLog = false;
+  private seed: AbortController | null = null;
   private stopped = false;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<(app: ForegroundApp | null) => void>();
@@ -185,19 +186,13 @@ class ForegroundTracker {
   start(): void {
     if (this.child) return;
     this.stopped = false;
-    // Seed from the AX bridge (a no-op unless the sim window is focused). Only apply it while the
-    // log has said nothing, so a log event that arrives first isn't overwritten by the slower seed.
-    this.deps
-      .frontmostApp(this.udid)
-      .then((app) => {
-        if (!this.stopped && app && !this.heardFromLog) this.set(app);
-      })
-      .catch(() => {});
-    this.spawn();
+    this.spawn(this.deps.frontmostApp);
   }
 
-  /** Spawn the log stream and wire its output and exit handling. */
-  private spawn(): void {
+  /** Attach the live log before seeding from an asynchronous snapshot. */
+  private spawn(
+    snapshot: (udid: string, signal: AbortSignal) => Promise<ForegroundApp | null>,
+  ): void {
     const child = this.deps.spawnLogStream(this.udid);
     this.child = child;
     child.stdout?.on("data", (chunk: Buffer) => {
@@ -208,6 +203,22 @@ class ForegroundTracker {
     };
     child.on("error", onGone);
     child.on("exit", onGone);
+
+    const seed = new AbortController();
+    this.seed = seed;
+    void snapshot(this.udid, seed.signal)
+      .then((app) => {
+        if (!seed.signal.aborted && this.child === child && app) this.set(app);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (this.seed === seed) this.seed = null;
+      });
+  }
+
+  private cancelSeed(): void {
+    this.seed?.abort();
+    this.seed = null;
   }
 
   /**
@@ -219,18 +230,23 @@ class ForegroundTracker {
     this.child = null;
     this.buf = "";
     this.pending = null;
-    this.heardFromLog = true;
+    this.cancelSeed();
     this.set(null);
     if (this.listeners.size === 0) return;
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
-      if (!this.stopped && !this.child && this.listeners.size > 0) this.spawn();
+      // @ref LLP 0003 — recover the foreground after replacing the visibility tail.
+      // A quiet app won't generate a transition on the replacement stream.
+      if (!this.stopped && !this.child && this.listeners.size > 0) {
+        this.spawn(this.deps.recoverForegroundApp);
+      }
     }, this.deps.restartDelayMs);
   }
 
   /** Stop tailing and cancel any pending respawn. */
   stop(): void {
     this.stopped = true;
+    this.cancelSeed();
     if (this.restartTimer) {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
@@ -252,9 +268,9 @@ class ForegroundTracker {
       if (!line) continue;
       const previous = { visible: this.latest, pending: this.pending };
       const next = visibilityAfterLogLine(previous, line);
-      if (next === previous) continue;
-      // Pending-only transitions also supersede the AX seed that started before the log stream.
-      this.heardFromLog = true;
+      if (!next) continue;
+      // A background event can invalidate a seed even while our visible app is already null.
+      this.cancelSeed();
       this.pending = next.pending;
       this.set(next.visible);
     }
@@ -298,6 +314,7 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
   const resolved: Required<ForegroundTrackerDeps> = {
     spawnLogStream: deps.spawnLogStream ?? spawnForegroundLogStream,
     frontmostApp: deps.frontmostApp ?? frontmostAppViaAx,
+    recoverForegroundApp: deps.recoverForegroundApp ?? frontmostAppFromRecentLogs,
     restartDelayMs: deps.restartDelayMs ?? RESTART_DELAY_MS,
   };
   const byUdid = new Map<string, ForegroundTracker>();
@@ -348,7 +365,11 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
 export const foregroundTracker = createForegroundTrackerCache();
 
 /** Recover the latest visible app when neither a live tracker nor AX can identify it. */
-export async function frontmostAppFromRecentLogs(udid: string): Promise<ForegroundApp | null> {
+export async function frontmostAppFromRecentLogs(
+  udid: string,
+  signal?: AbortSignal,
+): Promise<ForegroundApp | null> {
+  if (signal?.aborted) return null;
   // A long-lived simulator can have more visibility history than a fixed execFile buffer.
   // Keep only the latest parsed state while log show streams its boot-long history.
   return new Promise((resolve) => {
@@ -367,7 +388,7 @@ export async function frontmostAppFromRecentLogs(udid: string): Promise<Foregrou
         "--predicate",
         VISIBILITY_PREDICATE,
       ],
-      { stdio: ["ignore", "pipe", "ignore"] },
+      { stdio: ["ignore", "pipe", "ignore"], signal, killSignal: "SIGKILL" },
     );
     let state = NO_VISIBILITY;
     let buffer = "";
@@ -387,14 +408,14 @@ export async function frontmostAppFromRecentLogs(udid: string): Promise<Foregrou
       buffer += chunk;
       let end: number;
       while ((end = buffer.indexOf("\n")) >= 0) {
-        state = visibilityAfterLogLine(state, buffer.slice(0, end));
+        state = visibilityAfterLogLine(state, buffer.slice(0, end)) ?? state;
         buffer = buffer.slice(end + 1);
       }
       if (buffer.length > LINE_BUFFER_LIMIT) buffer = "";
     });
     child.once("error", () => finish(null));
     child.once("close", (code) => {
-      if (buffer) state = visibilityAfterLogLine(state, buffer);
+      if (buffer) state = visibilityAfterLogLine(state, buffer) ?? state;
       finish(code === 0 ? state.visible : null);
     });
   });

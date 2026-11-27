@@ -44,6 +44,15 @@ for (const state of ["Foreground", "Background"]) {
   );
 });
 
+test("aborts an in-progress history lookup", async () => {
+  await withShimsAsync({ xcrun: "#!/bin/sh\nexec /bin/sleep 30\n" }, async () => {
+    const controller = new AbortController();
+    const snapshot = frontmostAppFromRecentLogs("FAKE-DEVICE", controller.signal);
+    controller.abort();
+    expect(await snapshot).toBeNull();
+  });
+}, 1_000);
+
 test.each([false, true])(
   "history drops the old app during a pending launch (bootstrapped: %s)",
   async (bootstrapped) => {
@@ -94,7 +103,13 @@ function bootstrapChunk(bundleId: string, pid: number): Buffer {
   return Buffer.from(JSON.stringify({ eventMessage }) + "\n");
 }
 
-function trackerWithFakeStream(restartDelayMs = 1000) {
+function trackerWithFakeStream(
+  restartDelayMs = 1000,
+  recoverForegroundApp: (
+    udid: string,
+    signal: AbortSignal,
+  ) => Promise<ForegroundApp | null> = async () => null,
+) {
   const children: ReturnType<typeof fakeChild>[] = [];
   const cache = createForegroundTrackerCache({
     spawnLogStream: () => {
@@ -103,6 +118,7 @@ function trackerWithFakeStream(restartDelayMs = 1000) {
       return child as unknown as ChildProcess;
     },
     frontmostApp: async () => null, // no AX seed in tests; drive foreground purely from the feed
+    recoverForegroundApp,
     restartDelayMs,
   });
   return { cache, children };
@@ -330,6 +346,59 @@ describe("createForegroundTrackerCache", () => {
     ]);
     sub.unsubscribe();
   });
+
+  test("recovers an app that stays open while the log stream restarts", async () => {
+    const app = { bundleId: "dev.expo.A", pid: 11 };
+    const { cache, children } = trackerWithFakeStream(0, async (udid) => {
+      expect(udid).toBe("UDID");
+      return app;
+    });
+    const seen: (ForegroundApp | null)[] = [];
+    const sub = cache.subscribe("UDID", (next) => seen.push(next));
+    try {
+      children[0]!.stdout.emit("data", logChunk(app.bundleId, app.pid));
+      children[0]!.emit("exit");
+      expect(cache.peek("UDID")).toBeNull();
+      await tick();
+      expect(children).toHaveLength(2);
+      expect(cache.peek("UDID")).toEqual(app);
+      expect(seen).toEqual([app, null, app]);
+    } finally {
+      sub.unsubscribe();
+    }
+  });
+
+  test.each(["background", "replacement exit"])(
+    "discards a restart snapshot after %s",
+    async (event) => {
+      const app = { bundleId: "dev.expo.A", pid: 11 };
+      const snapshot = Promise.withResolvers<ForegroundApp | null>();
+      const signals: AbortSignal[] = [];
+      const { cache, children } = trackerWithFakeStream(0, (_udid, signal) => {
+        signals.push(signal);
+        return signals.length === 1 ? snapshot.promise : Promise.resolve(null);
+      });
+      const sub = cache.subscribe("UDID");
+      try {
+        children[0]!.stdout.emit("data", logChunk(app.bundleId, app.pid));
+        children[0]!.emit("exit");
+        await tick();
+        expect(signals).toHaveLength(1);
+        if (event === "background") {
+          children[1]!.stdout.emit("data", logChunk(app.bundleId, app.pid, "Background"));
+        } else {
+          children[1]!.emit("exit");
+        }
+        expect(signals[0]!.aborted).toBe(true);
+        snapshot.resolve(app);
+        await tick();
+        expect(cache.peek("UDID")).toBeNull();
+      } finally {
+        snapshot.resolve(null);
+        sub.unsubscribe();
+      }
+    },
+  );
 
   test("does not respawn after an intentional stop", async () => {
     const { cache, children } = trackerWithFakeStream(0);
