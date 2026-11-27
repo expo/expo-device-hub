@@ -166,6 +166,36 @@ describe("readBodyLimited", () => {
     expect(cancellations).toHaveLength(1);
   });
 
+  test.each([{}, { "content-length": "5" }])(
+    "rejects oversize input before waiting for stream cancellation (%j)",
+    async (headers) => {
+      let finishCancellation!: () => void;
+      const cancelling = new Promise<void>((resolve) => {
+        finishCancellation = resolve;
+      });
+      const request = new Request("http://localhost/test", {
+        method: "POST",
+        headers,
+        body: new ReadableStream<Uint8Array>({
+          start: (controller) => controller.enqueue(encoder.encode("abcde")),
+          cancel: () => cancelling,
+        }),
+      });
+      try {
+        await expectBodyError(
+          Promise.race([
+            readBodyLimited(request, 4),
+            new Promise((resolve) => setImmediate(resolve)),
+          ]),
+          "payload-too-large",
+          413,
+        );
+      } finally {
+        finishCancellation();
+      }
+    },
+  );
+
   test("does not trust an understated Content-Length", async () => {
     const request = requestWithChunks(["abc", "de"], {
       headers: { "content-length": "1" },

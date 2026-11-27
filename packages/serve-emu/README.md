@@ -383,6 +383,10 @@ curl -X POST "$BASE/api/key" -H 'Content-Type: application/json' -d '{"keycode":
 ```sh
 curl -X POST "$BASE/api/screenshot" --output screen.png
 curl -X POST "$BASE/api/screenshot?format=base64"
+curl "$BASE/api/screenshot"
+curl -X POST "$BASE/api/screenshot" \
+  -H 'Content-Type: application/json' \
+  -d '{"automation":true}' --output preview.png
 curl "$BASE/api/foreground"
 curl "$BASE/api/accessibility"
 curl -X POST "$BASE/api/accessibility/tap" \
@@ -400,6 +404,16 @@ Screenshot requests also accept `maxWidth` (integer 1–8192, no upscaling),
 preserve the native PNG bytes. Legacy `format=base64` still returns a JSON PNG;
 it can also use `maxWidth`. JPEG is lossy; session artifacts remain PNG at the
 requested size. Resizing/JPEG conversion runs on the host after `adb screencap`.
+
+A screenshot `POST` also takes an optional JSON body, `{"automation": true}`,
+the same body serve-sim's route takes. An automated capture returns the same
+image and `X-Expo-Screenshot-Metadata` header, but it does not save a session
+artifact; `X-Expo-Screenshot-Artifact` reports `disabled`. An empty body or
+`false` keeps the manual behavior. Any other JSON returns 400 and a body over
+1 KiB returns 413, both before the capture. `GET /api/screenshot` returns
+`{"ok":true,"options":["automation","maxWidth","format","quality"]}`. Servers
+without automation answer that `GET` with 405, so check it before you send an
+automated capture: an older server ignores the body and saves the artifact.
 
 Responses report `Server-Timing` for capture, encoding, artifact saving, and
 server total. Total includes response construction and excludes transfer. Benchmark a running local session

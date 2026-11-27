@@ -28,7 +28,13 @@ import {
   setUserRotation,
   type NightModeStatus,
 } from "./adb.ts";
-import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
+import {
+  captureScreenshot,
+  type ParsedScreenshotRequest,
+  readScreenshotRequest,
+  screenshotCapabilitiesResponse,
+  screenshotResponse,
+} from "./screenshot-response.ts";
 import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
 import {
@@ -1325,7 +1331,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   });
   const webRtcForbiddenOrigin = (req: Request) => webRtcForbiddenOriginResponse(req, opts);
 
-  const handleRequest = async (req: Request): Promise<Response> => {
+  const handleRequest = async (
+    req: Request,
+    screenshotRequest?: ParsedScreenshotRequest,
+  ): Promise<Response> => {
     const url = new URL(req.url);
 
     if (url.pathname === "/webrtc/stats") {
@@ -1742,6 +1751,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     }
 
     if (url.pathname === "/api/screenshot") {
+      if (req.method === "GET") return screenshotCapabilitiesResponse();
       if (req.method !== "POST") {
         return new Response("method not allowed", { status: 405 });
       }
@@ -1749,6 +1759,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         return await screenshotResponse(
           () => captureScreenshot(() => screencapPng(opts.serial), deviceState.orientation),
           url,
+          screenshotRequest ?? req,
         );
       } catch (err) {
         return Response.json(
@@ -3230,9 +3241,16 @@ export function createRouter(
       return serveStaticFile(url.pathname) ?? new Response("not found", { status: 404 });
     }
 
-    // Capture has side effects, so the method gate runs before ensure() resolves or starts a device.
-    if (url.pathname === "/api/screenshot" && req.method !== "POST") {
-      return new Response("method not allowed", { status: 405 });
+    let screenshotRequest: ParsedScreenshotRequest | undefined;
+    // @ref LLP 0003#android-screenshot-images — probe and validate the body before starting a stream.
+    if (url.pathname === "/api/screenshot") {
+      if (req.method === "GET") return screenshotCapabilitiesResponse();
+      if (req.method !== "POST") {
+        return new Response("method not allowed", { status: 405 });
+      }
+      const parsed = await readScreenshotRequest(req);
+      if (parsed instanceof Response) return parsed;
+      screenshotRequest = parsed;
     }
 
     // Everything else operates on a single device.
@@ -3242,7 +3260,7 @@ export function createRouter(
     } catch (err) {
       return Response.json({ ok: false, error: errMsg(err) }, { status: 503 });
     }
-    return app.handleRequest(req);
+    return app.handleRequest(req, screenshotRequest);
   };
 
   // @ref LLP 0003#cors — every route answers with the policy, as serve-sim's do

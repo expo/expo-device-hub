@@ -88,20 +88,17 @@ function parseContentLength(request: Request, maxBytes: number): number | null {
   return Number(declared);
 }
 
-async function cancelUnlockedBody(
-  body: ReadableStream<Uint8Array> | null,
-  reason: unknown,
-): Promise<void> {
+function cancelUnlockedBody(body: ReadableStream<Uint8Array> | null, reason: unknown): void {
   if (!body || body.locked) return;
-  try {
-    await body.cancel(reason);
-  } catch {}
+  void body.cancel(reason).catch(() => {});
 }
 
 /**
  * Materialize a small request body while enforcing the bytes actually read.
  * Content-Length is only an early rejection optimization; streamed bytes are
  * always counted, so a missing or understated header cannot bypass the limit.
+ * Start cancellation without awaiting it. A forwarded body can share its stream
+ * with a branch the outer server discards after we return the response.
  */
 export async function readBodyLimited(
   request: Request,
@@ -113,7 +110,7 @@ export async function readBodyLimited(
   try {
     parseContentLength(request, maxBytes);
   } catch (error) {
-    await cancelUnlockedBody(request.body, error);
+    cancelUnlockedBody(request.body, error);
     throw error;
   }
 
@@ -127,7 +124,7 @@ export async function readBodyLimited(
   const alreadyAborted = signals.find((signal) => signal.aborted);
   if (alreadyAborted) {
     const error = abortedError(alreadyAborted);
-    await cancelUnlockedBody(request.body, error);
+    cancelUnlockedBody(request.body, error);
     throw error;
   }
 
@@ -135,22 +132,18 @@ export async function readBodyLimited(
 
   const reader = request.body.getReader();
   let abortFailure: HttpBodyError | null = null;
-  let cancelPromise: Promise<void> | null = null;
+  let cancelled = false;
 
-  const cancel = (reason: unknown): Promise<void> => {
-    if (!cancelPromise) {
-      cancelPromise = reader.cancel(reason).then(
-        () => {},
-        () => {},
-      );
-    }
-    return cancelPromise;
+  const cancel = (reason: unknown): void => {
+    if (cancelled) return;
+    cancelled = true;
+    void reader.cancel(reason).catch(() => {});
   };
 
   const listeners = signals.map((signal) => {
     const onAbort = () => {
       abortFailure ??= abortedError(signal);
-      void cancel(abortFailure);
+      cancel(abortFailure);
     };
     signal.addEventListener("abort", onAbort, { once: true });
     return { signal, onAbort };
@@ -173,16 +166,12 @@ export async function readBodyLimited(
 
       chunksRead += 1;
       if (chunksRead > MAX_REQUEST_BODY_CHUNKS) {
-        const error = tooManyBodyChunksError(chunksRead);
-        await cancel(error);
-        throw error;
+        throw tooManyBodyChunksError(chunksRead);
       }
 
       const nextReceived = received + next.value.byteLength;
       if (nextReceived > maxBytes) {
-        const error = bodyTooLargeError(maxBytes, nextReceived);
-        await cancel(error);
-        throw error;
+        throw bodyTooLargeError(maxBytes, nextReceived);
       }
       if (nextReceived > body.byteLength) {
         const capacity = Math.min(
@@ -210,7 +199,7 @@ export async function readBodyLimited(
         ? cause
         : (abortFailure ??
           new HttpBodyError("body-read-failed", "failed to read request body", { cause }));
-    await cancel(error);
+    cancel(error);
     throw error;
   } finally {
     for (const { signal, onAbort } of listeners) {

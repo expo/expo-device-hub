@@ -55,6 +55,7 @@ const EXPECTED_ROUTES = [
   ["POST", "/api/display-density"],
   ["GET", "/api/logcat"],
   ["GET", "/api/metrics"],
+  ["GET", "/api/screenshot"],
   ["POST", "/api/screenshot"],
   ["GET", "/api/foreground"],
   ["GET", "/api/accessibility"],
@@ -518,13 +519,13 @@ const silentLogger: ApiLogger = {
 };
 
 describe("domain API route table", () => {
-  test("registers the exact 64 method/path pairs across 46 paths", () => {
+  test("registers the exact 65 method/path pairs across 46 paths", () => {
     const routes = createApiRoutes();
 
     expect(routes.map(({ method, path }) => [method, path])).toEqual(
       EXPECTED_ROUTES.map(([method, path]) => [method, path]),
     );
-    expect(routes).toHaveLength(64);
+    expect(routes).toHaveLength(65);
     expect(new Set(routes.map((route) => route.path)).size).toBe(46);
     const contractPairs = Object.entries(API_SUCCESS_PARSERS).flatMap(([path, methods]) =>
       Object.keys(methods).map((method) => `${method} ${path}`),
@@ -921,12 +922,43 @@ describe("screenshot artifact outcome", () => {
     }
   }
 
-  function screenshotRequest(query = ""): Promise<Response | null> {
+  function screenshotRequest(query = "", body?: string): Promise<Response | null> {
     return createApiRouter(createApiRoutes()).handle(
-      new Request(`${BASE_URL}/api/screenshot${query}`, { method: "POST" }),
+      new Request(`${BASE_URL}/api/screenshot${query}`, { method: "POST", body }),
       fakeDependencies({ takeScreenshot: async () => PNG }),
     );
   }
+
+  test("an automated capture returns the PNG without saving an artifact", async () => {
+    await withScreenshotDirectory(
+      async (root) => root,
+      async (directory) => {
+        const response = await screenshotRequest("", JSON.stringify({ automation: true }));
+        expect(response!.status).toBe(200);
+        expect(response!.headers.get("x-expo-screenshot-artifact")).toBe("disabled");
+        expect(new Uint8Array(await response!.arrayBuffer())).toEqual(PNG);
+        expect(await readdir(directory)).toEqual([]);
+      },
+    );
+  });
+
+  test("an invalid automation value is rejected before the capture", async () => {
+    let captured = false;
+    const response = await createApiRouter(createApiRoutes()).handle(
+      new Request(`${BASE_URL}/api/screenshot`, {
+        method: "POST",
+        body: JSON.stringify({ automation: "yes" }),
+      }),
+      fakeDependencies({
+        takeScreenshot: async () => {
+          captured = true;
+          return PNG;
+        },
+      }),
+    );
+    expect(response!.status).toBe(400);
+    expect(captured).toBe(false);
+  });
 
   test("a saved capture carries only the status header", async () => {
     await withScreenshotDirectory(

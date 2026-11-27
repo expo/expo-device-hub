@@ -13,7 +13,8 @@ export type { ApiSuccessResponse } from "../../shared/api-contracts";
 
 export type ApiClientPath = Exclude<ApiPath, "/api/logcat">;
 
-type RequestBodyOption<Body> = [Body] extends [undefined] ? { body?: undefined } : { body: Body };
+// A body that may be undefined, such as the screenshot's optional `{automation}`, may be omitted.
+type RequestBodyOption<Body> = undefined extends Body ? { body?: Body } : { body: Body };
 
 export type ApiRequestOptions<P extends ApiClientPath, M extends ApiMethod<P>> = Omit<
   RequestInit,

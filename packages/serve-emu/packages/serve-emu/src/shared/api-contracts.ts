@@ -519,6 +519,21 @@ export type ScreenshotArtifactReport =
   | { status: "saved" | "disabled" }
   | { status: "failed"; error: string };
 
+/**
+ * Optional JSON body of `POST /api/screenshot`, the shape serve-sim's route takes. `automation: true`
+ * skips the session artifact; an empty body or `false` keeps the manual behavior.
+ */
+export type ScreenshotRequest = { automation?: boolean };
+
+/** What `POST /api/screenshot` honors: `automation` in the JSON body, the rest in the query. */
+export const SCREENSHOT_OPTIONS = ["automation", "maxWidth", "format", "quality"] as const;
+
+/**
+ * `GET /api/screenshot`. Servers without it answer 405, so a client reads `options` before it
+ * sends an automated capture that an older server would save as an artifact.
+ */
+export type ScreenshotCapabilitiesResponse = ApiSuccess<{ options: string[] }>;
+
 export type ScreenshotBase64Response = ApiSuccess<{
   mimeType: "image/png";
   data: string;
@@ -730,7 +745,11 @@ export type ApiContractMap = {
   "/api/logcat": { GET: EndpointContract<undefined, never> };
   "/api/metrics": { GET: EndpointContract<undefined, never> };
   "/api/screenshot": {
-    POST: EndpointContract<undefined, ScreenshotBase64Response | BinaryPngResponse>;
+    GET: EndpointContract<undefined, ScreenshotCapabilitiesResponse>;
+    POST: EndpointContract<
+      ScreenshotRequest | undefined,
+      ScreenshotBase64Response | BinaryPngResponse
+    >;
   };
   "/api/foreground": { GET: EndpointContract<undefined, ForegroundResponse> };
   "/api/accessibility": { GET: EndpointContract<undefined, AccessibilitySnapshot> };
@@ -1811,6 +1830,20 @@ export function parseLogcatEventJson<Event extends keyof LogcatEventMap>(
   }
 }
 
+export function parseScreenshotCapabilitiesResponse(
+  value: unknown,
+): ScreenshotCapabilitiesResponse {
+  const root = record(value, "screenshot capabilities");
+  if (root.ok !== true) fail("screenshot capabilities.ok must be true");
+  if (!Array.isArray(root.options)) fail("screenshot capabilities.options must be an array");
+  return {
+    ok: true,
+    options: root.options.map((option, index) =>
+      string(option, `screenshot capabilities.options[${index}]`),
+    ),
+  };
+}
+
 function parseScreenshotResponse(value: unknown): ScreenshotBase64Response | BinaryPngResponse {
   return value instanceof Uint8Array ? value : parseScreenshotBase64Response(value);
 }
@@ -2087,7 +2120,7 @@ export const API_SUCCESS_PARSERS = {
   },
   "/api/logcat": { GET: unsupportedStreamingResponse },
   "/api/metrics": { GET: unsupportedStreamingResponse },
-  "/api/screenshot": { POST: parseScreenshotResponse },
+  "/api/screenshot": { GET: parseScreenshotCapabilitiesResponse, POST: parseScreenshotResponse },
   "/api/foreground": { GET: parseForegroundResponse },
   "/api/accessibility": { GET: parseAccessibilitySnapshot },
   "/api/accessibility/tap": { POST: parseAccessibilityTapResponse },

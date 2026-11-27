@@ -803,6 +803,32 @@ test("reports the display orientation in /api and /health and records the locked
   }
 });
 
+test("the app answers the screenshot probe and validates automation before capture", async () => {
+  const { session } = fakeScrcpySession(0);
+  const app = await createApp(
+    { serial: session.serial },
+    { readOrientation: readNoOrientation, startSession: async () => adaptScrcpySession(session) },
+  );
+  try {
+    const probe = await app.handleRequest(new Request("http://middleware.test/api/screenshot"));
+    expect(await probe.json()).toEqual({
+      ok: true,
+      options: ["automation", "maxWidth", "format", "quality"],
+    });
+    // A capture would run adb; a 400 shows the body reached the parser before it.
+    const invalid = await app.handleRequest(
+      new Request("http://middleware.test/api/screenshot", {
+        method: "POST",
+        body: JSON.stringify({ automation: 1 }),
+      }),
+    );
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toEqual({ ok: false, error: "Invalid screenshot request" });
+  } finally {
+    app.stop();
+  }
+});
+
 const FOLD_DISPLAYS = {
   inner: { width: 2076, height: 2152 },
   outer: { width: 1080, height: 2424 },
