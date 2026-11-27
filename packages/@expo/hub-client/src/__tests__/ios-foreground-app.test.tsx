@@ -25,7 +25,10 @@ const CONFIG = {
   appStateEndpoint: "/preview/session/appstate?device=UDID-1",
 };
 
-type AppStateSource = { onmessage: ((event: { data: string }) => void) | null };
+type AppStateSource = {
+  onmessage: ((event: { data: string }) => void) | null;
+  onerror: (() => void) | null;
+};
 
 async function mount() {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -111,4 +114,14 @@ test("iOS takes the new app's name when another app comes to the foreground", as
     id: "com.apple.Preferences",
     label: "Settings",
   });
+});
+
+test("iOS clears a stale app target when the foreground feed disconnects", async () => {
+  const harness = await mount();
+  await harness.send({ bundleId: "com.example.first", pid: 1 });
+  expect(harness.client().foregroundApp?.id).toBe("com.example.first");
+  await act(async () => harness.sources.at(-1)!.onerror?.());
+  expect(harness.client().foregroundApp).toBeNull();
+  await harness.send({ bundleId: "com.example.second", pid: 2 });
+  expect(harness.client().foregroundApp?.id).toBe("com.example.second");
 });

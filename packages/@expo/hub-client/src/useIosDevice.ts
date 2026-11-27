@@ -2976,7 +2976,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (data.bundleId) setForegroundApp((prev) => applyIosAppState(prev, data));
       } catch {}
     };
-    return () => source?.close();
+    // A disconnected feed no longer identifies a safe target for foreground app actions.
+    source.onerror = () => setForegroundApp(null);
+    return () => {
+      source.onmessage = null;
+      source.onerror = null;
+      source.close();
+    };
   }, [appStateUrl]);
 
   // ── Foreground app details (name, versions, icon) — introspected from the

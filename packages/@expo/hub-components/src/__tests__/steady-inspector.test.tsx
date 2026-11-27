@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { type DeviceClient } from "@expo/hub-client";
+import { type DeviceClient, type KeychainWriteResult } from "@expo/hub-client";
+import { Button } from "../components/Button";
 import { CollapsibleSection } from "../dashboard/CollapsibleSection";
 import { type Device } from "../dashboard/data";
 import {
@@ -146,6 +147,42 @@ test("hides the Keychain inspector when the current device disables it", async (
   const off = { ...access, capabilities: { ...access.capabilities, keychain: false } };
   await act(async () => renderer!.update(<InspectorSections client={off} device={IPHONE} />));
   expect(visible()).toBe(false);
+});
+
+test("keeps an in-flight Keychain result while the same device reconnects", async () => {
+  let finish: (result: KeychainWriteResult) => void = () => {};
+  const access = {
+    ...CONNECTING,
+    status: "streaming",
+    foregroundApp: { id: "com.example.app" },
+    capabilities: { ...NO_CAPABILITIES, keychain: true },
+    listKeychainKeys: async () => [],
+    setKeychainValues: () => new Promise<KeychainWriteResult>((resolve) => (finish = resolve)),
+    deleteKeychainValues: async () => ({ applied: false }) as const,
+  } as DeviceClient;
+  const inspector = (client: DeviceClient) => <InspectorSections client={client} device={IPHONE} />;
+  await act(async () => {
+    renderer = create(inspector(access));
+  });
+  const keychain = () =>
+    renderer!.root
+      .findAllByType(CollapsibleSection)
+      .find((section) => section.props.title === "Keychain");
+  await act(async () => keychain()!.props.onOpenChange(true));
+  const key = renderer!.root.findByProps({ "aria-label": "Keychain key" });
+  await act(async () => key.props.onChange({ currentTarget: { value: "token" } }));
+  const set = keychain()!
+    .findAllByType(Button)
+    .find(({ props }) => props.children === "Set");
+  await act(async () => set!.props.onClick());
+  await act(async () => renderer!.update(inspector(CONNECTING)));
+  expect(keychain()).toBeUndefined();
+  await act(async () => {
+    finish({ applied: true, keys: [{ key: "token", ok: true, status: 0, message: "ok" }] });
+  });
+  await act(async () => renderer!.update(inspector(access)));
+  expect(keychain()?.props.open).toBe(true);
+  expect(JSON.stringify(renderer!.toJSON())).toContain("Set token in com.example.app.");
 });
 
 describe("useSteadyClient", () => {

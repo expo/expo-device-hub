@@ -48,6 +48,12 @@ export function KeychainSection({
   const foreground = client.foregroundApp?.id ?? null;
   const appId = foreground?.startsWith(SYSTEM_APP_PREFIX) ? null : foreground;
   const { listKeychainKeys, setKeychainValues, deleteKeychainValues } = client;
+  const available =
+    client.capabilities.keychain === true &&
+    !!listKeychainKeys &&
+    !!setKeychainValues &&
+    !!deleteKeychainValues;
+  const serviceChanged = service !== (query.service ?? "");
   const [formApp, setFormApp] = useState(appId);
   const activeFormApp = useRef(formApp);
   useEffect(() => {
@@ -70,7 +76,7 @@ export function KeychainSection({
   useEffect(() => {
     setKeys(null);
     setListError(null);
-    if (!open || !appId || !listKeychainKeys) return;
+    if (!available || !open || !appId || !listKeychainKeys) return;
     let current = true;
     listKeychainKeys(appId, query).then(
       (next) => current && setKeys(next),
@@ -79,10 +85,14 @@ export function KeychainSection({
     return () => {
       current = false;
     };
-  }, [open, appId, query, listKeychainKeys]);
+  }, [available, open, appId, query, listKeychainKeys]);
 
   const typedOptions = (): KeychainOptions => (service ? { service } : {});
-  const reload = () => setQuery((current) => ({ ...current }));
+  function listWith(options: KeychainOptions) {
+    setKeys(null);
+    setListError(null);
+    setQuery({ ...options });
+  }
 
   // The app ID is fixed when the write starts: a relaunch moves the foreground away and back.
   async function write(
@@ -94,23 +104,23 @@ export function KeychainSection({
   ) {
     if (!appId || pending) return;
     const target = appId;
-    setPending(status);
+    setPending(`${target}: ${status}`);
     setNote(null);
     setError(null);
     try {
       const result = await run(target);
       const outcome = describeKeychainWrite(kind, result, relaunch, target);
       setNote(outcome.note);
-      setError(outcome.error);
+      setError(outcome.error ? `${target}: ${outcome.error}` : null);
       if (result.applied && activeFormApp.current === target) {
         if (kind === "set" && !outcome.error) {
           setKey("");
           setValue("");
         }
-        setQuery({ ...options });
+        listWith(options);
       }
     } catch (reason) {
-      setError(errorMessage(reason));
+      setError(`${target}: ${errorMessage(reason)}`);
     } finally {
       setPending(null);
     }
@@ -135,13 +145,13 @@ export function KeychainSection({
   }
 
   function remove(name: string) {
-    if (!deleteKeychainValues) return;
+    if (!deleteKeychainValues || serviceChanged) return;
     void write("delete", `Deleting ${name}…`, false, query, (target) =>
       deleteKeychainValues(target, [name], query),
     );
   }
 
-  if (!listKeychainKeys || !setKeychainValues || !deleteKeychainValues) return null;
+  if (!available) return null;
 
   return (
     <CollapsibleSection title="Keychain" open={open} onOpenChange={setOpen}>
@@ -153,12 +163,13 @@ export function KeychainSection({
         </SectionNote>
       ) : (
         <>
+          <SectionNote>{`Keys for service ${query.service ?? "app"}.`}</SectionNote>
           {keys === null ? (
             listError ? (
               <>
                 <SectionNote role="alert">{listError}</SectionNote>
                 <div style={GROUP_STYLE}>
-                  <Button theme="secondary" size="xs" onClick={reload}>
+                  <Button theme="secondary" size="xs" onClick={() => listWith(query)}>
                     Retry
                   </Button>
                 </div>
@@ -175,7 +186,7 @@ export function KeychainSection({
                   theme="tertiary"
                   size="xs"
                   aria-label={`Delete ${name}`}
-                  disabled={pending !== null}
+                  disabled={pending !== null || serviceChanged}
                   onClick={() => remove(name)}
                 >
                   Delete
@@ -212,10 +223,20 @@ export function KeychainSection({
               value={service}
               disabled={pending !== null}
               onChange={setService}
-              onSubmit={() => setQuery(typedOptions())}
+              onSubmit={() => listWith(typedOptions())}
             />
           </SidebarRow>
           <div style={BUTTONS_STYLE}>
+            {serviceChanged && (
+              <Button
+                theme="tertiary"
+                size="xs"
+                disabled={pending !== null}
+                onClick={() => listWith(typedOptions())}
+              >
+                List keys
+              </Button>
+            )}
             <Button
               theme="secondary"
               size="xs"

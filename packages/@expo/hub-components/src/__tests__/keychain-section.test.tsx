@@ -95,15 +95,20 @@ test("lists the app's keys with a Delete button each", async () => {
   expect(calls).toEqual([{ fn: "list", appId: APP, options: {} }]);
   expect(s.text()).toContain("accessToken");
   expect(s.text()).toContain("refreshToken");
-  // A service typed after the list does not redirect the Delete.
+  expect(s.text()).toContain("Keys for service app.");
   await s.type("Keychain service", "auth");
+  expect(s.button("Delete")!.props.disabled).toBe(true);
+  await s.click("List keys");
+  expect(calls.at(-1)).toEqual({ fn: "list", appId: APP, options: { service: "auth" } });
+  expect(s.text()).toContain("Keys for service auth.");
+  expect(s.button("Delete")!.props.disabled).toBe(false);
   expect(s.button("Delete")!.props["aria-label"]).toBe("Delete accessToken");
   await s.click("Delete");
   expect(calls.find((call) => call.fn === "delete")).toEqual({
     fn: "delete",
     appId: APP,
     arg: ["accessToken"],
-    options: {},
+    options: { service: "auth" },
   });
   expect(s.text()).toContain("Deleted accessToken in com.example.app.");
 });
@@ -181,23 +186,31 @@ test("keeps the result of a relaunch while the foreground app changes", async ()
   expect(s.text()).toContain("Set accessToken in com.example.app. The app restarted.");
 });
 
-test("explains a write the app applies at its next start", async () => {
-  const { client } = keychainClient(
-    {
-      setKeychainValues: async () => ({ applied: false }),
-      deleteKeychainValues: async () => ({ applied: false }),
-    },
-    ["a"],
-  );
+test("explains that an unanswered write is queued and expires", async () => {
+  const { client } = keychainClient({ setKeychainValues: async () => ({ applied: false }) });
   const s = await setup(client);
   await s.type("Keychain key", "a");
   await s.click("Set");
   expect(s.text()).toContain(
-    "com.example.app did not answer. It applies the change if it starts within the next hour. If it is open, use Set and relaunch.",
+    "Change queued for com.example.app. The request expires in one hour. If the app is open, use Set and relaunch.",
   );
+});
+
+test("shows a withdrawn SecureStore delete as a failure", async () => {
+  const { client } = keychainClient(
+    {
+      deleteKeychainValues: async () => {
+        throw new Error("The Keychain helper did not answer, so the delete was withdrawn.");
+      },
+    },
+    ["a"],
+  );
+  const s = await setup(client);
   await s.click("Delete");
-  expect(s.text()).toContain("It applies the change if it starts within the next hour.");
-  expect(s.text()).not.toContain("Set and relaunch.");
+  expect(s.text()).toContain(
+    "com.example.app: The Keychain helper did not answer, so the delete was withdrawn.",
+  );
+  expect(s.button("Delete")).toBeDefined();
 });
 
 test("keeps the form and shows a key that failed", async () => {

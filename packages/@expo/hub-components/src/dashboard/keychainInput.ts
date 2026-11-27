@@ -37,9 +37,9 @@ export function describeKeychainWrite(
 ): { note: string | null; error: string | null } {
   if (!result.applied) {
     // serve-sim cannot tell a closed app from one opened before the session started.
-    const queued = `${appId} did not answer. It applies the change if it starts within the next hour.`;
+    const queued = `Change queued for ${appId}. The request expires in one hour.`;
     return {
-      note: kind === "set" ? `${queued} If it is open, use Set and relaunch.` : queued,
+      note: kind === "set" ? `${queued} If the app is open, use Set and relaunch.` : queued,
       error: null,
     };
   }

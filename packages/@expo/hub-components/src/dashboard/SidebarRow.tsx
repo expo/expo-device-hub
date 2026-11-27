@@ -32,7 +32,16 @@ export function SidebarRow({
       }}
     >
       <span style={{ display: "flex", flex: 1, minWidth: 0, flexDirection: "column", gap: 2 }}>
-        <span style={{ ...textSize.sm, fontWeight: 500, color: text.secondary }}>{label}</span>
+        <span
+          style={{
+            ...textSize.sm,
+            fontWeight: 500,
+            color: text.secondary,
+            overflowWrap: "anywhere",
+          }}
+        >
+          {label}
+        </span>
         {description && (
           <span id={descriptionId} style={{ ...textSize.xs, color: text.tertiary }}>
             {description}
