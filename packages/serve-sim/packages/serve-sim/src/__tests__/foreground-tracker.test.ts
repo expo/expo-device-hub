@@ -141,7 +141,7 @@ describe("isUserFacingBundle", () => {
 describe("createForegroundTrackerCache", () => {
   test("tracks the latest user-facing app from the log feed", () => {
     const { cache, children } = trackerWithFakeStream();
-    const seen: ForegroundApp[] = [];
+    const seen: (ForegroundApp | null)[] = [];
     const sub = cache.subscribe("UDID", (app) => seen.push(app));
 
     children[0]!.stdout.emit("data", logChunk("dev.expo.A", 11));
@@ -153,7 +153,7 @@ describe("createForegroundTrackerCache", () => {
 
   test("ignores non-user-facing bundles and exact repeats, but tracks a same-bundle relaunch", () => {
     const { cache, children } = trackerWithFakeStream();
-    const seen: ForegroundApp[] = [];
+    const seen: (ForegroundApp | null)[] = [];
     const sub = cache.subscribe("UDID", (app) => seen.push(app));
     const child = children[0]!;
 
@@ -174,14 +174,14 @@ describe("createForegroundTrackerCache", () => {
   test("clears the app when it goes to the background or its visibility becomes unknown", () => {
     for (const visibility of ["Background", "Unknown"]) {
       const { cache, children } = trackerWithFakeStream();
-      const seen: ForegroundApp[] = [];
+      const seen: (ForegroundApp | null)[] = [];
       const sub = cache.subscribe("UDID", (app) => seen.push(app));
 
       children[0]!.stdout.emit("data", logChunk("dev.expo.A", 11));
       children[0]!.stdout.emit("data", logChunk("dev.expo.A", 11, visibility));
 
       expect(cache.peek("UDID")).toBeNull();
-      expect(seen).toEqual([{ bundleId: "dev.expo.A", pid: 11 }]);
+      expect(seen).toEqual([{ bundleId: "dev.expo.A", pid: 11 }, null]);
       sub.unsubscribe();
     }
   });
@@ -205,7 +205,7 @@ describe("createForegroundTrackerCache", () => {
 
   test("tracks an app that iOS shows before its process starts", () => {
     const { cache, children } = trackerWithFakeStream();
-    const seen: ForegroundApp[] = [];
+    const seen: (ForegroundApp | null)[] = [];
     const sub = cache.subscribe("UDID", (app) => seen.push(app));
 
     // On a cold launch, SpringBoard can log the visibility line with pid -1 and never repeat it.
@@ -244,7 +244,7 @@ describe("createForegroundTrackerCache", () => {
 
   test("tells listeners again when a backgrounded app comes back", () => {
     const { cache, children } = trackerWithFakeStream();
-    const seen: ForegroundApp[] = [];
+    const seen: (ForegroundApp | null)[] = [];
     const sub = cache.subscribe("UDID", (app) => seen.push(app));
     const child = children[0]!;
 
@@ -255,6 +255,7 @@ describe("createForegroundTrackerCache", () => {
     expect(cache.peek("UDID")).toEqual({ bundleId: "dev.expo.A", pid: 11 });
     expect(seen).toEqual([
       { bundleId: "dev.expo.A", pid: 11 },
+      null,
       { bundleId: "dev.expo.A", pid: 11 },
     ]);
     sub.unsubscribe();
@@ -297,7 +298,7 @@ describe("createForegroundTrackerCache", () => {
             seed = resolve;
           }),
       });
-      const seen: ForegroundApp[] = [];
+      const seen: (ForegroundApp | null)[] = [];
       const sub = cache.subscribe("UDID", (app) => seen.push(app));
       child.stdout.emit("data", logChunk("dev.expo.A", -1));
       if (cancelled) child.stdout.emit("data", logChunk("dev.expo.A", -1, "Background"));
@@ -309,14 +310,24 @@ describe("createForegroundTrackerCache", () => {
     },
   );
 
-  test("respawns the log stream when it exits while subscribers remain", async () => {
+  test("clears the app and respawns when the log stream exits", async () => {
     const { cache, children } = trackerWithFakeStream(0);
-    const sub = cache.subscribe("UDID");
+    const seen: (ForegroundApp | null)[] = [];
+    const sub = cache.subscribe("UDID", (app) => seen.push(app));
     expect(children).toHaveLength(1);
 
+    children[0]!.stdout.emit("data", logChunk("dev.expo.A", 11));
     children[0]!.emit("exit"); // the stream died unexpectedly
+    children[0]!.stdout.emit("data", logChunk("dev.expo.A", 12));
+    expect(cache.peek("UDID")).toBeNull();
     await tick();
     expect(children).toHaveLength(2); // respawned so tracking recovers
+    children[1]!.stdout.emit("data", logChunk("dev.expo.B", 22));
+    expect(seen).toEqual([
+      { bundleId: "dev.expo.A", pid: 11 },
+      null,
+      { bundleId: "dev.expo.B", pid: 22 },
+    ]);
     sub.unsubscribe();
   });
 
@@ -403,7 +414,7 @@ describe("createForegroundTrackerCache", () => {
       resolveSeed = resolve;
     });
     const child = fakeChild();
-    const seen: ForegroundApp[] = [];
+    const seen: (ForegroundApp | null)[] = [];
     const cache = createForegroundTrackerCache({
       spawnLogStream: () => child as unknown as ChildProcess,
       frontmostApp: () => seed,

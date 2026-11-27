@@ -2976,12 +2976,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (data.bundleId) setForegroundApp((prev) => applyIosAppState(prev, data));
       } catch {}
     };
-    // A disconnected feed no longer identifies a safe target for foreground app actions.
-    source.onerror = () => setForegroundApp(null);
+    // @ref LLP 0003 — a disconnected or cleared feed no longer identifies a foreground target.
+    const clear = () => {
+      if (source) setForegroundApp(null);
+    };
+    source.onerror = clear;
+    source.addEventListener("foreground-cleared", clear);
     return () => {
+      if (!source) return;
       source.onmessage = null;
       source.onerror = null;
       source.close();
+      source = null;
     };
   }, [appStateUrl]);
 

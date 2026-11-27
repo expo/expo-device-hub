@@ -186,10 +186,8 @@ export function InspectorSections({
       {section("permissions", (client) => (
         <PermissionsSection client={client} />
       ))}
-      {/* Keep in-flight results while the live capability is temporarily unavailable. */}
-      {liveClient?.platform === "ios" && (
-        <KeychainSection key={`keychain:${device?.id}`} client={liveClient} />
-      )}
+      {/* @ref LLP 0020#hub-ui — the section keeps write results and uses the live capability. */}
+      {platform === "ios" && <KeychainSection key={`keychain:${device?.id}`} client={liveClient} />}
       {section("clipboard", (client) => (
         <ClipboardSection
           key={`clipboard:${device?.id}`}

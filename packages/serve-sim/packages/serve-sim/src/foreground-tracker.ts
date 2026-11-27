@@ -143,7 +143,7 @@ export interface ForegroundTrackerDeps {
 }
 
 // Tails one SpringBoard visibility feed for a udid, holding the latest user-facing app and
-// notifying listeners when a new one comes forward. Seeds from the AX bridge on start (a no-op
+// notifying listeners when it changes. Seeds from the AX bridge on start (a no-op
 // unless the sim window is focused) because the log feed only emits on transitions.
 class ForegroundTracker {
   private child: ChildProcess | null = null;
@@ -153,7 +153,7 @@ class ForegroundTracker {
   private heardFromLog = false;
   private stopped = false;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly listeners = new Set<(app: ForegroundApp) => void>();
+  private readonly listeners = new Set<(app: ForegroundApp | null) => void>();
 
   /** Build a tracker for one udid, with injected spawn/frontmost/backoff deps. */
   constructor(
@@ -172,12 +172,12 @@ class ForegroundTracker {
   }
 
   /** Register a change listener. */
-  add(listener: (app: ForegroundApp) => void): void {
+  add(listener: (app: ForegroundApp | null) => void): void {
     this.listeners.add(listener);
   }
 
   /** Unregister a change listener. */
-  remove(listener: (app: ForegroundApp) => void): void {
+  remove(listener: (app: ForegroundApp | null) => void): void {
     this.listeners.delete(listener);
   }
 
@@ -200,9 +200,14 @@ class ForegroundTracker {
   private spawn(): void {
     const child = this.deps.spawnLogStream(this.udid);
     this.child = child;
-    child.stdout?.on("data", (chunk: Buffer) => this.consume(chunk.toString()));
-    child.on("error", () => this.onChildGone());
-    child.on("exit", () => this.onChildGone());
+    child.stdout?.on("data", (chunk: Buffer) => {
+      if (this.child === child) this.consume(chunk.toString());
+    });
+    const onGone = () => {
+      if (this.child === child) this.onChildGone();
+    };
+    child.on("error", onGone);
+    child.on("exit", onGone);
   }
 
   /**
@@ -212,6 +217,10 @@ class ForegroundTracker {
   private onChildGone(): void {
     if (this.stopped || this.restartTimer) return;
     this.child = null;
+    this.buf = "";
+    this.pending = null;
+    this.heardFromLog = true;
+    this.set(null);
     if (this.listeners.size === 0) return;
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
@@ -247,11 +256,7 @@ class ForegroundTracker {
       // Pending-only transitions also supersede the AX seed that started before the log stream.
       this.heardFromLog = true;
       this.pending = next.pending;
-      const visible = next.visible;
-      if (visible === this.latest) continue;
-      // Listeners hear only about apps coming forward; peek reports the cleared state.
-      if (visible) this.set(visible);
-      else this.latest = null;
+      this.set(next.visible);
     }
     if (this.buf.length > LINE_BUFFER_LIMIT) this.buf = "";
   }
@@ -260,9 +265,14 @@ class ForegroundTracker {
    * Adopt a new foreground app, ignoring non-UI bundles and exact repeats. Compares pid too, so a
    * same-bundle relaunch refreshes the pid the sampler scopes by.
    */
-  private set(app: ForegroundApp): void {
-    if (!isUserFacingBundle(app.bundleId)) return;
-    if (app.bundleId === this.latest?.bundleId && app.pid === this.latest.pid) return;
+  private set(app: ForegroundApp | null): void {
+    if (app === this.latest) return;
+    if (
+      app &&
+      (!isUserFacingBundle(app.bundleId) ||
+        (app.bundleId === this.latest?.bundleId && app.pid === this.latest.pid))
+    )
+      return;
     this.latest = app;
     for (const listener of this.listeners) {
       try {
@@ -301,7 +311,10 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
      * Subscribe to foreground changes (or just keep the tail warm with no listener). New listeners
      * are notified on future changes only; read `peek` for the current value.
      */
-    subscribe(udid: string, onChange?: (app: ForegroundApp) => void): ForegroundSubscription {
+    subscribe(
+      udid: string,
+      onChange?: (app: ForegroundApp | null) => void,
+    ): ForegroundSubscription {
       if (stopped) return { unsubscribe() {} };
       let tracker = byUdid.get(udid);
       if (!tracker) {
@@ -311,7 +324,7 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
       }
       // Wrap so each subscription is a distinct registration even when callers reuse a callback,
       // otherwise a Set would collapse them and one unsubscribe could stop a still-watched tracker.
-      const listener = (app: ForegroundApp) => onChange?.(app);
+      const listener = (app: ForegroundApp | null) => onChange?.(app);
       tracker.add(listener);
       return {
         unsubscribe: () => {

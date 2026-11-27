@@ -97,6 +97,7 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
           eventSourceUrls.push(url);
           eventSources.push(this);
         }
+        addEventListener() {}
         close() {}
       },
     );

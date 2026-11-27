@@ -3369,9 +3369,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
-    // SSE: foreground-app change stream. Emits `{bundleId, pid, isReactNative, label}` events
-    // parsed from SpringBoard's "Setting process visibility to: Foreground"
-    // log line. Filtering is done here (not in the browser) so the SSE stream
+    // @ref LLP 0003 — publish foreground changes before a delayed lookup can restore an old app.
+    // SSE: foreground-app transitions from SpringBoard's visibility log.
+    // Filtering is done here so the SSE stream
     // stays narrow and the client can listen without rate-limit concerns. `label` is read here,
     // from the bundle path simctl reports: a client-sent path (`app.infoPlist`) must pass
     // ConfinedPath, which refuses the runtime root on some hosts.
@@ -3399,24 +3399,32 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       // its current app (once known) before streaming changes.
       let lastApp: ForegroundApp | null = null;
       let generation = 0;
-      const emit = async (app: ForegroundApp) => {
+      const emit = async (app: ForegroundApp | null) => {
         // Dedup on bundleId and pid: the tracker emits same-bundle relaunches with a fresh pid, and
         // clients need the live pid.
-        if (res.writableEnded || (app.bundleId === lastApp?.bundleId && app.pid === lastApp.pid))
-          return;
+        if (res.writableEnded || res.destroyed || app === lastApp) return;
+        if (app && app.bundleId === lastApp?.bundleId && app.pid === lastApp.pid) return;
+        const previous = lastApp;
         lastApp = app;
         // The bundle lookup is awaited, so a later switch can resolve first; only write while no
         // newer emit has started, otherwise a slow lookup could overwrite the client with a stale app.
         const generationAtStart = ++generation;
+        if (!app || (previous && previous.bundleId !== app.bundleId)) {
+          res.write("event: foreground-cleared\ndata: null\n\n");
+        }
+        if (!app) return;
         for await (const event of foregroundAppEvents(udid, app)) {
-          if (res.writableEnded || generationAtStart !== generation) return;
+          if (res.writableEnded || res.destroyed || generationAtStart !== generation) return;
           res.write("data: " + JSON.stringify(event) + "\n\n");
         }
       };
       const subscription = foregroundTracker.subscribe(udid, (app) => void emit(app));
       const current = foregroundTracker.peek(udid);
       if (current) void emit(current);
-      req.on("close", () => subscription.unsubscribe());
+      req.on("close", () => {
+        generation++;
+        subscription.unsubscribe();
+      });
       return;
     }
 

@@ -29,7 +29,7 @@ export function KeychainSection({
   client,
   defaultOpen = false,
 }: {
-  client: DeviceClient;
+  client?: DeviceClient;
   /** Whether the section is initially expanded. */
   defaultOpen?: boolean;
 }) {
@@ -45,14 +45,20 @@ export function KeychainSection({
   const [pending, setPending] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const foreground = client.foregroundApp?.id ?? null;
+  const foreground = client?.foregroundApp?.id ?? null;
   const appId = foreground?.startsWith(SYSTEM_APP_PREFIX) ? null : foreground;
-  const { listKeychainKeys, setKeychainValues, deleteKeychainValues } = client;
+  const { listKeychainKeys, setKeychainValues, deleteKeychainValues } = client ?? {};
   const available =
-    client.capabilities.keychain === true &&
+    client?.capabilities.keychain === true &&
     !!listKeychainKeys &&
     !!setKeychainValues &&
     !!deleteKeychainValues;
+  // @ref LLP 0000#steady-inspector — preserve the section layout during reconnects.
+  const [seenCapability, setSeenCapability] = useState(available);
+  if (available && !seenCapability) setSeenCapability(true);
+  const reconnecting =
+    seenCapability &&
+    (!client || client.status === "connecting" || client.status === "reconnecting");
   const serviceChanged = service !== (query.service ?? "");
   const [formApp, setFormApp] = useState(appId);
   const activeFormApp = useRef(formApp);
@@ -60,7 +66,7 @@ export function KeychainSection({
     activeFormApp.current = formApp;
   }, [formApp]);
 
-  // Reset before rendering controls for another app. A relaunch can pass through SpringBoard.
+  // @ref LLP 0020#hub-ui — keep a draft through a relaunch and clear it for another app.
   if (appId !== null && appId !== formApp) {
     setFormApp(appId);
     setKey("");
@@ -151,11 +157,13 @@ export function KeychainSection({
     );
   }
 
-  if (!available) return null;
+  if (!available && !reconnecting) return null;
 
   return (
     <CollapsibleSection title="Keychain" open={open} onOpenChange={setOpen}>
-      {appId === null ? (
+      {!available ? (
+        <SectionNote>Waiting for Keychain access while the device reconnects.</SectionNote>
+      ) : appId === null ? (
         <SectionNote>
           {foreground === null || foreground === HOME_SCREEN
             ? "No app is in the foreground."

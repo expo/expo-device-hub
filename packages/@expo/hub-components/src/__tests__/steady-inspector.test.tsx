@@ -176,7 +176,9 @@ test("keeps an in-flight Keychain result while the same device reconnects", asyn
     .find(({ props }) => props.children === "Set");
   await act(async () => set!.props.onClick());
   await act(async () => renderer!.update(inspector(CONNECTING)));
-  expect(keychain()).toBeUndefined();
+  expect(keychain()?.props.open).toBe(true);
+  expect(renderer!.root.findAllByProps({ "aria-label": "Keychain key" })).toEqual([]);
+  expect(JSON.stringify(renderer!.toJSON())).toContain("Waiting for Keychain access");
   await act(async () => {
     finish({ applied: true, keys: [{ key: "token", ok: true, status: 0, message: "ok" }] });
   });
