@@ -114,7 +114,7 @@ async function write(
     action,
     { ...params, relaunch: options?.relaunch ?? false },
     options?.relaunch ? RELAUNCH_TIMEOUT_MS : ACTION_TIMEOUT_MS,
-    `${LOST} The change may still apply; list the keys to check.`,
+    `${LOST} The change may still apply. Verify it in the app before retrying.`,
   );
   const parsed = parseKeychainWrite(result.stdout);
   if (parsed) return parsed;

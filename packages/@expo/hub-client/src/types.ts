@@ -631,7 +631,7 @@ export interface DeviceCapabilities {
   /** The fold commands that `DeviceClient.fold` accepts. */
   fold: DeviceFoldCapabilities;
   /** Keychain values of installed apps that the backend can set, delete, and list by key. */
-  keychain: boolean;
+  keychain?: boolean;
 }
 
 /** Where an app's values live: expo-secure-store's layout, with its `keychainService` option. */
@@ -1078,15 +1078,15 @@ export interface DeviceClient {
   /** Read the list again, for example when the section opens. */
   refreshPermissions: () => void;
   /** Keys an installed app stored in its keychain. Values are never read back. */
-  listKeychainKeys: (appId: string, options?: KeychainOptions) => Promise<string[]>;
+  listKeychainKeys?: (appId: string, options?: KeychainOptions) => Promise<string[]>;
   /** Set keychain values an installed app reads, such as sign-in tokens. */
-  setKeychainValues: (
+  setKeychainValues?: (
     appId: string,
     values: Readonly<Record<string, string>>,
     options?: KeychainWriteOptions,
   ) => Promise<KeychainWriteResult>;
   /** Delete keychain values of an installed app. A key that did not exist counts as deleted. */
-  deleteKeychainValues: (
+  deleteKeychainValues?: (
     appId: string,
     keys: readonly string[],
     options?: KeychainWriteOptions,
