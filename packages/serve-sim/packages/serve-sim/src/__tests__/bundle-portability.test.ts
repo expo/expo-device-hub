@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
-import { join, resolve } from "path";
+import { dirname, join, resolve } from "path";
 
 // The published bundles must locate sibling artifacts (dist/simax,
 // dist/simcam) relative to wherever npm installed them. Bun's bundler
@@ -190,6 +190,46 @@ describeIfBuilt("bundle portability", () => {
       expect(result.stderr.trim()).toBe("native API unavailable");
     } finally {
       shim.restore();
+    }
+  });
+
+  test("notification writes clear a legacy lock before invoking the helper", () => {
+    const home = mkdtempSync(join(tmpdir(), "serve-sim-legacy-notifications-"));
+    const udid = "00000000-0000-0000-0000-000000000001";
+    const plist = join(
+      home,
+      "Library/Developer/CoreSimulator/Devices",
+      udid,
+      "data/Library/BulletinBoard/VersionedSectionInfo.plist",
+    );
+    mkdirSync(dirname(plist), { recursive: true });
+    const contents = "legacy notification settings";
+    writeFileSync(plist, contents);
+    try {
+      execFileSync("/usr/bin/chflags", ["uchg,nodump", plist]);
+      const result = spawnSync(
+        "node",
+        [
+          "--require",
+          join(import.meta.dir, "fixtures/legacy-notification-lock-preload.child.cjs"),
+          join(PKG_DIR, "dist/serve-sim.js"),
+          "permissions",
+          "revoke",
+          "notifications",
+          "dev.expo.test",
+          "-d",
+          udid,
+        ],
+        { encoding: "utf8", timeout: 5_000, env: { ...process.env, PERMISSION_TEST_HOME: home } },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(plist, "utf8")).toBe(contents);
+      expect(execFileSync("/usr/bin/stat", ["-f", "%Sf", plist], { encoding: "utf8" }).trim()).toBe(
+        "nodump",
+      );
+    } finally {
+      execFileSync("/usr/bin/chflags", ["nouchg", plist]);
+      rmSync(home, { recursive: true, force: true });
     }
   });
 

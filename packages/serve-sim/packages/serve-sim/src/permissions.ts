@@ -1,7 +1,7 @@
 import { execFileSync } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, lstatSync, realpathSync } from "fs";
 import { homedir } from "os";
-import { dirname, join, resolve } from "path";
+import { dirname, join, relative, resolve } from "path";
 import { dirnameOf, sleepSync } from "./runtime";
 
 const __dirname = dirnameOf(import.meta.url);
@@ -176,6 +176,23 @@ export function tccDbPath(udid: string): string {
   return join(simLibraryDir(udid), "TCC/TCC.db");
 }
 
+// @ref LLP 0003.000#notifications — let BulletinBoard save changes on upgraded Simulators
+function clearLegacyNotificationLock(udid: string): void {
+  const home = homedir();
+  const file = join(simLibraryDir(udid), "BulletinBoard/VersionedSectionInfo.plist");
+  try {
+    if (!lstatSync(file, { throwIfNoEntry: false })?.isFile()) return;
+    if (realpathSync(file) !== join(realpathSync(home), relative(home, file))) return;
+    execFileSync("/usr/bin/chflags", ["-h", "nouchg", file], {
+      stdio: "ignore",
+      timeout: 5_000,
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw new Error("Could not clear the legacy Simulator notification settings lock.");
+  }
+}
+
 // @ref LLP 0003.000#helper-fixture-and-packaging — spawn the packaged service helper inside the selected Simulator
 function nativePermission<T = unknown>(udid: string, ...args: string[]): T {
   const candidates = [
@@ -277,7 +294,7 @@ function setLocation(
     const reason = stderr || (e?.code === "ETIMEDOUT" ? "timed out" : String(e?.message ?? e));
     throw new Error(`simctl privacy ${action} ${service} failed: ${reason}`);
   }
-  // locationd persists asynchronously. Confirm the requested value before ACK.
+  // @ref LLP 0003.000#location — confirm persisted locationd codes, which differ from the public enum
   const expected =
     action === "reset" ? 0 : action === "revoke" ? 1 : service === "location-always" ? 4 : 2;
   const deadline = Date.now() + 5000;
@@ -303,6 +320,7 @@ function applyOne(
   if (spec.kind === "tcc") {
     nativePermission(udid, "tcc", verb, bundleId, value ?? "", spec.tccService!);
   } else if (spec.kind === "notifications") {
+    clearLegacyNotificationLock(udid);
     nativePermission(udid, "notifications", verb, bundleId, value ?? "");
   } else {
     setLocation(udid, bundleId, verb, value);

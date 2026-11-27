@@ -126,15 +126,13 @@ describe.skipIf(!ready)("service-backed permissions (real Simulator)", () => {
       const initial = state();
       const sb = springboard();
       expect(sb.length).toBeGreaterThan(0);
-      for (const [index, [action, status]] of (
-        [
-          ["grant", 2],
-          ["revoke", 1],
-          ["grant", 2],
-          ["reset", 0],
-          ["grant", 2],
-        ] as const
-      ).entries()) {
+      for (const [action, status] of [
+        ["grant", 2],
+        ["revoke", 1],
+        ["grant", 2],
+        ["reset", 0],
+        ["grant", 2],
+      ] as const) {
         cli(action, "notifications", BUNDLE);
         cli(action, "notifications", BUNDLE);
         await eventually(
@@ -148,7 +146,7 @@ describe.skipIf(!ready)("service-backed permissions (real Simulator)", () => {
           );
         }
         expect(list().notifications.authorizationStatus).toBe(status);
-        const tag = `permission-${index}`;
+        const tag = `permission-${action}-${randomUUID()}`;
         command("schedule", tag);
         if (status === 2)
           await eventually(
