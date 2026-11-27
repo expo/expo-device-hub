@@ -133,6 +133,7 @@ describe("capability operation draining", () => {
         expect(configure).toHaveBeenLastCalledWith(UDID, keychainCapability, {
           enabled: false,
           relaunch: false,
+          preserveForeignOwner: true,
         });
       } finally {
         resume.resolve();
@@ -180,6 +181,7 @@ describe("capability operation draining", () => {
       expect(configure).toHaveBeenLastCalledWith(UDID, keychainCapability, {
         enabled: false,
         relaunch: false,
+        preserveForeignOwner: true,
       });
     } finally {
       resume.resolve();
@@ -260,6 +262,7 @@ describe("capability operation draining", () => {
       expect(configure).toHaveBeenLastCalledWith(UDID, keychainCapability, {
         enabled: false,
         relaunch: false,
+        preserveForeignOwner: true,
       });
     } finally {
       resume.resolve();

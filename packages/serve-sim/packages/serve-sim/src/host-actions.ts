@@ -1288,7 +1288,7 @@ export async function runHostActionAsync(
           binPath,
           deviceName,
           prepareKeychain,
-          appClipboardReader,
+          capabilities,
         ),
       p.udid,
       { deviceName: deviceName?.(p.udid), isSuccessful: (value) => value.exitCode === 0 },
