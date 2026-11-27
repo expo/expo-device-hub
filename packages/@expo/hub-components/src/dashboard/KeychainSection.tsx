@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   type DeviceClient,
@@ -47,12 +47,30 @@ export function KeychainSection({
   const [error, setError] = useState<string | null>(null);
   const foreground = client.foregroundApp?.id ?? null;
   const appId = foreground?.startsWith(SYSTEM_APP_PREFIX) ? null : foreground;
-  const { listKeychainKeys } = client;
+  const { listKeychainKeys, setKeychainValues, deleteKeychainValues } = client;
+  const [formApp, setFormApp] = useState(appId);
+  const activeFormApp = useRef(formApp);
+  useEffect(() => {
+    activeFormApp.current = formApp;
+  }, [formApp]);
+
+  // Reset before rendering controls for another app. A relaunch can pass through SpringBoard.
+  if (appId !== null && appId !== formApp) {
+    setFormApp(appId);
+    setKey("");
+    setValue("");
+    setService("");
+    setQuery({});
+    setKeys(null);
+    setListError(null);
+    setNote(null);
+    setError(null);
+  }
 
   useEffect(() => {
     setKeys(null);
     setListError(null);
-    if (!open || !appId) return;
+    if (!open || !appId || !listKeychainKeys) return;
     let current = true;
     listKeychainKeys(appId, query).then(
       (next) => current && setKeys(next),
@@ -63,7 +81,7 @@ export function KeychainSection({
     };
   }, [open, appId, query, listKeychainKeys]);
 
-  const typedOptions = (): KeychainOptions => (service.trim() ? { service: service.trim() } : {});
+  const typedOptions = (): KeychainOptions => (service ? { service } : {});
   const reload = () => setQuery((current) => ({ ...current }));
 
   // The app ID is fixed when the write starts: a relaunch moves the foreground away and back.
@@ -84,12 +102,13 @@ export function KeychainSection({
       const outcome = describeKeychainWrite(kind, result, relaunch, target);
       setNote(outcome.note);
       setError(outcome.error);
-      if (result.applied && kind === "set" && !outcome.error) {
-        setKey("");
-        setValue("");
+      if (result.applied && activeFormApp.current === target) {
+        if (kind === "set" && !outcome.error) {
+          setKey("");
+          setValue("");
+        }
+        setQuery({ ...options });
       }
-      // Lists where the write went, also after a relaunch moved the foreground back.
-      if (result.applied) setQuery({ ...options });
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -98,6 +117,7 @@ export function KeychainSection({
   }
 
   function set(relaunch: boolean) {
+    if (!setKeychainValues) return;
     const draft = parseKeychainDraft(key, value);
     if (!draft.ok) {
       setNote(null);
@@ -110,15 +130,18 @@ export function KeychainSection({
       relaunch ? "Setting and restarting the app…" : "Setting…",
       relaunch,
       options,
-      (target) => client.setKeychainValues(target, draft.values, { ...options, relaunch }),
+      (target) => setKeychainValues(target, draft.values, { ...options, relaunch }),
     );
   }
 
   function remove(name: string) {
+    if (!deleteKeychainValues) return;
     void write("delete", `Deleting ${name}…`, false, query, (target) =>
-      client.deleteKeychainValues(target, [name], query),
+      deleteKeychainValues(target, [name], query),
     );
   }
+
+  if (!listKeychainKeys || !setKeychainValues || !deleteKeychainValues) return null;
 
   return (
     <CollapsibleSection title="Keychain" open={open} onOpenChange={setOpen}>
