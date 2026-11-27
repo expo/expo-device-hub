@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { allPermissionNames, parsePermissionsArgs, resolvePermission } from "../permissions";
 
 describe("resolvePermission", () => {
-  test("notifications resolves to the BulletinBoard writer", () => {
+  test("notifications resolves to the BulletinBoard service", () => {
     expect(resolvePermission("notifications")).toEqual({
       kind: "notifications",
       values: ["critical"],
@@ -20,7 +20,6 @@ describe("resolvePermission", () => {
     expect(resolvePermission("camera")).toEqual({
       kind: "tcc",
       tccService: "kTCCServiceCamera",
-      tccAuthVersion: 1,
       values: undefined,
     });
   });
@@ -29,7 +28,6 @@ describe("resolvePermission", () => {
     expect(resolvePermission("photos")).toEqual({
       kind: "tcc",
       tccService: "kTCCServicePhotos",
-      tccAuthVersion: 2,
       values: ["limited"],
     });
   });
@@ -159,5 +157,23 @@ describe("parsePermissionsArgs", () => {
     expect(
       parsePermissionsArgs(["grant", "location", "com.foo.bar", "--value", "sometimes"]),
     ).toEqual({ error: expect.stringContaining("Invalid --value") });
+  });
+});
+
+describe("permission readback", () => {
+  test("notification reset and denial remain distinct even when both disable notifications", async () => {
+    const { permissionStates } = await import("../permissions");
+    const notification = (status: number) =>
+      permissionStates({}, null, { allowsNotifications: false, authorizationStatus: status }).find(
+        (p) => p.id === "notifications",
+      )!.state;
+    expect(notification(0)).toBe("undetermined");
+    expect(notification(1)).toBe("denied");
+    expect(permissionStates({ photos: 3, camera: 0 }, null, null)).toEqual(
+      expect.arrayContaining([
+        { id: "photos", label: "Photos", state: "limited" },
+        { id: "camera", label: "Camera", state: "denied" },
+      ]),
+    );
   });
 });
