@@ -804,7 +804,7 @@ unless the middleware runs with `keychain: false` (`--disable keychain`) or the
 keychain library is not built; a client shows keychain controls only then. A key that failed sets a nonzero `exitCode` and keeps the per-key results in
 `stdout`; other errors return a nonzero `exitCode` and `stderr` [observed:
 `runKeychainAction` in `src/host-actions.ts`]. See
-[LLP 0017](0017-serve-sim-keychain.explainer.md).
+[LLP 0020](0020-serve-sim-keychain.explainer.md).
 
 ### Action catalog
 
