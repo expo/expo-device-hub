@@ -46,6 +46,20 @@ describe.skipIf(!ready)("native permission helper", () => {
     }
   }, 150_000);
 
+  test("location reads keyed authorization and returns null for missing state", () => {
+    const clients = join(import.meta.dir, "fixtures/location-clients.plist");
+    for (const [bundleId, path, state] of [
+      [bundle, clients, { Authorization: 4 }],
+      ["dev.expo.serve-sim.helper-reset", clients, { Authorization: 0 }],
+      ["dev.expo.serve-sim.helper-missing", clients, null],
+      [bundle, `${clients}.missing`, null],
+    ] as const) {
+      const result = run("location", "get", bundleId, path);
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual(state);
+    }
+  }, 150_000);
+
   test("TCC accepts camera changes and rejects an unknown service", () => {
     try {
       for (const action of ["grant", "revoke", "reset"] as const) {
