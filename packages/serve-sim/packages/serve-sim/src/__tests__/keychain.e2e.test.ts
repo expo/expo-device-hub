@@ -120,7 +120,7 @@ const describeOrSkip = ready ? describe : describe.skip;
 describeOrSkip("keychain round trip", () => {
   let tempState: ReturnType<typeof useTempStateDir>;
   let server: ReturnType<typeof Bun.spawn>;
-  let serverState: ServeSimDeviceState;
+  let serverState: { port: number; token: string };
 
   beforeAll(async () => {
     tempState = useTempStateDir();
@@ -140,13 +140,14 @@ describeOrSkip("keychain round trip", () => {
     const stateFile = stateFileForDevice(udid!);
     while (server.exitCode === null && server.signalCode === null && Date.now() < deadline) {
       if (existsSync(stateFile) && readInsert(udid!)) {
-        serverState = JSON.parse(readFileSync(stateFile, "utf8"));
-        expect(serverState).toMatchObject({
-          pid: server.pid,
-          port,
-          device: udid,
-          token: expect.any(String),
-        });
+        const state: ServeSimDeviceState = JSON.parse(readFileSync(stateFile, "utf8"));
+        expect(state.pid).toBe(server.pid);
+        expect(state.port).toBe(port);
+        expect(state.device).toBe(udid!);
+        if (typeof state.token !== "string" || state.token.length === 0) {
+          throw new Error("Built serve-sim did not publish a Controls token");
+        }
+        serverState = { port: state.port, token: state.token };
         return;
       }
       await Bun.sleep(250);
