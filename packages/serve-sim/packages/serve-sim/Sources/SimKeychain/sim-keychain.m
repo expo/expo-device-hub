@@ -78,8 +78,7 @@ static NSDictionary *result(OSStatus status, NSString *error) {
   return error == nil ? @{@"status" : @(status)} : @{@"status" : @(status), @"error" : error};
 }
 
-// A query without an access group can match across all entitled groups. Pin a
-// mutation to the sole matching group, or ask the caller to select one.
+// @ref LLP 0020#the-mailbox — resolve an omitted access group before mutating.
 static OSStatus scopeMutation(NSMutableDictionary *query, NSString **error) {
   id groupKey = (__bridge id)kSecAttrAccessGroup;
   if (query[groupKey] != nil) return errSecSuccess;

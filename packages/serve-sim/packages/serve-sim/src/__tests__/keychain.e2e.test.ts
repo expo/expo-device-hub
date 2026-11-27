@@ -306,22 +306,30 @@ describeOrSkip("keychain round trip", () => {
     await waitForLastSeen("status=-25300");
   }, 30_000);
 
-  test("rejects ambiguous writes and deletes until an access group is selected", async () => {
+  test("rejects ambiguous writes, deletes, and replacements before changing any item", async () => {
+    launch();
     const item = { ...ITEM, service: "group-scope-fixture" };
     const groups = [
       "SERVESIMFIX.dev.expo.serve-sim.launch-fixture",
       "SERVESIMFIX.dev.expo.serve-sim.shared-fixture",
     ];
-    for (const accessGroup of groups) {
-      expect(
-        await runKeychainOperations(udid!, APP, [{ ...set("before"), ...item, accessGroup }]),
-      ).toEqual({ applied: true, results: [{ status: 0 }] });
-    }
+    const value = `before-replacement-${Date.now()}`;
     try {
-      for (const operation of [
+      expect(await runKeychainOperations(udid!, APP, [set(value)])).toEqual({
+        applied: true,
+        results: [{ status: 0 }],
+      });
+      for (const accessGroup of groups) {
+        expect(
+          await runKeychainOperations(udid!, APP, [{ ...set("before"), ...item, accessGroup }]),
+        ).toEqual({ applied: true, results: [{ status: 0 }] });
+      }
+      const operations: KeychainOperation[] = [
         { ...set("ambiguous"), ...item },
         { op: "delete", ...item },
-      ] as const) {
+        { ...set("must-not-write"), replaces: [item] },
+      ];
+      for (const operation of operations) {
         const outcome = await runKeychainOperations(udid!, APP, [operation]);
         expect(outcome).toMatchObject({
           applied: true,
@@ -334,16 +342,19 @@ describeOrSkip("keychain round trip", () => {
       expect(
         outcome.applied && outcome.results[0]?.items?.map((entry) => entry.accessGroup).sort(),
       ).toEqual(groups);
+      terminate();
+      const after = seenValues().length;
+      launch();
+      await waitForLastSeen(`value=${value}`, { after });
     } finally {
-      await runKeychainOperations(
-        udid!,
-        APP,
-        groups.map((accessGroup) => ({
-          op: "delete",
+      await runKeychainOperations(udid!, APP, [
+        ...groups.map((accessGroup) => ({
+          op: "delete" as const,
           ...item,
           accessGroup,
         })),
-      );
+        { op: "delete", ...ITEM },
+      ]);
     }
   }, 30_000);
 });
