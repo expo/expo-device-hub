@@ -126,6 +126,7 @@ describeOrSkip("keychain round trip", () => {
   }, 120_000);
 
   afterAll(async () => {
+    const failures: unknown[] = [];
     try {
       // A failed readback relaunch can leave the app stopped during per-test cleanup.
       launch();
@@ -134,8 +135,13 @@ describeOrSkip("keychain round trip", () => {
       });
       expect(
         cleanup.applied && cleanup.results.every(({ status }) => status === 0 || status === -25300),
+        "Fixture Keychain deletions must complete",
       ).toBe(true);
-    } finally {
+    } catch (error) {
+      failures.push(error);
+    }
+
+    try {
       terminate();
       if (server) {
         server.kill("SIGTERM");
@@ -149,13 +155,26 @@ describeOrSkip("keychain round trip", () => {
           releaseSessionSync(udid!, server.pid, () => {});
         }
       }
-      try {
-        simctl(["uninstall", udid!, APP]);
-      } catch {}
-      tempState.restore();
+    } catch (error) {
+      failures.push(error);
     }
-    // Swallowing this is how a device stays injected for every test that runs after it.
-    expect(readInsert(udid!)).toBe("");
+
+    try {
+      simctl(["uninstall", udid!, APP]);
+    } catch {}
+    try {
+      tempState.restore();
+    } catch (error) {
+      failures.push(error);
+    }
+
+    try {
+      expect(readInsert(udid!), "Simulator injection must be cleared after teardown").toBe("");
+    } catch (error) {
+      failures.push(error);
+    }
+    if (failures.length > 0)
+      throw new AggregateError(failures, "Keychain Simulator teardown failed");
   }, 120_000);
 
   test("the built CLI loads the Keychain helper by default and a running app reads the write", async () => {
