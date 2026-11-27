@@ -502,9 +502,12 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
   test("one click on the stream takes the keyboard back from a toolbar button", async () => {
     await load(simUrl);
     const start = await launchTextField();
-    await clickOnce(await waitForElement(TOOLS_BUTTON));
+    await waitForElement(TOOLS_BUTTON);
+    // Give the button focus without toggling the panel and moving the stream.
+    await cdp.evaluate(`(${TOOLS_BUTTON}).focus({ preventScroll: true })`);
     expect(await cdp.evaluate<boolean>(`document.activeElement === ${TOOLS_BUTTON}`)).toBe(true);
     await clickOnce(await waitForStream());
+    expect(await cdp.evaluate<boolean>(`document.activeElement === ${TOOLS_BUTTON}`)).toBe(false);
     await typeKeys("zq");
     await waitFor(() => lastText(start), "zq");
   }, 90_000);

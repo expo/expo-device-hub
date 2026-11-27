@@ -3,12 +3,16 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "child_process";
+import { once } from "node:events";
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
+import WebSocket from "ws";
 
+import type { HostActionResult } from "../host-actions";
 import { releaseSessionSync } from "../launch-manager";
 import { runKeychainOperations, type KeychainOperation } from "../sim-keychain";
 import { setKeychainValues, type KeychainTarget } from "../keychain";
+import { stateFileForDevice, type ServeSimDeviceState } from "../state";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
 import { freePortAsync, useTempStateDir } from "./helpers";
 
@@ -116,6 +120,7 @@ const describeOrSkip = ready ? describe : describe.skip;
 describeOrSkip("keychain round trip", () => {
   let tempState: ReturnType<typeof useTempStateDir>;
   let server: ReturnType<typeof Bun.spawn>;
+  let serverState: { port: number; token: string };
 
   beforeAll(async () => {
     tempState = useTempStateDir();
@@ -126,17 +131,28 @@ describeOrSkip("keychain round trip", () => {
     simctl(["install", udid!, FIXTURE]);
     const port = await freePortAsync();
     // The built npm entry point must arm the real helper without a capability flag.
-    server = Bun.spawn(["node", CLI, udid!, "--port", String(port), "--quiet"], {
+    server = Bun.spawn(["node", CLI, "--single-device", udid!, "--port", String(port), "--quiet"], {
       env: { ...process.env },
       stdout: "inherit",
       stderr: "inherit",
     });
     const deadline = Date.now() + 60_000;
+    const stateFile = stateFileForDevice(udid!);
     while (server.exitCode === null && server.signalCode === null && Date.now() < deadline) {
-      if (readInsert(udid!)) return;
+      if (existsSync(stateFile) && readInsert(udid!)) {
+        const state: ServeSimDeviceState = JSON.parse(readFileSync(stateFile, "utf8"));
+        expect(state.pid).toBe(server.pid);
+        expect(state.port).toBe(port);
+        expect(state.device).toBe(udid!);
+        if (typeof state.token !== "string" || state.token.length === 0) {
+          throw new Error("Built serve-sim did not publish a Controls token");
+        }
+        serverState = { port: state.port, token: state.token };
+        return;
+      }
       await Bun.sleep(250);
     }
-    throw new Error("Built serve-sim did not arm its capability loader");
+    throw new Error("Built serve-sim did not publish preview state and arm its capability loader");
   }, 120_000);
 
   afterAll(async () => {
@@ -541,4 +557,50 @@ describeOrSkip("keychain round trip", () => {
     },
     60_000,
   );
+
+  test("single-device Controls set, list, and delete Keychain values without a UDID", async () => {
+    terminate();
+    launch();
+    const value = `host-action-${Date.now()}`;
+    const ws = new WebSocket(
+      `ws://127.0.0.1:${serverState.port}/exec-ws`,
+      `serve-sim.token.${serverState.token}`,
+      { handshakeTimeout: 10_000 },
+    );
+    async function nextReply<T>(): Promise<T> {
+      const [message] = await once(ws, "message", { signal: AbortSignal.timeout(15_000) });
+      return JSON.parse(String(message));
+    }
+    async function call(id: number, action: string, params: Record<string, unknown> = {}) {
+      const pending = nextReply<HostActionResult & { id: number }>();
+      ws.send(JSON.stringify({ id, action, params: { bundleId: APP, ...params } }));
+      const reply = await pending;
+      expect(reply).toMatchObject({ id, exitCode: 0, stderr: "" });
+      return reply.stdout;
+    }
+    try {
+      expect(await nextReply<{ ready: boolean }>()).toMatchObject({ ready: true });
+      const beforeWrite = seenValues().length;
+      const written = await call(1, "keychain.set", { values: { [KEY]: value } });
+      expect(JSON.parse(written)).toMatchObject({
+        applied: true,
+        keys: [{ key: KEY, ok: true }],
+      });
+      expect(written).not.toContain(value);
+      await waitForLastSeen(`value=${value}`, { after: beforeWrite });
+
+      const listed = await call(2, "keychain.list");
+      expect(JSON.parse(listed)).toEqual({ keys: [KEY] });
+
+      const beforeDelete = seenValues().length;
+      const removed = await call(3, "keychain.delete", { keys: [KEY] });
+      expect(JSON.parse(removed)).toMatchObject({
+        applied: true,
+        keys: [{ key: KEY, ok: true }],
+      });
+      await waitForLastSeen("status=-25300", { after: beforeDelete });
+    } finally {
+      ws.terminate();
+    }
+  }, 60_000);
 });
