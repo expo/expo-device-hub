@@ -80,7 +80,7 @@ async function readPasteboardOnce(udid: string, appReader: boolean): Promise<Pas
   // Another process's reader can still be in place, so this server's choice is checked here.
   if (!appReader) {
     throw new PasteboardUnavailableError(
-      "Clipboard reader is off on this server, by --disable clipboard.",
+      "Clipboard reader is off on this server, by --disable clipboard or capabilities.set.",
     );
   }
   try {
