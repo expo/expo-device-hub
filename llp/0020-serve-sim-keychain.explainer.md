@@ -76,9 +76,14 @@ The `keychain.set`, `keychain.delete`, and `keychain.list` host actions run the 
 
 A write that returns `applied: false` is queued for the helper to pick up before it expires. The client refuses Keychain actions whose full JSON message exceeds the standalone server's 4 MiB WebSocket limit, including UTF-8, escaping, and the request ID [observed: `control-socket.ts`, `exec-ws.ts`].
 
+## Hub UI
+
+The inspector's Keychain section, `KeychainSection` in `@expo/hub-components`, appears when `capabilities.keychain` is set. It lists the foreground app's SecureStore keys, each with Delete, and sets one key, or every key of a pasted JSON object, with Set or Set and relaunch. The home screen counts as no app. An optional Service field is SecureStore's `keychainService`. The list shows its service. Choose List keys or press Enter to apply an edited service before deleting. A successful Set also refreshes the list for its service. When serve-sim queues a change, the section shows the one-hour expiry and suggests Set and relaunch if the app is open.
+
+The inspector waits for a fresh app report after the foreground feed clears or disconnects. The draft stays with its app across a relaunch and clears when another user app comes to the foreground. While the device reconnects, the mounted section keeps its pending write and result, and restores the controls only when the live client reports access again [observed: `KeychainSection.tsx`, `InspectorSections.tsx`, `keychainInput.ts`].
+
 ## Not there yet
 
-- No Hub UI yet.
 - No Android support: serve-emu has no equivalent of the in-app write.
 - Items protected by biometrics (`kSecAttrAccessControl`) are not written.
 - A queued request stays in the app's `tmp` folder until the app next starts in a serve-sim session or the host sends the app another keychain request, even after it expired.

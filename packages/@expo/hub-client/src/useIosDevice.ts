@@ -2976,7 +2976,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (data.bundleId) setForegroundApp((prev) => applyIosAppState(prev, data));
       } catch {}
     };
-    return () => source?.close();
+    // @ref LLP 0003 — a disconnected or cleared feed no longer identifies a foreground target.
+    const clear = () => {
+      if (source) setForegroundApp(null);
+    };
+    source.onerror = clear;
+    source.addEventListener("foreground-cleared", clear);
+    return () => {
+      if (!source) return;
+      source.onmessage = null;
+      source.onerror = null;
+      source.close();
+      source = null;
+    };
   }, [appStateUrl]);
 
   // ── Foreground app details (name, versions, icon) — introspected from the

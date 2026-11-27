@@ -39,7 +39,14 @@ server's selected device.
 `/metrics`, `/logs`, `/ax`, `/appstate`, `/api/events` and `/grid/api/status/events`
 are server-sent event streams; the rest return JSON.
 
-Each `/appstate` event is `{bundleId, pid, isReactNative, label}`. The server reads
+Each `/appstate` message reports `{bundleId, pid, isReactNative, label}`. The named
+`foreground-cleared` event carries `null` when the tracker loses the current app or
+switches bundles before the new app's details are ready. The server skips older
+lookups after this event. A restarted log stream uses a bounded SpringBoard history
+lookup to recover an app that stayed open or is still launching. A live foreground
+event supersedes that lookup. The tracker applies background and bootstrap events
+from the replacement stream to the recovered state before it publishes the current
+app. The server reads
 `label` (`CFBundleDisplayName`, else `CFBundleName`, or `null`) from the bundle path that
 simctl reports (`src/foreground-app-details.ts`). A known React Native shell (Expo Go)
 is reported at once without `label`, so the reload control does not wait for simctl; its

@@ -1304,15 +1304,25 @@ function AppWithConfig({
     setCurrentApp(null);
     const es = openHostEventStream(config.appStateEndpoint ?? simEndpoint("appstate"));
     let timer: ReturnType<typeof setTimeout> | null = null;
+    const clear = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      setCurrentApp(null);
+    };
+    es.onerror = clear;
     es.onmessage = (e) => {
       try {
         const next = JSON.parse(e.data) as {
           bundleId: string;
           pid?: number;
           isReactNative: boolean;
-        };
+        } | null;
+        if (next === null) {
+          clear();
+          return;
+        }
         if (timer) clearTimeout(timer);
-        const delay = next?.isReactNative ? 0 : 600;
+        const delay = next.isReactNative ? 0 : 600;
         timer = setTimeout(() => setCurrentApp(next), delay);
       } catch {}
     };

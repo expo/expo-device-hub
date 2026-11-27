@@ -25,6 +25,7 @@ export function SectionNote({
       style={{
         ...textSize.xs,
         display: "block",
+        overflowWrap: "anywhere",
         padding: "0 0 8px",
         color: tone ? tones[tone].text : text.tertiary,
       }}

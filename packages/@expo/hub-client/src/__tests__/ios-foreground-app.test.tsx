@@ -25,7 +25,11 @@ const CONFIG = {
   appStateEndpoint: "/preview/session/appstate?device=UDID-1",
 };
 
-type AppStateSource = { onmessage: ((event: { data: string }) => void) | null };
+type AppStateSource = {
+  onmessage: ((event: { data: string }) => void) | null;
+  onerror: (() => void) | null;
+  clear: (() => void) | null;
+};
 
 async function mount() {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -59,10 +63,13 @@ async function mount() {
     class {
       onmessage = null;
       onerror = null;
+      clear: (() => void) | null = null;
       constructor() {
         sources.push(this);
       }
-      addEventListener() {}
+      addEventListener(event: string, listener: () => void) {
+        if (event === "foreground-cleared") this.clear = listener;
+      }
       close() {}
     },
   );
@@ -111,4 +118,25 @@ test("iOS takes the new app's name when another app comes to the foreground", as
     id: "com.apple.Preferences",
     label: "Settings",
   });
+});
+
+test("iOS clears a stale app target when the foreground feed disconnects", async () => {
+  const harness = await mount();
+  await harness.send({ bundleId: "com.example.first", pid: 1 });
+  expect(harness.client().foregroundApp?.id).toBe("com.example.first");
+  await act(async () => harness.sources.at(-1)!.onerror?.());
+  expect(harness.client().foregroundApp).toBeNull();
+  await harness.send({ bundleId: "com.example.second", pid: 2 });
+  expect(harness.client().foregroundApp?.id).toBe("com.example.second");
+});
+
+test("iOS clears the target on the same stream when an app backgrounds", async () => {
+  const harness = await mount();
+  await harness.send({ bundleId: "com.example.first", pid: 1 });
+  const source = harness.sources[0]!;
+  await act(async () => source.clear?.());
+  expect(harness.client().foregroundApp).toBeNull();
+  await harness.send({ bundleId: "com.example.first", pid: 1 });
+  expect(harness.sources).toEqual([source]);
+  expect(harness.client().foregroundApp?.id).toBe("com.example.first");
 });

@@ -8,6 +8,8 @@ import { border, fieldControlProps, font, text } from "../primitives";
 export function SidebarTextInput({
   ariaLabel,
   value,
+  placeholder,
+  inputMode = "decimal",
   disabled = false,
   invalid = false,
   describedBy,
@@ -17,6 +19,9 @@ export function SidebarTextInput({
 }: {
   ariaLabel: string;
   value: string;
+  placeholder?: string;
+  /** Coordinates by default; `text` for names. */
+  inputMode?: "decimal" | "text";
   disabled?: boolean;
   /** Marks the field the last parse rejected. */
   invalid?: boolean;
@@ -34,7 +39,8 @@ export function SidebarTextInput({
   return (
     <input
       type="text"
-      inputMode="decimal"
+      inputMode={inputMode}
+      placeholder={placeholder}
       aria-label={ariaLabel}
       aria-invalid={invalid || undefined}
       aria-describedby={describedBy}

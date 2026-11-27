@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { AccessibilitySection } from "./AccessibilitySection";
 import { CameraSection } from "./CameraSection";
 import { ClipboardSection } from "./ClipboardSection";
+import { KeychainSection } from "./KeychainSection";
 import { type ClipboardRequest } from "./ClipboardToast";
 import { PermissionsSection } from "./PermissionsSection";
 import { CollapsibleSection } from "./CollapsibleSection";
@@ -185,6 +186,8 @@ export function InspectorSections({
       {section("permissions", (client) => (
         <PermissionsSection client={client} />
       ))}
+      {/* @ref LLP 0020#hub-ui — the section keeps write results and uses the live capability. */}
+      {platform === "ios" && <KeychainSection key={`keychain:${device?.id}`} client={liveClient} />}
       {section("clipboard", (client) => (
         <ClipboardSection
           key={`clipboard:${device?.id}`}

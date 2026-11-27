@@ -184,6 +184,10 @@ and only change their value or lock]
   on iOS; Camera, Accessibility, Location, Permissions and Events on Android. A section whose
   capability the device does not report says that it is not available, in place of its
   controls. [observed: `PLATFORM_SECTIONS` in `InspectorSections.tsx`]
+  Keychain first appears when iOS reports access. It stays in place during a same-device
+  reconnect with its controls unavailable until the live report returns. This includes the
+  idle client used while the device list reconnects. An explicit disabled report hides it
+  [observed: `KeychainSection.tsx`].
 - **Rows.** Device options has one fixed list of rows per platform. A row that the device
   cannot change now is locked: while the settings load, without a reason; while the Hub
   cannot read them, or on a device that does not have the setting, with the reason in a
