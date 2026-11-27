@@ -5,6 +5,7 @@ import { join } from "path";
 import { execFile, execFileSync } from "child_process";
 import { promisify } from "util";
 import * as launchManager from "../launch-manager";
+import { deleteKeychainValues } from "../keychain";
 import { writeLaunchState } from "../launch-state";
 import * as simctlModule from "../simctl";
 import {
@@ -363,4 +364,28 @@ test("refuses a system app, which the capability loader never reaches", async ()
   await expect(runKeychainOperations("UDID", "com.apple.Preferences", [SET])).rejects.toThrow(
     "com.apple.Preferences is a system app",
   );
+});
+
+test("withdraws an unacknowledged alias delete while a single-item delete can queue", async () => {
+  const root = container();
+  const enabled = spyOn(launchManager, "isCapabilityEnabled").mockReturnValue(true);
+  const simctl = spyOn(simctlModule, "simctl").mockImplementation(async (args) =>
+    args[0] === "get_app_container" ? root : "",
+  );
+  const target = { udid: "UDID", bundleId: "dev.test.keychain", options: { service: "auth" } };
+  try {
+    await expect(
+      deleteKeychainValues({ ...target, format: "expo-secure-store" }, ["token"]),
+    ).rejects.toThrow("Open the app in an up-to-date serve-sim session");
+    expect(readdirSync(mailbox(root).requests)).toEqual([]);
+
+    expect(
+      await deleteKeychainValues({ ...target, format: "generic-password" }, ["token"]),
+    ).toEqual({ applied: false });
+    expect(readdirSync(mailbox(root).requests)).toHaveLength(1);
+  } finally {
+    simctl.mockRestore();
+    enabled.mockRestore();
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });

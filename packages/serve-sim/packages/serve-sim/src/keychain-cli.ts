@@ -30,7 +30,7 @@ function fail(message: string): never {
 }
 
 async function targetOf(bundleId: string, opts: KeychainCliOptions): Promise<KeychainTarget> {
-  const udid = await resolveBootedDeviceAsync(opts.device ?? "booted");
+  const udid = await resolveBootedDeviceAsync(opts.device ?? "booted", { iosOnly: true });
   return {
     udid,
     bundleId,

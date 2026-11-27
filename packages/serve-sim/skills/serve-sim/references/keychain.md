@@ -20,7 +20,7 @@ Shared options: `--format <expo-secure-store|generic-password>` (default `expo-s
   `key=value` arguments, which other processes can see.
 - `list` prints keys only. Values never leave the app.
 - If a write or delete matches in multiple access groups, pass `--access-group` with the group the app uses for that item.
-- The command selects the Simulator automatically when exactly one is booted. Pass `-d <udid>` if multiple booted Simulators match.
+- The command selects the iOS Simulator automatically when exactly one is booted. Pass `-d <udid>` if multiple booted iOS Simulators match.
 - With `--json`, `set` and `delete` print `{udid, bundleId, applied, keys: [{key, status, ok, message}]}`,
   or `{udid, bundleId, applied: false}` when the app did not answer and the change waits for its
   next start.
@@ -29,8 +29,8 @@ Shared options: `--format <expo-secure-store|generic-password>` (default `expo-s
 
 - **Running app:** the change applies at once. The next `SecureStore.getItemAsync` returns it. An
   app that cached its sign-in state does not notice; pass `--relaunch`.
-- **Closed app:** the request waits and applies when the app next starts. It expires after an hour;
-  the app then drops it unread.
+- **Closed app:** a set or single-item delete can queue for up to an hour. A SecureStore delete
+  needs the helper to answer. Open the app in an up-to-date serve-sim session or pass `--relaunch`.
 - **`--relaunch`:** restarts the app and waits for the helper to acknowledge the change. Early
   native launch callbacks can read before the write; restart again after acknowledgement if the
   app caches that read. If publishing fails after the app stops, serve-sim attempts to restart it

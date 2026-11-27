@@ -34,18 +34,26 @@ afterAll(() => rmSync(bundleDir, { recursive: true, force: true }));
 
 test.each([
   { firstState: "Shutdown", device: "Fixture Phone", ambiguous: false },
+  { firstState: "Shutdown", device: undefined, ambiguous: false },
   { firstState: "Booted", device: "Fixture Phone", ambiguous: true },
   { firstState: "Booted", device: undefined, ambiguous: true },
 ])(
-  "Keychain CLI selects only a unique booted device ($firstState, $device)",
+  "Keychain CLI selects only a unique booted iOS device ($firstState, $device)",
   async ({ firstState, device, ambiguous }) => {
     const state = useTempStateDir();
     const selected = "11111111-2222-3333-4444-666666666666";
     const devices = {
       devices: {
-        iOS: [
+        "com.apple.CoreSimulator.SimRuntime.iOS-26-5": [
           { udid: UDID, state: firstState, name: "Fixture Phone" },
           { udid: selected, state: "Booted", name: "Fixture Phone" },
+        ],
+        "com.apple.CoreSimulator.SimRuntime.watchOS-26-5": [
+          {
+            udid: "11111111-2222-3333-4444-777777777777",
+            state: "Booted",
+            name: "Fixture Phone",
+          },
         ],
       },
     };

@@ -459,79 +459,86 @@ describeOrSkip("keychain round trip", () => {
     await waitForLastSeen("status=-25300");
   }, 30_000);
 
-  test("the built CLI leaves every alias present when one access group is ambiguous", async () => {
-    launch();
-    const service = "secure-store-alias-fixture";
-    const entries = [
-      { ...ITEM, service: `${service}:no-auth`, accessGroup: GROUP_FIXTURES[0]!.accessGroup },
-      ...GROUP_FIXTURES.map(({ accessGroup }) => ({
-        ...ITEM,
-        service: `${service}:auth`,
-        accessGroup,
-      })),
-    ];
-    try {
-      expect(
+  test.each([
+    { scenario: "an alias matches multiple groups", authGroups: GROUP_FIXTURES },
+    { scenario: "aliases match different groups", authGroups: GROUP_FIXTURES.slice(1) },
+  ])(
+    "the built CLI leaves every alias present when $scenario",
+    async ({ authGroups }) => {
+      launch();
+      const service = "secure-store-alias-fixture";
+      const entries = [
+        { ...ITEM, service: `${service}:no-auth`, accessGroup: GROUP_FIXTURES[0]!.accessGroup },
+        ...authGroups.map(({ accessGroup }) => ({
+          ...ITEM,
+          service: `${service}:auth`,
+          accessGroup,
+        })),
+      ];
+      try {
+        expect(
+          await runKeychainOperations(
+            udid!,
+            APP,
+            entries.map((item) => ({
+              ...set("fixture-value"),
+              ...item,
+            })),
+            { timeoutMs: 10_000 },
+          ),
+        ).toEqual({ applied: true, results: entries.map(() => ({ status: 0 })) });
+        expect(keychainCli(["delete", APP, KEY, "--service", service])).toMatchObject({
+          status: 1,
+          output: {
+            applied: true,
+            keys: [
+              {
+                key: KEY,
+                status: -50,
+                ok: false,
+                message: expect.stringContaining("--access-group"),
+              },
+            ],
+          },
+        });
+        for (const { service, accessGroup } of entries) {
+          const created = await runKeychainOperations(udid!, APP, [
+            { op: "list", service, accessGroup },
+          ]);
+          expect(created).toMatchObject({
+            applied: true,
+            results: [{ status: 0, items: [{ service, accessGroup, account: ITEM.account }] }],
+          });
+        }
+        const [selected, shared] = GROUP_FIXTURES;
+        expect(
+          keychainCli([
+            "delete",
+            APP,
+            KEY,
+            "--service",
+            service,
+            "--access-group",
+            selected!.accessGroup,
+          ]),
+        ).toMatchObject({
+          status: 0,
+          output: { applied: true, keys: [{ key: KEY, status: 0, ok: true }] },
+        });
+        const auth = `${service}:auth`;
+        const remaining = await runKeychainOperations(udid!, APP, [{ op: "list", service: auth }]);
+        expect(remaining).toMatchObject({
+          applied: true,
+          results: [{ status: 0, items: [{ service: auth, accessGroup: shared!.accessGroup }] }],
+        });
+      } finally {
         await runKeychainOperations(
           udid!,
           APP,
-          entries.map((item) => ({
-            ...set("fixture-value"),
-            ...item,
-          })),
-          { timeoutMs: 10_000 },
-        ),
-      ).toEqual({ applied: true, results: entries.map(() => ({ status: 0 })) });
-      expect(keychainCli(["delete", APP, KEY, "--service", service])).toMatchObject({
-        status: 1,
-        output: {
-          applied: true,
-          keys: [
-            {
-              key: KEY,
-              status: -50,
-              ok: false,
-              message: expect.stringContaining("--access-group"),
-            },
-          ],
-        },
-      });
-      for (const { service, accessGroup } of entries) {
-        const created = await runKeychainOperations(udid!, APP, [
-          { op: "list", service, accessGroup },
-        ]);
-        expect(created).toMatchObject({
-          applied: true,
-          results: [{ status: 0, items: [{ service, accessGroup, account: ITEM.account }] }],
-        });
+          entries.map((item) => ({ op: "delete", ...item })),
+        );
       }
-      const [selected, shared] = GROUP_FIXTURES;
-      expect(
-        keychainCli([
-          "delete",
-          APP,
-          KEY,
-          "--service",
-          service,
-          "--access-group",
-          selected!.accessGroup,
-        ]),
-      ).toMatchObject({
-        status: 0,
-        output: { applied: true, keys: [{ key: KEY, status: 0, ok: true }] },
-      });
-      const auth = `${service}:auth`;
-      const remaining = await runKeychainOperations(udid!, APP, [{ op: "list", service: auth }]);
-      expect(remaining).toMatchObject({
-        applied: true,
-        results: [{ status: 0, items: [{ service: auth, accessGroup: shared!.accessGroup }] }],
-      });
-    } finally {
-      await runKeychainOperations(
-        udid!,
-        APP,
-        entries.map((item) => ({ op: "delete", ...item })),
-      );
-    }
-  }, 60_000);
+    },
+    60_000,
+  );
 });

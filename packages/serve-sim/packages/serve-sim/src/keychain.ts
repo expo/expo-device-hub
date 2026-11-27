@@ -25,7 +25,7 @@ export function describeKeychainStatus(status: number, error?: string): string {
     return "multiple access groups match this item. Specify --access-group in the CLI or accessGroup in Controls";
   }
   if (status === INVALID_ATTRIBUTES && error === "unknown op") {
-    return "the app's Keychain helper is out of date. Restart serve-sim and reopen the app";
+    return "the app's Keychain helper is out of date. Update and restart serve-sim, then reopen the app";
   }
   return status === SUCCESS ? "ok" : (STATUS_MESSAGES[status] ?? `keychain error ${status}`);
 }
@@ -224,11 +224,21 @@ export async function deleteKeychainValues(
   { relaunch = false }: { relaunch?: boolean } = {},
 ): Promise<KeychainWriteSummary> {
   const operations = keychainDeleteOperations(target.format, keys, target.options);
+  // @ref LLP 0020#running-and-closed-apps — a queued alias delete could reach an older helper.
+  const keepQueued = operations.every(({ op }) => op !== "delete-aliases");
   const outcome = await runKeychainOperations(target.udid, target.bundleId, operations, {
-    keepQueued: true,
+    keepQueued,
     relaunch,
   });
-  if (!outcome.applied) return { applied: false };
+  if (!outcome.applied) {
+    if (!keepQueued) {
+      throw new Error(
+        "The Keychain helper did not answer, so the delete was withdrawn. " +
+          "Open the app in an up-to-date serve-sim session and retry, or pass --relaunch in the CLI.",
+      );
+    }
+    return { applied: false };
+  }
   return {
     applied: true,
     keys: keys.map((key, index) => keyResult("delete", key, outcome.results[index]!)),

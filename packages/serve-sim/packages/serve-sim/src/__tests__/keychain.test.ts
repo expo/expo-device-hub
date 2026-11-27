@@ -125,7 +125,7 @@ test("statuses read as words", () => {
   expect(describeKeychainStatus(-34018)).toContain("no keychain entitlement");
   expect(describeKeychainStatus(-1)).toBe("keychain error -1");
   expect(describeKeychainStatus(-50, "unknown op")).toContain(
-    "Restart serve-sim and reopen the app",
+    "Update and restart serve-sim, then reopen the app",
   );
 });
 
