@@ -451,6 +451,41 @@ describeOrSkip("keychain round trip", () => {
     }
   }, 60_000);
 
+  test("does not start a set when a service-wide clear matches multiple access groups", async () => {
+    launch();
+    const service = "group-clear-fixture";
+    const targetService = "group-clear-target-fixture";
+    const entries = [
+      { ...ITEM, service, accessGroup: "SERVESIMFIX.dev.expo.serve-sim.launch-fixture" },
+      { ...ITEM, service, accessGroup: "SERVESIMFIX.dev.expo.serve-sim.shared-fixture" },
+    ];
+    try {
+      for (const entry of entries) {
+        expect(await runKeychainOperations(udid!, APP, [{ ...set("existing"), ...entry }])).toEqual(
+          { applied: true, results: [{ status: 0 }] },
+        );
+      }
+      expect(
+        await runKeychainOperations(udid!, APP, [
+          { ...set("should-not-be-added"), service: targetService, clears: [{ service }] },
+        ]),
+      ).toEqual({
+        applied: true,
+        results: [{ status: -50, error: "select an accessGroup for this item" }],
+      });
+      const listed = await runKeychainOperations(udid!, APP, [
+        { op: "list", service },
+        { op: "list", service: targetService },
+      ]);
+      expect(listed.applied && listed.results.map(({ items }) => items?.length)).toEqual([2, 0]);
+    } finally {
+      await runKeychainOperations(udid!, APP, [
+        ...entries.map((entry) => ({ op: "delete" as const, ...entry })),
+        { op: "delete", ...ITEM, service: targetService },
+      ]);
+    }
+  }, 30_000);
+
   const target = (): KeychainTarget => ({
     udid: udid!,
     bundleId: APP,
