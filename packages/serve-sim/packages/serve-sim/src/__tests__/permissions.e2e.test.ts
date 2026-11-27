@@ -10,7 +10,7 @@ import {
   rmSync,
   renameSync,
 } from "fs";
-import { tmpdir } from "os";
+import { homedir, tmpdir } from "os";
 import { randomUUID } from "crypto";
 import { join } from "path";
 
@@ -164,6 +164,50 @@ describe.skipIf(!ready)("service-backed permissions (real Simulator)", () => {
         expect(state().pid).toBe(initial.pid);
         expect(state().launchCount).toBe(initial.launchCount);
         expect(springboard()).toEqual(sb);
+      }
+    },
+    T,
+  );
+
+  test(
+    "BulletinBoard saves a denial after clearing the legacy notification lock",
+    async () => {
+      const store = join(
+        homedir(),
+        "Library/Developer/CoreSimulator/Devices",
+        udid!,
+        "data/Library/BulletinBoard/VersionedSectionInfo.plist",
+      );
+      const key = `sectionInfo.${BUNDLE.replaceAll(".", "\\.")}`;
+      function savedAllowsNotifications() {
+        const data = execFileSync("/usr/bin/plutil", ["-extract", key, "raw", "-o", "-", store], {
+          encoding: "utf8",
+          timeout: 5000,
+        });
+        const archive = execFileSync(
+          "/usr/bin/plutil",
+          ["-convert", "xml1", "-o", "-", "--", "-"],
+          {
+            input: Buffer.from(data.trim(), "base64"),
+            encoding: "utf8",
+            timeout: 5000,
+          },
+        );
+        return /<key>allowsNotifications<\/key>\s*<true\/>/.test(archive);
+      }
+
+      cli("grant", "notifications", BUNDLE);
+      await eventually(() => savedAllowsNotifications(), "BulletinBoard saved the grant");
+      try {
+        execFileSync("/usr/bin/chflags", ["uchg", store], { timeout: 5000 });
+        const flags = execFileSync("/usr/bin/stat", ["-f", "%Sf", store], { encoding: "utf8" });
+        expect(flags.trim().split(",")).toContain("uchg");
+        cli("revoke", "notifications", BUNDLE);
+        expect(list().notifications.authorizationStatus).toBe(1);
+        await eventually(() => !savedAllowsNotifications(), "BulletinBoard saved the denial");
+      } finally {
+        execFileSync("/usr/bin/chflags", ["nouchg", store], { timeout: 5000 });
+        cli("grant", "notifications", BUNDLE);
       }
     },
     T,

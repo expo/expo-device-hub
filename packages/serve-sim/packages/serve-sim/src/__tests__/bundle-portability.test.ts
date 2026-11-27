@@ -193,7 +193,7 @@ describeIfBuilt("bundle portability", () => {
     }
   });
 
-  test("notification writes clear a legacy lock before invoking the helper", () => {
+  test.each([false, true])("notification writes handle the legacy lock (failure=%j)", (failure) => {
     const home = mkdtempSync(join(tmpdir(), "serve-sim-legacy-notifications-"));
     const udid = "00000000-0000-0000-0000-000000000001";
     const plist = join(
@@ -220,13 +220,24 @@ describeIfBuilt("bundle portability", () => {
           "-d",
           udid,
         ],
-        { encoding: "utf8", timeout: 5_000, env: { ...process.env, PERMISSION_TEST_HOME: home } },
+        {
+          encoding: "utf8",
+          timeout: 5_000,
+          env: {
+            ...process.env,
+            PERMISSION_TEST_HOME: home,
+            PERMISSION_TEST_LOCK_FAILURE: failure ? "1" : "0",
+          },
+        },
       );
-      expect(result.status, result.stderr).toBe(0);
+      expect(result.status, result.stderr).toBe(failure ? 1 : 0);
+      expect(result.stderr.trim()).toBe(
+        failure ? "Could not clear the legacy Simulator notification settings lock." : "",
+      );
+      if (failure) expect(result.stdout).toBe("");
       expect(readFileSync(plist, "utf8")).toBe(contents);
-      expect(execFileSync("/usr/bin/stat", ["-f", "%Sf", plist], { encoding: "utf8" }).trim()).toBe(
-        "nodump",
-      );
+      const flags = execFileSync("/usr/bin/stat", ["-f", "%Sf", plist], { encoding: "utf8" });
+      expect(flags.trim().split(",").sort()).toEqual(failure ? ["nodump", "uchg"] : ["nodump"]);
     } finally {
       execFileSync("/usr/bin/chflags", ["nouchg", plist]);
       rmSync(home, { recursive: true, force: true });

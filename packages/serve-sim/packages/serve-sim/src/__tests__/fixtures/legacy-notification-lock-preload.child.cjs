@@ -9,6 +9,10 @@ os.homedir = () => home;
 
 const execFileSync = childProcess.execFileSync;
 childProcess.execFileSync = (file, args, options) => {
+  if (process.env.PERMISSION_TEST_LOCK_FAILURE === "1") {
+    if (file === "/usr/bin/chflags") throw new Error(`Could not change flags under ${home}`);
+    if (file === "xcrun") process.exit(91);
+  }
   if (file !== "xcrun") return execFileSync(file, args, options);
   const [, , udid, , family, action] = args;
   assert.equal(family, "notifications");
