@@ -8,6 +8,9 @@ on:
     if: ${{ !github.event.pull_request.draft || contains(toJSON(github.event.pull_request.labels), 'ci-ready') }}
     paths:
       - packages/serve-sim/**
+      # @ref LLP 0014#when-ci-runs — vendor-layout regression exercises these Hub files
+      - packages/expo-device-hub/scripts/vendor.ts
+      - packages/expo-device-hub/package.json
       - .eas/workflows/sim-test.yml
       - .eas/functions/restore-sim-test-build/**
       - .eas/functions/test-sim-runtime/**
