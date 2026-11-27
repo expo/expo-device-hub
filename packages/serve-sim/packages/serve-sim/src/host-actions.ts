@@ -220,7 +220,10 @@ const ACTION_SCHEMAS = {
       keys: z.array(KeychainKey).min(1).max(MAX_KEYCHAIN_KEYS),
       relaunch: z.boolean().default(false),
     })
-    .meta({ description: "Delete values from an app's keychain." }),
+    .meta({
+      description:
+        "Delete values from an app's keychain. For Expo SecureStore, open the app or use relaunch: true so the helper can confirm the delete.",
+    }),
   "keychain.list": z.object(KeychainTargetParams).meta({
     description: "List the keys an app stored in its keychain. Values are never returned.",
   }),
@@ -931,16 +934,9 @@ async function runProcedureAsync(
     }
     case "keychain.list": {
       const p = parseParams(action, raw);
-      return runKeychainAction(p.udid, prepareKeychain, async () => {
-        const keys = await listKeychainKeys(keychainTarget(p));
-        if (keys === null) {
-          throw new Error(
-            `${p.bundleId} did not answer. Open it in a serve-sim session and retry; ` +
-              "an app opened before the session started needs a restart.",
-          );
-        }
-        return ok(JSON.stringify({ keys }));
-      });
+      return runKeychainAction(p.udid, prepareKeychain, async () =>
+        ok(JSON.stringify({ keys: await listKeychainKeys(keychainTarget(p)) })),
+      );
     }
     case "app.file.upload":
       return runAppFileAction("upload", parseParams(action, raw));

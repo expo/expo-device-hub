@@ -2024,7 +2024,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const clipboard =
     clipboardOption === "unmanaged"
       ? null
-      : createCapabilitySession(clipboardCapability, clipboardOption);
+      : createCapabilitySession(clipboardCapability, clipboardOption, {
+          // @ref LLP 0010#reading-when-simctl-pbpaste-fails — explicit Clipboard opt-out removes an existing reader.
+          preserveForeignOwnerOnDisable: false,
+        });
   const keychainOption = options?.keychain ?? true;
   // Without the dylib the capability declines: no session tries to set it up, and clients show no
   // controls that would always fail.

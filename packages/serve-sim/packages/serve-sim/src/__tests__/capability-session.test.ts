@@ -340,6 +340,27 @@ describe("capability session, through the clipboard capability", () => {
 describe("clipboard in the preview middleware", () => {
   const apiRequest = () => new Request("http://localhost:3200/.sim/api");
 
+  test("an explicit Clipboard disable withdraws an existing reader from another process", async () => {
+    await enableCapabilities(UDID, null, [reader], { relaunch: false });
+    writeLaunchState(UDID, {
+      ...readLaunchState(UDID)!,
+      capabilities: { clipboard: { ...reader, ownerPid: process.ppid } },
+    });
+    expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPid).toBe(process.ppid);
+    const forgetState = recordState(UDID, process.pid, 3200);
+    const middleware = simMiddleware({ device: UDID, clipboard: false, keychain: "unmanaged" });
+    try {
+      expect((await middleware(apiRequest()))?.status).toBe(200);
+    } finally {
+      try {
+        await middleware.dispose();
+      } finally {
+        forgetState();
+      }
+    }
+    expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
+  });
+
   test("answers /api without waiting for the setup it starts", async () => {
     const forgetState = recordState(UDID, process.pid, 3200);
     let proceed!: () => void;

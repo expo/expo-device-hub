@@ -69,7 +69,10 @@ function exitReleaseFailure(error: unknown): string {
 export function createCapabilitySession(
   definition: CapabilityDefinition,
   enabled = true,
-  { now = Date.now }: { now?: () => number } = {},
+  {
+    now = Date.now,
+    preserveForeignOwnerOnDisable = true,
+  }: { now?: () => number; preserveForeignOwnerOnDisable?: boolean } = {},
 ) {
   // Pages, /api polls, and config requests all call initialize(). After a setup succeeds, the launchd
   // check (two simctl spawns) runs at most once per RECHECK_MS per device. That check is what repairs
@@ -106,7 +109,7 @@ export function createCapabilitySession(
       await configureCapability(udid, definition, {
         enabled,
         relaunch: false,
-        preserveForeignOwner: true,
+        preserveForeignOwner: enabled || preserveForeignOwnerOnDisable,
       });
       if (enabled) {
         initializedHere.add(udid);

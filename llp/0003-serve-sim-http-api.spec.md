@@ -784,8 +784,11 @@ All three take `{udid, bundleId, format?, service?, accessGroup?}`. `format` is
   `accessible?`, and `relaunch?`. It returns
   `{applied: true, keys: [{key, status, ok, message}]}`, or `{applied: false}` when the app
   did not answer and applies the change at its next launch.
-- `keychain.delete` also takes `keys` and `relaunch?`, and returns the same shape. A key
-  that did not exist counts as deleted: its `status` is "not found" and `ok` is true.
+- `keychain.delete` takes `keys` and `relaunch?`. It returns the same result shape after
+  the helper answers. A generic-password delete can return `{applied: false}` and queue.
+  An unanswered SecureStore delete is withdrawn and fails with a nonzero `exitCode`.
+  Open the app or pass `relaunch: true` to retry. A missing key counts as deleted
+  with `ok: true` and a "not found" message.
 - `keychain.list` returns `{keys}`, and fails when the app does not answer. Values are
   never returned.
 
