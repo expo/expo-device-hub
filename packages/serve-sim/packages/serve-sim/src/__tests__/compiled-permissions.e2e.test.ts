@@ -18,17 +18,25 @@ describe.skipIf(!ready)("compiled permission dispatch", () => {
     const executable = join(PKG, `dist/permission-dispatch-${randomUUID()}`);
     linkSync(BINARY, executable);
     const port = await freePortAsync();
+    const stderrFile = join(dir, "startup.stderr");
     const child = Bun.spawn([executable, udid!, "--port", String(port)], {
       env: { ...process.env, SERVE_SIM_STATE_DIR: dir },
       stdout: "ignore",
-      stderr: "ignore",
+      stderr: Bun.file(stderrFile),
     });
     try {
       const stateFile = join(dir, `server-${udid}.json`);
       const deadline = Date.now() + 60_000;
       while (!existsSync(stateFile) && Date.now() < deadline && child.exitCode === null)
         await new Promise((r) => setTimeout(r, 100));
-      expect(existsSync(stateFile)).toBe(true);
+      if (!existsSync(stateFile)) {
+        const stderr = readFileSync(stderrFile, "utf8").trim();
+        const reason =
+          child.exitCode === null ? "startup timed out" : `exit code ${child.exitCode}`;
+        throw new Error(
+          `Compiled serve-sim did not write its state (${reason}).\n${stderr}`.trim(),
+        );
+      }
       const state = JSON.parse(readFileSync(stateFile, "utf8"));
       const reply = await new Promise<{ exitCode: number; stdout: string; stderr: string }>(
         (resolve, reject) => {
