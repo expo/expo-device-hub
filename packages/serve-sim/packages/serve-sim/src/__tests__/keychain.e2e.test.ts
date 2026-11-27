@@ -80,8 +80,8 @@ async function waitForLastSeen(
   expect(values.at(-1)).toBe(expected);
 }
 
-function launch(): void {
-  simctl(["launch", udid!, APP, "-ServeSimFixtureKeychain", KEY]);
+function launch(...readbackArgs: string[]): void {
+  simctl(["launch", udid!, APP, "-ServeSimFixtureKeychain", KEY, ...readbackArgs]);
 }
 
 const describeOrSkip = ready ? describe : describe.skip;
@@ -310,18 +310,24 @@ describeOrSkip("keychain round trip", () => {
     launch();
     const item = { ...ITEM, service: "group-scope-fixture" };
     const groups = [
-      "SERVESIMFIX.dev.expo.serve-sim.launch-fixture",
-      "SERVESIMFIX.dev.expo.serve-sim.shared-fixture",
+      {
+        accessGroup: "SERVESIMFIX.dev.expo.serve-sim.launch-fixture",
+        value: "before-default-group",
+      },
+      {
+        accessGroup: "SERVESIMFIX.dev.expo.serve-sim.shared-fixture",
+        value: "before-shared-group",
+      },
     ];
-    const value = `before-replacement-${Date.now()}`;
+    const targetValue = `before-replacement-${Date.now()}`;
     try {
-      expect(await runKeychainOperations(udid!, APP, [set(value)])).toEqual({
+      expect(await runKeychainOperations(udid!, APP, [set(targetValue)])).toEqual({
         applied: true,
         results: [{ status: 0 }],
       });
-      for (const accessGroup of groups) {
+      for (const { accessGroup, value } of groups) {
         expect(
-          await runKeychainOperations(udid!, APP, [{ ...set("before"), ...item, accessGroup }]),
+          await runKeychainOperations(udid!, APP, [{ ...set(value), ...item, accessGroup }]),
         ).toEqual({ applied: true, results: [{ status: 0 }] });
       }
       const operations: KeychainOperation[] = [
@@ -336,19 +342,24 @@ describeOrSkip("keychain round trip", () => {
           results: [{ status: -50, error: "select an accessGroup for this item" }],
         });
       }
-      const outcome = await runKeychainOperations(udid!, APP, [
-        { op: "list", service: item.service },
-      ]);
-      expect(
-        outcome.applied && outcome.results[0]?.items?.map((entry) => entry.accessGroup).sort(),
-      ).toEqual(groups);
+      for (const { accessGroup, value } of groups) {
+        terminate();
+        const after = seenValues().length;
+        launch(
+          "-ServeSimFixtureKeychainService",
+          item.service,
+          "-ServeSimFixtureKeychainAccessGroup",
+          accessGroup,
+        );
+        await waitForLastSeen(`value=${value}`, { after });
+      }
       terminate();
       const after = seenValues().length;
       launch();
-      await waitForLastSeen(`value=${value}`, { after });
+      await waitForLastSeen(`value=${targetValue}`, { after });
     } finally {
       await runKeychainOperations(udid!, APP, [
-        ...groups.map((accessGroup) => ({
+        ...groups.map(({ accessGroup }) => ({
           op: "delete" as const,
           ...item,
           accessGroup,
@@ -356,5 +367,5 @@ describeOrSkip("keychain round trip", () => {
         { op: "delete", ...ITEM },
       ]);
     }
-  }, 30_000);
+  }, 60_000);
 });

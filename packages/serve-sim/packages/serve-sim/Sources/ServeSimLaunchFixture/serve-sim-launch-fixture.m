@@ -58,16 +58,17 @@ static void RequestIfAsked(void) {
 
 // -ServeSimFixtureKeychain <key> reads the key the way expo-secure-store does and records each
 // value the app sees, so a test can tell what the app itself reads after serve-sim writes it.
-static NSString *ReadSecureStoreKey(NSString *key) {
+static NSString *ReadSecureStoreKey(NSString *key, NSString *service, NSString *accessGroup) {
   NSData *account = [key dataUsingEncoding:NSUTF8StringEncoding];
-  NSDictionary *query = @{
+  NSMutableDictionary *query = [@{
     (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
-    (__bridge id)kSecAttrService : @"app:no-auth",
+    (__bridge id)kSecAttrService : service,
     (__bridge id)kSecAttrGeneric : account,
     (__bridge id)kSecAttrAccount : account,
     (__bridge id)kSecMatchLimit : (__bridge id)kSecMatchLimitOne,
     (__bridge id)kSecReturnData : @YES,
-  };
+  } mutableCopy];
+  if (accessGroup != nil) query[(__bridge id)kSecAttrAccessGroup] = accessGroup;
   CFTypeRef found = NULL;
   OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &found);
   if (status != errSecSuccess) return [NSString stringWithFormat:@"status=%d", (int)status];
@@ -75,16 +76,20 @@ static NSString *ReadSecureStoreKey(NSString *key) {
   return [@"value=" stringByAppendingString:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @""];
 }
 
-static void WatchKeychainIfAsked(void) {
+static NSString *LaunchArgument(NSString *name) {
   NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
-  NSUInteger flag = [arguments indexOfObject:@"-ServeSimFixtureKeychain"];
-  if (flag == NSNotFound || flag + 1 >= arguments.count) {
-    return;
-  }
-  NSString *key = arguments[flag + 1];
+  NSUInteger flag = [arguments indexOfObject:name];
+  return flag != NSNotFound && flag + 1 < arguments.count ? arguments[flag + 1] : nil;
+}
+
+static void WatchKeychainIfAsked(void) {
+  NSString *key = LaunchArgument(@"-ServeSimFixtureKeychain");
+  if (key == nil) return;
+  NSString *service = LaunchArgument(@"-ServeSimFixtureKeychainService") ?: @"app:no-auth";
+  NSString *accessGroup = LaunchArgument(@"-ServeSimFixtureKeychainAccessGroup");
   __block NSString *last = nil;
   void (^check)(void) = ^{
-    NSString *seen = ReadSecureStoreKey(key);
+    NSString *seen = ReadSecureStoreKey(key, service, accessGroup);
     if ([seen isEqualToString:last]) return;
     last = seen;
     Record(@"keychain", seen);
