@@ -2,4 +2,4 @@
 "expo-device-hub": patch
 ---
 
-Fix CLI-backed Simulator controls in Device Hub.
+Remove Node's module-type warning from Simulator control output in Device Hub.

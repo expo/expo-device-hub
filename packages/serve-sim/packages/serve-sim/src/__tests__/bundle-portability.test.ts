@@ -78,7 +78,6 @@ describeIfBuilt("bundle portability", () => {
           const hub = JSON.parse(
             readFileSync(join(PKG_DIR, "../../../expo-device-hub/package.json"), "utf8"),
           );
-          expect(hub.files).toContain("vendor/serve-sim/package.json");
           fixture = mkdtempSync(join(tmpdir(), "serve-sim-vendor-"));
           const scripts = join(fixture, "scripts");
           const source = join(fixture, "node_modules/@expo/serve-sim");
@@ -102,7 +101,7 @@ describeIfBuilt("bundle portability", () => {
           writeFileSync(
             join(fixture, "package.json"),
             JSON.stringify({
-              name: "hub-vendor-test",
+              ...hub,
               vendorDependencies: { "@expo/serve-sim": "workspace:*" },
             }),
           );
@@ -114,6 +113,20 @@ describeIfBuilt("bundle portability", () => {
             timeout: 20_000,
           });
           expect(vendor.status, vendor.stderr).toBe(0);
+          const [pack] = JSON.parse(
+            execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], {
+              cwd: fixture,
+              encoding: "utf8",
+              timeout: 20_000,
+            }),
+          );
+          expect(pack.files.map((file: { path: string }) => file.path)).toEqual(
+            expect.arrayContaining([
+              "vendor/serve-sim/package.json",
+              "vendor/serve-sim/dist/middleware.js",
+              "vendor/serve-sim/dist/serve-sim.js",
+            ]),
+          );
           cwd = fixture;
           middleware = "./vendor/serve-sim/dist/middleware.js";
         }

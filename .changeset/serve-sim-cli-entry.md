@@ -2,4 +2,4 @@
 "@expo/serve-sim": patch
 ---
 
-Fix CLI-backed controls in mounted middleware and compiled executables.
+Select the Simulator control CLI entry when building serve-sim.
