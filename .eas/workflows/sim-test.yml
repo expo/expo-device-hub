@@ -64,6 +64,12 @@ jobs:
           npm pack --pack-destination release --json > /tmp/npm-pack.json
           TARBALL=$(node -p 'JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename' < /tmp/npm-pack.json)
           mv "release/$TARBALL" release/serve-sim.tgz
+          tar -tzf release/serve-sim.tgz > /tmp/serve-sim-package-files.txt
+          grep -qx package/dist/simperm/serve-sim-permissions /tmp/serve-sim-package-files.txt
+          if grep -q SimPermissionsFixture /tmp/serve-sim-package-files.txt; then
+            echo "The npm package contains the permission test fixture" >&2
+            exit 1
+          fi
 
       - name: Upload npm package
         uses: eas/upload_artifact
