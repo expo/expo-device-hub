@@ -1,4 +1,4 @@
-import { type HostActionResult, type RunHostAction } from "./exec-ws";
+import { type HostActionResult, lastStderrLine, type RunHostAction } from "./exec-ws";
 import { type DeviceGeoFix } from "./types";
 
 /**
@@ -11,11 +11,7 @@ import { type DeviceGeoFix } from "./types";
 export function simctlFailureMessage(result: HostActionResult): string {
   const reason = /Reason:\s*(.+)$/m.exec(result.stderr);
   if (reason) return reason[1].trim();
-  const lines = result.stderr
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  return lines.at(-1) ?? "simctl location failed";
+  return lastStderrLine(result, "simctl location failed");
 }
 
 function throwOnFailure(result: HostActionResult): void {

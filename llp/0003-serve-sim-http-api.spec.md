@@ -783,7 +783,7 @@ All three take `{udid, bundleId, format?, service?, accessGroup?}`. `format` is
 - `keychain.set` also takes `values` (an object of 1 to 200 string keys and values),
   `accessible?`, and `relaunch?`. It returns
   `{applied: true, keys: [{key, status, ok, message}]}`, or `{applied: false}` when the app
-  did not answer and applies the change at its next launch.
+  did not answer and the request remains queued for the helper to pick up before expiry.
 - `keychain.delete` takes `keys` and `relaunch?`. It returns the same result shape after
   the helper answers. A generic-password delete can return `{applied: false}` and queue.
   An unanswered SecureStore delete is withdrawn and fails with a nonzero `exitCode`.

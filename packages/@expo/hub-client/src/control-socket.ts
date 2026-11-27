@@ -1,5 +1,19 @@
 // serve-sim shares eight action/UI slots per control connection.
 const MAX_IN_FLIGHT_REQUESTS = 8;
+const MAX_CONTROL_MESSAGE_BYTES = 4 * 1024 * 1024;
+
+// @ref LLP 0020#hub-client — measure the complete JSON frame before sending Keychain actions.
+export function encodeControlRequest(body: Record<string, unknown>, id: number): string {
+  const frame = JSON.stringify({ ...body, id });
+  if (
+    typeof body.action === "string" &&
+    body.action.startsWith("keychain.") &&
+    new TextEncoder().encode(frame).byteLength > MAX_CONTROL_MESSAGE_BYTES
+  ) {
+    throw new Error("This Keychain request exceeds the 4 MiB limit. Send fewer or smaller items.");
+  }
+  return frame;
+}
 
 // @ref LLP 0013#control-channel-pool — client ownership, server-slot accounting, and independent health/subscription recovery
 /** A control channel belongs to one client identity, never to the module. */
@@ -15,7 +29,7 @@ export function createControlSocket(
   } = {},
 ) {
   type Reply = Record<string, unknown>;
-  type Pending = { body: Reply; sent: boolean; finish: (error?: Error, reply?: Reply) => void };
+  type Pending = { frame: string; sent: boolean; finish: (error?: Error, reply?: Reply) => void };
   type Subscription = {
     path: string;
     data: (chunk: string) => void;
@@ -80,9 +94,9 @@ export function createControlSocket(
       }, retryMs);
     }
   };
-  const send = (ws: WebSocket, body: Reply) => {
+  const send = (ws: WebSocket, frame: string) => {
     try {
-      ws.send(JSON.stringify(body));
+      ws.send(frame);
     } catch {
       fail(ws, new Error("exec-ws error"));
     }
@@ -104,7 +118,7 @@ export function createControlSocket(
         if (request.sent) continue;
         request.sent = true;
         inFlight.add(id);
-        send(ws, { ...request.body, id });
+        send(ws, request.frame);
       }
     } finally {
       sendingRequests = false;
@@ -119,11 +133,11 @@ export function createControlSocket(
       // before host action dispatch, including on older serve-sim servers.
       // Probe the channel independently of potentially slow host actions.
       healthTimer = setTimeout(() => fail(ws, new Error("exec-ws timeout")), healthTimeoutMs);
-      send(ws, { id: healthProbeId });
+      send(ws, JSON.stringify({ id: healthProbeId }));
     }, healthIntervalMs);
   };
   const sendSubscription = (id: number, sub: Subscription) => {
-    if (ready && socket) send(socket, { sub: id, path: sub.path });
+    if (ready && socket) send(socket, JSON.stringify({ sub: id, path: sub.path }));
   };
   const connect = () => {
     if (disposed || socket) return;
@@ -139,7 +153,7 @@ export function createControlSocket(
     socket = ws;
     connectTimer = setTimeout(() => fail(ws, new Error("exec-ws timeout")), connectTimeoutMs);
     ws.onopen = () => {
-      if (!disposed && socket === ws) send(ws, { token });
+      if (!disposed && socket === ws) send(ws, JSON.stringify({ token }));
     };
     ws.onmessage = (event) => {
       if (disposed || socket !== ws) return;
@@ -205,6 +219,7 @@ export function createControlSocket(
           return;
         }
         const id = nextId++;
+        const frame = encodeControlRequest(body, id);
         let settled = false;
         const finish = (error?: Error, reply?: Reply) => {
           if (settled) return;
@@ -219,7 +234,7 @@ export function createControlSocket(
         const abort = () => finish(signal?.reason ?? new DOMException("Aborted", "AbortError"));
         const timer = setTimeout(() => finish(new Error("exec-ws timeout")), timeoutMs);
         signal?.addEventListener("abort", abort, { once: true });
-        pending.set(id, { body, sent: false, finish });
+        pending.set(id, { frame, sent: false, finish });
         if (ready) sendRequests();
         else connect();
       });
@@ -235,7 +250,7 @@ export function createControlSocket(
         if (subscriptions.get(id) !== sub) return;
         subscriptions.delete(id);
         clearTimeout(sub.timer);
-        if (ready && socket) send(socket, { unsub: id });
+        if (ready && socket) send(socket, JSON.stringify({ unsub: id }));
         if (!subscriptions.size && !connectionListeners.size) {
           clearTimeout(retryTimer);
           retryTimer = undefined;

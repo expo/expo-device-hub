@@ -70,8 +70,15 @@ The CLI selects a single booted iOS Simulator. When several booted iOS Simulator
 
 The `keychain.set`, `keychain.delete`, and `keychain.list` host actions run the same functions in the server process, so values never reach a child process's arguments ([LLP 0003](0003-serve-sim-http-api.spec.md#keychain-actions)).
 
+## Hub client
+
+`@expo/hub-client` sets `capabilities.keychain` when serve-sim's preview config has `keychain: true` and the client has controls connection settings for the device. `listKeychainKeys`, `setKeychainValues`, and `deleteKeychainValues` take an explicit app ID and return promises, so a write keeps its result while a relaunch moves the foreground to SpringBoard and back. They use the expo-secure-store layout, with SecureStore's `keychainService` as an option. A request waits up to 120 s, or 300 s with a relaunch, which covers serve-sim's lock waits; a write whose reply is lost, by a timeout or a dropped connection, says the change may still apply [observed: `ios-keychain.ts`, `useIosDevice.ts`]. Android clients report the capability as off.
+
+A write that returns `applied: false` is queued for the helper to pick up before it expires. The client refuses Keychain actions whose full JSON message exceeds the standalone server's 4 MiB WebSocket limit, including UTF-8, escaping, and the request ID [observed: `control-socket.ts`, `exec-ws.ts`].
+
 ## Not there yet
 
 - No Hub UI yet.
+- No Android support: serve-emu has no equivalent of the in-app write.
 - Items protected by biometrics (`kSecAttrAccessControl`) are not written.
 - A queued request stays in the app's `tmp` folder until the app next starts in a serve-sim session or the host sends the app another keychain request, even after it expired.

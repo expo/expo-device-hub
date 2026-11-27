@@ -69,6 +69,25 @@ test("concurrent requests and subscriptions share one authenticated connection",
   ws.reply({ sub: sub.sub, data: "line" });
   expect(data).toEqual(["line"]);
 });
+
+test("an oversized Keychain request leaves the control connection usable", async () => {
+  const { channel, ready } = setup();
+  channel.onConnectionChange(() => {});
+  const ws = ready();
+  const value = "\u0000".repeat(256 * 1024);
+  await expect(
+    channel.request(
+      { action: "keychain.set", params: { values: { a: value, b: value, c: value } } },
+      100,
+    ),
+  ).rejects.toThrow("4 MiB");
+  expect(ws.sent).toEqual([{ token: "A" }]);
+
+  const next = channel.request({ action: "keychain.list" }, 100);
+  ws.reply({ id: ws.sent[1]!.id, stdout: "[]" });
+  expect((await next).stdout).toBe("[]");
+});
+
 test("one subscriber can unsubscribe without canceling another on the same path", () => {
   const { channel, ready } = setup();
   const a: string[] = [],
