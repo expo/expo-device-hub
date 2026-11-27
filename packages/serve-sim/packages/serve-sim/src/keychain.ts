@@ -35,14 +35,20 @@ export const KEYCHAIN_FORMATS = [
   "expo-secure-store",
   "generic-password",
   "react-native-keychain",
+  "keychain-access",
 ] as const;
 export type KeychainFormatName = (typeof KEYCHAIN_FORMATS)[number];
 
 export interface KeychainFormatOptions {
-  /** expo-secure-store: its `keychainService` option. generic-password: the item's service. */
+  /**
+   * expo-secure-store: its `keychainService` option. generic-password: the item's service.
+   * keychain-access: `Keychain(service:)`, the bundle ID when omitted.
+   */
   service?: string;
   /** react-native-keychain: the username stored with each password; empty when omitted. */
   username?: string;
+  /** The app, from the target: keychain-access uses it when no service is given. */
+  bundleId?: string;
   accessGroup?: string;
   accessible?: KeychainAccessible;
 }
@@ -105,10 +111,36 @@ const expoSecureStore: KeychainFormat = {
   },
 };
 
+/** The key as a string account in one service, as most Swift and Objective-C wrappers store it. */
+function accountInService(
+  serviceOf: (options: KeychainFormatOptions) => string,
+): Pick<KeychainFormat, "places" | "keyOf"> {
+  return {
+    places: (key, options) => [
+      withGroup({ service: serviceOf(options), account: b64(key) }, options),
+    ],
+    keyOf: (item, options) => (item.service === serviceOf(options) ? fromB64(item.account) : null),
+  };
+}
+
 const genericPassword: KeychainFormat = {
   service: "required",
-  places: (key, options) => [withGroup({ service: options.service!, account: b64(key) }, options)],
-  keyOf: (item, options) => (item.service === options.service ? fromB64(item.account) : null),
+  ...accountInService((options) => options.service!),
+  defaultAccessible: "afterFirstUnlock",
+  checkKey: nonEmpty,
+};
+
+// Mirrors KeychainAccess's Keychain.swift (v4.2.2): `Keychain(service:)` stores the key as a string
+// account in the service, and `Keychain()` uses the bundle ID. A set updates an existing item or
+// adds one, and `allKeys()` lists the accounts in the service.
+const keychainAccess: KeychainFormat = {
+  service: "optional",
+  ...accountInService((options) => {
+    const service = options.service ?? options.bundleId;
+    if (!service)
+      throw new Error("The keychain-access format needs a service or the app's bundle ID.");
+    return service;
+  }),
   defaultAccessible: "afterFirstUnlock",
   checkKey: nonEmpty,
 };
@@ -133,6 +165,7 @@ const FORMATS: Record<KeychainFormatName, KeychainFormat> = {
   "expo-secure-store": expoSecureStore,
   "generic-password": genericPassword,
   "react-native-keychain": reactNativeKeychain,
+  "keychain-access": keychainAccess,
 };
 
 /** Refuses keys and options the format cannot store, before any request leaves. */
@@ -212,7 +245,8 @@ export interface KeychainTarget {
   udid: string;
   bundleId: string;
   format: KeychainFormatName;
-  options: KeychainFormatOptions;
+  /** The format's options; the bundle ID comes from the target. */
+  options: Omit<KeychainFormatOptions, "bundleId">;
 }
 
 export interface KeychainKeyResult {
@@ -228,6 +262,11 @@ export type KeychainWriteSummary =
   | { applied: true; keys: KeychainKeyResult[] }
   | { applied: false };
 
+const formatOptions = (target: KeychainTarget): KeychainFormatOptions => ({
+  ...target.options,
+  bundleId: target.bundleId,
+});
+
 function keyResult(
   verb: "set" | "delete",
   key: string,
@@ -242,7 +281,7 @@ export async function setKeychainValues(
   entries: [key: string, value: string][],
   { relaunch = false }: { relaunch?: boolean } = {},
 ): Promise<KeychainWriteSummary> {
-  const operations = keychainSetOperations(target.format, entries, target.options);
+  const operations = keychainSetOperations(target.format, entries, formatOptions(target));
   const outcome = await runKeychainOperations(target.udid, target.bundleId, operations, {
     keepQueued: true,
     relaunch,
@@ -259,7 +298,7 @@ export async function deleteKeychainValues(
   keys: string[],
   { relaunch = false }: { relaunch?: boolean } = {},
 ): Promise<KeychainWriteSummary> {
-  const operations = keychainDeleteOperations(target.format, keys, target.options);
+  const operations = keychainDeleteOperations(target.format, keys, formatOptions(target));
   // @ref LLP 0020#running-and-closed-apps — a queued alias delete could reach an older helper.
   const keepQueued = operations.every(({ op }) => op !== "delete-aliases");
   const outcome = await runKeychainOperations(target.udid, target.bundleId, operations, {
@@ -282,7 +321,7 @@ export async function deleteKeychainValues(
 }
 
 export async function listKeychainKeys(target: KeychainTarget): Promise<string[]> {
-  assertKeychainRequest(target.format, [], target.options);
+  assertKeychainRequest(target.format, [], formatOptions(target));
   const { accessGroup } = target.options;
   const outcome = await runKeychainOperations(target.udid, target.bundleId, [
     accessGroup ? { op: "list", accessGroup } : { op: "list" },
@@ -297,5 +336,5 @@ export async function listKeychainKeys(target: KeychainTarget): Promise<string[]
   if (result.status !== SUCCESS) {
     throw new Error(`Could not list keychain items: ${describeKeychainStatus(result.status)}.`);
   }
-  return keychainKeys(target.format, result.items ?? [], target.options);
+  return keychainKeys(target.format, result.items ?? [], formatOptions(target));
 }
