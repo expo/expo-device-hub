@@ -344,7 +344,7 @@ serve-sim keychain delete com.example.app refreshToken
 - Biometric-protected items are not supported. Values passed as `key=value` arguments are
   visible to other processes; prefer `--from-file`.
 
-See [keychain](https://github.com/expo/expo-device-hub/blob/main/llp/0017-serve-sim-keychain.explainer.md) for how the write reaches the app.
+See [keychain](https://github.com/expo/expo-device-hub/blob/main/llp/0020-serve-sim-keychain.explainer.md) for how the write reaches the app.
 
 ## Network capture
 
