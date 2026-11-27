@@ -1046,6 +1046,8 @@ export interface DeviceClient {
   permissionsPending: ReadonlySet<string>;
   /** Permission error; failed writes remain visible until the next write starts. */
   permissionsError: string | null;
+  /** True when reading permissions again can recover a permission error. */
+  permissionsCanRetry?: boolean;
   /** Grant or revoke one permission of the foreground app. */
   setPermission: (id: string, action: AppPermissionAction) => void;
   /** Return every permission of the foreground app to its default. */

@@ -30,8 +30,10 @@ export async function readPermissions(
   response: Response,
   parse: (payload: unknown) => AppPermission[] | null,
   fallback: string,
+  signal?: AbortSignal,
 ): Promise<AppPermission[]> {
   const payload: unknown = await response.json().catch(() => null);
+  signal?.throwIfAborted();
   const permissions = response.ok ? parse(payload) : null;
   if (permissions) return permissions;
   throw new Error(errorMessage(payload, fallback));

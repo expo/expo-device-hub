@@ -72,6 +72,9 @@ test("Retry recovers a failed Android write and readback without releasing owner
   expect(client.permissionsPending.size).toBe(0);
   expect(client.permissions?.[0].state).toBe("denied");
   expect(client.permissionsError).toBe("write disconnected");
+  expect(
+    renderer!.root.findAllByType(Button).some((button) => button.props.children === "Retry"),
+  ).toBe(false);
 });
 
 test.each(["ios", "android"] as const)(

@@ -30,6 +30,9 @@ const WRITE_PATH: Record<AppPermissionAction, string> = {
   revoke: "/api/apps/revoke",
 };
 
+// Allow for the write queue and both ADB calls in a reset.
+const PERMISSION_REQUEST_TIMEOUT_MS = 60_000;
+
 export function androidPermissionsBackend(
   baseUrl: string,
   device: string | null,
@@ -37,17 +40,24 @@ export function androidPermissionsBackend(
 ): PermissionsBackend {
   const list = async (appId: string) => {
     const path = `/api/apps/permissions?packageName=${encodeURIComponent(appId)}`;
-    const response = await fetchImpl(deviceApiUrl(baseUrl, path, device), { cache: "no-store" });
-    return readPermissions(response, parseAndroidPermissions, "Could not read permissions");
+    const signal = AbortSignal.timeout(PERMISSION_REQUEST_TIMEOUT_MS);
+    const response = await fetchImpl(deviceApiUrl(baseUrl, path, device), {
+      cache: "no-store",
+      signal,
+    });
+    return readPermissions(response, parseAndroidPermissions, "Could not read permissions", signal);
   };
   const post = async (path: string, body: Record<string, string>) => {
+    const signal = AbortSignal.timeout(PERMISSION_REQUEST_TIMEOUT_MS);
     const response = await fetchImpl(deviceApiUrl(baseUrl, path, device), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal,
     });
     if (response.ok) return;
     const payload: unknown = await response.json().catch(() => null);
+    signal.throwIfAborted();
     throw new Error(errorMessage(payload, "Permission update failed"));
   };
   return {

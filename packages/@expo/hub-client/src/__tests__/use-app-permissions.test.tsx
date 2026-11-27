@@ -1,5 +1,6 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { androidPermissionsBackend } from "../android-permissions";
 import { useAppPermissions } from "../useAppPermissions";
 import { type PermissionsBackend } from "../app-permissions";
 import { type AppPermission } from "../types";
@@ -232,6 +233,48 @@ test("failed recovery keeps ownership until a later successful read", async () =
   expect(client.permissionsPending.size).toBe(0);
   expect(client.permissions?.[0].state).toBe("undetermined");
   expect(client.permissionsError).toBe("write disconnected");
+});
+
+test("a hung Android readback times out and lets Retry recover pending state", async () => {
+  const deadline = new AbortController();
+  const timeout = spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+  let reads = 0;
+  const backend = androidPermissionsBackend("http://host-a/emu", "device", async (_url, init) => {
+    if (init?.method === "POST") throw new Error("write disconnected");
+    if (++reads === 2) {
+      return {
+        ok: true,
+        json: () =>
+          new Promise((_, reject) => {
+            const signal = init!.signal!;
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          }),
+      } as Response;
+    }
+    return Response.json({ ok: true, permissions: [{ name: "camera", granted: reads === 1 }] });
+  });
+  try {
+    await act(async () => {
+      renderer = create(<Harness backend={backend} />);
+    });
+    await act(async () => client.refreshPermissions());
+    await act(async () => client.setPermission("camera", "revoke"));
+    expect(reads).toBe(2);
+    expect(client.permissionsPending.has("camera")).toBe(true);
+    await act(async () => client.refreshPermissions());
+    expect(reads).toBe(2);
+    await act(async () => deadline.abort(new DOMException("Read timed out", "TimeoutError")));
+    expect(client.permissionsError).toBe("write disconnected. Readback: Read timed out");
+    expect(client.permissionsPending.has("camera")).toBe(true);
+    timeout.mockRestore();
+    await act(async () => client.refreshPermissions());
+    expect(reads).toBe(3);
+    expect(client.permissionsPending.size).toBe(0);
+    expect(client.permissions?.[0].state).toBe("denied");
+    expect(client.permissionsCanRetry).toBe(false);
+  } finally {
+    timeout.mockRestore();
+  }
 });
 
 test("a recovery snapshot cannot overwrite another permission's newer write", async () => {

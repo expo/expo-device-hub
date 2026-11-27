@@ -23,7 +23,13 @@ export function PermissionsSection({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const { permissions, permissionsPending, permissionsError, refreshPermissions } = client;
+  const {
+    permissions,
+    permissionsPending,
+    permissionsError,
+    permissionsCanRetry,
+    refreshPermissions,
+  } = client;
   const appId = client.foregroundApp?.id ?? null;
 
   useEffect(() => {
@@ -91,11 +97,13 @@ export function PermissionsSection({
       {permissionsError && (
         <>
           <SectionNote role="alert">{permissionsError}</SectionNote>
-          <div style={{ padding: "0 0 12px" }}>
-            <Button theme="secondary" size="xs" onClick={refreshPermissions}>
-              Retry
-            </Button>
-          </div>
+          {permissionsCanRetry !== false && (
+            <div style={{ padding: "0 0 12px" }}>
+              <Button theme="secondary" size="xs" onClick={refreshPermissions}>
+                Retry
+              </Button>
+            </div>
+          )}
         </>
       )}
     </CollapsibleSection>

@@ -270,10 +270,12 @@ also fails, both the write error and the readback error are shown so the pending
 state has an explanation. Changing
 targets hides the old target's error; returning to a target with an unresolved
 write restores its retained error.
-The shared Permissions section offers Retry for errors even with existing rows
-and held writes. The shared section refreshes on interval and focus only while it
-is open; recovery can also use Retry without waiting for a poll.
-[observed: `useAppPermissions.ts`; serve-sim `app-permissions-tool.tsx`; regression
+The shared Permissions section offers Retry for a failed read or an unresolved
+write. After successful recovery, the write error remains visible and Retry
+disappears. The section refreshes on interval and focus while open. Android
+permission requests have a 60-second browser deadline so a lost response cannot
+prevent further reads. The server still orders recovery behind earlier writes.
+[observed: `useAppPermissions.ts`, `android-permissions.ts`; serve-sim `app-permissions-tool.tsx`; regression
 coverage in `__tests__/use-app-permissions.test.tsx` and serve-sim's
 `__tests__/fixtures/permissions-ui.child.ts`;
 `packages/@expo/hub-components/src/dashboard/PermissionsSection.tsx`;
