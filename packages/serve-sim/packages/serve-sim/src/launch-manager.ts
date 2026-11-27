@@ -827,10 +827,15 @@ async function enableCapabilitiesUnlocked(
 }
 
 /** null when the check itself failed, which is not the same as "not running". */
-async function isRunning(udid: string, bundleId: string): Promise<boolean | null> {
+export async function isRunning(udid: string, bundleId: string): Promise<boolean | null> {
   const out = await simctl(["spawn", udid, "launchctl", "list"], 15_000).catch(() => null);
   if (out === null) return null;
-  return out.includes(`UIKitApplication:${bundleId}`);
+  const appLabel = `UIKitApplication:${bundleId}`;
+  // The last column is the label, which may have an instance suffix.
+  return out.split("\n").some((line) => {
+    const label = line.trim().split(/\s+/).at(-1);
+    return label === appLabel || label?.startsWith(`${appLabel}[`) === true;
+  });
 }
 
 async function terminateForRelaunch(udid: string, bundleId: string): Promise<void> {
@@ -862,9 +867,54 @@ async function relaunchTarget(
 ): Promise<void> {
   const target = bundleId ?? state.bundleId;
   if (!target) return;
-  const args = target === state.bundleId ? state.launchArgs : [];
   await terminateForRelaunch(udid, target);
-  await simctl(["launch", udid, target, ...args]);
+  await startTarget(udid, target, state);
+}
+
+/** Starts one app, with its recorded launch arguments when it is the session's target. */
+async function startTarget(udid: string, bundleId: string, state: LaunchState): Promise<void> {
+  const args = bundleId === state.bundleId ? state.launchArgs : [];
+  await simctl(["launch", udid, bundleId, ...args]);
+}
+
+/** Prepare a new app process while holding the device lock through stop and restart. */
+export async function relaunchAppWithPreparation(
+  udid: string,
+  bundleId: string,
+  prepare: () => Promise<void>,
+  discardPreparation: () => Promise<void>,
+): Promise<void> {
+  await withLaunchStateLock(udid, async () => {
+    const state = readLaunchState(udid) ?? { launchArgs: [], capabilities: {} };
+    await terminateForRelaunch(udid, bundleId);
+    try {
+      await prepare();
+    } catch (error) {
+      try {
+        await startTarget(udid, bundleId, state);
+      } catch (restartError) {
+        throw new AggregateError(
+          [error, restartError],
+          `Could not prepare the relaunch or restart ${bundleId}.`,
+        );
+      }
+      throw error;
+    }
+    try {
+      await startTarget(udid, bundleId, state);
+    } catch (error) {
+      // Remove preparation before another launch can pick it up.
+      try {
+        await discardPreparation();
+      } catch (discardError) {
+        throw new AggregateError(
+          [error, discardError],
+          `Could not restart ${bundleId} or discard its launch preparation.`,
+        );
+      }
+      throw error;
+    }
+  });
 }
 
 export async function disableCapability(

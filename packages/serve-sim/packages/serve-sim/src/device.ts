@@ -63,15 +63,21 @@ export function resolveDeviceMatches(nameOrUDID: string): string[] {
   process.exit(1);
 }
 
-/** Canonical device identity for native capture, without exiting a middleware host. */
-export async function resolveBootedDeviceAsync(nameOrUDID: string): Promise<string> {
+/** Resolve a device ID or one unambiguous booted device by name. */
+export async function resolveBootedDeviceAsync(
+  nameOrUDID: string,
+  { iosOnly = false }: { iosOnly?: boolean } = {},
+): Promise<string> {
   if (/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID))
     return nameOrUDID.toUpperCase();
   const { devices } = JSON.parse(await simctl(["list", "devices", "booted", "-j"])) as {
     devices: Record<string, Array<{ udid: string; name: string; state: string }>>;
   };
-  const matches = Object.values(devices)
-    .flat()
+  const matches = Object.entries(devices)
+    .filter(
+      ([runtime]) => !iosOnly || runtime.startsWith("com.apple.CoreSimulator.SimRuntime.iOS-"),
+    )
+    .flatMap(([, devices]) => devices)
     .filter(
       (device) =>
         device.state === "Booted" &&

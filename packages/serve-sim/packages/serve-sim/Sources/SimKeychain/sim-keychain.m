@@ -116,6 +116,37 @@ static NSDictionary *deleteItem(NSDictionary *operation) {
   return result(status, error);
 }
 
+// @ref LLP 0020#the-mailbox — scope every alias before deleting any part of one key.
+static NSDictionary *deleteAliases(NSDictionary *operation) {
+  id items = operation[@"items"];
+  if (![items isKindOfClass:NSArray.class] || [items count] == 0)
+    return result(errSecParam, @"needs a nonempty list of aliases");
+  NSMutableArray<NSDictionary *> *queries = [NSMutableArray array];
+  NSString *group = nil;
+  for (id item in items) {
+    if (![item isKindOfClass:NSDictionary.class]) return result(errSecParam, @"alias must be an item");
+    NSString *error = nil;
+    NSMutableDictionary *query = itemQuery(item, &error);
+    if (query == nil) return result(errSecParam, error);
+    OSStatus status = scopeMutation(query, &error);
+    if (status == errSecItemNotFound) continue;
+    if (status != errSecSuccess) return result(status, error);
+    NSString *nextGroup = query[(__bridge id)kSecAttrAccessGroup];
+    if (group != nil && ![group isEqualToString:nextGroup])
+      return result(errSecParam, @"select an accessGroup for this item");
+    group = nextGroup;
+    [queries addObject:query];
+  }
+  OSStatus outcome = errSecItemNotFound;
+  for (NSDictionary *query in queries) {
+    OSStatus status = SecItemDelete((__bridge CFDictionaryRef)query);
+    if (status == errSecItemNotFound) continue;
+    if (status != errSecSuccess) return result(status, nil);
+    outcome = errSecSuccess;
+  }
+  return result(outcome, nil);
+}
+
 static NSDictionary *setItem(NSDictionary *operation) {
   NSString *error = nil;
   NSMutableDictionary *query = itemQuery(operation, &error);
@@ -219,6 +250,7 @@ static NSDictionary *run(id operation) {
   NSString *op = operation[@"op"];
   if ([op isEqual:@"set"]) return setItem(operation);
   if ([op isEqual:@"delete"]) return deleteItem(operation);
+  if ([op isEqual:@"delete-aliases"]) return deleteAliases(operation);
   if ([op isEqual:@"list"]) return listItems(operation);
   return @{@"status" : @(errSecParam), @"error" : @"unknown op"};
 }

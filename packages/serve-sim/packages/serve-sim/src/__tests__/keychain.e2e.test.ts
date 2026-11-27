@@ -2,12 +2,13 @@
 // SecItemCopyMatching then reads, both while the app runs and on its next launch.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 
 import { releaseSessionSync } from "../launch-manager";
 import { runKeychainOperations, type KeychainOperation } from "../sim-keychain";
+import { setKeychainValues, type KeychainTarget } from "../keychain";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
 import { freePortAsync, useTempStateDir } from "./helpers";
 
@@ -95,6 +96,19 @@ async function waitForLastSeen(
 
 function launch(...readbackArgs: string[]): void {
   simctl(["launch", udid!, APP, "-ServeSimFixtureKeychain", KEY, ...readbackArgs]);
+}
+
+function keychainCli(args: string[], input?: string) {
+  const child = spawnSync("node", [CLI, "keychain", ...args, "-d", udid!, "--json"], {
+    input,
+    env: { ...process.env },
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  if (child.error) throw child.error;
+  if (!child.stdout.trim()) throw new Error(child.stderr.trim());
+  console.log(`[keychain CLI] exit ${child.status}: ${child.stdout.trim()}`);
+  return { status: child.status, output: JSON.parse(child.stdout) };
 }
 
 const describeOrSkip = ready ? describe : describe.skip;
@@ -388,4 +402,143 @@ describeOrSkip("keychain round trip", () => {
       await runKeychainOperations(udid!, APP, FIXTURE_DELETES);
     }
   }, 60_000);
+
+  const target = (): KeychainTarget => ({
+    udid: udid!,
+    bundleId: APP,
+    format: "expo-secure-store",
+    options: {},
+  });
+
+  test("the built CLI reads stdin, relaunches a closed app, and reports the result", async () => {
+    // Closed, so only the process the relaunch starts can apply the value.
+    terminate();
+    const value = `relaunched-${Date.now()}`;
+    expect(
+      keychainCli(["set", APP, "--from-file", "-", "--relaunch"], JSON.stringify({ [KEY]: value })),
+    ).toEqual({
+      status: 0,
+      output: {
+        udid,
+        bundleId: APP,
+        applied: true,
+        keys: [{ key: KEY, status: 0, ok: true, message: "ok" }],
+      },
+    });
+    // startApp starts the app without the fixture's argument, so start it with one.
+    terminate();
+    launch();
+    await waitForLastSeen(`value=${value}`);
+  }, 60_000);
+
+  test("a closed app queues the change without waiting", async () => {
+    terminate();
+    const started = Date.now();
+    expect(await setKeychainValues(target(), [[KEY, "queued-fast"]])).toEqual({ applied: false });
+    expect(Date.now() - started).toBeLessThan(2_500);
+    launch();
+    await waitForLastSeen("value=queued-fast");
+  }, 60_000);
+
+  test("the built CLI lists and deletes SecureStore keys", async () => {
+    const listed = keychainCli(["list", APP]);
+    expect(listed.status).toBe(0);
+    expect(listed.output.keys).toContain(KEY);
+    expect(keychainCli(["delete", APP, KEY, "missing"])).toEqual({
+      status: 0,
+      output: {
+        udid,
+        bundleId: APP,
+        applied: true,
+        keys: [
+          { key: KEY, status: 0, ok: true, message: "ok" },
+          { key: "missing", status: -25300, ok: true, message: "not found" },
+        ],
+      },
+    });
+    await waitForLastSeen("status=-25300");
+  }, 30_000);
+
+  test.each([
+    { scenario: "an alias matches multiple groups", authGroups: GROUP_FIXTURES },
+    { scenario: "aliases match different groups", authGroups: GROUP_FIXTURES.slice(1) },
+  ])(
+    "the built CLI leaves every alias present when $scenario",
+    async ({ authGroups }) => {
+      launch();
+      const service = "secure-store-alias-fixture";
+      const entries = [
+        { ...ITEM, service: `${service}:no-auth`, accessGroup: GROUP_FIXTURES[0]!.accessGroup },
+        ...authGroups.map(({ accessGroup }) => ({
+          ...ITEM,
+          service: `${service}:auth`,
+          accessGroup,
+        })),
+      ];
+      try {
+        expect(
+          await runKeychainOperations(
+            udid!,
+            APP,
+            entries.map((item) => ({
+              ...set("fixture-value"),
+              ...item,
+            })),
+            { timeoutMs: 10_000 },
+          ),
+        ).toEqual({ applied: true, results: entries.map(() => ({ status: 0 })) });
+        expect(keychainCli(["delete", APP, KEY, "--service", service])).toMatchObject({
+          status: 1,
+          output: {
+            applied: true,
+            keys: [
+              {
+                key: KEY,
+                status: -50,
+                ok: false,
+                message: expect.stringContaining("--access-group"),
+              },
+            ],
+          },
+        });
+        for (const { service, accessGroup } of entries) {
+          const created = await runKeychainOperations(udid!, APP, [
+            { op: "list", service, accessGroup },
+          ]);
+          expect(created).toMatchObject({
+            applied: true,
+            results: [{ status: 0, items: [{ service, accessGroup, account: ITEM.account }] }],
+          });
+        }
+        const [selected, shared] = GROUP_FIXTURES;
+        expect(
+          keychainCli([
+            "delete",
+            APP,
+            KEY,
+            "--service",
+            service,
+            "--access-group",
+            selected!.accessGroup,
+          ]),
+        ).toMatchObject({
+          status: 0,
+          output: { applied: true, keys: [{ key: KEY, status: 0, ok: true }] },
+        });
+        const auth = `${service}:auth`;
+        const remaining = await runKeychainOperations(udid!, APP, [{ op: "list", service: auth }]);
+        expect(remaining).toMatchObject({
+          applied: true,
+          results: [{ status: 0, items: [{ service: auth, accessGroup: shared!.accessGroup }] }],
+        });
+      } finally {
+        await runKeychainOperations(
+          udid!,
+          APP,
+          entries.map((item) => ({ op: "delete", ...item })),
+        );
+      }
+    },
+    60_000,
+  );
 });

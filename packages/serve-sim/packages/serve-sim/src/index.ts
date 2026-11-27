@@ -84,6 +84,7 @@ import { prepareAppInstall } from "./app-install-worker";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
 import { clipboardCapability } from "./sim-pasteboard-reader";
 import { keychainCapability } from "./sim-keychain";
+import { registerKeychainCommands } from "./keychain-cli";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
 import { debugCli, debugHelper, debugState } from "./debug";
@@ -3476,6 +3477,8 @@ program
   .helpOption(false)
   .argument("[args...]")
   .action((args: string[]) => permissions(args));
+
+registerKeychainCommands(program, deviceOpt);
 
 program
   .command("ui")

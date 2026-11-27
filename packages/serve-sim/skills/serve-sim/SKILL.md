@@ -17,6 +17,7 @@ Drive an Apple Simulator (iOS, iPad, Apple Watch) from an agent using the [serve
 - The user wants to **simulate a memory warning** or **rotate the device** programmatically.
 - The user wants to **read the simulator's accessibility tree** to find UI elements without pixel hunting.
 - The user wants to **grant, revoke, or reset an app's privacy permissions** — camera, photos, location, contacts, or **push notifications**.
+- The user wants an app to **start signed in**, or to set **SecureStore / keychain** values such as tokens.
 
 ## When NOT to use
 
@@ -80,6 +81,7 @@ Key invariants the agent must respect:
 | Inject camera feed            | `npx @expo/serve-sim camera <bundle-id> [--file <path>\|--webcam [name]]`               | (Re)launches the app with the camera dylib attached. macOS 14+ only. See [references/camera.md](references/camera.md).                            |
 | Hot-swap camera source        | `npx @expo/serve-sim camera switch <placeholder\|webcam\|file> [arg]`                   | No app relaunch.                                                                                                                                  |
 | Manage app permissions        | `npx @expo/serve-sim permissions <grant\|revoke\|reset\|list> <permission> <bundle-id>` | Camera, photos, location, **push notifications**, contacts, etc. See [references/permissions.md](references/permissions.md).                      |
+| Seed keychain / SecureStore   | `npx @expo/serve-sim keychain set <bundle-id> --from-file <json>`                       | Sign an app in without app code. expo-secure-store format by default. See [references/keychain.md](references/keychain.md).                       |
 | Read accessibility tree       | Derive `/ax` from the helper base in `streamUrl`                                        | Returns axe-style JSON. See [references/endpoints.md](references/endpoints.md).                                                                   |
 
 Most subcommands accept `-d <udid|name>` to target a specific device when several are booted.
@@ -174,6 +176,7 @@ Orphan servers occupy their recorded ports and prevent fresh starts.
 - [references/buttons-rotation.md](references/buttons-rotation.md) — the six valid buttons and the four orientations, with behavioral notes.
 - [references/camera.md](references/camera.md) — synthetic camera injection: placeholder, file, webcam, mirror modes, hot-swap.
 - [references/permissions.md](references/permissions.md) — granting/revoking app privacy permissions, including push notifications.
+- [references/keychain.md](references/keychain.md) — writing, deleting, and listing an app's keychain or SecureStore values.
 - [references/ca-debug.md](references/ca-debug.md) — the five CoreAnimation debug flags and when each one helps.
 - [references/endpoints.md](references/endpoints.md) — HTTP and WebSocket endpoints for agents that bypass the CLI.
 - [references/workflows.md](references/workflows.md) — end-to-end recipes for UI automation, camera testing, deep-link flows.

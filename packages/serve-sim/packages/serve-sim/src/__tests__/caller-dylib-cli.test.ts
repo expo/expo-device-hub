@@ -1,7 +1,16 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
+import { writeLaunchState } from "../launch-state";
 import { freePortAsync, useTempStateDir, withShimsAsync } from "./helpers";
 
 function expectStartupDiagnostics(stderr: string) {
@@ -18,6 +27,13 @@ function expectStartupDiagnostics(stderr: string) {
 const bundleDir = mkdtempSync(join(tmpdir(), "serve-sim-caller-cli-node-"));
 const diagnostic = "SERVE_SIM_ADDITIONAL_DYLIBS needs absolute paths to existing dylibs";
 const UDID = "11111111-2222-3333-4444-555555555555";
+const keychainCapability = {
+  name: "keychain",
+  dylib: "/fixture.dylib",
+  scope: "userApps",
+  bundleId: null,
+  ownerPid: null,
+} as const;
 let entrypoint: string;
 beforeAll(async () => {
   const build = await Bun.build({
@@ -30,6 +46,122 @@ beforeAll(async () => {
   entrypoint = build.outputs[0]!.path;
 });
 afterAll(() => rmSync(bundleDir, { recursive: true, force: true }));
+
+test.each([
+  { firstState: "Shutdown", device: "Fixture Phone", ambiguous: false },
+  { firstState: "Shutdown", device: undefined, ambiguous: false },
+  { firstState: "Booted", device: "Fixture Phone", ambiguous: true },
+  { firstState: "Booted", device: undefined, ambiguous: true },
+])(
+  "Keychain CLI selects only a unique booted iOS device ($firstState, $device)",
+  async ({ firstState, device, ambiguous }) => {
+    const state = useTempStateDir();
+    const selected = "11111111-2222-3333-4444-666666666666";
+    const devices = {
+      devices: {
+        "com.apple.CoreSimulator.SimRuntime.iOS-26-5": [
+          { udid: UDID, state: firstState, name: "Fixture Phone" },
+          { udid: selected, state: "Booted", name: "Fixture Phone" },
+        ],
+        "com.apple.CoreSimulator.SimRuntime.watchOS-26-5": [
+          {
+            udid: "11111111-2222-3333-4444-777777777777",
+            state: "Booted",
+            name: "Fixture Phone",
+          },
+        ],
+      },
+    };
+    try {
+      writeLaunchState(selected, {
+        launchArgs: [],
+        capabilities: { keychain: keychainCapability },
+      });
+      await withShimsAsync(
+        {
+          xcrun: `#!/bin/sh
+if [ "$2" = list ]; then printf '%s\\n' '${JSON.stringify(devices)}'; exit 0; fi
+if [ "$2" = get_app_container ] && [ "$3" = '${selected}' ]; then exit 0; fi
+exit 1
+`,
+        },
+        async () => {
+          const result = Bun.spawnSync(
+            [
+              "node",
+              entrypoint,
+              "keychain",
+              "list",
+              "dev.example.fixture",
+              ...(device === undefined ? [] : ["-d", device]),
+            ],
+            { env: { ...process.env }, timeout: 10_000 },
+          );
+          expect(result.exitCode).toBe(1);
+          expect(result.stderr.toString()).toContain(
+            ambiguous
+              ? "Several booted simulators match; specify a simulator UDID."
+              : `dev.example.fixture is not installed on ${selected}`,
+          );
+        },
+      );
+    } finally {
+      state.restore();
+    }
+  },
+  20_000,
+);
+
+test("Keychain CLI withdraws an unanswered SecureStore delete and tells the caller to retry", async () => {
+  const state = useTempStateDir();
+  const bundleId = "dev.example.fixture";
+  const container = join(state.dir, "app");
+  const requests = join(container, "tmp", "serve-sim-keychain", "requests");
+  try {
+    mkdirSync(container);
+    writeLaunchState(UDID, {
+      launchArgs: [],
+      capabilities: { keychain: keychainCapability },
+    });
+    await withShimsAsync(
+      {
+        xcrun: `#!/bin/sh
+case "$2" in
+  get_app_container) printf '%s\\n' "$SERVE_SIM_TEST_APP_CONTAINER" ;;
+  spawn) exit 0 ;;
+  *) exit 1 ;;
+esac
+`,
+      },
+      async () => {
+        const command = ["node", entrypoint, "keychain", "delete", bundleId, "token"];
+        const target = ["-d", UDID, "--service", "auth", "--json"];
+        const deleteKey = (format: string) =>
+          Bun.spawnSync([...command, ...target, "--format", format], {
+            env: { ...process.env, SERVE_SIM_TEST_APP_CONTAINER: container },
+            timeout: 10_000,
+          });
+        const refused = deleteKey("expo-secure-store");
+        expect(refused.exitCode).toBe(1);
+        expect(refused.stdout.toString()).toBe("");
+        expect(refused.stderr.toString()).toContain("the delete was withdrawn");
+        expect(refused.stderr.toString()).toContain("pass --relaunch");
+        expect(readdirSync(requests)).toEqual([]);
+
+        const queued = deleteKey("generic-password");
+        expect(queued.exitCode).toBe(0);
+        expect(JSON.parse(queued.stdout.toString())).toEqual({
+          udid: UDID,
+          bundleId,
+          applied: false,
+        });
+        expect(readdirSync(requests)).toHaveLength(1);
+      },
+    );
+  } finally {
+    state.restore();
+  }
+}, 25_000);
 
 test.each(["none", "publish", "stop", "missing-loader", "lock-timeout", "rollback"] as const)(
   "plain default initialization handles %s",

@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-10-27
-**Revised:** 2026-11-04
+**Revised:** 2026-11-08
 **Related:** LLP 0007, LLP 0010
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -38,18 +38,32 @@ tmp/serve-sim-keychain/responses/<nonce>.json               app writes, one rena
 - At its deadline the host withdraws an unanswered request. If the file is gone, the app claimed it and is running it, so the host waits a few more seconds for the answer instead of reporting the change as not applied. Answers that nobody read are removed after an hour; they hold attribute names, not values. Each new request also removes requests that expired, and the app action `app.file.*` refuses paths in the mailbox, so other exec-ws clients cannot read queued values or add requests [observed: `removeOlderThan` in `src/sim-keychain.ts`, `AppRelativePath` in `src/app-files.ts`].
 - Operations are `set` (update, else add), `delete`, and `list`. Service, account, and access group identify an item. `generic` is written as an attribute and never matched, so an item stored with another `generic` value is updated rather than duplicated. A `set` may list items it `replaces`; the dylib refuses a replacement that could match the target before writing, comparing decoded account bytes and treating an omitted access group as overlapping any allowed group. It deletes replacements only after the set succeeds, and one it cannot delete fails the set [observed: `setItem` in `Sources/SimKeychain/sim-keychain.m`]. `list` returns service, account, and access group; values never leave the app through this channel.
 - Without an explicit access group, each update or delete query must match items in at most one of the app's entitled groups. If it matches several groups, supply `accessGroup` for the intended item. A new item without a match goes to the app's default group. Listing can still cover every entitled group [observed: `scopeMutation` and `listItems` in `Sources/SimKeychain/sim-keychain.m`].
+- `delete-aliases` checks every place a library reads one key before deleting any of them. If the aliases resolve to different access groups or one alias matches several groups, it asks the caller to select a group [observed: `deleteAliases` in `Sources/SimKeychain/sim-keychain.m`].
 - Attribute bytes travel as base64 with `attributesAsData`, because libraries differ. expo-secure-store stores account and generic as data, and the keychain matches the type it stored.
 
 ## Running and closed apps
 
 A request to a running app that loaded the dylib gets an answer at once. An app that is closed, or that started before the session armed the loader, does not answer. With `keepQueued`, the request stays in the mailbox, and the dylib applies it when the app next starts. Each request expires an hour after it was made. The dylib drops an expired request unread, so a value seeded for a closed app cannot overwrite what the app stored itself much later.
 
+A closed app gets a set or single-item delete queued at once. An alias delete needs an answer because the next app launch could load a helper that does not support it. Open the app or use `--relaunch` to delete a SecureStore key [observed: `deleteKeychainValues` in `src/keychain.ts`, `executeOperation` in `Sources/SimKeychain/sim-keychain.m`].
+
 The dylib loads on the app's main queue after launch. A read in `application(_:didFinishLaunchingWithOptions:)` can run before a queued write [observed: spike, iOS 26.5, 2026-10-27]. An Expo app read the queued value on its first JS mount, and a value written while it ran on its next `getItemAsync` [observed: SDK 58 Release build, iOS 26.5, 2026-10-27]. An app that caches its login state after the first read needs a relaunch to see a new value.
 
 The capability is on by default for user apps. Without a built dylib it declines, so a session still starts, and keychain commands report the capability as unavailable. A `com.apple.` bundle ID is refused at once, because the loader never reaches a system app [observed: `runKeychainOperations` in `src/sim-keychain.ts`].
 
+## Formats and the CLI
+
+`serve-sim keychain set|delete|list` (`src/keychain-cli.ts`) maps string keys and values to attributes in `src/keychain.ts`. JSON file input validates own entries without rebuilding an object, so credential names such as `__proto__` survive and every non-string value is refused before publication [observed: `parseKeychainEntries` in `src/keychain-cli.ts`]:
+
+- `expo-secure-store` (default) writes service `<keychainService>:no-auth`, with account and generic as the key's bytes, and `whenUnlocked`, as SecureStore does. Like SecureStore's `setItemAsync`, a successful `set` then removes the `:auth` and legacy items, so `getItemAsync` cannot return an older copy. `delete` removes all three services SecureStore reads.
+- `generic-password` writes the key as a string account in a given service, for other libraries.
+
+The CLI selects a single booted iOS Simulator. When several booted iOS Simulators match, pass `-d` with the intended device's UUID [observed: `targetOf` in `src/keychain-cli.ts`].
+
+`--relaunch` holds the device launch lock while stopping the app, publishing the request, and restarting the app with its recorded arguments. It releases the lock before waiting for the helper's answer. If publishing fails after the app stops, serve-sim attempts to restart it and reports the publication failure. It reports both errors if restarting also fails. An app that cached a read in an early native launch callback needs another restart after acknowledgement. If the app does not claim the request, serve-sim withdraws it and the command fails. A lost answer after the app claimed the request leaves the result uncertain [observed: `runKeychainOperations` and `requestKeychainUnlocked` in `src/sim-keychain.ts`]. Deleting a key that does not exist succeeds.
+
 ## Not there yet
 
-- No CLI, host action, or UI yet.
+- No host action or UI yet.
 - Items protected by biometrics (`kSecAttrAccessControl`) are not written.
 - A queued request stays in the app's `tmp` folder until the app next starts in a serve-sim session or the host sends the app another keychain request, even after it expired.

@@ -1,9 +1,12 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, promises as fs, readdirSync, statSync } from "fs";
+import { describe, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdtempSync, promises as fs, readdirSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { execFile, execFileSync } from "child_process";
 import { promisify } from "util";
+import * as launchManager from "../launch-manager";
+import { writeLaunchState } from "../launch-state";
+import * as simctlModule from "../simctl";
 import {
   MAX_KEYCHAIN_REQUEST_BYTES,
   QUEUED_REQUEST_TTL_MS,
@@ -11,6 +14,7 @@ import {
   runKeychainOperations,
   type KeychainOperation,
 } from "../sim-keychain";
+import { useTempStateDir } from "./helpers";
 
 function container(): string {
   return mkdtempSync(join(tmpdir(), "serve-sim-keychain-"));
@@ -224,15 +228,135 @@ describe("requestKeychain", () => {
     );
   });
 
-  test("refuses a request over the size the app reads", async () => {
+  test("validates before stopping the app and withdraws the request if starting fails", async () => {
     const root = container();
+    const state = useTempStateDir();
+    const relaunch = { udid: "KEYCHAIN-RELAUNCH", bundleId: "dev.test.keychain" };
     const huge = { ...SET, data: "A".repeat(MAX_KEYCHAIN_REQUEST_BYTES) };
-    await expect(requestKeychain(root, [huge])).rejects.toThrow("Send fewer or smaller items");
+    const simctl = spyOn(simctlModule, "simctl").mockImplementation(async (args) => {
+      if (args[0] === "launch") throw new Error("launch failed");
+      return "";
+    });
+    try {
+      await expect(requestKeychain(root, [huge], { relaunch })).rejects.toThrow(
+        "Send fewer or smaller items",
+      );
+      expect(simctl).not.toHaveBeenCalled();
+      await expect(requestKeychain(root, [SET], { relaunch })).rejects.toThrow("launch failed");
+      expect(simctl.mock.calls.map(([args]) => args[0])).toEqual(["terminate", "launch"]);
+      expect(readdirSync(mailbox(root).requests)).toEqual([]);
+    } finally {
+      simctl.mockRestore();
+      state.restore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   test("refuses a container that is not an absolute path", async () => {
     await expect(requestKeychain("(null)", [SET])).rejects.toThrow("Not an app data container");
   });
+});
+
+test("holds the device lock through publication and restart, then releases it before the answer", async () => {
+  const root = await fs.realpath(container());
+  const state = useTempStateDir();
+  const udid = "KEYCHAIN-RELAUNCH";
+  const bundleId = "dev.test.keychain";
+  writeLaunchState(udid, { bundleId, launchArgs: ["--original"], capabilities: {} });
+  const publishing = Promise.withResolvers<void>();
+  const allowPublication = Promise.withResolvers<void>();
+  const renameFile = fs.rename.bind(fs);
+  const rename = spyOn(fs, "rename").mockImplementation(async (from, to) => {
+    if (String(from).startsWith(`${mailbox(root).requests}/.`)) {
+      publishing.resolve();
+      await allowPublication.promise;
+    }
+    return renameFile(from, to);
+  });
+  const launches: string[][] = [];
+  const enabled = spyOn(launchManager, "isCapabilityEnabled").mockReturnValue(true);
+  const simctl = spyOn(simctlModule, "simctl").mockImplementation(async (args) => {
+    if (args[0] === "get_app_container") return root;
+    if (args[0] === "launch") {
+      expect(readdirSync(mailbox(root).requests).some((name) => name.endsWith(".json"))).toBe(true);
+      launches.push(args.slice(3));
+    }
+    return "";
+  });
+  const request = runKeychainOperations(udid, bundleId, [SET], {
+    relaunch: true,
+    timeoutMs: 3000,
+  }).then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+  try {
+    await Promise.race([
+      publishing.promise,
+      request.then((outcome) => {
+        throw new Error("The request ended before publishing", { cause: outcome });
+      }),
+    ]);
+    const lockedAtPublication = existsSync(join(state.dir, `launch-${udid}.lock`));
+    const competingLaunch = launchManager.launchApp(udid, { bundleId, launchArgs: ["--next"] });
+    allowPublication.resolve();
+    // The competing launch can finish even though the keychain request has no answer yet.
+    await competingLaunch;
+    await answerOnce(root, ({ nonce }) => ({ nonce, results: [{ status: 0 }] }));
+    expect(await request).toEqual({ value: { applied: true, results: [{ status: 0 }] } });
+    expect(lockedAtPublication).toBe(true);
+    expect(launches).toEqual([["--original"], ["--next"]]);
+  } finally {
+    allowPublication.resolve();
+    await request;
+    rename.mockRestore();
+    enabled.mockRestore();
+    simctl.mockRestore();
+    state.restore();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test.each([
+  { name: "restarts the app when request publication fails", restartFailure: undefined },
+  {
+    name: "reports publication and restart failures together",
+    restartFailure: new Error("restart failed"),
+  },
+])("$name", async ({ restartFailure }) => {
+  const root = container();
+  const state = useTempStateDir();
+  const enabled = spyOn(launchManager, "isCapabilityEnabled").mockReturnValue(true);
+  const simctl = spyOn(simctlModule, "simctl").mockImplementation(async (args) => {
+    if (args[0] === "get_app_container") return root;
+    // Simulate the mailbox becoming unwritable only after the app has stopped.
+    if (args[0] === "terminate") await fs.rm(mailbox(root).requests, { recursive: true });
+    if (args[0] === "launch" && restartFailure) throw restartFailure;
+    return "";
+  });
+  try {
+    const error = await runKeychainOperations("UDID", "dev.test.keychain", [SET], {
+      relaunch: true,
+    }).catch((error: unknown) => error);
+    expect(simctl.mock.calls.map(([args]) => args[0])).toEqual([
+      "get_app_container",
+      "terminate",
+      "launch",
+    ]);
+    if (restartFailure) {
+      expect(error).toBeInstanceOf(AggregateError);
+      const errors = (error as AggregateError).errors;
+      expect(errors[0]).toMatchObject({ code: "ENOENT" });
+      expect(errors[1]).toBe(restartFailure);
+    } else {
+      expect(error).toMatchObject({ code: "ENOENT" });
+    }
+  } finally {
+    enabled.mockRestore();
+    simctl.mockRestore();
+    state.restore();
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 test("refuses a system app, which the capability loader never reaches", async () => {
