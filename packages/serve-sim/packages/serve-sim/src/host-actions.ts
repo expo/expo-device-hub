@@ -882,6 +882,7 @@ async function runProcedureAsync(
   serveSimBinPath: string,
   deviceName?: (udid: string) => string | undefined,
   prepareKeychain?: (udid: string) => Promise<void>,
+  appClipboardReader?: boolean,
 ): Promise<HostActionResult> {
   switch (action) {
     case "clipboard.read":
@@ -892,7 +893,11 @@ async function runProcedureAsync(
       try {
         if (action === "clipboard.read") {
           const { readSimPasteboardResult } = await import("./sim-pasteboard-reader");
-          return ok(JSON.stringify(await readSimPasteboardResult(p.udid)));
+          const result =
+            appClipboardReader === false
+              ? await readSimPasteboardResult(p.udid, { appReader: false })
+              : await readSimPasteboardResult(p.udid);
+          return ok(JSON.stringify(result));
         }
         if (action === "clipboard.write") {
           await writeSimPasteboard(p.udid, parseParams(action, raw).text);
@@ -1217,6 +1222,7 @@ export async function runHostActionAsync(
   streamSettings?: StreamSettings,
   deviceName?: (udid: string) => string | undefined,
   prepareKeychain?: (udid: string) => Promise<void>,
+  appClipboardReader?: boolean,
 ): Promise<HostActionResult> {
   const { action, params } = msg;
   if (typeof action !== "string" || !isHostActionName(action)) {
@@ -1227,13 +1233,30 @@ export async function runHostActionAsync(
     const p = parseParams(action, params);
     result = await timeStartup(
       action,
-      () => runProcedureAsync(action, params, streamSettings, binPath, deviceName, prepareKeychain),
+      () =>
+        runProcedureAsync(
+          action,
+          params,
+          streamSettings,
+          binPath,
+          deviceName,
+          prepareKeychain,
+          appClipboardReader,
+        ),
       p.udid,
       { deviceName: deviceName?.(p.udid), isSuccessful: (value) => value.exitCode === 0 },
     );
   } else {
     result = await (isProcedureAction(action)
-      ? runProcedureAsync(action, params, streamSettings, binPath, deviceName, prepareKeychain)
+      ? runProcedureAsync(
+          action,
+          params,
+          streamSettings,
+          binPath,
+          deviceName,
+          prepareKeychain,
+          appClipboardReader,
+        )
       : runInvocation(buildInvocation(action, params, binPath)));
   }
   // exec-ws spreads this into its reply. Keep the explicit public result fields;
