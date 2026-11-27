@@ -100,14 +100,20 @@ test("a write that expires during name resolution never starts after resolution 
     script,
   );
   let read: Promise<unknown> | undefined;
+  let waiting: Promise<unknown> | undefined;
   try {
     const outcome = request.then(
       () => null,
       (error: Error) => error,
     );
     await eventually(() => entered);
+    waiting = runHostActionAsync(
+      { action: "permissions.resetAll", params: { udid: "another name", bundleId: "test.expiry" } },
+      script,
+    ).catch((error: Error) => error);
     for (const expire of timers.pending.values()) expire();
     expect((await outcome)?.message).toContain("it was not started");
+    expect(await waiting).toMatchObject({ message: expect.stringContaining("it was not started") });
     resolveName("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE");
     read = runHostActionAsync(
       {
@@ -119,6 +125,10 @@ test("a write that expires during name resolution never starts after resolution 
     await eventually(() => existsSync(join(directory, "events")));
     expect(readFileSync(join(directory, "events"), "utf8").trim()).toBe("list");
     await read;
+    expect(lookup.mock.calls.map(([name]) => name)).toEqual([
+      "slow name",
+      "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+    ]);
     expect(timers.pending.size).toBe(0);
   } finally {
     resolveName("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE");
@@ -126,7 +136,7 @@ test("a write that expires during name resolution never starts after resolution 
     timers.restore();
     // Unblock a reset if a regression allowed it to run.
     writeFileSync(join(directory, "release"), "");
-    await Promise.allSettled([request, read]);
+    await Promise.allSettled([request, waiting, read]);
     rmSync(directory, { recursive: true, force: true });
   }
 });

@@ -1139,6 +1139,7 @@ export async function runHostActionAsync(
           }, PERMISSION_WRITE_WAIT_MS);
         });
   const admission = permissionAdmission.then(async () => {
+    if (expiry && (expired || performance.now() >= waitingDeadline)) throw waitingError();
     // Resolve aliases in arrival order; a fast UUID lookup must not overtake an
     // earlier name lookup. Only admission is global, execution stays per app.
     const device = await import("./device");
