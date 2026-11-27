@@ -1,4 +1,4 @@
-import { type ControlSocket } from "./control-socket";
+import { type ControlSocket, encodeControlRequest } from "./control-socket";
 /**
  * One-shot requests over the serve-sim middleware's **exec-ws** control socket,
  * mirroring the serve-sim client's `utils/exec.ts` (serve-sim #136).
@@ -74,6 +74,7 @@ function execWsRequest(
 ): Promise<ExecReply> {
   if (channel) return channel.request(body, timeoutMs) as Promise<ExecReply>;
   return new Promise((resolve, reject) => {
+    const frame = encodeControlRequest(body, 1);
     let ws: WebSocket;
     try {
       ws = new WebSocket(execWsUrl, protocols);
@@ -106,7 +107,7 @@ function execWsRequest(
       if (msg.ready) {
         if (!sent) {
           sent = true;
-          ws.send(JSON.stringify({ id: 1, ...body }));
+          ws.send(frame);
         }
         return;
       }
@@ -121,9 +122,8 @@ function execWsRequest(
 }
 
 /**
- * Run one typed host action. A rejected action (unknown name, invalid params)
- * resolves like a failed process — `exitCode: 1` with the message in `stderr` —
- * matching serve-sim's `runHostAction`; transport failures reject.
+ * Run one typed host action. A rejected action or oversized Keychain frame resolves
+ * with `exitCode: 1` and the message in `stderr`. Transport failures reject.
  */
 export async function runHostAction(
   execWsUrl: string,
@@ -158,8 +158,6 @@ export async function runHostAction(
   };
 }
 
-// Transport failures use these exact messages (see execWsRequest); anything
-// else came back from the server as an `{id, error}` reply.
 function isActionRejection(message: string): boolean {
   return !isTransportFailure(message);
 }

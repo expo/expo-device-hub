@@ -88,6 +88,23 @@ describe("runHostAction", () => {
     });
   });
 
+  test("rejects an oversized UTF-8 Keychain request before opening a socket", async () => {
+    installFakeWebSocket();
+    const value = "界".repeat(256 * 1024);
+    const values = { a: value, b: value, c: value, d: value, e: value, f: value };
+    const result = await runHostAction(
+      "ws://hub/exec-ws",
+      "secret",
+      "keychain.set",
+      { values },
+      undefined,
+      undefined,
+      100,
+    );
+    expect(result).toMatchObject({ exitCode: 1, stderr: expect.stringContaining("4 MiB") });
+    expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+
   test("rejects when the socket closes before answering", async () => {
     installFakeWebSocket();
     const pending = runHostAction("ws://hub/exec-ws", "secret", "app.container", { udid: "U" });

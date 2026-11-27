@@ -18,6 +18,7 @@ import {
  * app's own access group. Values travel as action parameters and never come back.
  */
 
+// @ref LLP 0020#hub-client — client deadlines cover the server's Keychain waits.
 // serve-sim bounds these in-process actions only by its own waits: up to 30 s to find the app's
 // container, 15 s to see whether it runs, 60 s for another request to the same app
 // (`requestKeychain` in its sim-keychain.ts), 3 s for the answer, and 5 s of grace. A relaunch

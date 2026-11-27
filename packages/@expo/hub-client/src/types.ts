@@ -654,7 +654,7 @@ export interface KeychainKeyResult {
   message: string;
 }
 
-/** Per-key results, or not applied when the app was closed and applies the change at its next launch. */
+/** Per-key results, or a request queued for the helper and expiring after one hour. */
 export type KeychainWriteResult = { applied: true; keys: KeychainKeyResult[] } | { applied: false };
 
 /** How the device answers one permission of the foreground app. */
