@@ -119,7 +119,11 @@ test("lists the app's keys with a Delete button each", async () => {
   await s.type("Keychain service", "auth");
   expect(s.button("Delete")!.props.disabled).toBe(true);
   await s.click("List keys");
-  expect(calls.at(-1)).toEqual({ fn: "list", appId: APP, options: { format: "expo-secure-store", service: "auth" } });
+  expect(calls.at(-1)).toEqual({
+    fn: "list",
+    appId: APP,
+    options: { format: "expo-secure-store", service: "auth" },
+  });
   expect(s.text()).toContain("Keys for service auth.");
   expect(s.button("Delete")!.props.disabled).toBe(false);
   expect(s.button("Delete")!.props["aria-label"]).toBe("Delete accessToken");
@@ -200,8 +204,12 @@ test("generic-password preserves the exact service for list, set, and delete", a
   await s.type("Keychain key", "token");
   await s.type("Keychain value", "synthetic");
   await s.click("Set");
-  // Editing the field does not redirect deletion away from the service that was listed.
   await s.type("Keychain service", "other");
+  expect(s.button("Delete")!.props.disabled).toBe(true);
+  await s.click("Delete");
+  expect(calls.some((call) => call.fn === "delete")).toBe(false);
+  await s.type("Keychain service", " auth ");
+  expect(s.button("Delete")!.props.disabled).toBe(false);
   await s.click("Delete");
   const options = { format: "generic-password", service: " auth " };
   expect(calls.filter((call) => call.fn === "list").at(-1)?.options).toEqual(options);
@@ -215,6 +223,19 @@ test("generic-password preserves the exact service for list, set, and delete", a
     arg: ["token"],
     options,
   });
+});
+
+test("distinguishes keys and services whose whitespace changes the target", async () => {
+  const { client, calls } = keychainClient({}, ["token", " token "]);
+  const s = await setup(client);
+  await s.choose("generic-password");
+  await s.type("Keychain service", " auth ");
+  await s.click("List keys");
+
+  expect(s.text()).toContain(JSON.stringify('Keys for service "\\u0020auth\\u0020".'));
+  expect(s.text()).toContain(JSON.stringify("Delete token"));
+  expect(s.text()).toContain(JSON.stringify('Delete "\\u0020token\\u0020"'));
+  expect(calls.at(-1)?.options).toEqual({ format: "generic-password", service: " auth " });
 });
 
 test("a new format drops the note of a write in the old one", async () => {
@@ -231,7 +252,7 @@ test("a format that needs a service asks for one before it lists or sets", async
   const { client, calls } = keychainClient({}, ["token"]);
   const s = await setup(client);
   await s.choose("generic-password");
-  expect(s.text()).toContain("Enter the service, then press Enter to list its keys.");
+  expect(s.text()).toContain("Enter the service, then choose List keys or press Enter.");
   await s.type("Keychain key", "token");
   await s.click("Set");
   expect(s.text()).toContain("Enter the service.");
@@ -239,6 +260,7 @@ test("a format that needs a service asks for one before it lists or sets", async
   expect(calls).toEqual([{ fn: "list", appId: APP, options: { format: "expo-secure-store" } }]);
 
   await s.type("Keychain service", "com.example.auth");
+  expect(s.text()).not.toContain("Enter the service.");
   await act(async () =>
     s.field("Keychain service").props.onKeyDown({ key: "Enter", preventDefault() {} }),
   );

@@ -76,8 +76,17 @@ export function parseKeychainDraft(key: string, value: string): KeychainDraft {
   return { ok: true, values: Object.fromEntries(entries) as Record<string, string> };
 }
 
+/** Show significant whitespace without changing the identifier sent to Keychain. */
+export function displayKeychainIdentifier(identifier: string): string {
+  if (identifier === identifier.trim() && !/ {2,}|[^\S ]|"/.test(identifier)) return identifier;
+  return JSON.stringify(identifier).replace(/\s/g, (space) => {
+    const codePoint = space.charCodeAt(0).toString(16).padStart(4, "0");
+    return `\\u${codePoint}`;
+  });
+}
+
 function keysLabel(keys: string[]): string {
-  return keys.length === 1 ? keys[0]! : `${keys.length} keys`;
+  return keys.length === 1 ? displayKeychainIdentifier(keys[0]!) : `${keys.length} keys`;
 }
 
 /** What a write did, as one note and, for keys that failed, one error. */
@@ -104,6 +113,10 @@ export function describeKeychainWrite(
         ? `${verb} ${keysLabel(done.map(({ key }) => key))} in ${appId}.${relaunched ? " The app restarted." : ""}`
         : null,
     error:
-      failed.length > 0 ? failed.map(({ key, message }) => `${key}: ${message}`).join("; ") : null,
+      failed.length > 0
+        ? failed
+            .map(({ key, message }) => `${displayKeychainIdentifier(key)}: ${message}`)
+            .join("; ")
+        : null,
   };
 }

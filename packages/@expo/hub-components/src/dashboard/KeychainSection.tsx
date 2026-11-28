@@ -13,6 +13,7 @@ import {
   KEYCHAIN_FORMAT_OPTIONS,
   KEYCHAIN_FORMAT_UI,
   describeKeychainWrite,
+  displayKeychainIdentifier,
   missingKeychainField,
   parseKeychainDraft,
 } from "./keychainInput";
@@ -95,6 +96,7 @@ export function KeychainSection({
   const missing = missingKeychainField(query);
   const shown = KEYCHAIN_FORMAT_UI[format];
   const serviceChanged = fieldValue !== (query[shown.field.option] ?? "");
+  const requiredFieldError = `Enter the ${shown.field.label.toLowerCase()}.`;
 
   useEffect(() => {
     setKeys(null);
@@ -160,8 +162,7 @@ export function KeychainSection({
   function set(relaunch: boolean) {
     if (!setKeychainValues) return;
     const options = typedOptions();
-    const field = missingKeychainField(options);
-    if (field) return refuse(`Enter the ${field}.`);
+    if (missingKeychainField(options)) return refuse(requiredFieldError);
     const draft = parseKeychainDraft(key, value);
     if (!draft.ok) return refuse(draft.error);
     void write(
@@ -175,7 +176,7 @@ export function KeychainSection({
 
   function remove(name: string) {
     if (!deleteKeychainValues || serviceChanged) return;
-    void write("delete", `Deleting ${name}…`, false, query, (target) =>
+    void write("delete", `Deleting ${displayKeychainIdentifier(name)}…`, false, query, (target) =>
       deleteKeychainValues(target, [name], query),
     );
   }
@@ -199,6 +200,7 @@ export function KeychainSection({
               ariaLabel="Keychain format"
               value={format}
               options={KEYCHAIN_FORMAT_OPTIONS}
+              width={160}
               disabled={pending !== null}
               onChange={(next) => {
                 // The field can mean something else in the new format, so it starts empty, and a
@@ -218,13 +220,18 @@ export function KeychainSection({
               placeholder={shown.field.placeholder}
               value={fieldValue}
               disabled={pending !== null}
-              onChange={setFieldValue}
+              onChange={(next) => {
+                setFieldValue(next);
+                if (next && error === requiredFieldError) setError(null);
+              }}
               onSubmit={() => listWith(typedOptions())}
             />
           </SidebarRow>
-          {!missing && <SectionNote>{`Keys for service ${query.service ?? "app"}.`}</SectionNote>}
+          {!missing && (
+            <SectionNote>{`Keys for service ${displayKeychainIdentifier(query.service ?? "app")}.`}</SectionNote>
+          )}
           {missing ? (
-            <SectionNote>{`Enter the ${missing}, then press Enter to list its keys.`}</SectionNote>
+            <SectionNote>{`Enter the ${missing}, then choose List keys or press Enter.`}</SectionNote>
           ) : keys === null ? (
             listError ? (
               <>
@@ -243,19 +250,22 @@ export function KeychainSection({
               {KEYCHAIN_FORMAT_UI[query.format ?? "expo-secure-store"].empty}
             </SectionNote>
           ) : (
-            keys.map((name) => (
-              <SidebarRow key={name} label={name}>
-                <Button
-                  theme="tertiary"
-                  size="xs"
-                  aria-label={`Delete ${name}`}
-                  disabled={pending !== null || serviceChanged}
-                  onClick={() => remove(name)}
-                >
-                  Delete
-                </Button>
-              </SidebarRow>
-            ))
+            keys.map((name) => {
+              const label = displayKeychainIdentifier(name);
+              return (
+                <SidebarRow key={name} label={label}>
+                  <Button
+                    theme="tertiary"
+                    size="xs"
+                    aria-label={`Delete ${label}`}
+                    disabled={pending !== null || serviceChanged}
+                    onClick={() => remove(name)}
+                  >
+                    Delete
+                  </Button>
+                </SidebarRow>
+              );
+            })
           )}
           <SidebarRow label="Key">
             <SidebarTextInput

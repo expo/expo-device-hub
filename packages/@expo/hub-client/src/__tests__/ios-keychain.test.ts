@@ -116,23 +116,25 @@ for (const lost of ["exec-ws timeout", "exec-ws closed", "exec-ws error"]) {
 }
 
 describe("deleteIosKeychainValues", () => {
-  test("sends the keys as a list", async () => {
+  test("sends the exact keys, format, and service for deletion", async () => {
     const { run, calls } = fakeRun(reply(APPLIED));
-    await deleteIosKeychainValues(run, UDID, APP, ["accessToken"]);
+    const options = { format: "generic-password", service: " auth " } as const;
+    await deleteIosKeychainValues(run, UDID, APP, [" accessToken "], options);
     expect(calls[0]).toMatchObject({
       action: "keychain.delete",
-      params: { udid: UDID, bundleId: APP, keys: ["accessToken"], relaunch: false },
+      params: { udid: UDID, bundleId: APP, keys: [" accessToken "], relaunch: false, ...options },
     });
   });
 });
 
 describe("listIosKeychainKeys", () => {
-  test("returns the keys", async () => {
-    const { run, calls } = fakeRun(reply({ keys: ["a", "b"] }));
-    expect(await listIosKeychainKeys(run, UDID, APP)).toEqual(["a", "b"]);
+  test("returns the keys for the exact format and service", async () => {
+    const { run, calls } = fakeRun(reply({ keys: ["a", " b "] }));
+    const options = { format: "generic-password", service: " auth " } as const;
+    expect(await listIosKeychainKeys(run, UDID, APP, options)).toEqual(["a", " b "]);
     expect(calls[0]).toMatchObject({
       action: "keychain.list",
-      params: { udid: UDID, bundleId: APP },
+      params: { udid: UDID, bundleId: APP, ...options },
     });
   });
 
