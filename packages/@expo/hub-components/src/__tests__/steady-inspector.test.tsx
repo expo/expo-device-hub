@@ -318,6 +318,48 @@ describe("InspectorSections", () => {
     expect(JSON.stringify(renderer!.toJSON())).toContain(SECTION_UNAVAILABLE_NOTE);
   });
 
+  test("keeps Permissions open when capability discovery enables the controls", async () => {
+    let reads = 0;
+    const connected: DeviceClient = {
+      ...STREAMING,
+      capabilities: { ...STREAMING.capabilities, permissions: true },
+      foregroundApp: { id: "test.app" },
+      permissions: null,
+      refreshPermissions: () => {
+        reads++;
+      },
+    };
+    const connecting: DeviceClient = {
+      ...connected,
+      status: "connecting",
+      capabilities: NO_CAPABILITIES,
+    };
+    const permissions = () =>
+      renderer!.root.find(
+        (node) => node.type === CollapsibleSection && node.props.title === "Permissions",
+      );
+    await act(async () => {
+      renderer = create(<InspectorSections client={connecting} device={IPHONE} />);
+    });
+    await act(async () => permissions().props.onOpenChange(true));
+    expect(permissions().props.open).toBe(true);
+    expect(reads).toBe(0);
+
+    await act(async () =>
+      renderer!.update(<InspectorSections client={connected} device={IPHONE} />),
+    );
+    expect(permissions().props.open).toBe(true);
+    expect(reads).toBe(1);
+    expect(JSON.stringify(renderer!.toJSON())).toContain("Reading permissions");
+
+    await act(async () =>
+      renderer!.update(<InspectorSections client={connecting} device={IPHONE} />),
+    );
+    expect(permissions().props.open).toBe(true);
+    expect(JSON.stringify(renderer!.toJSON())).toContain(SECTION_UNAVAILABLE_NOTE);
+    expect(reads).toBe(1);
+  });
+
   test("gives the sibling sections that are keyed by the device distinct keys", async () => {
     // With equal keys, React repeats a section on update and reports the keys.
     const errors: string[] = [];
