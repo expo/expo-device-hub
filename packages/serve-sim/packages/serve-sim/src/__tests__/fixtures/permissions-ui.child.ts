@@ -270,42 +270,45 @@ test("a failed permission read keeps the last rows until a refresh succeeds", as
   expect(view()).not.toContain("permission read failed");
 });
 
-test("failed readbacks keep a write pending until a poll succeeds", async () => {
-  const interval = spyOn(globalThis, "setInterval");
-  const deadline = new AbortController();
-  const timeout = spyOn(AbortSignal, "timeout");
-  try {
-    await mount();
-    const [poll] = interval.mock.calls.find(([, delay]) => delay === 5_000)!;
-    await reply("denied");
-    await click("Allow");
+test.each(["list failed", "list timed out"])(
+  "immediate readback error '%s' keeps a write pending until a poll succeeds",
+  async (readError) => {
+    const interval = spyOn(globalThis, "setInterval");
+    const deadline = new AbortController();
+    const timeout = spyOn(AbortSignal, "timeout");
+    try {
+      await mount();
+      const [poll] = interval.mock.calls.find(([, delay]) => delay === 5_000)!;
+      await reply("denied");
+      await click("Allow");
 
-    await fail("grant failed");
-    await fail("list failed", takeRead());
-    expect(button("Allow").props.disabled).toBe(true);
-    expect(view()).toContain("grant failed. Readback: list failed");
+      timeout.mockClear();
+      timeout.mockReturnValueOnce(deadline.signal);
+      await fail("grant failed");
+      const readback = takeRead();
+      expect(timeout.mock.calls).toEqual([[135_000]]);
+      await act(async () => poll());
+      expect(requests).toHaveLength(0);
 
-    timeout.mockReturnValueOnce(deadline.signal);
-    await act(async () => poll());
-    takeRead();
-    expect(timeout).toHaveBeenLastCalledWith(135_000);
-    await act(async () => poll());
-    expect(requests).toHaveLength(0);
+      if (readError === "list timed out") {
+        await act(async () => deadline.abort(new DOMException(readError, "TimeoutError")));
+      } else {
+        await fail(readError, readback);
+      }
+      expect(button("Allow").props.disabled).toBe(true);
+      expect(view()).toContain(`grant failed. Readback: ${readError}`);
 
-    await act(async () => deadline.abort(new DOMException("list timed out", "TimeoutError")));
-    expect(button("Allow").props.disabled).toBe(true);
-    expect(view()).toContain("grant failed. Readback: list timed out");
-
-    await act(async () => poll());
-    await reply("denied");
-    expect(button("Allow").props.disabled).toBe(false);
-    expect(view()).toContain("grant failed");
-    expect(view()).not.toContain("list timed out");
-  } finally {
-    interval.mockRestore();
-    timeout.mockRestore();
-  }
-});
+      await act(async () => poll());
+      await reply("denied");
+      expect(button("Allow").props.disabled).toBe(false);
+      expect(view()).toContain("grant failed");
+      expect(view()).not.toContain(readError);
+    } finally {
+      interval.mockRestore();
+      timeout.mockRestore();
+    }
+  },
+);
 
 test("a failed old-target read cannot clear the new app's confirmed rows", async () => {
   await mount();
