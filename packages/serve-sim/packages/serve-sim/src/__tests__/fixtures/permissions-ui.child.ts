@@ -304,8 +304,10 @@ test.each(["nonzero reply", "timeout"])(
       await expectFailedReadback(() => fail("grant failed"), "immediate readback failed");
       await expectFailedReadback(() => act(async () => poll()), "recovery poll failed");
       await act(async () => poll());
-      await reply("denied");
+      await reply("granted");
       expect(button("Allow").props.disabled).toBe(false);
+      expect(button("Allow").props["aria-pressed"]).toBe(true);
+      expect(button("Deny").props["aria-pressed"]).toBe(false);
       expect(view()).toContain("grant failed");
       expect(view()).not.toContain("recovery poll failed");
     } finally {
