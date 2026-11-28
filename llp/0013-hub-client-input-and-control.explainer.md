@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub, ServeSim, ServeEmu
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich), 2026-11-09 (single-device sessions keep the left sidebar and show no device lifecycle controls; Claude Code, directed by Krystof Woldrich), 2026-11-09 (observed ordinary-device pose, Codex directed by Gabe Debes), 2026-11-10 (an unknown observed pose keeps the legacy orientation controls; Claude Code, directed by Gabe Debes), 2026-11-11 (a recording that follows folds leaves fold commands free; Claude Code, directed by Krystof Woldrich), 2026-11-17 (the dashboard keeps the Orientation row and locks it; Claude Code, directed by Krystof Woldrich), 2026-11-18 (optional screenshot image controls; Codex directed by Gabe Debes), 2026-11-27 (permission readback and ordered Android requests)
+**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich), 2026-11-09 (single-device sessions keep the left sidebar and show no device lifecycle controls; Claude Code, directed by Krystof Woldrich), 2026-11-09 (observed ordinary-device pose, Codex directed by Gabe Debes), 2026-11-10 (an unknown observed pose keeps the legacy orientation controls; Claude Code, directed by Gabe Debes), 2026-11-11 (a recording that follows folds leaves fold commands free; Claude Code, directed by Krystof Woldrich), 2026-11-17 (the dashboard keeps the Orientation row and locks it; Claude Code, directed by Krystof Woldrich), 2026-11-18 (optional screenshot image controls; Codex directed by Gabe Debes), 2026-11-27 (permission readback, recovery and ordered Android requests)
 **Related:** LLP 0000, LLP 0003, LLP 0004
 
 ## Summary
@@ -251,6 +251,35 @@ Expanding the permission section after reopening reads behind any earlier server
 
 Native services, caching and notification initialization limits are described in
 [LLP 0003.000](0003.000-simulator-permissions.explainer.md).
+
+The shared Hub permission hook retains pending writes per target/app through
+backend replacement, target changes and lost replies. Generations and per-row
+versions reject stale reads; a successful ordered read releases unresolved write
+ownership. Android target identity includes the host and device. The iOS Hub
+backend remains absent until its adapter is enabled. [observed:
+`useAppPermissions.ts`, `useAndroidDevice.ts`, `useIosDevice.ts`]
+
+A poll keeps the pending-write IDs it saw when it began, even after those writes
+finish, so a stale snapshot cannot revert their confirmed state. One poll runs per
+target and backend generation. A new target or backend can start reading while
+an earlier poll settles. Refresh skips targets with an active write because the
+backend reads back state after an acknowledged mutation. A failed mutation or
+readback keeps ownership until an ordered recovery read succeeds. If the
+mutation was acknowledged and only its readback failed, a successful read clears
+that alert. An error from the mutation itself survives background refreshes until
+a new mutation. If both steps fail, the section shows both errors. Changing
+targets hides the old target's error; returning to a target with an unresolved
+write restores its retained error.
+The shared Permissions section offers Retry for a failed read or an unresolved
+write. After successful recovery, Retry disappears and any mutation error remains
+visible. The section refreshes on interval and focus while open. Android
+permission requests have a 60-second browser deadline so a lost response cannot
+prevent further reads. The server still orders recovery behind earlier writes.
+[observed: `useAppPermissions.ts`, `android-permissions.ts`; serve-sim `app-permissions-tool.tsx`; regression
+coverage in `__tests__/use-app-permissions.test.tsx` and serve-sim's
+`__tests__/fixtures/permissions-ui.child.ts`;
+`packages/@expo/hub-components/src/dashboard/PermissionsSection.tsx`;
+`packages/@expo/hub-client/src/__tests__/android-permission-ordering.test.tsx`]
 
 Android's server serializes permission grants, revokes, resets and reads per
 serial/package. Reset holds its slot across both its initial read and its final
