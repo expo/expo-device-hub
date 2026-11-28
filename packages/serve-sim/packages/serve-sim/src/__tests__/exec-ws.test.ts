@@ -1,7 +1,9 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { clearEventLogForTests, recordEventLogEvent } from "../event-log";
+import * as hostActionUtils from "../host-actions-utils";
 import { simMiddleware } from "../middleware";
 import { servePreview, type PreviewServer } from "../runtime";
+import { createExecWebSocketHandler } from "../socket/server-control";
 
 // The control channel is the ONLY transport the preview page uses for execs,
 // simulator settings, and SSE side-channels — there is deliberately no HTTP
@@ -35,14 +37,17 @@ interface Reply {
   data?: string;
 }
 
-function connect(token: string): Promise<{
+function connect(
+  token: string,
+  port = server.port,
+): Promise<{
   next: () => Promise<Reply>;
   send: (body: Record<string, unknown>) => void;
   close: () => void;
   closed: Promise<void>;
 }> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${server.port}/exec-ws`, [`serve-sim.token.${token}`]);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/exec-ws`, [`serve-sim.token.${token}`]);
     const queue: Reply[] = [];
     const waiters: Array<(r: Reply) => void> = [];
     let closeResolve: () => void;
@@ -103,6 +108,67 @@ describe("exec-ws control channel", () => {
     expect(reply.error).toBeUndefined();
     expect(reply.exitCode).toBe(0);
     expect(JSON.parse(reply.stdout!)).toMatchObject({ udid, bundleId: null, tcc: {} });
+  });
+
+  test("a reconnect reads permissions after the disconnected socket's write finishes", async () => {
+    const pendingActions = new Set<Promise<unknown>>();
+    const handleWebSocket = createExecWebSocketHandler({
+      path: "/exec-ws",
+      execToken: TOKEN,
+      serveSimBinPath: "serve-sim-test",
+      pendingActions,
+    });
+    const queueServer = await servePreview({
+      port: 0,
+      middleware: Object.assign(() => new Response(null, { status: 404 }), { handleWebSocket }),
+    });
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    const invoke = spyOn(hostActionUtils, "runInvocation").mockImplementation(async ({ args }) => {
+      if (args[1] === "reset") {
+        started.resolve();
+        await finish.promise;
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+    let writer: Awaited<ReturnType<typeof connect>> | undefined;
+    let reader: Awaited<ReturnType<typeof connect>> | undefined;
+    const params = { udid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", bundleId: "dev.expo.queue" };
+    try {
+      writer = await connect(TOKEN, queueServer.port);
+      await writer.next();
+      writer.send({ id: 1, action: "permissions.resetAll", params });
+      await Promise.race([
+        started.promise,
+        Bun.sleep(3000).then(() => {
+          throw new Error("permission write did not start");
+        }),
+      ]);
+      writer.close();
+      await writer.closed;
+
+      reader = await connect(TOKEN, queueServer.port);
+      await reader.next();
+      reader.send({ id: 2, action: "permissions.list", params });
+      reader.send({
+        id: 3,
+        action: "permissions.list",
+        params: { ...params, bundleId: "dev.expo.other" },
+      });
+      expect(await reader.next()).toMatchObject({ id: 3, exitCode: 0 });
+      expect(invoke).toHaveBeenCalledTimes(2);
+
+      finish.resolve();
+      expect(await reader.next()).toMatchObject({ id: 2, exitCode: 0 });
+      expect(invoke).toHaveBeenCalledTimes(3);
+    } finally {
+      finish.resolve();
+      writer?.close();
+      reader?.close();
+      await Promise.allSettled(pendingActions);
+      invoke.mockRestore();
+      queueServer.stop(true);
+    }
   });
 
   test("refuses a free-form shell command, which the protocol no longer carries", async () => {

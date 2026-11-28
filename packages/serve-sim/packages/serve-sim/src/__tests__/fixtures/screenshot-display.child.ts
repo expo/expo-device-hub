@@ -228,14 +228,26 @@ test("native capture failure skips a second display query and cleans its reserva
 });
 
 test("canonicalizes native session identity for names, booted, and lowercase UUIDs", async () => {
-  process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({
-    devices: { iOS: [{ udid: UDID, name: "QA Duo", state: "Booted" }] },
-  });
+  const namesake = {
+    udid: "00000000-0000-0000-0000-000000000001",
+    name: "Booted",
+    state: "Shutdown",
+  };
+  const devices = { iOS: [{ udid: UDID, name: "QA Duo", state: "Booted" }, namesake] };
+  process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({ devices });
   for (const udid of ["qa duo", "booted", UDID.toLowerCase()]) {
     expect((await capture({ udid })).exitCode).toBe(0);
     expect(owners.at(-1)?.[0]).toBe(UDID);
     expect(readFileSync(log, "utf8")).toContain(UDID);
   }
+  namesake.state = "Booted";
+  process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({ devices });
+  const before = owners.length;
+  expect(await capture({ udid: "booted" })).toMatchObject({
+    exitCode: 1,
+    stderr: expect.stringContaining("Could not resolve"),
+  });
+  expect(owners.length).toBe(before);
 });
 
 test("refuses ambiguous and missing names before starting native capture", async () => {
