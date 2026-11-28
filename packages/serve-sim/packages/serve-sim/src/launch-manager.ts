@@ -995,6 +995,8 @@ async function disableCapabilityUnlocked(
       : {}),
   };
   const booted = await withdrawLaunchState(udid, state);
+  // The saved session still needs its loader when capture reboots an offline device.
+  if (armSession && !booted) armedHere.add(udid);
   if (relaunch && booted) await relaunchTarget(udid, bundleId, state);
 }
 

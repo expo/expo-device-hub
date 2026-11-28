@@ -829,6 +829,7 @@ Controls request. Each successful change updates the preview config on open `/ap
 If a change for that device and capability is already running, the next request returns an error
 and asks the client to retry. A failed change leaves the previous choice in effect. Disabling
 withdraws the capability and retains the loader for the session in one launch-state update.
+If the device is shut down, the update saves that state for the next boot.
 
 Disabling closes admission and waits for admitted Keychain calls or clipboard app reads before
 acknowledging. During the wait, a concurrent list or config read shows the new choice. With

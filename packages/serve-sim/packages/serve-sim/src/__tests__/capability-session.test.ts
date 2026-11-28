@@ -3,9 +3,13 @@ import { spawn } from "child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { createCapabilityController, createCapabilitySession } from "../capability-session";
+import { rebootWithCapture } from "../capture/reboot";
+import { createCaptureRuntime } from "../capture/runtime";
 import { keychainCapability } from "../sim-keychain";
 import {
   capabilityConfigPath,
+  capabilityLoaderPath,
+  devicesArmedHere,
   enableCapabilities,
   isCapabilityEnabled,
   readLaunchState,
@@ -238,16 +242,36 @@ describe("capability session, through the clipboard capability", () => {
     }
   });
 
-  test("turns off the reader while a previously opened device is shut down", async () => {
-    const clipboard = createCapabilitySession(clipboardCapability);
+  test("an offline disable registers the loader for a later capture reboot", async () => {
+    const clipboard = createCapabilitySession(clipboardCapability, true, {
+      openedDevices: new Set([UDID]),
+    });
     try {
-      await clipboard.initialize(UDID);
+      // The device has saved launch state but this process has not armed it yet.
+      writeLaunchState(UDID, {
+        launchArgs: [],
+        capabilities: { clipboard: { ...reader, ownerPid: null } },
+      });
+      expect(devicesArmedHere()).not.toContain(UDID);
       process.env.TEST_CLIPBOARD_OFF_DEVICE = UDID;
       await clipboard.setEnabled(UDID, false);
       expect(clipboard.allows(UDID)).toBe(false);
       expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
-      delete process.env.TEST_CLIPBOARD_OFF_DEVICE;
-      await clipboard.initialize(UDID, true);
+      expect(readLaunchState(UDID)?.sessionPids).toContain(process.pid);
+      expect(devicesArmedHere()).toContain(UDID);
+
+      await rebootWithCapture(UDID, false, {
+        runtime: createCaptureRuntime(),
+        closeSession: async () => {},
+        shutdown: async () => {},
+        boot: async () => {
+          delete process.env.TEST_CLIPBOARD_OFF_DEVICE;
+        },
+        resumeSession: async () => {},
+      });
+      const env = JSON.parse(readFileSync(join(state.dir, `${UDID}.env`), "utf8"));
+      expect(env.DYLD_INSERT_LIBRARIES).toBe(capabilityLoaderPath());
+      expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe("");
       expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
     } finally {
       delete process.env.TEST_CLIPBOARD_OFF_DEVICE;
