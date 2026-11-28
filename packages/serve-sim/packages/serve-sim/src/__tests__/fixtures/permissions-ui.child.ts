@@ -270,11 +270,10 @@ test("a failed permission read keeps the last rows until a refresh succeeds", as
   expect(view()).not.toContain("permission read failed");
 });
 
-test.each(["list failed", "list timed out"])(
-  "immediate readback error '%s' keeps a write pending until a poll succeeds",
-  async (readError) => {
+test.each(["nonzero reply", "timeout"])(
+  "readback %s keeps a write pending until a poll succeeds",
+  async (failure) => {
     const interval = spyOn(globalThis, "setInterval");
-    const deadline = new AbortController();
     const timeout = spyOn(AbortSignal, "timeout");
     try {
       await mount();
@@ -282,27 +281,33 @@ test.each(["list failed", "list timed out"])(
       await reply("denied");
       await click("Allow");
 
-      timeout.mockClear();
-      timeout.mockReturnValueOnce(deadline.signal);
-      await fail("grant failed");
-      const readback = takeRead();
-      expect(timeout.mock.calls).toEqual([[135_000]]);
-      await act(async () => poll());
-      expect(requests).toHaveLength(0);
+      async function expectFailedReadback(start: () => PromiseLike<unknown>, error: string) {
+        const deadline = new AbortController();
+        timeout.mockClear();
+        timeout.mockReturnValueOnce(deadline.signal);
+        await start();
+        const readback = takeRead();
+        expect(timeout.mock.calls).toEqual([[135_000]]);
+        await act(async () => poll());
+        expect(requests).toHaveLength(0);
 
-      if (readError === "list timed out") {
-        await act(async () => deadline.abort(new DOMException(readError, "TimeoutError")));
-      } else {
-        await fail(readError, readback);
+        if (failure === "timeout") {
+          await act(async () => deadline.abort(new DOMException(error, "TimeoutError")));
+        } else {
+          await fail(error, readback);
+        }
+        expect(button("Allow").props.disabled).toBe(true);
+        expect(button("Deny").props["aria-pressed"]).toBe(true);
+        expect(view()).toContain(`grant failed. Readback: ${error}`);
       }
-      expect(button("Allow").props.disabled).toBe(true);
-      expect(view()).toContain(`grant failed. Readback: ${readError}`);
 
+      await expectFailedReadback(() => fail("grant failed"), "immediate readback failed");
+      await expectFailedReadback(() => act(async () => poll()), "recovery poll failed");
       await act(async () => poll());
       await reply("denied");
       expect(button("Allow").props.disabled).toBe(false);
       expect(view()).toContain("grant failed");
-      expect(view()).not.toContain(readError);
+      expect(view()).not.toContain("recovery poll failed");
     } finally {
       interval.mockRestore();
       timeout.mockRestore();
