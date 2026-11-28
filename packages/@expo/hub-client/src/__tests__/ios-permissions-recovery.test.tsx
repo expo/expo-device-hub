@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { useAppPermissions } from "../useAppPermissions";
-import { iosPermissionTargetId } from "../ios-permissions";
+import { iosPermissionsBackend, iosPermissionTargetId } from "../ios-permissions";
 import { type PermissionsBackend } from "../app-permissions";
 import { type AppPermission } from "../types";
 
@@ -34,7 +34,6 @@ afterEach(async () => {
 
 test("a slow permission reset keeps controls pending through the host deadline and readback", async () => {
   const { runHostAction } = await import("../exec-ws");
-  const { iosPermissionsBackend } = await import("../ios-permissions");
   const calls: string[] = [];
   let now = 0;
   const pending: {
@@ -81,10 +80,32 @@ test("a slow permission reset keeps controls pending through the host deadline a
   expect(client.permissionsPending.size).toBe(0);
 });
 
+test("a successful read clears the alert after an acknowledged iOS write", async () => {
+  let lists = 0;
+  const backend = iosPermissionsBackend(async (action) => {
+    if (action !== "permissions.list") return { exitCode: 0, stdout: "", stderr: "" };
+    if (++lists === 2) return { exitCode: 1, stdout: "", stderr: "List failed" };
+    return {
+      exitCode: 0,
+      stdout: JSON.stringify({ permissions: rows(lists === 1 ? "denied" : "granted") }),
+      stderr: "",
+    };
+  }, "device");
+  await act(async () => {
+    renderer = create(<Harness backend={backend} />);
+  });
+  await act(async () => client.refreshPermissions());
+  await act(async () => client.setPermission("camera", "grant"));
+  expect(lists).toBe(3);
+  expect(client.permissions?.[0].state).toBe("granted");
+  expect(client.permissionsPending.size).toBe(0);
+  expect(client.permissionsCanRetry).toBe(false);
+  expect(client.permissionsError).toBeNull();
+});
+
 test("socket loss keeps a reset pending until ordered reconnect readback completes", async () => {
   const { createControlSocket } = await import("../control-socket");
   const { runHostAction } = await import("../exec-ws");
-  const { iosPermissionsBackend } = await import("../ios-permissions");
   const sockets: any[] = [];
   const calls: string[] = [];
   let lists = 0;

@@ -1,4 +1,4 @@
-import { asRecord, type PermissionsBackend } from "./app-permissions";
+import { asRecord, type PermissionsBackend, readPermissionsAfterWrite } from "./app-permissions";
 import { type RunHostAction } from "./exec-ws";
 import { type AppPermission } from "./types";
 
@@ -41,11 +41,11 @@ export function iosPermissionsBackend(run: RunHostAction, udid: string): Permiss
     list,
     async write(bundleId, service, permissionAction) {
       await action("permissions.set", { bundleId, service, action: permissionAction });
-      return list(bundleId);
+      return readPermissionsAfterWrite(list, bundleId);
     },
     async reset(bundleId) {
       await action("permissions.resetAll", { bundleId });
-      return list(bundleId);
+      return readPermissionsAfterWrite(list, bundleId);
     },
   };
 }
