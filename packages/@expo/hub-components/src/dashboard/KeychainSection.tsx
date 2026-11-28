@@ -224,7 +224,7 @@ export function KeychainSection({
               ariaLabel="Keychain format"
               value={format}
               options={KEYCHAIN_FORMAT_OPTIONS}
-              width={160}
+              width={188}
               disabled={pending !== null}
               onChange={(next) => {
                 // The field can mean something else in the new format, so it starts empty, and a
