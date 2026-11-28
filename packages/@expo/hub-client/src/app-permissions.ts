@@ -6,6 +6,21 @@ export interface PermissionsBackend {
   reset(appId: string): Promise<AppPermission[]>;
 }
 
+export class PermissionReadbackError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : "Permission read failed", { cause });
+    this.name = "PermissionReadbackError";
+  }
+}
+
+export async function readPermissionsAfterWrite(list: PermissionsBackend["list"], appId: string) {
+  try {
+    return await list(appId);
+  } catch (error) {
+    throw new PermissionReadbackError(error);
+  }
+}
+
 export type PermissionsFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 export const NO_PENDING_PERMISSION_WRITES: ReadonlySet<string> = new Set();

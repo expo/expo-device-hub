@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   applyPermissionsRead,
   NO_PENDING_PERMISSION_WRITES,
+  PermissionReadbackError,
   type PermissionsBackend,
   type PermissionWriteVersions,
   heldPermissionIds,
@@ -145,7 +146,11 @@ export function useAppPermissions({ active, backend, appId, targetId }: UseAppPe
           const next = await run(state.backend!, appId);
           confirmed = applyRead(state, next, generation, versions, pending, ids);
         } catch (error) {
-          state.writeError = error instanceof Error ? error.message : "Permission request failed";
+          if (error instanceof PermissionReadbackError) {
+            if (state.generation === generation) state.readError = error.message;
+          } else {
+            state.writeError = error instanceof Error ? error.message : "Permission request failed";
+          }
         }
         for (const [id, token] of tokens) {
           if (state.writes.get(id) !== token) continue;

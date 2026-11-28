@@ -32,6 +32,7 @@ export function PermissionsSection({
   } = client;
   const appId = client.foregroundApp?.id ?? null;
 
+  // @ref LLP 0013#app-permissions — retry failed reads while the section is visible
   useEffect(() => {
     if (!open || !appId) return;
     refreshPermissions();

@@ -11,10 +11,10 @@ let client: ReturnType<typeof useAppPermissions>;
 const rows = (state: AppPermission["state"]): AppPermission[] => [
   { id: "camera", label: "Camera", state },
 ];
-function deferred() {
-  let resolve!: (rows: AppPermission[]) => void;
+function deferred<T = AppPermission[]>() {
+  let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;
-  const promise = new Promise<AppPermission[]>((yes, no) => {
+  const promise = new Promise<T>((yes, no) => {
     resolve = yes;
     reject = no;
   });
@@ -234,6 +234,41 @@ test("failed recovery keeps ownership until a later successful read", async () =
   expect(client.permissions?.[0].state).toBe("undetermined");
   expect(client.permissionsError).toBe("write disconnected");
 });
+
+test.each(["grant", "reset"] as const)(
+  "recovery clears the alert after an acknowledged Android %s",
+  async (action) => {
+    const recovery = deferred<Response>();
+    const initialGrant = action === "reset";
+    const permissionResponse = (granted: boolean) =>
+      Response.json({ ok: true, permissions: [{ name: "camera", granted }] });
+    let reads = 0;
+    const backend = androidPermissionsBackend("http://host-a/emu", "device", async (_url, init) => {
+      if (init?.method === "POST") return Response.json({ ok: true });
+      if (++reads === 1) return permissionResponse(initialGrant);
+      if (reads === 2) return Response.json({ error: "ADB list failed" }, { status: 502 });
+      return recovery.promise;
+    });
+    await act(async () => {
+      renderer = create(<Harness backend={backend} />);
+    });
+    await act(async () => client.refreshPermissions());
+    await act(async () => {
+      if (action === "reset") client.resetPermissions();
+      else client.setPermission("camera", "grant");
+    });
+    expect(reads).toBe(3);
+    expect(client.permissionsPending.has("camera")).toBe(true);
+    expect(client.permissionsError).toBe("ADB list failed");
+    expect(client.permissionsCanRetry).toBe(true);
+
+    await act(async () => recovery.resolve(permissionResponse(!initialGrant)));
+    expect(client.permissions?.[0].state).toBe(initialGrant ? "denied" : "granted");
+    expect(client.permissionsPending.size).toBe(0);
+    expect(client.permissionsCanRetry).toBe(false);
+    expect(client.permissionsError).toBeNull();
+  },
+);
 
 test("a hung Android readback times out and lets Retry recover pending state", async () => {
   const deadline = new AbortController();

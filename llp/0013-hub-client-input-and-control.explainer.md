@@ -260,19 +260,19 @@ backend remains absent until its adapter is enabled. [observed:
 `useAppPermissions.ts`, `useAndroidDevice.ts`, `useIosDevice.ts`]
 
 A poll keeps the pending-write IDs it saw when it began, even after those writes
-finish, so a stale snapshot cannot revert their confirmed state. Only one Hub
-permission poll runs at a time. Refresh skips targets with an active write: its
-backend lists state after the mutation, so an extra poll would duplicate that
-readback. Once all active writes finish, any lost write reply gets an ordered
-recovery read before its controls unlock. Read errors clear after a successful
-read; write errors survive background refreshes until a new mutation. If recovery
-also fails, both the write error and the readback error are shown so the pending
-state has an explanation. Changing
+finish, so a stale snapshot cannot revert their confirmed state. One poll runs per
+target and backend generation. A new target or backend can start reading while
+an earlier poll settles. Refresh skips targets with an active write because the
+backend reads back state after an acknowledged mutation. A failed mutation or
+readback keeps ownership until an ordered recovery read succeeds. If the
+mutation was acknowledged and only its readback failed, a successful read clears
+that alert. An error from the mutation itself survives background refreshes until
+a new mutation. If both steps fail, the section shows both errors. Changing
 targets hides the old target's error; returning to a target with an unresolved
 write restores its retained error.
 The shared Permissions section offers Retry for a failed read or an unresolved
-write. After successful recovery, the write error remains visible and Retry
-disappears. The section refreshes on interval and focus while open. Android
+write. After successful recovery, Retry disappears and any mutation error remains
+visible. The section refreshes on interval and focus while open. Android
 permission requests have a 60-second browser deadline so a lost response cannot
 prevent further reads. The server still orders recovery behind earlier writes.
 [observed: `useAppPermissions.ts`, `android-permissions.ts`; serve-sim `app-permissions-tool.tsx`; regression

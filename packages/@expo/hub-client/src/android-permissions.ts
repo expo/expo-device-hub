@@ -6,6 +6,7 @@ import {
   type PermissionsBackend,
   type PermissionsFetch,
   readPermissions,
+  readPermissionsAfterWrite,
 } from "./app-permissions";
 import { type AppPermission, type AppPermissionAction } from "./types";
 
@@ -30,7 +31,7 @@ const WRITE_PATH: Record<AppPermissionAction, string> = {
   revoke: "/api/apps/revoke",
 };
 
-// Allow for the write queue and both ADB calls in a reset.
+// @ref LLP 0013#app-permissions — allow for the write queue and both ADB calls in a reset
 const PERMISSION_REQUEST_TIMEOUT_MS = 60_000;
 
 export function androidPermissionsBackend(
@@ -64,11 +65,11 @@ export function androidPermissionsBackend(
     list,
     write: async (appId, id, action) => {
       await post(WRITE_PATH[action], { packageName: appId, permission: id });
-      return list(appId);
+      return readPermissionsAfterWrite(list, appId);
     },
     reset: async (appId) => {
       await post("/api/apps/reset-permissions", { packageName: appId });
-      return list(appId);
+      return readPermissionsAfterWrite(list, appId);
     },
   };
 }
