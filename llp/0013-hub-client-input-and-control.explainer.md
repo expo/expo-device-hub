@@ -265,8 +265,10 @@ queue-wait deadline: a readback must wait behind another active mutation instead
 of turning an acknowledged write into a persistent timeout error. Its ADB call
 still has the existing ten-second timeout, including executor queue time.
 The standalone HTTP API returns `504` with `deadline-exceeded` for mutation
-queue expiry and `429` with `queue-full` for overload. The Hub middleware retains
-its existing `400` response with the error message. An expired mutation keeps
+queue expiry and `429` with `queue-full` for overload. It disables Bun's HTTP idle
+timeout for permission operations so the queue and ADB can return their result.
+POST bodies still use the default timeout during parsing. The Hub middleware
+retains its existing `400` response with the error message. An expired mutation keeps
 its slot until earlier work finishes, so callers cannot bypass a running mutation
 or grow an unbounded chain. Each ADB call retains its existing timeout. This order
 is local to the server process and does not survive a server restart. [observed:
