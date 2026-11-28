@@ -6,7 +6,7 @@
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
-**Revised:** 2026-11-23 (Android tablet profiles, Claude Code); 2026-11-20 (tablet page height, Claude Code); 2026-11-16 (sidebar support warning and Android phone profiles, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
+**Revised:** 2026-11-27 (stable iOS permission inspector); 2026-11-23 (Android tablet profiles, Claude Code); 2026-11-20 (tablet page height, Claude Code); 2026-11-16 (sidebar support warning and Android phone profiles, Codex directed by Krystof Woldrich); 2026-10-03 (reviewed and made Active by Krystof Woldrich)
 
 ## Summary
 
@@ -180,8 +180,9 @@ reconnects. [confirmed: Krystof Woldrich, 2026-11-17, requested that options sta
 and only change their value or lock]
 
 - **Sections.** A selected device always has Current app, Device options, Stream options
-  and Logs, and the sections of its platform: Accessibility, Location, Clipboard and Events
-  on iOS; Camera, Accessibility, Location, Permissions and Events on Android. A section whose
+  and Logs, and the sections of its platform: Accessibility, Location, Permissions,
+  Clipboard and Events on iOS, and Camera, Accessibility, Location, Permissions
+  and Events on Android. A section whose
   capability the device does not report says that it is not available, in place of its
   controls. [observed: `PLATFORM_SECTIONS` in `InspectorSections.tsx`]
 - **Rows.** Device options has one fixed list of rows per platform. A row that the device

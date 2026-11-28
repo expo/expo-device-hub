@@ -59,7 +59,7 @@ export type InspectorSectionsProps = {
 // @ref LLP 0000#steady-inspector — a platform's sections are fixed, so they do not come and go with the connection
 /** The sections that every device of a platform has, also before the device reports its capabilities. */
 const PLATFORM_SECTIONS: Record<Platform, ReadonlySet<CapabilitySection>> = {
-  ios: new Set(["accessibility", "location", "clipboard", "events"]),
+  ios: new Set(["accessibility", "location", "permissions", "clipboard", "events"]),
   android: new Set(["camera", "accessibility", "location", "permissions", "events"]),
 };
 
@@ -135,6 +135,7 @@ export function InspectorSections({
     : undefined;
   // Physical devices cannot be deleted from the host.
   const onRemoveDevice = device?.physical ? undefined : onRemove;
+  const permissionsAvailable = liveClient?.capabilities.permissions === true;
 
   // A section shows for a capability of the device's platform, or one that the device reported.
   const section = (name: CapabilitySection, content: (client: DeviceClient) => ReactNode) => {
@@ -182,9 +183,14 @@ export function InspectorSections({
       {section("location", (client) => (
         <LocationSection key={device?.id} client={client} />
       ))}
-      {section("permissions", (client) => (
-        <PermissionsSection client={client} />
-      ))}
+      {client &&
+        (permissionsAvailable ||
+          (device && PLATFORM_SECTIONS[device.platform].has("permissions"))) && (
+          <PermissionsSection
+            client={client}
+            unavailableNote={permissionsAvailable ? undefined : SECTION_UNAVAILABLE_NOTE}
+          />
+        )}
       {section("clipboard", (client) => (
         <ClipboardSection
           key={`clipboard:${device?.id}`}

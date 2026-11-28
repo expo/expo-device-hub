@@ -3343,28 +3343,33 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       });
       res.write(":\n\n");
 
-      // SpringBoard's foreground feed is edge-triggered, so a fresh subscriber sees nothing until
-      // the next app switch. The shared tracker seeds itself from the AX bridge on start, so replay
-      // its current app (once known) before streaming changes.
-      let lastApp: ForegroundApp | null = null;
+      // @ref LLP 0003#routes — replay a foreground snapshot and invalidate older app metadata on clear
+      let lastApp: ForegroundApp | null | undefined;
       let generation = 0;
-      const emit = async (app: ForegroundApp) => {
+      const emit = async (app: ForegroundApp | null) => {
         // Dedup on bundleId and pid: the tracker emits same-bundle relaunches with a fresh pid, and
         // clients need the live pid.
-        if (res.writableEnded || (app.bundleId === lastApp?.bundleId && app.pid === lastApp.pid))
+        if (
+          res.writableEnded ||
+          app === lastApp ||
+          (app && lastApp && app.bundleId === lastApp.bundleId && app.pid === lastApp.pid)
+        )
           return;
         lastApp = app;
         // The bundle lookup is awaited, so a later switch can resolve first; only write while no
         // newer emit has started, otherwise a slow lookup could overwrite the client with a stale app.
         const generationAtStart = ++generation;
+        if (!app) {
+          res.write("event: foreground-clear\ndata: null\n\n");
+          return;
+        }
         for await (const event of foregroundAppEvents(udid, app)) {
           if (res.writableEnded || generationAtStart !== generation) return;
           res.write("data: " + JSON.stringify(event) + "\n\n");
         }
       };
       const subscription = foregroundTracker.subscribe(udid, (app) => void emit(app));
-      const current = foregroundTracker.peek(udid);
-      if (current) void emit(current);
+      void emit(foregroundTracker.peek(udid));
       req.on("close", () => subscription.unsubscribe());
       return;
     }

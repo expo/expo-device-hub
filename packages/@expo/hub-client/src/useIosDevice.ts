@@ -111,6 +111,7 @@ import {
   mergeIosAppDetails,
 } from "./ios-app-details";
 import { clearIosLocation, setIosLocation } from "./ios-location";
+import { iosPermissionTargetId, iosPermissionsBackend } from "./ios-permissions";
 import { fetchScreenshot } from "./screenshot";
 import { iosMessageForKeyboardInput } from "./keyboard";
 import {
@@ -2626,8 +2627,27 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     locationCapabilities,
   } = useDeviceLocation(locationBackend);
 
-  // iOS permission controls stay hidden without a connected backend.
-  const appPermissions = useAppPermissions({ targetId: null, active, appId: null, backend: null });
+  const permissionsBackend = useMemo(
+    () => (runAction && deviceUdid ? iosPermissionsBackend(runAction, deviceUdid) : null),
+    [runAction, deviceUdid],
+  );
+  const appPermissions = useAppPermissions({
+    targetId: iosPermissionTargetId(baseUrl, deviceUdid),
+    active,
+    appId: foregroundApp?.id ?? null,
+    backend: permissionsBackend,
+  });
+  const refreshAppPermissions = appPermissions.refreshPermissions;
+  // @ref LLP 0013#app-permissions — recover pending writes on reconnect even with the inspector closed
+  useEffect(() => {
+    if (!active || !permissionsBackend || !foregroundApp?.id) return;
+    const stop = controlSocket?.onConnectionChange((ready) => {
+      if (ready) refreshAppPermissions();
+    });
+    return () => {
+      stop?.();
+    };
+  }, [active, permissionsBackend, foregroundApp?.id, refreshAppPermissions, controlSocket]);
 
   useEffect(() => {
     setEventLogState(createIosEventLogState());
@@ -2922,7 +2942,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Foreground app (middleware /appstate SSE) — the middleware bootstraps a
   //    fresh subscriber with the current frontmost app, then pushes changes as
-  //    SpringBoard foregrounds apps. EventSource reconnects on its own. ──
+  //    SpringBoard changes visibility. EventSource reconnects on its own. ──
   const appStateUrl = config?.appStateUrl ?? null;
   useEffect(() => {
     setForegroundApp(null);
@@ -2939,6 +2959,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (data.bundleId) setForegroundApp((prev) => applyIosAppState(prev, data));
       } catch {}
     };
+    // @ref LLP 0003#routes — a clear stops permission actions until the next foreground app
+    source.addEventListener("foreground-clear", () => setForegroundApp(null));
     return () => source?.close();
   }, [appStateUrl]);
 
@@ -3033,7 +3055,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       accessibility: accessibilityAvailable,
       streamSettings: streamSettingsAvailable ? IOS_STREAM_SETTING_CAPABILITIES : false,
       location: locationCapabilities,
-      permissions: false,
+      permissions: active && permissionsBackend !== null,
       clipboard:
         clipboardPaste || clipboardCopy ? { paste: clipboardPaste, copy: clipboardCopy } : false,
       orientation: orientationCapabilities,
@@ -3050,6 +3072,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       clipboardCopy,
       orientationCapabilities,
       foldCapabilities,
+      active,
+      permissionsBackend,
     ],
   );
 

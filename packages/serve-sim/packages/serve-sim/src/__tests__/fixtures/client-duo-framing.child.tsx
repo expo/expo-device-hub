@@ -134,8 +134,11 @@ for (const [file, exports] of Object.entries(hooks)) {
   );
   mock.module(`../../client/hooks/${file}`, () => stable);
 }
+const { openHostEventStream } = await import("../../socket/client-control");
+let subscribeToAppState = false;
 mock.module("../../socket/client-control", () => ({
-  openHostEventStream: () => ({ close: noop }),
+  openHostEventStream: (path: string) =>
+    subscribeToAppState && path === "/appstate" ? openHostEventStream(path) : { close: noop },
   runHostAction: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
 }));
 
@@ -205,6 +208,61 @@ async function mount() {
     renderer = create(entry);
   });
 }
+
+test("the preview clears its permission target on an app-state control message", async () => {
+  const originalWebSocket = globalThis.WebSocket;
+  const subscribed = Promise.withResolvers<number>();
+  const sockets: PreviewControlSocket[] = [];
+  class PreviewControlSocket {
+    static readonly OPEN = 1;
+    readonly readyState = PreviewControlSocket.OPEN;
+    onmessage?: (event: { data: string }) => void;
+    onclose?: () => void;
+    constructor() {
+      sockets.push(this);
+      queueMicrotask(() => this.receive({ ready: true }));
+    }
+    send(raw: string) {
+      const message = JSON.parse(raw);
+      if (message.path === "/appstate") subscribed.resolve(message.sub);
+    }
+    receive(message: object) {
+      this.onmessage?.({ data: JSON.stringify(message) });
+    }
+  }
+  globalThis.WebSocket = PreviewControlSocket as unknown as typeof WebSocket;
+  subscribeToAppState = true;
+  try {
+    await mount();
+    const sub = await subscribed.promise;
+    const control = sockets[0]!;
+    const currentApp = () => renderer!.root.findByType(ToolsPanel).props.currentApp;
+    const showApp = (bundleId: string, isReactNative: boolean) =>
+      control.receive({ sub, data: `data: ${JSON.stringify({ bundleId, isReactNative })}\n\n` });
+
+    await act(async () => {
+      showApp("test.app", true);
+      await Bun.sleep(1);
+    });
+    expect(currentApp()?.bundleId).toBe("test.app");
+
+    await act(async () => {
+      showApp("test.pending-app", false);
+      control.receive({ sub, data: "event: foreground-clear\n" });
+      control.receive({ sub, data: "data: null\n\n" });
+    });
+    expect(currentApp()).toBeNull();
+    await act(async () => Bun.sleep(650));
+    expect(currentApp()).toBeNull();
+  } finally {
+    await act(async () => renderer?.unmount());
+    renderer = undefined;
+    sockets[0]?.onclose?.();
+    subscribeToAppState = false;
+    globalThis.WebSocket = originalWebSocket;
+  }
+});
+
 function model() {
   return renderer!.root.findByType(DuoModelView).props;
 }

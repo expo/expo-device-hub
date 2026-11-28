@@ -17,10 +17,12 @@ const STATE_LABELS: Record<AppPermissionState, string> = {
 export function PermissionsSection({
   client,
   defaultOpen = false,
+  unavailableNote,
 }: {
   client: DeviceClient;
   /** Whether the section is initially expanded. */
   defaultOpen?: boolean;
+  unavailableNote?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const {
@@ -30,7 +32,7 @@ export function PermissionsSection({
     permissionsCanRetry,
     refreshPermissions,
   } = client;
-  const appId = client.foregroundApp?.id ?? null;
+  const appId = unavailableNote ? null : (client.foregroundApp?.id ?? null);
 
   // @ref LLP 0013#app-permissions — retry failed reads while the section is visible
   useEffect(() => {
@@ -46,7 +48,9 @@ export function PermissionsSection({
 
   return (
     <CollapsibleSection title="Permissions" open={open} onOpenChange={setOpen}>
-      {appId === null ? (
+      {unavailableNote ? (
+        <SectionNote>{unavailableNote}</SectionNote>
+      ) : appId === null ? (
         <SectionNote>No app is in the foreground.</SectionNote>
       ) : permissions === null ? (
         !permissionsError && <SectionNote>Reading permissions…</SectionNote>
@@ -54,6 +58,12 @@ export function PermissionsSection({
         <SectionNote>This app declares no runtime permissions.</SectionNote>
       ) : (
         <>
+          {client.platform === "ios" && (
+            <SectionNote>
+              Shows service authorization. Some apps cache status until relaunch. Notifications may
+              need the app’s normal request to enable alerts.
+            </SectionNote>
+          )}
           {permissions.map((permission) => {
             const pending = permissionsPending.has(permission.id);
             return (
@@ -95,7 +105,7 @@ export function PermissionsSection({
           </div>
         </>
       )}
-      {permissionsError && (
+      {!unavailableNote && permissionsError && (
         <>
           <SectionNote role="alert">{permissionsError}</SectionNote>
           {permissionsCanRetry !== false && (

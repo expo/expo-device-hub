@@ -1,5 +1,7 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import WebSocket from "ws";
+import * as appDetails from "../foreground-app-details";
+import { foregroundTracker, type ForegroundApp } from "../foreground-tracker";
 import { simMiddleware } from "../middleware";
 import { servePreview, type PreviewServer } from "../runtime";
 import { freePortAsync, recordState, useTempStateDir } from "./helpers";
@@ -214,5 +216,77 @@ test("the pinned preview and state feed recover when a lowercase helper reconnec
     remove();
     abort.abort();
     await reader.cancel().catch(() => {});
+  }
+});
+
+test("appstate clears foreground immediately and drops old app metadata", async () => {
+  const remove = recordState(DEVICE, process.pid, 1);
+  let foreground!: (app: ForegroundApp | null) => void;
+  const subscribe = spyOn(foregroundTracker, "subscribe").mockImplementation((_udid, listener) => {
+    foreground = listener!;
+    return { unsubscribe() {} };
+  });
+  const lookupStarted = Promise.withResolvers<void>();
+  const finishLookup = Promise.withResolvers<void>();
+  const lookupFinished = Promise.withResolvers<void>();
+  let lookups = 0;
+  const describe = spyOn(appDetails, "foregroundAppEvents").mockImplementation(
+    async function* (_udid, app) {
+      if (++lookups === 1) {
+        try {
+          lookupStarted.resolve();
+          await finishLookup.promise;
+          yield { ...app, isReactNative: false, label: "Stale app" };
+        } finally {
+          lookupFinished.resolve();
+        }
+      } else {
+        yield { ...app, isReactNative: false, label: "Current app" };
+      }
+    },
+  );
+  const abort = new AbortController();
+  try {
+    const response = await fetch(`${origin}/appstate`, {
+      signal: AbortSignal.any([abort.signal, AbortSignal.timeout(2_000)]),
+    });
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    let buffered = "";
+    const nextEvent = async () => {
+      for (;;) {
+        const end = buffered.indexOf("\n\n");
+        if (end < 0) {
+          const { done, value } = await reader.read();
+          if (done) throw new Error("App state stream ended");
+          buffered += new TextDecoder().decode(value);
+          continue;
+        }
+        const frame = buffered.slice(0, end);
+        buffered = buffered.slice(end + 2);
+        if (frame.includes("data: ")) return frame;
+      }
+    };
+    const clear = "event: foreground-clear\ndata: null";
+    expect(await nextEvent()).toBe(clear);
+
+    const app = { bundleId: "dev.expo.test", pid: 42 };
+    foreground(app);
+    await lookupStarted.promise;
+    foreground(null);
+    expect(await nextEvent()).toBe(clear);
+    finishLookup.resolve();
+    await lookupFinished.promise;
+
+    foreground(app);
+    expect(await nextEvent()).toBe(
+      "data: " + JSON.stringify({ ...app, isReactNative: false, label: "Current app" }),
+    );
+  } finally {
+    abort.abort();
+    finishLookup.resolve();
+    describe.mockRestore();
+    subscribe.mockRestore();
+    remove();
   }
 });
