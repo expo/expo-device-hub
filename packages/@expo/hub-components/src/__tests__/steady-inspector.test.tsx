@@ -274,10 +274,18 @@ describe("InspectorSections", () => {
       "Stream options",
       "Accessibility",
       "Location",
+      "Permissions",
       "Clipboard",
       "Events",
       "Logs",
     ]);
+    const streaming: DeviceClient = {
+      ...STREAMING,
+      capabilities: { ...STREAMING.capabilities, permissions: true },
+    };
+    expect(
+      sectionTitles(renderToStaticMarkup(<InspectorSections client={streaming} device={IPHONE} />)),
+    ).toEqual(connecting);
     const android = sectionTitles(
       renderToStaticMarkup(
         <InspectorSections
@@ -303,10 +311,10 @@ describe("InspectorSections", () => {
     await act(async () => {
       renderer = create(<InspectorSections client={CONNECTING} device={IPHONE} />);
     });
-    const location = renderer!.root.find(
-      (node) => node.type === CollapsibleSection && node.props.title === "Location",
+    const permissions = renderer!.root.find(
+      (node) => node.type === CollapsibleSection && node.props.title === "Permissions",
     );
-    await act(async () => location.props.onOpenChange(true));
+    await act(async () => permissions.props.onOpenChange(true));
     expect(JSON.stringify(renderer!.toJSON())).toContain(SECTION_UNAVAILABLE_NOTE);
   });
 

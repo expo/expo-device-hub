@@ -1306,13 +1306,14 @@ function AppWithConfig({
     let timer: ReturnType<typeof setTimeout> | null = null;
     es.onmessage = (e) => {
       try {
-        const next = JSON.parse(e.data) as {
-          bundleId: string;
-          pid?: number;
-          isReactNative: boolean;
-        };
+        const next = JSON.parse(e.data) as typeof currentApp;
         if (timer) clearTimeout(timer);
-        const delay = next?.isReactNative ? 0 : 600;
+        if (next === null) {
+          timer = null;
+          setCurrentApp(null);
+          return;
+        }
+        const delay = next.isReactNative ? 0 : 600;
         timer = setTimeout(() => setCurrentApp(next), delay);
       } catch {}
     };

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { DeviceClientProvider } from "../DeviceClientProvider";
-import { useDeviceClient } from "../useDeviceClient";
+import { DeviceClientProvider, useDeviceClientSelector } from "../DeviceClientProvider";
+import { type DeviceClient } from "../types";
 import { createGlobalStubs } from "./test-globals";
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
@@ -12,7 +12,7 @@ afterEach(async () => {
   restoreGlobals();
 });
 
-test("the iOS device hook refreshes on reconnect without polling closed permission controls", async () => {
+test("the iOS device hook refreshes on reconnect and drops a backgrounded permission target", async () => {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("window", {
     location: { href: "https://hub.test/" },
@@ -48,7 +48,9 @@ test("the iOS device hook refreshes on reconnect without polling closed permissi
             exitCode: 0,
             stderr: "",
             stdout: JSON.stringify(
-              message.action === "permissions.list" ? { permissions: [] } : {},
+              message.action === "permissions.list"
+                ? { permissions: [{ id: "camera", label: "Camera", state: "denied" }] }
+                : {},
             ),
           }),
         );
@@ -59,17 +61,19 @@ test("the iOS device hook refreshes on reconnect without polling closed permissi
     close() {}
   }
   stubGlobal("WebSocket", Socket);
-  const appEvents: { onmessage?: (event: { data: string }) => void }[] = [];
-  stubGlobal(
-    "EventSource",
-    class {
-      onmessage?: (event: { data: string }) => void;
-      constructor() {
-        appEvents.push(this);
-      }
-      close() {}
-    },
-  );
+  const appEvents: AppStateSource[] = [];
+  class AppStateSource {
+    onmessage?: (event: { data: string }) => void;
+    readonly listeners = new Map<string, () => void>();
+    constructor() {
+      appEvents.push(this);
+    }
+    addEventListener(name: string, listener: () => void) {
+      this.listeners.set(name, listener);
+    }
+    close() {}
+  }
+  stubGlobal("EventSource", AppStateSource);
   stubGlobal("fetch", async (url: string) =>
     new URL(url).pathname === "/ios/api"
       ? Response.json({
@@ -81,9 +85,9 @@ test("the iOS device hook refreshes on reconnect without polling closed permissi
         })
       : Response.json({}, { status: 404 }),
   );
-  let foregroundApp: string | undefined;
+  let client!: DeviceClient;
   function Client() {
-    foregroundApp = useDeviceClient().foregroundApp?.id;
+    client = useDeviceClientSelector((snapshot) => snapshot);
     return null;
   }
   await act(async () => {
@@ -103,7 +107,7 @@ test("the iOS device hook refreshes on reconnect without polling closed permissi
   await act(async () =>
     appEvents[0].onmessage?.({ data: JSON.stringify({ bundleId: "test.app", pid: 123 }) }),
   );
-  expect(foregroundApp).toBe("test.app");
+  expect(client.foregroundApp?.id).toBe("test.app");
   const metrics = channel.sent.find((message) => message.path === "/metrics");
   expect(metrics).toBeDefined();
   await act(async () =>
@@ -126,5 +130,18 @@ test("the iOS device hook refreshes on reconnect without polling closed permissi
   const reconnected = sockets.filter((socket) => socket.url.endsWith("/exec-ws")).at(-1)!;
   expect(reconnected).not.toBe(channel);
   await act(async () => reconnected.reply({ ready: true }));
+  expect(permissionReads()).toBe(before + 1);
+  expect(client.permissions?.[0].state).toBe("denied");
+
+  await act(async () => appEvents[0].listeners.get("foreground-clear")?.());
+  expect(client.foregroundApp).toBeNull();
+  expect(client.permissions).toBeNull();
+  await act(async () => {
+    client.setPermission("camera", "grant");
+    client.resetPermissions();
+    client.refreshPermissions();
+  });
+  expect(actions).not.toContain("permissions.set");
+  expect(actions).not.toContain("permissions.resetAll");
   expect(permissionReads()).toBe(before + 1);
 });

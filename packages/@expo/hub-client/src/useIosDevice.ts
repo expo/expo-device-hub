@@ -2638,6 +2638,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     backend: permissionsBackend,
   });
   const refreshAppPermissions = appPermissions.refreshPermissions;
+  // @ref LLP 0013#app-permissions — recover pending writes on reconnect even with the inspector closed
   useEffect(() => {
     if (!active || !permissionsBackend || !foregroundApp?.id) return;
     const stop = controlSocket?.onConnectionChange((ready) => {
@@ -2941,7 +2942,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Foreground app (middleware /appstate SSE) — the middleware bootstraps a
   //    fresh subscriber with the current frontmost app, then pushes changes as
-  //    SpringBoard foregrounds apps. EventSource reconnects on its own. ──
+  //    SpringBoard changes visibility. EventSource reconnects on its own. ──
   const appStateUrl = config?.appStateUrl ?? null;
   useEffect(() => {
     setForegroundApp(null);
@@ -2958,6 +2959,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (data.bundleId) setForegroundApp((prev) => applyIosAppState(prev, data));
       } catch {}
     };
+    // @ref LLP 0003#routes — a clear stops permission actions until the next foreground app
+    source.addEventListener("foreground-clear", () => setForegroundApp(null));
     return () => source?.close();
   }, [appStateUrl]);
 

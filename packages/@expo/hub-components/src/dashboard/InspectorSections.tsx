@@ -59,7 +59,7 @@ export type InspectorSectionsProps = {
 // @ref LLP 0000#steady-inspector — a platform's sections are fixed, so they do not come and go with the connection
 /** The sections that every device of a platform has, also before the device reports its capabilities. */
 const PLATFORM_SECTIONS: Record<Platform, ReadonlySet<CapabilitySection>> = {
-  ios: new Set(["accessibility", "location", "clipboard", "events"]),
+  ios: new Set(["accessibility", "location", "permissions", "clipboard", "events"]),
   android: new Set(["camera", "accessibility", "location", "permissions", "events"]),
 };
 

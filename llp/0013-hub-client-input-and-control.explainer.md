@@ -268,6 +268,14 @@ permission controls only when an active client has the typed host-action channel
 An older serve-sim without normalized permission readback reports an update error.
 [observed: `useIosDevice.ts`, `ios-permissions.ts`]
 
+The iOS inspector keeps the Permissions section in place while the connection is
+starting. The Hub and standalone preview clear the app target when serve-sim sends
+`foreground-clear` ([LLP 0003](0003-serve-sim-http-api.spec.md#routes)). The Hub
+refreshes after reconnect when it has a foreground app, even with the inspector
+closed, so it can recover pending writes. [observed: `useIosDevice.ts`;
+`packages/@expo/hub-components/src/dashboard/InspectorSections.tsx`; serve-sim
+`src/client/client.tsx`]
+
 The Hub allows 125 seconds for permission replies, covering serve-sim's default
 120-second execution budget. Queue waits or a raised `SERVE_SIM_ACTION_TIMEOUT_MS`
 can exceed it.
