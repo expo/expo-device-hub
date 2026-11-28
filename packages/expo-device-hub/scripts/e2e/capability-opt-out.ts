@@ -25,12 +25,11 @@ const device = pinned ? booted.find(({ udid }) => udid === pinned) : booted[0];
 assert(device, "The selected iOS Simulator is not booted");
 const { udid } = device;
 
-function loaderConfig(udid: string): string {
-  return execFileSync(
-    "xcrun",
-    ["simctl", "spawn", udid, "launchctl", "getenv", "SERVE_SIM_CAPABILITIES_CONFIG"],
-    { encoding: "utf8", timeout: 15_000 },
-  ).trim();
+function launchdEnv(name: string): string {
+  return execFileSync("xcrun", ["simctl", "spawn", udid, "launchctl", "getenv", name], {
+    encoding: "utf8",
+    timeout: 15_000,
+  }).trim();
 }
 
 async function waitForHub(hub: Bun.Subprocess, hubStateDir: string): Promise<HubState> {
@@ -44,17 +43,22 @@ async function waitForHub(hub: Bun.Subprocess, hubStateDir: string): Promise<Hub
   throw new Error(`Hub did not publish its state (exit code: ${hub.exitCode})`);
 }
 
-async function verifyHub(mode: "default" | "disabled"): Promise<void> {
+async function verifyHub(hubPackage: string, mode: "default" | "disabled"): Promise<void> {
   const disabled = mode === "disabled";
   const state = await mkdtemp(join(tmpdir(), "hub-capability-opt-out-"));
   const hubStateDir = join(state, "hub");
   const simStateDir = join(state, "serve-sim");
-  const loaderPath = join(simStateDir, `capabilities-${udid}.conf`);
+  const configPath = join(simStateDir, `capabilities-${udid}.conf`);
+  const loaderConfig = () => launchdEnv("SERVE_SIM_CAPABILITIES_CONFIG");
+  const hubInserts = () =>
+    launchdEnv("DYLD_INSERT_LIBRARIES")
+      .split(":")
+      .filter((path) => path.startsWith(`${hubPackage}/`));
   const flags = disabled ? ["--disable", "clipboard", "--disable", "keychain"] : [];
   const hub = Bun.spawn(
     [
       "node",
-      resolve(import.meta.dir, "../../dist/server/cli.mjs"),
+      join(hubPackage, "dist/server/cli.mjs"),
       "--host",
       "127.0.0.1",
       "--port",
@@ -115,22 +119,30 @@ async function verifyHub(mode: "default" | "disabled"): Promise<void> {
         assert.equal(capabilities?.[name]?.ownerPid, hub.pid, `Failed to register default ${name}`);
     }
     if (disabled) {
-      assert.notEqual(loaderConfig(udid), loaderPath, "Disabled preview armed its loader");
+      assert.notEqual(loaderConfig(), configPath, "Disabled preview published a loader config");
+      assert.deepEqual(hubInserts(), [], "Disabled preview inserted bundled libraries");
       console.log("Hub opt-outs: opening the preview did not register either helper");
       await verifyDisabledRequests(preview, token);
     } else {
-      assert.equal(loaderConfig(udid), loaderPath, "Default preview did not arm its loader");
+      assert.equal(loaderConfig(), configPath, "Default preview did not publish its loader config");
+      const loader = "vendor/serve-sim/dist/capability-loader/libServeSimCapabilityLoader.dylib";
+      assert(
+        hubInserts().includes(join(hubPackage, loader)),
+        "Default preview did not insert its loader",
+      );
       console.log("Hub defaults: opening the preview registered both helpers");
     }
   } finally {
     hub.kill("SIGTERM");
-    await Promise.race([hub.exited, delay(20_000, null, { ref: false })]);
+    // Allow the Hub's 60-second shutdown deadline to elapse before killing it.
+    await Promise.race([hub.exited, delay(65_000, null, { ref: false })]);
     if (hub.exitCode === null) hub.kill("SIGKILL");
     await hub.exited;
     await rm(state, { recursive: true, force: true });
   }
   assert.equal(hub.exitCode, 0, "Hub did not exit cleanly");
-  assert.notEqual(loaderConfig(udid), loaderPath, "Hub left its loader armed after shutdown");
+  assert.notEqual(loaderConfig(), configPath, "Hub left its loader config after shutdown");
+  assert.deepEqual(hubInserts(), [], "Hub left bundled libraries inserted after shutdown");
 }
 
 async function verifyDisabledRequests(preview: URL, token: string): Promise<void> {
@@ -187,6 +199,21 @@ async function verifyDisabledRequests(preview: URL, token: string): Promise<void
   }
 }
 
-await verifyHub("default");
-await verifyHub("disabled");
+const hubRoot = resolve(import.meta.dir, "../..");
+// Extract beneath the workspace package so Node resolves the existing locked dependencies.
+const archiveDir = await mkdtemp(join(hubRoot, ".capability-opt-out-"));
+try {
+  const tarball = execFileSync(
+    "npm",
+    ["pack", "--ignore-scripts", "--pack-destination", archiveDir, "--silent"],
+    { cwd: hubRoot, encoding: "utf8", timeout: 60_000 },
+  ).trim();
+  execFileSync("tar", ["-xzf", join(archiveDir, tarball), "-C", archiveDir], { timeout: 60_000 });
+  const hubPackage = join(archiveDir, "package");
+  console.log(`Testing the Hub package from ${tarball}`);
+  await verifyHub(hubPackage, "default");
+  await verifyHub(hubPackage, "disabled");
+} finally {
+  await rm(archiveDir, { recursive: true, force: true });
+}
 console.log(`Passed on ${device.name} (${device.runtime}, ${device.udid})`);
