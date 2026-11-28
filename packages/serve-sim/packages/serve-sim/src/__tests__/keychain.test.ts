@@ -111,12 +111,21 @@ describe("generic-password format", () => {
     ).toThrow("A service cannot be empty.");
   });
 
-  test("lists keys from its service only", () => {
+  test("lists only string accounts in its service", () => {
     const items = [
-      { service: "com.example", account: b64("user") },
-      { service: "other", account: b64("else") },
+      { service: "com.example", account: b64("user"), accountAsData: false },
+      { service: "com.example", account: b64("data-only"), accountAsData: true },
+      { service: "other", account: b64("else"), accountAsData: false },
     ];
     expect(keychainKeys("generic-password", items, { service: "com.example" })).toEqual(["user"]);
+  });
+
+  test("refuses to guess account types from an older helper", () => {
+    expect(() =>
+      keychainKeys("generic-password", [{ service: "com.example", account: b64("user") }], {
+        service: "com.example",
+      }),
+    ).toThrow("Reopen the app in an up-to-date serve-sim session");
   });
 });
 

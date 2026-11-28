@@ -2,13 +2,21 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   type DeviceClient,
+  type KeychainFormat,
   type KeychainOptions,
   type KeychainWriteResult,
 } from "@expo/hub-client";
-import { Button } from "../primitives";
+import { Button, Select } from "../primitives";
 import { errorMessage } from "./browserClipboard";
 import { CollapsibleSection } from "./CollapsibleSection";
-import { describeKeychainWrite, parseKeychainDraft } from "./keychainInput";
+import {
+  KEYCHAIN_FORMAT_OPTIONS,
+  KEYCHAIN_FORMAT_UI,
+  describeKeychainWrite,
+  displayKeychainIdentifier,
+  missingKeychainField,
+  parseKeychainDraft,
+} from "./keychainInput";
 import { SectionNote } from "./SectionNote";
 import { SidebarRow } from "./SidebarRow";
 import { SidebarTextArea } from "./SidebarTextArea";
@@ -21,8 +29,15 @@ const HOME_SCREEN = "com.apple.springboard";
 // serve-sim reaches the keychain of user apps only, not of system apps such as Safari.
 const SYSTEM_APP_PREFIX = "com.apple.";
 
+// @ref LLP 0020#hub-ui — single-line inputs can silently drop line breaks from a paste.
+function rejectMultilinePaste(text: string, setRejected: (rejected: boolean) => void): boolean {
+  const rejected = /[\r\n]/.test(text);
+  setRejected(rejected);
+  return rejected;
+}
+
 /**
- * Keychain values of the foreground app, in expo-secure-store's layout: list its keys, set
+ * Keychain values of the foreground app, in the layout of a library it uses: list its keys, set
  * values such as sign-in tokens, and delete them. Values are never read back.
  */
 export function KeychainSection({
@@ -36,10 +51,15 @@ export function KeychainSection({
   const [open, setOpen] = useState(defaultOpen);
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
-  const [service, setService] = useState("");
-  // The options the keys are listed with, so a Delete goes where they were read. Typing a service
-  // does not change it; Enter in the field or a Set does. A new object lists the keys again.
-  const [query, setQuery] = useState<KeychainOptions>({});
+  const [format, setFormat] = useState<KeychainFormat>("expo-secure-store");
+  // The format's field, such as the service the app passes.
+  const [fieldValue, setFieldValue] = useState("");
+  const [servicePasteRejected, setServicePasteRejected] = useState(false);
+  const [keyPasteRejected, setKeyPasteRejected] = useState(false);
+  // The options the keys are listed with, so a Delete goes where they were read. Typing in the
+  // field does not change it; a new format, Enter in the field, or a Set does. A new object lists
+  // the keys again.
+  const [query, setQuery] = useState<KeychainOptions>({ format: "expo-secure-store" });
   const [keys, setKeys] = useState<string[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -62,7 +82,6 @@ export function KeychainSection({
       client.status === "idle" ||
       client.status === "connecting" ||
       client.status === "reconnecting");
-  const serviceChanged = service !== (query.service ?? "");
   const [formApp, setFormApp] = useState(appId);
   const activeFormApp = useRef(formApp);
   useEffect(() => {
@@ -74,18 +93,28 @@ export function KeychainSection({
     setFormApp(appId);
     setKey("");
     setValue("");
-    setService("");
-    setQuery({});
+    setFormat("expo-secure-store");
+    setFieldValue("");
+    setServicePasteRejected(false);
+    setKeyPasteRejected(false);
+    setQuery({ format: "expo-secure-store" });
     setKeys(null);
     setListError(null);
     setNote(null);
     setError(null);
   }
 
+  const missing = missingKeychainField(query);
+  const shown = KEYCHAIN_FORMAT_UI[format];
+  const serviceChanged = fieldValue !== (query[shown.field.option] ?? "");
+  const setDisabled = pending !== null || servicePasteRejected || keyPasteRejected;
+  const deleteDisabled = pending !== null || serviceChanged || servicePasteRejected;
+  const requiredFieldError = `Enter the ${shown.field.label.toLowerCase()}.`;
+
   useEffect(() => {
     setKeys(null);
     setListError(null);
-    if (!available || !open || !appId || !listKeychainKeys) return;
+    if (!available || !open || !appId || !listKeychainKeys || missingKeychainField(query)) return;
     let current = true;
     listKeychainKeys(appId, query).then(
       (next) => current && setKeys(next),
@@ -96,11 +125,18 @@ export function KeychainSection({
     };
   }, [available, open, appId, query, listKeychainKeys]);
 
-  const typedOptions = (): KeychainOptions => (service ? { service } : {});
+  const typedOptions = (): KeychainOptions => {
+    const text = fieldValue;
+    return { format, ...(text ? { [shown.field.option]: text } : {}) };
+  };
   function listWith(options: KeychainOptions) {
     setKeys(null);
     setListError(null);
     setQuery({ ...options });
+  }
+
+  function listFromInput() {
+    if (!servicePasteRejected) listWith(typedOptions());
   }
 
   // The app ID is fixed when the write starts: a relaunch moves the foreground away and back.
@@ -135,15 +171,17 @@ export function KeychainSection({
     }
   }
 
+  function refuse(message: string) {
+    setNote(null);
+    setError(message);
+  }
+
   function set(relaunch: boolean) {
-    if (!setKeychainValues) return;
-    const draft = parseKeychainDraft(key, value);
-    if (!draft.ok) {
-      setNote(null);
-      setError(draft.error);
-      return;
-    }
+    if (!setKeychainValues || setDisabled) return;
     const options = typedOptions();
+    if (missingKeychainField(options)) return refuse(requiredFieldError);
+    const draft = parseKeychainDraft(key, value);
+    if (!draft.ok) return refuse(draft.error);
     void write(
       "set",
       relaunch ? "Setting and restarting the app…" : "Setting…",
@@ -154,8 +192,8 @@ export function KeychainSection({
   }
 
   function remove(name: string) {
-    if (!deleteKeychainValues || serviceChanged) return;
-    void write("delete", `Deleting ${name}…`, false, query, (target) =>
+    if (!deleteKeychainValues || deleteDisabled) return;
+    void write("delete", `Deleting ${displayKeychainIdentifier(name)}…`, false, query, (target) =>
       deleteKeychainValues(target, [name], query),
     );
   }
@@ -174,8 +212,51 @@ export function KeychainSection({
         </SectionNote>
       ) : (
         <>
-          <SectionNote>{`Keys for service ${query.service ?? "app"}.`}</SectionNote>
-          {keys === null ? (
+          <SidebarRow label="Format">
+            <Select
+              ariaLabel="Keychain format"
+              value={format}
+              options={KEYCHAIN_FORMAT_OPTIONS}
+              width={160}
+              disabled={pending !== null}
+              onChange={(next) => {
+                // The field can mean something else in the new format, so it starts empty, and a
+                // note about a write in the old format goes.
+                setFormat(next);
+                setFieldValue("");
+                setServicePasteRejected(false);
+                listWith({ format: next });
+                setNote(null);
+                setError(null);
+              }}
+            />
+          </SidebarRow>
+          <SidebarRow label={shown.field.label} description={shown.field.description}>
+            <SidebarTextInput
+              ariaLabel={`Keychain ${shown.field.label.toLowerCase()}`}
+              inputMode="text"
+              placeholder={shown.field.placeholder}
+              value={fieldValue}
+              disabled={pending !== null}
+              invalid={servicePasteRejected}
+              onChange={(next) => {
+                setFieldValue(next);
+                setServicePasteRejected(false);
+                if (next && error === requiredFieldError) setError(null);
+              }}
+              onPasteText={(text) => rejectMultilinePaste(text, setServicePasteRejected)}
+              onSubmit={listFromInput}
+            />
+          </SidebarRow>
+          {servicePasteRejected && (
+            <SectionNote role="alert">Enter a service on one line.</SectionNote>
+          )}
+          {!missing && (
+            <SectionNote>{`Keys for service ${displayKeychainIdentifier(query.service ?? "app")}.`}</SectionNote>
+          )}
+          {missing ? (
+            <SectionNote>{`Enter the ${missing}, then choose List keys or press Enter.`}</SectionNote>
+          ) : keys === null ? (
             listError ? (
               <>
                 <SectionNote role="alert">{listError}</SectionNote>
@@ -189,33 +270,44 @@ export function KeychainSection({
               <SectionNote>Reading keys…</SectionNote>
             )
           ) : keys.length === 0 ? (
-            <SectionNote>This app stored no SecureStore values.</SectionNote>
+            <SectionNote>
+              {KEYCHAIN_FORMAT_UI[query.format ?? "expo-secure-store"].empty}
+            </SectionNote>
           ) : (
-            keys.map((name) => (
-              <SidebarRow key={name} label={name}>
-                <Button
-                  theme="tertiary"
-                  size="xs"
-                  aria-label={`Delete ${name}`}
-                  disabled={pending !== null || serviceChanged}
-                  onClick={() => remove(name)}
-                >
-                  Delete
-                </Button>
-              </SidebarRow>
-            ))
+            keys.map((name) => {
+              const label = displayKeychainIdentifier(name);
+              return (
+                <SidebarRow key={name} label={label}>
+                  <Button
+                    theme="tertiary"
+                    size="xs"
+                    aria-label={`Delete ${label}`}
+                    disabled={deleteDisabled}
+                    onClick={() => remove(name)}
+                  >
+                    Delete
+                  </Button>
+                </SidebarRow>
+              );
+            })
           )}
           <SidebarRow label="Key">
             <SidebarTextInput
               ariaLabel="Keychain key"
               inputMode="text"
-              placeholder="accessToken"
+              placeholder={shown.keyPlaceholder ?? "accessToken"}
               value={key}
               disabled={pending !== null}
-              onChange={setKey}
+              invalid={keyPasteRejected}
+              onChange={(next) => {
+                setKey(next);
+                setKeyPasteRejected(false);
+              }}
+              onPasteText={(text) => rejectMultilinePaste(text, setKeyPasteRejected)}
               onSubmit={() => set(false)}
             />
           </SidebarRow>
+          {keyPasteRejected && <SectionNote role="alert">Enter a key on one line.</SectionNote>}
           <div style={GROUP_STYLE}>
             <SidebarTextArea
               ariaLabel="Keychain value"
@@ -226,42 +318,21 @@ export function KeychainSection({
               onSubmit={() => set(false)}
             />
           </div>
-          <SidebarRow label="Service" description="SecureStore keychainService">
-            <SidebarTextInput
-              ariaLabel="Keychain service"
-              inputMode="text"
-              placeholder="app"
-              value={service}
-              disabled={pending !== null}
-              onChange={setService}
-              onSubmit={() => listWith(typedOptions())}
-            />
-          </SidebarRow>
           <div style={BUTTONS_STYLE}>
             {serviceChanged && (
               <Button
                 theme="tertiary"
                 size="xs"
-                disabled={pending !== null}
-                onClick={() => listWith(typedOptions())}
+                disabled={pending !== null || servicePasteRejected}
+                onClick={listFromInput}
               >
                 List keys
               </Button>
             )}
-            <Button
-              theme="secondary"
-              size="xs"
-              disabled={pending !== null}
-              onClick={() => set(false)}
-            >
+            <Button theme="secondary" size="xs" disabled={setDisabled} onClick={() => set(false)}>
               Set
             </Button>
-            <Button
-              theme="tertiary"
-              size="xs"
-              disabled={pending !== null}
-              onClick={() => set(true)}
-            >
+            <Button theme="tertiary" size="xs" disabled={setDisabled} onClick={() => set(true)}>
               Set and relaunch
             </Button>
           </div>

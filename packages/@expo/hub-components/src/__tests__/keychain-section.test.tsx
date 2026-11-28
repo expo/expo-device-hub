@@ -4,7 +4,13 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from "rea
 
 import { type DeviceClient, type KeychainWriteResult } from "@expo/hub-client";
 import { Button } from "../components/Button";
-import { describeKeychainWrite, parseKeychainDraft } from "../dashboard/keychainInput";
+import { Select } from "../components/Select";
+import { KEYCHAIN_FORMATS } from "../../../../serve-sim/packages/serve-sim/src/keychain";
+import {
+  describeKeychainWrite,
+  KEYCHAIN_FORMAT_UI,
+  parseKeychainDraft,
+} from "../dashboard/keychainInput";
 import { KeychainSection } from "../dashboard/KeychainSection";
 import { createGlobalStubs } from "./test-globals";
 
@@ -49,6 +55,8 @@ function keychainClient(overrides: Partial<DeviceClient> = {}, keys: string[] = 
 async function setup(client: DeviceClient) {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("window", { setTimeout, clearTimeout });
+  // Radix Select checks for an enclosing form, which react-test-renderer has no DOM for.
+  stubGlobal("HTMLFormElement", class {});
   await act(async () => {
     renderer = create(<KeychainSection client={client} defaultOpen />);
   });
@@ -65,10 +73,34 @@ async function setup(client: DeviceClient) {
       act(async () =>
         root.findByProps({ "aria-label": label }).props.onChange({ currentTarget: { value } }),
       ),
+    paste: async (label: string, value: string) => {
+      let canceled = false;
+      await act(async () =>
+        root.findByProps({ "aria-label": label }).props.onPaste({
+          clipboardData: { getData: () => value },
+          preventDefault() {
+            canceled = true;
+          },
+        }),
+      );
+      return canceled;
+    },
+    choose: (value: string) =>
+      act(async () =>
+        root
+          .findAllByType(Select)
+          .find((node: ReactTestInstance) => node.props.ariaLabel === "Keychain format")!
+          .props.onChange(value),
+      ),
     rerender: (next: DeviceClient) =>
       act(async () => renderer!.update(<KeychainSection client={next} defaultOpen />)),
   };
 }
+
+// hub-client copies serve-sim's format names, so this checks the copy against the source.
+test("offers every format serve-sim stores, and no other", () => {
+  expect(Object.keys(KEYCHAIN_FORMAT_UI).sort()).toEqual([...KEYCHAIN_FORMATS].sort());
+});
 
 test("asks for a foreground app before anything else, and treats the home screen as none", () => {
   for (const foregroundApp of [null, { id: "com.apple.springboard" }]) {
@@ -92,14 +124,18 @@ test("offers no controls for a system app, which serve-sim cannot reach", () => 
 test("lists the app's keys with a Delete button each", async () => {
   const { client, calls } = keychainClient({}, ["accessToken", "refreshToken"]);
   const s = await setup(client);
-  expect(calls).toEqual([{ fn: "list", appId: APP, options: {} }]);
+  expect(calls).toEqual([{ fn: "list", appId: APP, options: { format: "expo-secure-store" } }]);
   expect(s.text()).toContain("accessToken");
   expect(s.text()).toContain("refreshToken");
   expect(s.text()).toContain("Keys for service app.");
   await s.type("Keychain service", "auth");
   expect(s.button("Delete")!.props.disabled).toBe(true);
   await s.click("List keys");
-  expect(calls.at(-1)).toEqual({ fn: "list", appId: APP, options: { service: "auth" } });
+  expect(calls.at(-1)).toEqual({
+    fn: "list",
+    appId: APP,
+    options: { format: "expo-secure-store", service: "auth" },
+  });
   expect(s.text()).toContain("Keys for service auth.");
   expect(s.button("Delete")!.props.disabled).toBe(false);
   expect(s.button("Delete")!.props["aria-label"]).toBe("Delete accessToken");
@@ -108,7 +144,7 @@ test("lists the app's keys with a Delete button each", async () => {
     fn: "delete",
     appId: APP,
     arg: ["accessToken"],
-    options: { service: "auth" },
+    options: { format: "expo-secure-store", service: "auth" },
   });
   expect(s.text()).toContain("Deleted accessToken in com.example.app.");
 });
@@ -124,16 +160,169 @@ test("sets one key, clears the form, and reads the keys again", async () => {
     fn: "set",
     appId: APP,
     arg: { accessToken: "tok" },
-    options: { service: "auth", relaunch: false },
+    options: { format: "expo-secure-store", service: "auth", relaunch: false },
   });
   expect(s.text()).toContain("Set accessToken in com.example.app.");
   // The keys are read again where the value went.
   expect(calls.filter((call) => call.fn === "list").at(-1)).toEqual({
     fn: "list",
     appId: APP,
-    options: { service: "auth" },
+    options: { format: "expo-secure-store", service: "auth" },
   });
   expect(s.text()).not.toContain('"tok"');
+});
+
+test("a new format clears the keys of the old one", async () => {
+  let finish: (keys: string[]) => void = () => {};
+  let calls = 0;
+  const { client } = keychainClient({
+    listKeychainKeys: () =>
+      ++calls === 1
+        ? Promise.resolve(["secure-key"])
+        : new Promise((resolve) => (finish = resolve)),
+  });
+  const s = await setup(client);
+  expect(s.text()).toContain("secure-key");
+  await s.choose("generic-password");
+  await s.type("Keychain service", "com.example.auth");
+  await act(async () => s.field("Keychain service").props.onKeyDown({ key: "Enter" }));
+  expect(s.text()).not.toContain("secure-key");
+  expect(s.text()).toContain("Reading keys…");
+  await act(async () => finish(["generic-key"]));
+  expect(s.text()).toContain("generic-key");
+});
+
+test("generic-password preserves spaces in a single key", async () => {
+  const { client, calls } = keychainClient();
+  const s = await setup(client);
+  await s.choose("generic-password");
+  await s.type("Keychain service", "auth");
+  await s.type("Keychain key", " token ");
+  await s.type("Keychain value", "synthetic");
+  await s.click("Set");
+  expect(calls.find((call) => call.fn === "set")).toMatchObject({
+    appId: APP,
+    arg: { " token ": "synthetic" },
+    options: { format: "generic-password", service: "auth", relaunch: false },
+  });
+});
+
+test("generic-password preserves the exact service for list, set, and delete", async () => {
+  const { client, calls } = keychainClient({}, ["token"]);
+  const s = await setup(client);
+  await s.choose("generic-password");
+  await s.type("Keychain service", " auth ");
+  await act(async () => s.field("Keychain service").props.onKeyDown({ key: "Enter" }));
+  await s.type("Keychain key", "token");
+  await s.type("Keychain value", "synthetic");
+  await s.click("Set");
+  await s.type("Keychain service", "other");
+  expect(s.button("Delete")!.props.disabled).toBe(true);
+  await s.click("Delete");
+  expect(calls.some((call) => call.fn === "delete")).toBe(false);
+  await s.type("Keychain service", " auth ");
+  expect(s.button("Delete")!.props.disabled).toBe(false);
+  await s.click("Delete");
+  const options = { format: "generic-password", service: " auth " };
+  expect(calls.filter((call) => call.fn === "list").at(-1)?.options).toEqual(options);
+  expect(calls.find((call) => call.fn === "set")).toMatchObject({
+    appId: APP,
+    arg: { token: "synthetic" },
+    options: { ...options, relaunch: false },
+  });
+  expect(calls.find((call) => call.fn === "delete")).toMatchObject({
+    appId: APP,
+    arg: ["token"],
+    options,
+  });
+});
+
+test("distinguishes keys and services whose whitespace changes the target", async () => {
+  const { client, calls } = keychainClient({}, ["token", " token "]);
+  const s = await setup(client);
+  await s.choose("generic-password");
+  await s.type("Keychain service", " auth ");
+  await s.click("List keys");
+
+  expect(s.text()).toContain(JSON.stringify('Keys for service "\\u0020auth\\u0020".'));
+  expect(s.text()).toContain(JSON.stringify("Delete token"));
+  expect(s.text()).toContain(JSON.stringify('Delete "\\u0020token\\u0020"'));
+  expect(calls.at(-1)?.options).toEqual({ format: "generic-password", service: " auth " });
+});
+
+test("a multiline paste blocks writes until both identifiers are corrected", async () => {
+  const { client, calls } = keychainClient({}, ["token"]);
+  const s = await setup(client);
+  await s.choose("generic-password");
+  await s.type("Keychain service", "auth");
+  await s.click("List keys");
+  await s.type("Keychain service", "other");
+  await s.type("Keychain key", "token");
+  await s.type("Keychain value", "synthetic");
+
+  expect(await s.paste("Keychain service", "auth\r\nv2")).toBe(true);
+  expect(await s.paste("Keychain key", "token\nv2")).toBe(true);
+  expect(s.text()).toContain("Enter a service on one line.");
+  expect(s.text()).toContain("Enter a key on one line.");
+  expect(s.button("List keys")!.props.disabled).toBe(true);
+  expect(s.button("Set")!.props.disabled).toBe(true);
+  expect(s.button("Set and relaunch")!.props.disabled).toBe(true);
+  expect(s.button("Delete")!.props.disabled).toBe(true);
+  const before = calls.length;
+  await s.click("Set");
+  await act(async () => s.field("Keychain service").props.onKeyDown({ key: "Enter" }));
+  await act(async () => s.field("Keychain key").props.onKeyDown({ key: "Enter" }));
+  expect(calls.length).toBe(before);
+
+  await s.type("Keychain service", " auth ");
+  expect(s.button("Set")!.props.disabled).toBe(true);
+  expect(await s.paste("Keychain key", " token ")).toBe(false);
+  await s.type("Keychain key", " token ");
+  expect(s.button("Set")!.props.disabled).toBe(false);
+  await s.click("Set");
+  expect(calls.find((call) => call.fn === "set")).toMatchObject({
+    arg: { " token ": "synthetic" },
+    options: { format: "generic-password", service: " auth " },
+  });
+});
+
+test("a new format drops the note of a write in the old one", async () => {
+  const { client } = keychainClient();
+  const s = await setup(client);
+  await s.choose("generic-password");
+  await s.click("Set");
+  expect(s.text()).toContain("Enter the service.");
+  await s.choose("expo-secure-store");
+  expect(s.text()).not.toContain("Enter the service.");
+});
+
+test("a format that needs a service asks for one before it lists or sets", async () => {
+  const { client, calls } = keychainClient({}, ["token"]);
+  const s = await setup(client);
+  await s.choose("generic-password");
+  expect(s.text()).toContain("Enter the service, then choose List keys or press Enter.");
+  await s.type("Keychain key", "token");
+  await s.click("Set");
+  expect(s.text()).toContain("Enter the service.");
+  // Only the first SecureStore list ran: nothing was listed or set without a service.
+  expect(calls).toEqual([{ fn: "list", appId: APP, options: { format: "expo-secure-store" } }]);
+
+  await s.type("Keychain service", "com.example.auth");
+  expect(s.text()).not.toContain("Enter the service.");
+  await act(async () =>
+    s.field("Keychain service").props.onKeyDown({ key: "Enter", preventDefault() {} }),
+  );
+  await s.click("Set");
+  expect(calls.find((call) => call.fn === "set")?.options).toEqual({
+    format: "generic-password",
+    service: "com.example.auth",
+    relaunch: false,
+  });
+  expect(calls.at(-1)).toEqual({
+    fn: "list",
+    appId: APP,
+    options: { format: "generic-password", service: "com.example.auth" },
+  });
 });
 
 test("sets every key of a pasted JSON object", async () => {
@@ -179,7 +368,7 @@ test("keeps the result of a relaunch while the foreground app changes", async ()
   );
   expect(calls.find((call) => call.fn === "set")).toMatchObject({
     appId: APP,
-    options: { relaunch: true },
+    options: { format: "expo-secure-store", relaunch: true },
   });
   // The home screen has no keychain of its own, so nothing listed it.
   expect(calls.filter((call) => call.appId !== APP)).toEqual([]);
@@ -262,7 +451,7 @@ test("shows a list failure with Retry", async () => {
 
 describe("parseKeychainDraft", () => {
   test("takes a key and its value, or a JSON object of strings", () => {
-    expect(parseKeychainDraft(" token ", "")).toEqual({ ok: true, values: { token: "" } });
+    expect(parseKeychainDraft(" token ", "")).toEqual({ ok: true, values: { " token ": "" } });
     expect(parseKeychainDraft("", '{"a":"1"}')).toEqual({ ok: true, values: { a: "1" } });
   });
 

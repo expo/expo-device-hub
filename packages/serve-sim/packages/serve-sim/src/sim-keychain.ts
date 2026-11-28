@@ -87,6 +87,8 @@ export type KeychainOperation =
 const KeychainListedItem = z.object({
   service: z.string(),
   account: z.string(),
+  // Older helpers supplied the account bytes without its type.
+  accountAsData: z.boolean().optional(),
   accessGroup: z.string().optional(),
 });
 export type KeychainListedItem = z.infer<typeof KeychainListedItem>;
