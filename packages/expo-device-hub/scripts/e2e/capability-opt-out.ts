@@ -96,12 +96,19 @@ async function verifyHub(hubPackage: string, mode: "default" | "disabled"): Prom
       signal: AbortSignal.timeout(120_000),
     });
     assert.deepEqual(await start.json(), { ok: true });
-    const config = await fetch(new URL("api", preview), {
+    const { device: previewDevice, keychain } = await fetch(new URL("api", preview), {
       headers,
-      signal: AbortSignal.timeout(10_000),
-    });
-    assert.equal(config.status, 200);
-    const { device: previewDevice, keychain } = await config.json();
+      // The first config read also looks up the Simulator and its DeviceKit profile.
+      signal: AbortSignal.timeout(30_000),
+    })
+      .then((response) => {
+        assert.equal(response.status, 200);
+        return response.json();
+      })
+      .catch((cause: unknown) => {
+        const reason = cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
+        throw new Error(`Could not read the ${mode} preview config (${reason})`, { cause });
+      });
     assert.equal(previewDevice, udid);
     assert.equal(keychain, disabled ? undefined : true, "Unexpected Keychain availability");
     const launch = await readFile(join(simStateDir, `launch-${udid}.json`), "utf8").catch(
