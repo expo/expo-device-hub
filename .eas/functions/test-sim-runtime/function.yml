@@ -13,6 +13,17 @@ runs:
     - name: Start iOS Simulator
       uses: eas/start_ios_simulator
 
+    - name: Test the Hub capability opt-outs
+      run: |
+        set -e
+        if [ "${{ inputs.group }}" = rest ]; then
+          bun run --filter '@expo/hub-android-utils' --filter '@expo/hub-apple-utils' build
+          bun run --filter serve-emu build
+          bun run --filter expo-device-hub build:vendor
+          bun run --filter expo-device-hub build:server
+          bun packages/expo-device-hub/scripts/e2e/capability-opt-out.ts
+        fi
+
     - name: Run sequential simulator tests
       # An unmet precondition fails instead of skipping; see e2e-preconditions.ts.
       env:

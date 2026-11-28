@@ -12,6 +12,9 @@ export type StandaloneServeSimOptions = {
   corsOrigins?: string[];
   /** Without the session token, serve-sim allows network capture only on a loopback host. */
   loopbackOnly?: boolean;
+  /** `--disable`: serve-sim does not set up these capabilities on the simulators it opens. */
+  clipboard?: false;
+  keychain?: false;
 };
 
 // The same rule as serve-sim's own: a name such as `127.example.com` is not loopback.
@@ -72,6 +75,8 @@ export function standaloneServeSimOptions(options: CliOptions): StandaloneServeS
     ...(options.corsOrigins && options.corsOrigins.length > 0
       ? { corsOrigins: options.corsOrigins }
       : {}),
+    ...(options.disabledCapabilities?.includes("clipboard") ? { clipboard: false as const } : {}),
+    ...(options.disabledCapabilities?.includes("keychain") ? { keychain: false as const } : {}),
   };
 }
 

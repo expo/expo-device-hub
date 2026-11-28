@@ -75,10 +75,15 @@ for (const app of PASTEBOARD_TEST_APPS) {
       expect((await readSimPasteboardResult(udid!)).text).toBe(probe);
     }, 20_000);
 
-    test("reads unicode through the dylib when pbpaste is skipped", async () => {
+    test("reads unicode through the dylib only when the server allows it", async () => {
       const probe = `café 🎉 email+tag@x.com 日本語 ${app.label}`;
       writeTestPasteboard(udid!, probe);
-      expect((await withSkipPbpaste(() => readSimPasteboardResult(udid!))).text).toBe(probe);
+      await withSkipPbpaste(async () => {
+        await expect(readSimPasteboardResult(udid!, { appReader: false })).rejects.toThrow(
+          "Clipboard reader is off on this server",
+        );
+        expect((await readSimPasteboardResult(udid!)).text).toBe(probe);
+      });
     }, 20_000);
   });
 }

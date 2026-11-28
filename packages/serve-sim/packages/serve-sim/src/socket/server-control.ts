@@ -89,6 +89,7 @@ interface ExecChannelOptions {
   streamSettings?: StreamSettings;
   /** Owning middleware policy/setup, awaited before Keychain actions. */
   prepareKeychain?: (udid: string) => Promise<void>;
+  appClipboardReader?: boolean;
 }
 
 function wireExecSocket(
@@ -341,6 +342,7 @@ function wireExecSocket(
       opts.streamSettings,
       opts.deviceName,
       opts.prepareKeychain,
+      opts.appClipboardReader,
     )
       .then((result) => {
         try {
