@@ -42,7 +42,7 @@ beforeEach(() => {
   delete process.env.TEST_CLIPBOARD_OFF_DEVICE;
   shims = installShims({
     xcrun: `#!/usr/bin/env bun
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "fs";
+import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 const args = process.argv.slice(2);
 appendFileSync(process.env.TEST_CLIPBOARD_CALLS, args.join(" ") + "\\n");
@@ -54,6 +54,15 @@ if (args[2] === process.env.TEST_CLIPBOARD_OFF_DEVICE) {
 if (args[3] === "launchctl") {
   const file = join(dirname(process.env.TEST_CLIPBOARD_CALLS), args[2] + ".env");
   const env = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  const failAfterWithdrawal = join(dirname(file), "fail-after-withdrawal");
+  if (args[4] === "getenv" && args[5] === "DYLD_INSERT_LIBRARIES" && existsSync(failAfterWithdrawal)) {
+    const config = readFileSync(failAfterWithdrawal, "utf8");
+    if (readFileSync(config, "utf8") === "") {
+      unlinkSync(failAfterWithdrawal);
+      console.error("could not update launchd after withdrawal");
+      process.exit(1);
+    }
+  }
   if (args[4] === "getenv") console.log(env[args[5]] ?? "");
   else {
     if (args[4] === "setenv") env[args[5]] = args[6];
@@ -193,6 +202,40 @@ describe("capability session, through the clipboard capability", () => {
     expect(isCapabilityEnabled(UDID, "clipboard")).toBe(true);
     await clipboard.dispose();
     expect(readLaunchState(UDID)).toBeNull();
+  });
+
+  test("disables with one launch update and rolls back if that update fails", async () => {
+    const clipboard = createCapabilitySession(clipboardCapability);
+    try {
+      await clipboard.initialize(UDID);
+      const config = capabilityConfigPath(UDID);
+      const originalConfig = readFileSync(config, "utf8");
+      const originalState = readLaunchState(UDID);
+      const launchEnv = join(state.dir, `${UDID}.env`);
+      const originalEnv = readFileSync(launchEnv, "utf8");
+      writeFileSync(join(state.dir, "fail-after-withdrawal"), config);
+      await expect(clipboard.setEnabled(UDID, false)).rejects.toThrow(
+        "could not update launchd after withdrawal",
+      );
+      expect(clipboard.allows(UDID)).toBe(true);
+      expect(readLaunchState(UDID)).toEqual(originalState);
+      expect(readFileSync(config, "utf8")).toBe(originalConfig);
+      expect(JSON.parse(readFileSync(launchEnv, "utf8"))).toEqual(JSON.parse(originalEnv));
+
+      // The disable hook runs after withdrawal. A second launch update would fail here.
+      prepare.mockImplementationOnce(async () => {
+        process.env.TEST_CLIPBOARD_FAIL_DEVICE = UDID;
+        return null;
+      });
+      await clipboard.setEnabled(UDID, false);
+      expect(clipboard.allows(UDID)).toBe(false);
+      expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
+      expect(readFileSync(config, "utf8")).toBe("");
+      expect(readLaunchState(UDID)?.sessionPids).toContain(process.pid);
+    } finally {
+      delete process.env.TEST_CLIPBOARD_FAIL_DEVICE;
+      await clipboard.dispose();
+    }
   });
 
   test("turns off the reader while a previously opened device is shut down", async () => {

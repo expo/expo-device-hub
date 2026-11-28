@@ -827,7 +827,8 @@ server stops and survives setup checks and a Simulator reboot. A setup owned by 
 process stays in place. Devices opened at standalone startup can be switched on the first
 Controls request. Each successful change updates the preview config on open `/api/events` streams.
 If a change for that device and capability is already running, the next request returns an error
-and asks the client to retry. A failed change leaves the previous choice in effect.
+and asks the client to retry. A failed change leaves the previous choice in effect. Disabling
+withdraws the capability and retains the loader for the session in one launch-state update.
 
 Disabling closes admission and waits for admitted Keychain calls or clipboard app reads before
 acknowledging. During the wait, a concurrent list or config read shows the new choice. With

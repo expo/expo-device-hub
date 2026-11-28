@@ -3,12 +3,10 @@ import {
   isCapabilityArmed,
   isCapabilityEnabled,
   readLaunchState,
-  rearmCapabilityLoader,
   releaseSession,
   releaseSessionSync,
 } from "./launch-manager";
 import type { CapabilityDefinition } from "./capabilities";
-import { isDeviceNotBooted } from "./device";
 import { LaunchStateLockedError } from "./launch-state-lock";
 import { ownerIsGone } from "./launch-state";
 import { KEYCHAIN_CAPABILITY } from "./sim-keychain";
@@ -194,21 +192,15 @@ export function createCapabilitySession(
       await configureCapability(udid, definition, {
         enabled: want,
         relaunch: false,
+        armSession: !want,
         preserveForeignOwner: want || keepForeignOwnerOnDisable,
         onPreservedOwner: (pid) => {
           entry.preservedOwnerPid = pid;
         },
       });
-      // A disabled preview must leave a live owner's loader and config untouched.
-      if (entry.preservedOwnerPid !== undefined) return;
-      if (!want) {
-        if (!readLaunchState(udid)) return;
-        // Republish without dead owners, including readers left by an earlier session.
-        await rearmCapabilityLoader(udid).catch((error: unknown) => {
-          // With the Simulator shut down, only the saved withdrawal is needed.
-          if (!isDeviceNotBooted(error)) throw error;
-        });
-      }
+      // A disabled preview leaves a live owner's setup alone and has nothing to release if
+      // the device had no launch state.
+      if (entry.preservedOwnerPid !== undefined || (!want && !readLaunchState(udid))) return;
       initializedHere.add(udid);
       releaseOnExit(udid);
     })().then(

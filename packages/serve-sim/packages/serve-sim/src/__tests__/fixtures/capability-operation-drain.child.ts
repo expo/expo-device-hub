@@ -142,6 +142,7 @@ describe("capability operation draining", () => {
         expect(configure).toHaveBeenLastCalledWith(UDID, keychainCapability, {
           enabled: false,
           relaunch: false,
+          armSession: true,
           preserveForeignOwner: true,
           onPreservedOwner: expect.any(Function),
         });
@@ -234,6 +235,7 @@ describe("capability operation draining", () => {
       expect(configure).toHaveBeenLastCalledWith(UDID, keychainCapability, {
         enabled: false,
         relaunch: false,
+        armSession: true,
         preserveForeignOwner: true,
         onPreservedOwner: expect.any(Function),
       });
@@ -281,6 +283,7 @@ describe("capability operation draining", () => {
       expect(configure).toHaveBeenLastCalledWith(UDID, clipboardCapability, {
         enabled: false,
         relaunch: false,
+        armSession: true,
         preserveForeignOwner: true,
         onPreservedOwner: expect.any(Function),
       });
@@ -367,6 +370,7 @@ describe("capability operation draining", () => {
       expect(configure).toHaveBeenLastCalledWith(UDID, keychainCapability, {
         enabled: false,
         relaunch: false,
+        armSession: true,
         preserveForeignOwner: true,
         onPreservedOwner: expect.any(Function),
       });

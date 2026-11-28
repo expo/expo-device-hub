@@ -605,6 +605,8 @@ type ConfigureOptions = {
   bundleId?: string | null;
   options?: Record<string, string>;
   enabled: boolean;
+  /** Keep the preview's loader armed when updating existing launch state. */
+  armSession?: boolean;
   /** Share an existing session's setup without replacing or removing its registration. */
   preserveForeignOwner?: boolean;
   /** Report the retained owner before releasing the device lock. */
@@ -658,6 +660,7 @@ export async function configureCapability(
     ownerPid = process.pid,
     preserveForeignOwner = false,
     onPreservedOwner,
+    armSession = false,
   }: ConfigureOptions,
 ): Promise<void> {
   const context: CapabilityContext = { udid, bundleId, options, enabled };
@@ -676,7 +679,10 @@ export async function configureCapability(
     }
     if (!enabled) {
       if (!hasForeignCapabilityOwner(udid, definition, ownerPid)) {
-        await disableCapabilityUnlocked(udid, bundleId, definition.name, { relaunch: false });
+        await disableCapabilityUnlocked(udid, bundleId, definition.name, {
+          relaunch: false,
+          armSession,
+        });
       }
       await definition.setEnabled(context);
       return;
@@ -688,7 +694,7 @@ export async function configureCapability(
         `Capability ${definition.name} declined to start on ${udid}. Check its configuration and retry.`,
       );
     }
-    await publishPreparations(udid, bundleId, [preparation], ownerPid);
+    await publishPreparations(udid, bundleId, [preparation], ownerPid, armSession);
     if (relaunch) {
       const state = readLaunchState(udid);
       if (state) await relaunchTarget(udid, bundleId, state);
@@ -960,10 +966,10 @@ async function disableCapabilityUnlocked(
   udid: string,
   bundleId: string | null,
   name: string,
-  { relaunch = true }: EnableOptions = {},
+  { relaunch = true, armSession = false }: EnableOptions & { armSession?: boolean } = {},
 ): Promise<void> {
   const previous = readLaunchState(udid);
-  if (!previous || !(name in previous.capabilities)) {
+  if (!previous || (!armSession && !(name in previous.capabilities))) {
     if (managedStartupDylibs(udid).length > 0) {
       await withdrawLaunchState(udid, previous ?? { launchArgs: [], capabilities: {} });
     }
@@ -972,7 +978,22 @@ async function disableCapabilityUnlocked(
   const rest = Object.fromEntries(
     Object.entries(previous.capabilities).filter(([key]) => key !== name),
   );
-  const state: LaunchState = { ...previous, capabilities: rest };
+  // @ref LLP 0003#capability-actions — withdraw and keep the loader in the same publication.
+  if (armSession) {
+    const loader = capabilityLoaderPath();
+    if (!existsSync(loader)) {
+      throw new Error(
+        `Capability loader not found at ${loader}. Rebuild serve-sim's native artifacts and try again.`,
+      );
+    }
+  }
+  const state: LaunchState = {
+    ...previous,
+    capabilities: rest,
+    ...(armSession
+      ? { sessionPids: [...new Set([...(previous.sessionPids ?? []), process.pid])] }
+      : {}),
+  };
   const booted = await withdrawLaunchState(udid, state);
   if (relaunch && booted) await relaunchTarget(udid, bundleId, state);
 }
