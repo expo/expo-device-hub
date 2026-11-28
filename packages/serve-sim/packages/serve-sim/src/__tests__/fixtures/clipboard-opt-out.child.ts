@@ -7,7 +7,8 @@ import type { UpgradeHandlerWebSocket } from "../../socket/types";
 import { installShims, UDID, useTempStateDir } from "../helpers";
 
 const ORIGIN = "http://127.0.0.1:3200";
-const REFUSAL = "Clipboard reader is off on this server, by --disable clipboard.";
+const REFUSAL =
+  "Clipboard reader is off on this server, by --disable clipboard or capabilities.set.";
 
 function readControls(middleware: ReturnType<typeof simMiddleware>) {
   const result = Promise.withResolvers<{ exitCode: number; stdout: string; stderr: string }>();
@@ -54,9 +55,9 @@ exit 1
     execToken: "test-token",
     requirePreviewToken: true,
   });
-  const readHttp = () =>
+  const readHttp = (udid = UDID) =>
     middleware(
-      new Request(`${ORIGIN}/preview/api/pasteboard?device=${UDID}`, {
+      new Request(`${ORIGIN}/preview/api/pasteboard?device=${udid}`, {
         method: "POST",
         headers: { Authorization: "Bearer test-token", Origin: ORIGIN },
       }),
@@ -86,7 +87,7 @@ exit 1
     expect(JSON.parse(controlsSuccess.stdout)).toEqual({ text: "native text" });
 
     writeFileSync(join(shims.dir, "xcrun.fail"), "");
-    const refused = await readHttp();
+    const refused = await readHttp(UDID.toLowerCase());
     expect(refused?.status).toBe(503);
     expect(await refused?.json()).toEqual({ ok: false, error: REFUSAL });
     expect(await readControls(middleware)).toMatchObject({ exitCode: 1, stderr: REFUSAL });

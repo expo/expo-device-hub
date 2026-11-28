@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createCapabilityController, createCapabilitySession } from "../../capability-session";
+import * as foregroundTracker from "../../foreground-tracker";
 import { runHostActionAsync } from "../../host-actions";
 import * as keychain from "../../keychain";
 import * as launchManager from "../../launch-manager";
 import { keychainCapability } from "../../sim-keychain";
+import * as pasteboard from "../../sim-pasteboard";
+import { clipboardCapability, readSimPasteboardResult } from "../../sim-pasteboard-reader";
+import * as simctl from "../../simctl";
 import { UDID, useTempStateDir } from "../helpers";
 
 function deferred() {
@@ -25,7 +29,7 @@ afterEach(() => {
   state.restore();
 });
 
-async function managedSession(onChange?: () => void) {
+async function managedSession(onChange?: () => void, definition = keychainCapability) {
   // Control the launch-manager boundary, not the session or host-action fence under test.
   const configure = spyOn(launchManager, "configureCapability").mockResolvedValue(undefined);
   const armed = spyOn(launchManager, "isCapabilityArmed").mockResolvedValue(false);
@@ -37,9 +41,14 @@ async function managedSession(onChange?: () => void) {
     () => enabled.mockRestore(),
     () => release.mockRestore(),
   );
-  const session = createCapabilitySession(keychainCapability);
+  const session = createCapabilitySession(definition);
   await session.initialize(UDID);
-  const controller = createCapabilityController({ clipboard: null, keychain: session }, onChange);
+  const controller = createCapabilityController(
+    definition === clipboardCapability
+      ? { clipboard: session, keychain: null }
+      : { clipboard: null, keychain: session },
+    onChange,
+  );
   return { session, controller, configure, release };
 }
 
@@ -188,6 +197,57 @@ describe("capability operation draining", () => {
     } finally {
       resume.resolve();
       await Promise.allSettled([action, disabling]);
+      await session.dispose();
+    }
+  });
+
+  test("disable waits for an admitted app clipboard read", async () => {
+    const { session, controller, configure } = await managedSession(undefined, clipboardCapability);
+    const entered = deferred();
+    const resume = deferred();
+    const pbpaste = spyOn(pasteboard, "readPasteboardViaSimctl").mockRejectedValue(
+      new Error("pbpaste unavailable"),
+    );
+    const foreground = spyOn(foregroundTracker, "frontmostAppOf").mockResolvedValue({
+      bundleId: "com.example.app",
+      pid: 123,
+    });
+    const sim = spyOn(simctl, "simctl").mockImplementation(async ([command]) => {
+      expect(command).toBe("get_app_container");
+      entered.resolve();
+      await resume.promise;
+      return "(null)";
+    });
+    restores.push(
+      () => pbpaste.mockRestore(),
+      () => foreground.mockRestore(),
+      () => sim.mockRestore(),
+    );
+    const reading = readSimPasteboardResult(UDID, { capabilities: controller });
+    const outcome = reading.catch((error: unknown) => error);
+    await Promise.race([entered.promise, reading]);
+    const disabling = controller.set(UDID, "clipboard", false);
+    try {
+      await Bun.sleep(0);
+      expect(configure).toHaveBeenCalledTimes(1);
+      resume.resolve();
+      expect(await outcome).toMatchObject({
+        message: expect.stringContaining("Open another app and retry"),
+      });
+      await disabling;
+      expect(configure).toHaveBeenLastCalledWith(UDID, clipboardCapability, {
+        enabled: false,
+        relaunch: false,
+        preserveForeignOwner: true,
+        onPreservedOwner: expect.any(Function),
+      });
+      await expect(readSimPasteboardResult(UDID, { capabilities: controller })).rejects.toThrow(
+        "Clipboard reader is off on this server",
+      );
+      expect(sim).toHaveBeenCalledTimes(1);
+    } finally {
+      resume.resolve();
+      await Promise.allSettled([outcome, disabling]);
       await session.dispose();
     }
   });

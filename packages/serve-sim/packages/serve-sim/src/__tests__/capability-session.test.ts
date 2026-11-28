@@ -181,10 +181,11 @@ describe("capability session, through the clipboard capability", () => {
   test("keeps a per-device choice through the 30 s re-check until it changes again", async () => {
     let time = 0;
     const clipboard = createCapabilitySession(clipboardCapability, true, { now: () => time });
-    await clipboard.initialize(UDID);
+    await clipboard.initialize(UDID.toLowerCase());
     await clipboard.setEnabled(UDID, false);
     expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
-    expect([clipboard.allows(UDID), clipboard.allows(`${UDID}-2`)]).toEqual([false, true]);
+    expect(clipboard.allows(UDID.toLowerCase())).toBe(false);
+    expect(clipboard.allows(`${UDID}-2`)).toBe(true);
     time += 30_000;
     await clipboard.initialize(UDID);
     expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
@@ -192,6 +193,23 @@ describe("capability session, through the clipboard capability", () => {
     expect(isCapabilityEnabled(UDID, "clipboard")).toBe(true);
     await clipboard.dispose();
     expect(readLaunchState(UDID)).toBeNull();
+  });
+
+  test("turns off the reader while a previously opened device is shut down", async () => {
+    const clipboard = createCapabilitySession(clipboardCapability);
+    try {
+      await clipboard.initialize(UDID);
+      process.env.TEST_CLIPBOARD_OFF_DEVICE = UDID;
+      await clipboard.setEnabled(UDID, false);
+      expect(clipboard.allows(UDID)).toBe(false);
+      expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
+      delete process.env.TEST_CLIPBOARD_OFF_DEVICE;
+      await clipboard.initialize(UDID, true);
+      expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
+    } finally {
+      delete process.env.TEST_CLIPBOARD_OFF_DEVICE;
+      await clipboard.dispose();
+    }
   });
 
   test("a choice made during setup applies after it", async () => {

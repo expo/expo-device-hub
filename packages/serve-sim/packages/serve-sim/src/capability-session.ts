@@ -8,6 +8,7 @@ import {
   releaseSessionSync,
 } from "./launch-manager";
 import type { CapabilityDefinition } from "./capabilities";
+import { isDeviceNotBooted } from "./device";
 import { LaunchStateLockedError } from "./launch-state-lock";
 import { ownerIsGone } from "./launch-state";
 import { KEYCHAIN_CAPABILITY } from "./sim-keychain";
@@ -107,7 +108,7 @@ export function createCapabilitySession(
   let disposed = false;
   // Per-device choices from `setEnabled`; the periodic check keeps them rather than `enabled`.
   const choices = new Map<string, boolean>();
-  const wanted = (udid: string) => !disposed && (choices.get(udid) ?? enabled);
+  const wanted = (udid: string) => !disposed && (choices.get(udid.toUpperCase()) ?? enabled);
   const keepForeignOwnerOnDisable = enabled || preserveForeignOwnerOnDisable;
   // A running process that set the capability up would set it up again on its next check, so
   // turning it off here leaves that record; this server's own actions still refuse it.
@@ -121,6 +122,7 @@ export function createCapabilitySession(
   const initializedHere = new Set<string>();
 
   function runOperation<T>(udid: string, operation: () => Promise<T>): Promise<T> {
+    udid = udid.toUpperCase();
     if (disposed) return Promise.reject(new Error(`The ${definition.name} session has ended.`));
     if (!wanted(udid)) {
       return Promise.reject(
@@ -154,6 +156,7 @@ export function createCapabilitySession(
    * one: it skips the retry wait and the shared setup, and runs after any setup still running.
    */
   function initialize(udid: string, force = false): Promise<void> {
+    udid = udid.toUpperCase();
     if (disposed) return Promise.resolve();
     if (!force && now() < (failures.get(udid)?.retryAt ?? 0)) return Promise.resolve();
     const want = wanted(udid);
@@ -186,7 +189,10 @@ export function createCapabilitySession(
       if (!want) {
         if (!readLaunchState(udid)) return;
         // Republish without dead owners, including readers left by an earlier session.
-        await rearmCapabilityLoader(udid);
+        await rearmCapabilityLoader(udid).catch((error: unknown) => {
+          // With the Simulator shut down, only the saved withdrawal is needed.
+          if (!isDeviceNotBooted(error)) throw error;
+        });
       }
       initializedHere.add(udid);
       releaseOnExit(udid);
@@ -214,6 +220,7 @@ export function createCapabilitySession(
     initialize,
     /** Actions need a successful setup; background polling may skip a failed setup's backoff. */
     async prepare(udid: string): Promise<void> {
+      udid = udid.toUpperCase();
       await initialize(udid);
       if (disposed) throw new Error(`The ${definition.name} session has ended.`);
       const failure = failures.get(udid);
@@ -223,6 +230,7 @@ export function createCapabilitySession(
     /** Whether this server lets the capability work on the device: the startup setting or a choice. */
     allows: wanted,
     async setEnabled(udid: string, value: boolean): Promise<void> {
+      udid = udid.toUpperCase();
       if (disposed) throw new Error(`The ${definition.name} session has ended.`);
       if (value && !enabled) {
         throw new Error(
@@ -286,7 +294,12 @@ export function createCapabilityController(
       SESSION_CAPABILITIES.flatMap((name) => {
         const session = sessions[name];
         return session
-          ? [{ name, enabled: session.allows(udid) && isCapabilityEnabled(udid, name) }]
+          ? [
+              {
+                name,
+                enabled: session.allows(udid) && isCapabilityEnabled(udid.toUpperCase(), name),
+              },
+            ]
           : [];
       }),
     async set(udid, name, enabled) {

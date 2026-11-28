@@ -35,7 +35,7 @@ describe("clipboard host actions", () => {
     const result = await run("clipboard.read", { udid: UDID.toLowerCase() });
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ text, cleanupWarning: "cleanup warning" });
-    expect(read).toHaveBeenCalledWith(UDID, { appReader: true });
+    expect(read).toHaveBeenCalledWith(UDID, { capabilities: undefined });
   });
 
   test("passes the owning server's clipboard reader opt-out", async () => {

@@ -820,20 +820,24 @@ not built, or, in a stream helper (`"unmanaged"`), no session set keychain up on
 ### Capability actions
 
 The middleware sets up the `clipboard` and `keychain` capabilities on each device it opens
-(LLP 0010, LLP 0017). `capabilities.set` takes `{udid, name, enabled}`, where `name` is
-`clipboard` or `keychain`, and turns that capability off or on again until the server stops,
-on a device this middleware opened; the middleware's 30 s check keeps the choice. Off leaves a
-setup that another running serve-sim process owns, and on again leaves it that process's; while
-off, this server's keychain actions refuse the device. Each choice resends the preview config to
-open `/api/events` streams, as it can leave the state files unchanged. With clipboard off, clipboard reads use only `simctl pbpaste`. `capabilities.list` takes `{udid}`.
-Disabling Keychain closes admission immediately and waits for admitted calls before acknowledging completion. A concurrent list or preview config reflects the admission choice while that wait is pending. Already-published mailbox requests are not revoked and retain their expiry (LLP 0017).
-Both return `{capabilities: [{name, enabled}]}` for the capabilities this middleware manages.
-`enabled` is true only when this server allows the capability on the device and the device's
-launch state has it, so a capability that another process keeps set up still reads as off here.
-A capability that the middleware was started without (`false`) cannot be turned on, and one it
-leaves `"unmanaged"` is not listed; either request returns a nonzero `exitCode` and `stderr`
-[observed: `createCapabilityController` in `src/capability-session.ts`, `capabilityReply` in
-`src/host-actions.ts`].
+([LLP 0010](0010-serve-sim-clipboard.explainer.md), [LLP 0020](0020-serve-sim-keychain.explainer.md)).
+`capabilities.set` takes `{udid, name, enabled}`, where `name` is `clipboard` or `keychain`.
+It switches that capability on one device the middleware opened. The choice lasts until the
+server stops and survives setup checks and a Simulator reboot. A setup owned by another running
+process stays in place. Each choice updates the preview config on open `/api/events` streams.
+
+Disabling closes admission and waits for admitted Keychain calls or clipboard app reads before
+acknowledging. During the wait, a concurrent list or config read shows the new choice. With
+Clipboard off, ordinary reads use only `simctl pbpaste`. Copy still uses its own helper.
+With Keychain off, new Keychain calls are refused. Published mailbox requests remain until their
+normal expiry ([LLP 0020](0020-serve-sim-keychain.explainer.md)).
+
+`capabilities.list` takes `{udid}`. Both actions return `{capabilities: [{name, enabled}]}`.
+`enabled` requires both permission from this server and setup in the device launch state.
+A capability disabled at startup stays off. An unmanaged capability is omitted. Attempts to
+enable a startup-disabled capability or change an unmanaged one return a nonzero `exitCode`
+and `stderr` [observed: `createCapabilityController` in `src/capability-session.ts`,
+`capabilityReply` in `src/host-actions.ts`].
 
 ### Action catalog
 

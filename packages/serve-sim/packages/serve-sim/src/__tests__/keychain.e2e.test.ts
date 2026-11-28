@@ -3,7 +3,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "child_process";
-import { once } from "node:events";
+import { on, once } from "node:events";
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import WebSocket from "ws";
@@ -558,30 +558,66 @@ describeOrSkip("keychain round trip", () => {
     60_000,
   );
 
-  test("single-device Controls set, list, and delete Keychain values without a UDID", async () => {
+  test("single-device Controls edit and toggle Keychain without a UDID", async () => {
     terminate();
     launch();
     const value = `host-action-${Date.now()}`;
-    const ws = new WebSocket(
-      `ws://127.0.0.1:${serverState.port}/exec-ws`,
-      `serve-sim.token.${serverState.token}`,
-      { handshakeTimeout: 10_000 },
-    );
+    const connect = () =>
+      new WebSocket(
+        `ws://127.0.0.1:${serverState.port}/exec-ws`,
+        `serve-sim.token.${serverState.token}`,
+        { handshakeTimeout: 10_000 },
+      );
+    const ws = connect();
+    const events = connect();
+    const messages = on(events, "message", { signal: AbortSignal.timeout(50_000) });
+    let eventBuffer = "";
+    async function waitForKeychainConfig(enabled: boolean) {
+      for (;;) {
+        const { value, done } = await messages.next();
+        if (done) throw new Error("The preview event stream ended");
+        const event = JSON.parse(String(value[0])) as {
+          sub?: number;
+          data?: string;
+          end?: boolean;
+        };
+        if (event.sub !== 1) continue;
+        if (event.end) throw new Error("The preview event stream ended");
+        eventBuffer += event.data ?? "";
+        let frameEnd: number;
+        while ((frameEnd = eventBuffer.indexOf("\n\n")) >= 0) {
+          const frame = eventBuffer.slice(0, frameEnd);
+          eventBuffer = eventBuffer.slice(frameEnd + 2);
+          if (!frame.startsWith("data: ")) continue;
+          const config = JSON.parse(frame.slice(6)) as { keychain?: boolean } | null;
+          if (config && (config.keychain === true) === enabled) return;
+        }
+      }
+    }
     async function nextReply<T>(): Promise<T> {
       const [message] = await once(ws, "message", { signal: AbortSignal.timeout(15_000) });
       return JSON.parse(String(message));
     }
-    async function call(id: number, action: string, params: Record<string, unknown> = {}) {
+    async function call(
+      id: number,
+      action: string,
+      params: Record<string, unknown> = {},
+      exitCode = 0,
+    ) {
       const pending = nextReply<HostActionResult & { id: number }>();
-      ws.send(JSON.stringify({ id, action, params: { bundleId: APP, ...params } }));
+      ws.send(JSON.stringify({ id, action, params }));
       const reply = await pending;
-      expect(reply).toMatchObject({ id, exitCode: 0, stderr: "" });
-      return reply.stdout;
+      expect(reply).toMatchObject({ id, exitCode });
+      if (exitCode === 0) expect(reply.stderr).toBe("");
+      return reply;
     }
     try {
       expect(await nextReply<{ ready: boolean }>()).toMatchObject({ ready: true });
       const beforeWrite = seenValues().length;
-      const written = await call(1, "keychain.set", { values: { [KEY]: value } });
+      const { stdout: written } = await call(1, "keychain.set", {
+        bundleId: APP,
+        values: { [KEY]: value },
+      });
       expect(JSON.parse(written)).toMatchObject({
         applied: true,
         keys: [{ key: KEY, ok: true }],
@@ -589,17 +625,42 @@ describeOrSkip("keychain round trip", () => {
       expect(written).not.toContain(value);
       await waitForLastSeen(`value=${value}`, { after: beforeWrite });
 
-      const listed = await call(2, "keychain.list");
-      expect(JSON.parse(listed)).toEqual({ keys: [KEY] });
+      if (events.readyState !== WebSocket.OPEN)
+        await once(events, "open", { signal: AbortSignal.timeout(10_000) });
+      events.send(JSON.stringify({ sub: 1, path: "/api/events" }));
+      await waitForKeychainConfig(true);
+
+      const toggle = async (id: number, enabled: boolean) => {
+        const { stdout } = await call(id, "capabilities.set", { name: "keychain", enabled });
+        expect(JSON.parse(stdout)).toMatchObject({
+          capabilities: expect.arrayContaining([{ name: "keychain", enabled }]),
+        });
+      };
+      try {
+        await toggle(2, false);
+        await waitForKeychainConfig(false);
+        const refused = await call(3, "keychain.list", { bundleId: APP }, 1);
+        expect(refused.stderr).toContain("Keychain access is off");
+      } finally {
+        await toggle(4, true);
+      }
+      await waitForKeychainConfig(true);
+      const listed = await call(5, "keychain.list", { bundleId: APP });
+      expect(JSON.parse(listed.stdout)).toEqual({ keys: [KEY] });
 
       const beforeDelete = seenValues().length;
-      const removed = await call(3, "keychain.delete", { keys: [KEY] });
+      const { stdout: removed } = await call(6, "keychain.delete", {
+        bundleId: APP,
+        keys: [KEY],
+      });
       expect(JSON.parse(removed)).toMatchObject({
         applied: true,
         keys: [{ key: KEY, ok: true }],
       });
       await waitForLastSeen("status=-25300", { after: beforeDelete });
     } finally {
+      await messages.return?.();
+      events.terminate();
       ws.terminate();
     }
   }, 60_000);

@@ -3009,6 +3009,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         respond(400, { ok: false, error: "No booted simulator available" });
         return;
       }
+      udid = udid.toUpperCase();
       try {
         if (bodyRead) {
           let body: Buffer | undefined;
@@ -3050,9 +3051,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         }
         const result = session
           ? await session.copyPasteboard()
-          : await readSimPasteboardResult(udid, {
-              appReader: capabilities.allows(udid, "clipboard"),
-            });
+          : await readSimPasteboardResult(udid, { capabilities });
         respond(200, { ok: true, ...result });
       } catch (error) {
         // A failed Copy can still leave Command held; the viewer shows this beside the error.

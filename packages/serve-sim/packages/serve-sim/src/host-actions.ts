@@ -935,8 +935,7 @@ async function runProcedureAsync(
       try {
         if (action === "clipboard.read") {
           const { readSimPasteboardResult } = await import("./sim-pasteboard-reader");
-          const appReader = capabilities?.allows(p.udid, "clipboard") ?? true;
-          return ok(JSON.stringify(await readSimPasteboardResult(p.udid, { appReader })));
+          return ok(JSON.stringify(await readSimPasteboardResult(p.udid, { capabilities })));
         }
         if (action === "clipboard.write") {
           await writeSimPasteboard(p.udid, parseParams(action, raw).text);
