@@ -510,7 +510,9 @@ const PROCEDURE_ACTIONS = [
 ] as const satisfies readonly HostActionName[];
 
 type ProcedureAction = (typeof PROCEDURE_ACTIONS)[number];
-type InvocationAction = Exclude<HostActionName, ProcedureAction | "app.install">;
+type PermissionRequestAction = "permissions.set" | "permissions.resetAll" | "permissions.list";
+type UnqueuedAction = Exclude<HostActionName, PermissionRequestAction>;
+type InvocationAction = Exclude<UnqueuedAction, ProcedureAction | "app.install">;
 
 function isProcedureAction(action: HostActionName): action is ProcedureAction {
   return PROCEDURE_ACTIONS.some((procedure) => procedure === action);
@@ -541,6 +543,26 @@ function parseParams<A extends HostActionName>(action: A, raw: unknown): ParamsF
     );
   }
   return result.data as ParamsFor<A>;
+}
+
+function parsePermissionRequest(
+  action: PermissionRequestAction,
+  raw: unknown,
+): { udid: string; bundleId?: string; args: string[] } {
+  switch (action) {
+    case "permissions.list": {
+      const p = parseParams(action, raw);
+      return { ...p, args: ["permissions", "list", ...(p.bundleId ? [p.bundleId] : [])] };
+    }
+    case "permissions.set": {
+      const p = parseParams(action, raw);
+      return { ...p, args: ["permissions", p.action, p.service, p.bundleId] };
+    }
+    case "permissions.resetAll": {
+      const p = parseParams(action, raw);
+      return { ...p, args: ["permissions", "reset", "all", p.bundleId] };
+    }
+  }
 }
 
 function buildInvocation(action: InvocationAction, raw: unknown, binPath: string): Invocation {
@@ -632,10 +654,6 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
       const p = parseParams(action, raw);
       return serveSim(["hinge", String(p.value), "-d", p.udid]);
     }
-    case "permissions.list": {
-      const p = parseParams(action, raw);
-      return serveSim(["permissions", "list", ...(p.bundleId ? [p.bundleId] : []), "-d", p.udid]);
-    }
     case "location.set": {
       const p = parseParams(action, raw);
       return simctl(["location", p.udid, "set", `${p.lat.toFixed(7)},${p.lng.toFixed(7)}`]);
@@ -722,14 +740,6 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
     case "camera.stopWebcam": {
       const p = parseParams(action, raw);
       return serveSim(["camera", "--stop-webcam", "-d", p.udid]);
-    }
-    case "permissions.set": {
-      const p = parseParams(action, raw);
-      return serveSim(["permissions", p.action, p.service, p.bundleId, "-d", p.udid]);
-    }
-    case "permissions.resetAll": {
-      const p = parseParams(action, raw);
-      return serveSim(["permissions", "reset", "all", p.bundleId, "-d", p.udid]);
     }
     case "app.container": {
       const p = parseParams(action, raw);
@@ -1075,29 +1085,27 @@ async function runProcedureAsync(
 }
 
 async function runHostActionUnqueuedAsync(
-  msg: HostActionRequest,
+  action: UnqueuedAction,
+  params: unknown,
   binPath: string,
   streamSettings?: StreamSettings,
   deviceName?: (udid: string) => string | undefined,
 ): Promise<HostActionResult> {
-  const { action, params } = msg;
-  if (typeof action !== "string" || !isHostActionName(action)) {
-    throw new InvalidHostActionError(`unknown action ${String(action)}`);
-  }
-  let result: HostActionResult;
   if (action === "app.install") {
     const p = parseParams(action, params);
-    result = await timeStartup(
+    return timeStartup(
       action,
       () => runProcedureAsync(action, params, streamSettings, binPath, deviceName),
       p.udid,
       { deviceName: deviceName?.(p.udid), isSuccessful: (value) => value.exitCode === 0 },
     );
-  } else {
-    result = await (isProcedureAction(action)
-      ? runProcedureAsync(action, params, streamSettings, binPath, deviceName)
-      : runInvocation(buildInvocation(action, params, binPath)));
   }
+  return isProcedureAction(action)
+    ? runProcedureAsync(action, params, streamSettings, binPath, deviceName)
+    : runInvocation(buildInvocation(action, params, binPath));
+}
+
+function publicActionResult(result: HostActionResult): HostActionResult {
   // exec-ws spreads this into its reply. Keep the explicit public result fields;
   // `timedOut` stays internal, while screenshot metadata accompanies the path.
   const { stdout, stderr, exitCode, metadata } = result;
@@ -1114,14 +1122,19 @@ export async function runHostActionAsync(
   streamSettings?: StreamSettings,
   deviceName?: (udid: string) => string | undefined,
 ): Promise<HostActionResult> {
-  const run = () => runHostActionUnqueuedAsync(msg, binPath, streamSettings, deviceName);
+  const { action, params } = msg;
+  if (typeof action !== "string" || !isHostActionName(action)) {
+    throw new InvalidHostActionError(`unknown action ${String(action)}`);
+  }
   if (
-    msg.action !== "permissions.set" &&
-    msg.action !== "permissions.resetAll" &&
-    msg.action !== "permissions.list"
+    action !== "permissions.set" &&
+    action !== "permissions.resetAll" &&
+    action !== "permissions.list"
   )
-    return run();
-  const params = parseParams(msg.action, msg.params);
+    return publicActionResult(
+      await runHostActionUnqueuedAsync(action, params, binPath, streamSettings, deviceName),
+    );
+  const { udid: requestedDevice, bundleId: key, args } = parsePermissionRequest(action, params);
   let expired = false;
   let waitingTimer: ReturnType<typeof setTimeout> | undefined;
   const waitingDeadline = performance.now() + PERMISSION_WRITE_WAIT_MS;
@@ -1130,7 +1143,7 @@ export async function runHostActionAsync(
       `Permission write timed out waiting after ${PERMISSION_WRITE_WAIT_MS}ms; it was not started.`,
     );
   const expiry =
-    msg.action === "permissions.list"
+    action === "permissions.list"
       ? undefined
       : new Promise<never>((_, reject) => {
           waitingTimer = setTimeout(() => {
@@ -1145,10 +1158,10 @@ export async function runHostActionAsync(
     const device = await import("./device");
     // An unscoped list reads persisted TCC state and also works for shutdown devices.
     const resolve =
-      msg.action === "permissions.list" && !params.bundleId
+      action === "permissions.list" && key === undefined
         ? device.resolveDeviceAsync
         : device.resolveBootedDeviceAsync;
-    const udid = await resolve(params.udid).catch((error: unknown) => {
+    const udid = await resolve(requestedDevice).catch((error: unknown) => {
       if (error instanceof device.DeviceResolutionError)
         throw new InvalidHostActionError(error.message);
       console.error("Permission device lookup failed:", error);
@@ -1156,7 +1169,6 @@ export async function runHostActionAsync(
         "Could not resolve the Simulator device. Check the host logs.",
       );
     });
-    const key = params.bundleId;
     const requests =
       permissionRequests.get(udid) ?? new Map<string | undefined, Promise<unknown>>();
     // Device-wide reads form a barrier across apps; otherwise unrelated apps stay concurrent.
@@ -1165,12 +1177,7 @@ export async function runHostActionAsync(
     const current = Promise.all(previous.map((request) => request?.catch(() => {}))).then(() => {
       clearTimeout(waitingTimer);
       if (expiry && (expired || performance.now() >= waitingDeadline)) throw waitingError();
-      return runHostActionUnqueuedAsync(
-        { ...msg, params: { ...params, udid } },
-        binPath,
-        streamSettings,
-        deviceName,
-      );
+      return runInvocation(serveSimInvocation(binPath, [...args, "-d", udid]));
     });
     requests.set(key, current);
     permissionRequests.set(udid, requests);
@@ -1192,5 +1199,5 @@ export async function runHostActionAsync(
     })
     .finally(() => clearTimeout(waitingTimer));
   // Expiry answers the caller immediately; the queue retains its slot until earlier work ends.
-  return expiry ? Promise.race([completion, expiry]) : completion;
+  return publicActionResult(await (expiry ? Promise.race([completion, expiry]) : completion));
 }

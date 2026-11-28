@@ -74,21 +74,19 @@ export async function resolveBootedDeviceAsync(nameOrUDID: string): Promise<stri
 export async function resolveDeviceAsync(nameOrUDID: string, bootedOnly = false): Promise<string> {
   if (/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID))
     return nameOrUDID.toUpperCase();
+  const name = nameOrUDID.toLowerCase();
+  const bootedAlias = name === "booted";
   const { devices } = JSON.parse(
-    await simctl(["list", "devices", ...(bootedOnly ? ["booted"] : []), "-j"]),
+    await simctl(["list", "devices", ...(bootedOnly && !bootedAlias ? ["booted"] : []), "-j"]),
   ) as {
     devices: Record<string, Array<{ udid: string; name: string; state: string }>>;
   };
-  const named = Object.values(devices)
-    .flat()
-    .filter(
-      (device) =>
-        nameOrUDID.toLowerCase() === "booted" ||
-        device.name.toLowerCase() === nameOrUDID.toLowerCase(),
-    );
-  const booted = named.filter((device) => device.state === "Booted");
-  const matches =
-    bootedOnly || nameOrUDID.toLowerCase() === "booted" || booted.length ? booted : named;
+  const all = Object.values(devices).flat();
+  // @ref LLP 0003.000#ordered-requests-and-authoritative-browser-state — a literal Booted name wins over the alias
+  const named = all.filter((device) => device.name.toLowerCase() === name);
+  const candidates = bootedAlias && named.length === 0 ? all : named;
+  const booted = candidates.filter((device) => device.state === "Booted");
+  const matches = bootedOnly || booted.length > 0 ? booted : named;
   if (matches.length !== 1)
     throw new DeviceResolutionError(
       matches.length

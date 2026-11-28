@@ -694,6 +694,42 @@ it("unscoped permission listing resolves shutdown names and prefers a unique boo
   }
 });
 
+it("resolves Booted as a literal device name before using the alias", async () => {
+  const sim = await import("../simctl");
+  const device = await import("../device");
+  const literal = {
+    name: "Booted",
+    udid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+    state: "Shutdown",
+  };
+  const running = {
+    name: "Other phone",
+    udid: "BBBBBBBB-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+    state: "Booted",
+  };
+  const lookup = spyOn(sim, "simctl").mockImplementation(async (args) => {
+    const devices = [literal, running];
+    return JSON.stringify({
+      devices: {
+        runtime: args.includes("booted") ? devices.filter((d) => d.state === "Booted") : devices,
+      },
+    });
+  });
+  try {
+    expect(await device.resolveDeviceAsync("booted")).toBe(literal.udid);
+    await expect(device.resolveBootedDeviceAsync("Booted")).rejects.toBeInstanceOf(
+      device.DeviceResolutionError,
+    );
+    literal.state = "Booted";
+    expect(await device.resolveBootedDeviceAsync("Booted")).toBe(literal.udid);
+    literal.name = "Former literal";
+    literal.state = "Shutdown";
+    expect(await device.resolveBootedDeviceAsync("booted")).toBe(running.udid);
+  } finally {
+    lookup.mockRestore();
+  }
+});
+
 it("permission readback and later writes wait for an outstanding host mutation", async () => {
   const dir = mkdtempSync(join(tmpdir(), "permission-order-"));
   const events = join(dir, "events");
