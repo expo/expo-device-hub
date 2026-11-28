@@ -73,13 +73,18 @@ async function setup(client: DeviceClient) {
       act(async () =>
         root.findByProps({ "aria-label": label }).props.onChange({ currentTarget: { value } }),
       ),
-    paste: (label: string, value: string) =>
-      act(async () =>
+    paste: async (label: string, value: string) => {
+      let canceled = false;
+      await act(async () =>
         root.findByProps({ "aria-label": label }).props.onPaste({
           clipboardData: { getData: () => value },
-          preventDefault() {},
+          preventDefault() {
+            canceled = true;
+          },
         }),
-      ),
+      );
+      return canceled;
+    },
     choose: (value: string) =>
       act(async () =>
         root
@@ -255,8 +260,8 @@ test("a multiline paste blocks writes until both identifiers are corrected", asy
   await s.type("Keychain key", "token");
   await s.type("Keychain value", "synthetic");
 
-  await s.paste("Keychain service", "auth\r\nv2");
-  await s.paste("Keychain key", "token\nv2");
+  expect(await s.paste("Keychain service", "auth\r\nv2")).toBe(true);
+  expect(await s.paste("Keychain key", "token\nv2")).toBe(true);
   expect(s.text()).toContain("Enter a service on one line.");
   expect(s.text()).toContain("Enter a key on one line.");
   expect(s.button("List keys")!.props.disabled).toBe(true);
@@ -271,6 +276,7 @@ test("a multiline paste blocks writes until both identifiers are corrected", asy
 
   await s.type("Keychain service", " auth ");
   expect(s.button("Set")!.props.disabled).toBe(true);
+  expect(await s.paste("Keychain key", " token ")).toBe(false);
   await s.type("Keychain key", " token ");
   expect(s.button("Set")!.props.disabled).toBe(false);
   await s.click("Set");
