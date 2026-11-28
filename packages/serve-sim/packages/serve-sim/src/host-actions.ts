@@ -1157,18 +1157,20 @@ export async function runHostActionAsync(
     // earlier name lookup. Only admission is global, execution stays per app.
     const device = await import("./device");
     // An unscoped list reads persisted TCC state and also works for shutdown devices.
-    const resolve =
-      action === "permissions.list" && key === undefined
-        ? device.resolveDeviceAsync
-        : device.resolveBootedDeviceAsync;
-    const udid = await resolve(requestedDevice).catch((error: unknown) => {
-      if (error instanceof device.DeviceResolutionError)
-        throw new InvalidHostActionError(error.message);
-      console.error("Permission device lookup failed:", error);
-      throw new InvalidHostActionError(
-        "Could not resolve the Simulator device. Check the host logs.",
-      );
-    });
+    const udid = await device
+      .resolveDeviceAsync(requestedDevice, {
+        bootedOnly: action !== "permissions.list" || key !== undefined,
+        // @ref LLP 0003.000#ordered-requests-and-authoritative-browser-state — preserve literal device names for permissions
+        preferLiteralBootedName: true,
+      })
+      .catch((error: unknown) => {
+        if (error instanceof device.DeviceResolutionError)
+          throw new InvalidHostActionError(error.message);
+        console.error("Permission device lookup failed:", error);
+        throw new InvalidHostActionError(
+          "Could not resolve the Simulator device. Check the host logs.",
+        );
+      });
     const requests =
       permissionRequests.get(udid) ?? new Map<string | undefined, Promise<unknown>>();
     // Device-wide reads form a barrier across apps; otherwise unrelated apps stay concurrent.

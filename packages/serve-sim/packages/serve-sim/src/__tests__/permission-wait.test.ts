@@ -90,7 +90,7 @@ test("a write that expires during name resolution never starts after resolution 
   const identity = new Promise<string>((resolve) => {
     resolveName = resolve;
   });
-  const lookup = spyOn(device, "resolveBootedDeviceAsync").mockImplementation(() => {
+  const lookup = spyOn(device, "resolveDeviceAsync").mockImplementation(() => {
     entered = true;
     return identity;
   });
@@ -147,7 +147,7 @@ test("a queued write checks elapsed time even when its wait timer is delayed", a
   const identity = new Promise<string>((resolve) => {
     admit = resolve;
   });
-  const lookup = spyOn(device, "resolveBootedDeviceAsync").mockReturnValue(identity);
+  const lookup = spyOn(device, "resolveDeviceAsync").mockReturnValue(identity);
   let now = 0;
   const clock = spyOn(performance, "now").mockImplementation(() => now);
   try {

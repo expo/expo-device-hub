@@ -716,15 +716,20 @@ it("resolves Booted as a literal device name before using the alias", async () =
     });
   });
   try {
-    expect(await device.resolveDeviceAsync("booted")).toBe(literal.udid);
-    await expect(device.resolveBootedDeviceAsync("Booted")).rejects.toBeInstanceOf(
-      device.DeviceResolutionError,
-    );
+    const options = { preferLiteralBootedName: true };
+    const bootedOnly = { ...options, bootedOnly: true };
+    expect(await device.resolveDeviceAsync("booted", options)).toBe(literal.udid);
+    await expect(
+      runHostActionAsync(
+        { action: "permissions.resetAll", params: { udid: "Booted", bundleId: "dev.expo.test" } },
+        BIN,
+      ),
+    ).rejects.toThrow("No booted simulator matches that device name.");
     literal.state = "Booted";
-    expect(await device.resolveBootedDeviceAsync("Booted")).toBe(literal.udid);
+    expect(await device.resolveDeviceAsync("Booted", bootedOnly)).toBe(literal.udid);
     literal.name = "Former literal";
     literal.state = "Shutdown";
-    expect(await device.resolveBootedDeviceAsync("booted")).toBe(running.udid);
+    expect(await device.resolveDeviceAsync("booted", bootedOnly)).toBe(running.udid);
   } finally {
     lookup.mockRestore();
   }
@@ -742,7 +747,7 @@ it("permission readback and later writes wait for an outstanding host mutation",
   const identity = new Promise<string>((resolve) => {
     admit = resolve;
   });
-  const resolve = spyOn(device, "resolveBootedDeviceAsync").mockImplementation(async (value) =>
+  const resolve = spyOn(device, "resolveDeviceAsync").mockImplementation(async (value) =>
     value === "delayed-alias"
       ? identity
       : value === "ordered-alias"
