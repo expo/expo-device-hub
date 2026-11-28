@@ -25,6 +25,7 @@ const device = pinned ? booted.find(({ udid }) => udid === pinned) : booted[0];
 assert(device, "The selected iOS Simulator is not booted");
 const state = await mkdtemp(join(tmpdir(), "hub-capability-opt-out-"));
 const hubStateDir = join(state, "hub");
+const simStateDir = join(state, "serve-sim");
 const hub = Bun.spawn(
   [
     "node",
@@ -47,7 +48,7 @@ const hub = Bun.spawn(
     env: {
       ...process.env,
       EXPO_DEVICE_HUB_STATE_DIR: hubStateDir,
-      SERVE_SIM_STATE_DIR: join(state, "serve-sim"),
+      SERVE_SIM_STATE_DIR: simStateDir,
       SERVE_SIM_CAPTURE_CA_DIR: join(state, "capture-ca"),
       // Exercise the fallback decision without relying on pbpaste to fail on a given iOS runtime.
       SERVE_SIM_SKIP_PBPASTE: "1",
@@ -76,9 +77,41 @@ try {
   const { url, token } = await waitForHub();
   assert(token, "The Hub did not publish an authentication token");
   const preview = new URL("/vendor/serve-sim/", url);
+  const headers = { Authorization: `Bearer ${token}`, Origin: preview.origin };
+  // The device-start route waits for capability setup before it publishes the preview.
+  const start = await fetch(new URL("grid/api/start", preview), {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ udid: device.udid }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  assert.deepEqual(await start.json(), { ok: true });
+  const config = await fetch(new URL("api", preview), {
+    headers,
+    signal: AbortSignal.timeout(10_000),
+  });
+  assert.equal(config.status, 200);
+  const { device: previewDevice, keychain } = await config.json();
+  assert.equal(previewDevice, device.udid);
+  assert.equal(keychain, undefined, "The disabled Keychain must be absent from preview config");
+  const launch = await readFile(join(simStateDir, `launch-${device.udid}.json`), "utf8").catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return "{}";
+      throw error;
+    },
+  );
+  const { capabilities } = JSON.parse(launch);
+  assert.equal(
+    capabilities?.clipboard,
+    undefined,
+    "Preview setup registered the disabled clipboard",
+  );
+  assert.equal(capabilities?.keychain, undefined, "Preview setup registered the disabled Keychain");
+  console.log("Hub opt-outs: opening the preview did not register either helper");
+
   const http = await fetch(new URL("api/pasteboard", preview), {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, Origin: preview.origin },
+    headers,
     signal: AbortSignal.timeout(10_000),
   });
   assert.equal(http.status, 503);
