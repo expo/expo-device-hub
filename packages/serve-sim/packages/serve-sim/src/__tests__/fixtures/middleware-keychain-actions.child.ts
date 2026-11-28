@@ -85,6 +85,36 @@ for (const [action, params] of [
   });
 }
 
+test("the first Controls action can disable Keychain on an opened standalone device", async () => {
+  const state = useTempStateDir();
+  const dylib = spyOn(simKeychain, "locateKeychainDylib").mockReturnValue("/test/keychain.dylib");
+  const configure = spyOn(launchManager, "configureCapability").mockResolvedValue(undefined);
+  const middleware = simMiddleware({
+    ...OPTIONS,
+    singleDevice: UDID,
+    openedDevices: [UDID.toLowerCase()],
+  });
+  try {
+    const reply = await connection(middleware)("capabilities.set", {
+      udid: undefined,
+      name: "keychain",
+      enabled: false,
+    });
+    expect(reply).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(configure).toHaveBeenCalledTimes(1);
+    expect(configure).toHaveBeenCalledWith(
+      UDID,
+      simKeychain.keychainCapability,
+      expect.objectContaining({ enabled: false }),
+    );
+  } finally {
+    await middleware.dispose();
+    configure.mockRestore();
+    dylib.mockRestore();
+    state.restore();
+  }
+});
+
 test.each([
   { name: "the first keychain action waits for middleware setup", failSetup: false },
   { name: "failed middleware setup refuses the keychain action", failSetup: true },

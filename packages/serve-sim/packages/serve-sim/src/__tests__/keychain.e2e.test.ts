@@ -613,8 +613,21 @@ describeOrSkip("keychain round trip", () => {
     }
     try {
       expect(await nextReply<{ ready: boolean }>()).toMatchObject({ ready: true });
+      const toggle = async (id: number, enabled: boolean) => {
+        const { stdout } = await call(id, "capabilities.set", { name: "keychain", enabled });
+        expect(JSON.parse(stdout)).toMatchObject({
+          capabilities: expect.arrayContaining([{ name: "keychain", enabled }]),
+        });
+      };
+      // Exercise standalone Controls before any page, config, or Keychain request initializes it.
+      try {
+        await toggle(1, false);
+      } finally {
+        await toggle(2, true);
+      }
+
       const beforeWrite = seenValues().length;
-      const { stdout: written } = await call(1, "keychain.set", {
+      const { stdout: written } = await call(3, "keychain.set", {
         bundleId: APP,
         values: { [KEY]: value },
       });
@@ -630,26 +643,20 @@ describeOrSkip("keychain round trip", () => {
       events.send(JSON.stringify({ sub: 1, path: "/api/events" }));
       await waitForKeychainConfig(true);
 
-      const toggle = async (id: number, enabled: boolean) => {
-        const { stdout } = await call(id, "capabilities.set", { name: "keychain", enabled });
-        expect(JSON.parse(stdout)).toMatchObject({
-          capabilities: expect.arrayContaining([{ name: "keychain", enabled }]),
-        });
-      };
       try {
-        await toggle(2, false);
+        await toggle(4, false);
         await waitForKeychainConfig(false);
-        const refused = await call(3, "keychain.list", { bundleId: APP }, 1);
+        const refused = await call(5, "keychain.list", { bundleId: APP }, 1);
         expect(refused.stderr).toContain("Keychain access is off");
       } finally {
-        await toggle(4, true);
+        await toggle(6, true);
       }
       await waitForKeychainConfig(true);
-      const listed = await call(5, "keychain.list", { bundleId: APP });
+      const listed = await call(7, "keychain.list", { bundleId: APP });
       expect(JSON.parse(listed.stdout)).toEqual({ keys: [KEY] });
 
       const beforeDelete = seenValues().length;
-      const { stdout: removed } = await call(6, "keychain.delete", {
+      const { stdout: removed } = await call(8, "keychain.delete", {
         bundleId: APP,
         keys: [KEY],
       });

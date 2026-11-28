@@ -824,7 +824,10 @@ The middleware sets up the `clipboard` and `keychain` capabilities on each devic
 `capabilities.set` takes `{udid, name, enabled}`, where `name` is `clipboard` or `keychain`.
 It switches that capability on one device the middleware opened. The choice lasts until the
 server stops and survives setup checks and a Simulator reboot. A setup owned by another running
-process stays in place. Each choice updates the preview config on open `/api/events` streams.
+process stays in place. Devices opened at standalone startup can be switched on the first
+Controls request. Each successful change updates the preview config on open `/api/events` streams.
+If a change for that device and capability is already running, the next request returns an error
+and asks the client to retry. A failed change leaves the previous choice in effect.
 
 Disabling closes admission and waits for admitted Keychain calls or clipboard app reads before
 acknowledging. During the wait, a concurrent list or config read shows the new choice. With

@@ -1505,6 +1505,8 @@ export interface SimMiddlewareOptions {
   prepareForAdoption?: boolean;
   /** Base path to serve the preview at. Default: "/.sim" */
   basePath?: string;
+  /** Devices the standalone owner already opened before mounting the preview. */
+  openedDevices?: readonly string[];
   /** Pin this preview server to a specific simulator UDID. */
   device?: string;
   /** Restrict every route and control action to this simulator UDID. */
@@ -2021,11 +2023,13 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   let networkCapture = options?.networkCapture ?? false;
   let sessionConfigured = false;
   captureRuntime.setUpstream(parseCaptureProxy(options?.networkCaptureProxy));
+  const openedDevices = new Set(options?.openedDevices?.map((udid) => udid.toUpperCase()));
   const clipboardOption = options?.clipboard ?? true;
   const clipboard =
     clipboardOption === "unmanaged"
       ? null
       : createCapabilitySession(clipboardCapability, clipboardOption, {
+          openedDevices,
           // @ref LLP 0010#reading-when-simctl-pbpaste-fails — explicit Clipboard opt-out removes an existing reader.
           preserveForeignOwnerOnDisable: false,
         });
@@ -2036,7 +2040,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const keychain =
     keychainOption === "unmanaged" || (keychainOption === true && !keychainAdvertised)
       ? null
-      : createCapabilitySession(keychainCapability, keychainOption);
+      : createCapabilitySession(keychainCapability, keychainOption, { openedDevices });
   // Open /api/events streams, which a capability choice changes without a state-file event.
   const configListeners = new Set<() => void>();
   const capabilities = createCapabilityController({ clipboard, keychain }, () => {
@@ -3693,6 +3697,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       );
     }
     signal?.throwIfAborted();
+    if (selectedDevice) openedDevices.add(selectedDevice.toUpperCase());
     awaitingAdoption = false;
     configuringSession = false;
   };

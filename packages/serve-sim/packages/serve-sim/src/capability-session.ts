@@ -98,7 +98,12 @@ export function createCapabilitySession(
   {
     now = Date.now,
     preserveForeignOwnerOnDisable = true,
-  }: { now?: () => number; preserveForeignOwnerOnDisable?: boolean } = {},
+    openedDevices = new Set<string>(),
+  }: {
+    now?: () => number;
+    preserveForeignOwnerOnDisable?: boolean;
+    openedDevices?: Set<string>;
+  } = {},
 ) {
   // Pages, /api polls, and config requests all call initialize(). After a setup succeeds, the launchd
   // check (two simctl spawns) runs at most once per RECHECK_MS per device. That check is what repairs
@@ -108,7 +113,13 @@ export function createCapabilitySession(
   let disposed = false;
   // Per-device choices from `setEnabled`; the periodic check keeps them rather than `enabled`.
   const choices = new Map<string, boolean>();
-  const wanted = (udid: string) => !disposed && (choices.get(udid.toUpperCase()) ?? enabled);
+  // @ref LLP 0003#capability-actions — admission and setup change together.
+  const changes = new Map<string, boolean>();
+  function wanted(udid: string): boolean {
+    udid = udid.toUpperCase();
+    // A disable closes admission as it drains. An enable opens admission after setup succeeds.
+    return !disposed && changes.get(udid) !== false && (choices.get(udid) ?? enabled);
+  }
   const keepForeignOwnerOnDisable = enabled || preserveForeignOwnerOnDisable;
   // A running process that set the capability up would set it up again on its next check, so
   // turning it off here leaves that record; this server's own actions still refuse it.
@@ -141,9 +152,9 @@ export function createCapabilitySession(
   }
 
   /** Whether the last setup still holds, so a call can share it instead of starting another. */
-  function stillHolds(udid: string, previous: DeviceSetup): boolean {
+  function stillHolds(udid: string, previous: DeviceSetup, want: boolean): boolean {
     if (!previous.done) return true;
-    if (!wanted(udid))
+    if (!want)
       return (
         readLaunchState(udid)?.capabilities[definition.name]?.ownerPid ===
         previous.preservedOwnerPid
@@ -151,20 +162,24 @@ export function createCapabilitySession(
     return now() - previous.checkedAt < RECHECK_MS && isCapabilityEnabled(udid, definition.name);
   }
 
-  /**
-   * `force` is for a reboot, which clears launchd, and for a new choice, which reverses the last
-   * one: it skips the retry wait and the shared setup, and runs after any setup still running.
-   */
   function initialize(udid: string, force = false): Promise<void> {
     udid = udid.toUpperCase();
     if (disposed) return Promise.resolve();
+    openedDevices.add(udid);
+    const previous = devices.get(udid);
+    // A background recheck must share setup while a requested change is applying.
+    if (changes.has(udid) && previous) return previous.work;
+    return applySetup(udid, force, wanted(udid));
+  }
+
+  // A reboot or an explicit change skips backoff and runs after any pending setup.
+  function applySetup(udid: string, force: boolean, want: boolean): Promise<void> {
     if (!force && now() < (failures.get(udid)?.retryAt ?? 0)) return Promise.resolve();
-    const want = wanted(udid);
     const previous = devices.get(udid);
     // Disable removes setup after admitted operations drain. Polling and preparation may still
     // share an in-flight setup, but must not turn it off underneath those operations.
     if (!want && operations.get(udid)?.size) return previous?.work ?? Promise.resolve();
-    if (previous && !force && stillHolds(udid, previous)) return previous.work;
+    if (previous && !force && stillHolds(udid, previous, want)) return previous.work;
     const earlier = previous && !previous.done ? previous.work.catch(() => {}) : undefined;
     const entry: DeviceSetup = { work: Promise.resolve(), done: false, checkedAt: 0 };
     entry.work = (async () => {
@@ -237,15 +252,24 @@ export function createCapabilitySession(
           `This server started with ${definition.name} disabled. Restart it without --disable ${definition.name} to turn it on.`,
         );
       }
-      if (!devices.has(udid) && !failures.has(udid)) {
+      if (!openedDevices.has(udid)) {
         throw new Error(`This server has not opened ${udid}.`);
       }
-      choices.set(udid, value);
-      // Close admission first, then drain before completing the disable.
-      // Action failures remain with their callers and do not prevent disabling.
-      if (!value) await Promise.allSettled(operations.get(udid) ?? []);
-      if (disposed) throw new Error(`The ${definition.name} session has ended.`);
-      await initialize(udid, true);
+      if (changes.has(udid)) {
+        throw new Error(
+          `A ${definition.name} change is in progress for ${udid}. Retry when it finishes.`,
+        );
+      }
+      changes.set(udid, value);
+      try {
+        // Action failures remain with their callers and do not prevent disabling.
+        if (!value) await Promise.allSettled(operations.get(udid) ?? []);
+        if (disposed) throw new Error(`The ${definition.name} session has ended.`);
+        await applySetup(udid, true, value);
+        choices.set(udid, value);
+      } finally {
+        changes.delete(udid);
+      }
     },
     async dispose(): Promise<void> {
       disposed = true;

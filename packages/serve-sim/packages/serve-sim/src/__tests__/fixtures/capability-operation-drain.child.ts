@@ -153,6 +153,49 @@ describe("capability operation draining", () => {
     },
   );
 
+  test("rejects enable while a disable is draining, then accepts a retry", async () => {
+    const { session, controller } = await managedSession();
+    const resume = deferred();
+    const operation = controller.run(UDID, "keychain", () => resume.promise);
+    const disabling = controller.set(UDID, "keychain", false);
+    try {
+      await expect(controller.set(UDID, "keychain", true)).rejects.toThrow("change is in progress");
+      expect(controller.list(UDID)).toEqual([{ name: "keychain", enabled: false }]);
+      resume.resolve();
+      await disabling;
+      expect(controller.list(UDID)).toEqual([{ name: "keychain", enabled: false }]);
+      await controller.set(UDID, "keychain", true);
+      expect(controller.list(UDID)).toEqual([{ name: "keychain", enabled: true }]);
+    } finally {
+      resume.resolve();
+      await Promise.allSettled([operation, disabling]);
+      await session.dispose();
+    }
+  });
+
+  test("a failed enable leaves the capability off after the next boot", async () => {
+    const { session, controller, configure } = await managedSession();
+    try {
+      await controller.set(UDID, "keychain", false);
+      configure.mockRejectedValueOnce(
+        new Error("Unable to perform operation because device is not booted"),
+      );
+      await expect(controller.set(UDID, "keychain", true)).rejects.toThrow("device is not booted");
+      expect(session.allows(UDID)).toBe(false);
+      await session.initialize(UDID, true);
+      expect(configure).toHaveBeenLastCalledWith(
+        UDID,
+        keychainCapability,
+        expect.objectContaining({ enabled: false }),
+      );
+      expect(controller.list(UDID)).toEqual([{ name: "keychain", enabled: false }]);
+      await controller.set(UDID, "keychain", true);
+      expect(controller.list(UDID)).toEqual([{ name: "keychain", enabled: true }]);
+    } finally {
+      await session.dispose();
+    }
+  });
+
   test("disable drains action preparation before removing setup", async () => {
     const { session, controller, configure } = await managedSession();
     const entered = deferred();
