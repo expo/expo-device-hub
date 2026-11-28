@@ -231,12 +231,14 @@ The lock is temporary. The team plans to record the screen in a way that survive
 
 The standalone preview reads `permissions.list` when its permission section opens,
 after a write, on focus and every five seconds while open. It reads services again
-after reload instead of treating the command acknowledgement as state. It rejects
-retired reads, coalesces reads per target and keeps mutation failures visible
-when the permission section is collapsed and reopened. Mutation errors clear on target changes
-or a new write, while a successful refresh clears only read errors. A failed
-read keeps the last confirmed rows for that target and shows its error alongside
-any mutation error. A pending write clears only after a successful readback.
+after reload instead of treating the command acknowledgement as state. A poll or
+focus event skips a read already in progress for the current view. Reopening the
+section discards replies from the previous view and requests a fresh read when
+no write is active. Mutation failures stay visible across collapse and reopen.
+A target change or a new write clears them. A successful refresh clears read
+errors. A failed read keeps the last confirmed rows for that target and shows
+its error alongside any mutation error. A pending write clears only after a
+successful readback.
 The preview waits up to 135 seconds per request so a silent socket cannot prevent
 later recovery reads.
 Location Always has a separate selection, including Reset for undetermined state.
