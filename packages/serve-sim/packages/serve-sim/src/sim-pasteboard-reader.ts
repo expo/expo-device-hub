@@ -77,7 +77,7 @@ async function readPasteboardOnce(udid: string, appReader: boolean): Promise<Pas
       debugPasteboard("simctl pbpaste failed on %s: %s", udid, error);
     }
   }
-  // Another process's reader can still be in place, so this server's choice is checked here.
+  // @ref LLP 0010#the-pasteboard-grant-stays — another process's reader can still be in place.
   if (!appReader) {
     throw new PasteboardUnavailableError(
       "Clipboard reader is off on this server, by --disable clipboard.",

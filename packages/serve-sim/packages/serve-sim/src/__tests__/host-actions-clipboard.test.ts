@@ -3,6 +3,7 @@ import { describeHostActions, runHostActionAsync } from "../host-actions";
 import * as pasteboard from "../sim-pasteboard";
 import * as reader from "../sim-pasteboard-reader";
 import * as sessions from "../device-session";
+import { runChildSuite } from "./fixtures/run-child-suite";
 import { UDID } from "./helpers";
 
 const restores: (() => void)[] = [];
@@ -38,19 +39,12 @@ describe("clipboard host actions", () => {
   });
 
   test("passes the owning server's clipboard reader opt-out", async () => {
-    const read = spyOn(reader, "readSimPasteboardResult").mockResolvedValue({ text: "test" });
-    restores.push(() => read.mockRestore());
-    const result = await runHostActionAsync(
-      { action: "clipboard.read", params: { udid: UDID } },
-      "false",
-      undefined,
-      undefined,
-      undefined,
-      false,
-    );
-    expect(result.exitCode).toBe(0);
-    expect(read).toHaveBeenCalledWith(UDID, { appReader: false });
-  });
+    const { exitCode, output } = await runChildSuite("clipboard-opt-out.child.ts", {
+      timeoutMs: 10_000,
+    });
+    expect(exitCode, output).toBe(0);
+    expect(output).toContain("1 pass");
+  }, 15_000);
 
   test("writes empty and multiline Unicode text without putting it in argv", async () => {
     const write = spyOn(pasteboard, "writeSimPasteboard").mockResolvedValue(undefined);

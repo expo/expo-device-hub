@@ -2,4 +2,4 @@
 "@expo/serve-sim": patch
 ---
 
-Keep clipboard reads on `simctl pbpaste` when the app clipboard reader is disabled.
+Use only `simctl pbpaste` for ordinary clipboard reads when the in-app reader is disabled.

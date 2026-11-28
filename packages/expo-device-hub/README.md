@@ -114,8 +114,8 @@ is repeatable:
 npx expo-device-hub --disable keychain
 ```
 
-Without `clipboard`, clipboard reads use only `simctl pbpaste`. Without `keychain`, the Keychain
-section does not show.
+With `clipboard` disabled, ordinary reads use only `simctl pbpaste`. Copy still uses its separate
+Simulator helper. With `keychain` disabled, the Keychain section is hidden.
 
 ### Restrict a session to one device
 
