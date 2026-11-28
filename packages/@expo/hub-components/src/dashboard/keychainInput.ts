@@ -76,7 +76,7 @@ export function parseKeychainDraft(key: string, value: string): KeychainDraft {
   return { ok: true, values: Object.fromEntries(entries) as Record<string, string> };
 }
 
-/** Show significant whitespace without changing the identifier sent to Keychain. */
+/** @ref LLP 0020#hub-ui — show significant whitespace while sending the original identifier. */
 export function displayKeychainIdentifier(identifier: string): string {
   if (identifier === identifier.trim() && !/ {2,}|[^\S ]|"/.test(identifier)) return identifier;
   return JSON.stringify(identifier).replace(/\s/g, (space) => {

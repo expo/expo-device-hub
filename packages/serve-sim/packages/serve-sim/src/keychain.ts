@@ -97,7 +97,16 @@ const expoSecureStore: KeychainFormat = {
 const genericPassword: KeychainFormat = {
   service: "required",
   places: (key, options) => [withGroup({ service: options.service!, account: b64(key) }, options)],
-  keyOf: (item, options) => (item.service === options.service ? fromB64(item.account) : null),
+  // @ref LLP 0020#formats-the-cli-and-host-actions — listing must match the string-account query.
+  keyOf(item, options) {
+    if (item.service !== options.service || item.accountAsData) return null;
+    if (item.accountAsData === undefined) {
+      throw new Error(
+        "Reopen the app in an up-to-date serve-sim session to list Generic password keys.",
+      );
+    }
+    return fromB64(item.account);
+  },
   defaultAccessible: "afterFirstUnlock",
   checkKey: nonEmpty,
 };

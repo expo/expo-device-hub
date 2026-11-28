@@ -235,9 +235,14 @@ static NSDictionary *listItems(NSDictionary *operation) {
   NSMutableArray *items = [NSMutableArray array];
   for (NSDictionary *row in rows) {
     NSString *service = row[(__bridge id)kSecAttrService];
-    NSString *account = attributeBase64(row[(__bridge id)kSecAttrAccount]);
+    id accountAttribute = row[(__bridge id)kSecAttrAccount];
+    NSString *account = attributeBase64(accountAttribute);
     if (![service isKindOfClass:NSString.class] || account == nil) continue;
-    NSMutableDictionary *item = [@{@"service" : service, @"account" : account} mutableCopy];
+    NSMutableDictionary *item = [@{
+      @"service" : service,
+      @"account" : account,
+      @"accountAsData" : @([accountAttribute isKindOfClass:NSData.class]),
+    } mutableCopy];
     NSString *group = row[(__bridge id)kSecAttrAccessGroup];
     if ([group isKindOfClass:NSString.class]) item[@"accessGroup"] = group;
     [items addObject:item];

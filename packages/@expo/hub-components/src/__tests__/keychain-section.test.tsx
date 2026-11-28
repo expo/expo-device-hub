@@ -73,6 +73,13 @@ async function setup(client: DeviceClient) {
       act(async () =>
         root.findByProps({ "aria-label": label }).props.onChange({ currentTarget: { value } }),
       ),
+    paste: (label: string, value: string) =>
+      act(async () =>
+        root.findByProps({ "aria-label": label }).props.onPaste({
+          clipboardData: { getData: () => value },
+          preventDefault() {},
+        }),
+      ),
     choose: (value: string) =>
       act(async () =>
         root
@@ -236,6 +243,41 @@ test("distinguishes keys and services whose whitespace changes the target", asyn
   expect(s.text()).toContain(JSON.stringify("Delete token"));
   expect(s.text()).toContain(JSON.stringify('Delete "\\u0020token\\u0020"'));
   expect(calls.at(-1)?.options).toEqual({ format: "generic-password", service: " auth " });
+});
+
+test("a multiline paste blocks writes until both identifiers are corrected", async () => {
+  const { client, calls } = keychainClient({}, ["token"]);
+  const s = await setup(client);
+  await s.choose("generic-password");
+  await s.type("Keychain service", "auth");
+  await s.click("List keys");
+  await s.type("Keychain service", "other");
+  await s.type("Keychain key", "token");
+  await s.type("Keychain value", "synthetic");
+
+  await s.paste("Keychain service", "auth\r\nv2");
+  await s.paste("Keychain key", "token\nv2");
+  expect(s.text()).toContain("Enter a service on one line.");
+  expect(s.text()).toContain("Enter a key on one line.");
+  expect(s.button("List keys")!.props.disabled).toBe(true);
+  expect(s.button("Set")!.props.disabled).toBe(true);
+  expect(s.button("Set and relaunch")!.props.disabled).toBe(true);
+  expect(s.button("Delete")!.props.disabled).toBe(true);
+  const before = calls.length;
+  await s.click("Set");
+  await act(async () => s.field("Keychain service").props.onKeyDown({ key: "Enter" }));
+  await act(async () => s.field("Keychain key").props.onKeyDown({ key: "Enter" }));
+  expect(calls.length).toBe(before);
+
+  await s.type("Keychain service", " auth ");
+  expect(s.button("Set")!.props.disabled).toBe(true);
+  await s.type("Keychain key", " token ");
+  expect(s.button("Set")!.props.disabled).toBe(false);
+  await s.click("Set");
+  expect(calls.find((call) => call.fn === "set")).toMatchObject({
+    arg: { " token ": "synthetic" },
+    options: { format: "generic-password", service: " auth " },
+  });
 });
 
 test("a new format drops the note of a write in the old one", async () => {

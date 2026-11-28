@@ -53,7 +53,15 @@ const GROUP_FIXTURES = [
   { accessGroup: "SERVESIMFIX.dev.expo.serve-sim.launch-fixture", value: "before-default-group" },
   { accessGroup: "SERVESIMFIX.dev.expo.serve-sim.shared-fixture", value: "before-shared-group" },
 ];
+const MIXED_SERVICE = "serve-sim-mixed-accounts";
+const MIXED_ACCOUNTS = ["data-account", "string-account"].map((name) => ({
+  service: MIXED_SERVICE,
+  account: b64(name),
+  attributesAsData: name === "data-account",
+}));
+const MIXED_DELETES = MIXED_ACCOUNTS.map((item) => ({ op: "delete" as const, ...item }));
 const FIXTURE_DELETES: KeychainOperation[] = [
+  ...MIXED_DELETES,
   ...GROUP_FIXTURES.map(({ accessGroup }) => ({
     op: "delete" as const,
     ...GROUP_ITEM,
@@ -346,10 +354,54 @@ describeOrSkip("keychain round trip", () => {
     // Values are base64 on the wire, so check the shape rather than search for the text.
     for (const item of result?.items ?? []) {
       expect(
-        Object.keys(item).every((key) => ["service", "account", "accessGroup"].includes(key)),
+        Object.keys(item).every((key) =>
+          ["service", "account", "accountAsData", "accessGroup"].includes(key),
+        ),
       ).toBe(true);
     }
   }, 30_000);
+
+  test("generic-password lists and deletes string accounts while preserving data accounts", async () => {
+    launch();
+    const args = ["--format", "generic-password", "--service", MIXED_SERVICE];
+    try {
+      expect(
+        await runKeychainOperations(
+          udid!,
+          APP,
+          MIXED_ACCOUNTS.map((item) => ({ op: "set", ...item, data: b64("fixture") })),
+          { timeoutMs: 10_000 },
+        ),
+      ).toEqual({ applied: true, results: [{ status: 0 }, { status: 0 }] });
+
+      expect(keychainCli(["list", APP, ...args])).toMatchObject({
+        status: 0,
+        output: { keys: ["string-account"] },
+      });
+      expect(keychainCli(["delete", APP, "string-account", ...args])).toMatchObject({
+        status: 0,
+        output: { applied: true, keys: [{ key: "string-account", status: 0, ok: true }] },
+      });
+      const remaining = await runKeychainOperations(udid!, APP, [
+        { op: "list", service: MIXED_SERVICE },
+      ]);
+      expect(remaining).toMatchObject({
+        applied: true,
+        results: [
+          {
+            status: 0,
+            items: [{ service: MIXED_SERVICE, account: b64("data-account"), accountAsData: true }],
+          },
+        ],
+      });
+      expect(keychainCli(["list", APP, ...args])).toMatchObject({
+        status: 0,
+        output: { keys: [] },
+      });
+    } finally {
+      await runKeychainOperations(udid!, APP, MIXED_DELETES, { timeoutMs: 10_000 });
+    }
+  }, 60_000);
 
   test("a request made while the app is closed applies on its next launch", async () => {
     terminate();
