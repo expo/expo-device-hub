@@ -129,7 +129,7 @@ async function verifyHub(hubPackage: string, mode: "default" | "disabled"): Prom
       assert.notEqual(loaderConfig(), configPath, "Disabled preview published a loader config");
       assert.deepEqual(hubInserts(), [], "Disabled preview inserted bundled libraries");
       console.log("Hub opt-outs: opening the preview did not register either helper");
-      await verifyDisabledRequests(preview, token);
+      await verifyDisabledRequests(preview, token, udid);
     } else {
       assert.equal(loaderConfig(), configPath, "Default preview did not publish its loader config");
       const loader = "vendor/serve-sim/dist/capability-loader/libServeSimCapabilityLoader.dylib";
@@ -152,10 +152,11 @@ async function verifyHub(hubPackage: string, mode: "default" | "disabled"): Prom
   assert.deepEqual(hubInserts(), [], "Hub left bundled libraries inserted after shutdown");
 }
 
-async function verifyDisabledRequests(preview: URL, token: string): Promise<void> {
+async function verifyDisabledRequests(preview: URL, token: string, udid: string): Promise<void> {
   const headers = { Authorization: `Bearer ${token}`, Origin: preview.origin };
-  const clipboardError = "Clipboard reader is off on this server, by --disable clipboard.";
-  const keychainError = "The keychain capability is off on this server.";
+  const clipboardError =
+    "Clipboard reader is off on this server, by --disable clipboard or capabilities.set.";
+  const keychainError = `Keychain access is off for ${udid} on this server, by --disable keychain or capabilities.set.`;
   type Reply = { id: number; exitCode: number; stderr: string };
   let socket: WebSocket | undefined;
   try {

@@ -2073,6 +2073,7 @@ async function serve(
           });
         },
         device: targetDevice,
+        openedDevices: ownedDevices,
         prepareForAdoption: options.orphan,
         singleDevice: options.singleDevice,
         streamSettings: options.stream,

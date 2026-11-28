@@ -5,7 +5,7 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-18 (Android screenshot image options; Codex, directed by Gabe Debes), 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
+**Revised:** 2026-11-27 (Keychain and capability actions), 2026-11-18 (Android screenshot image options; Codex, directed by Gabe Debes), 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -810,11 +810,44 @@ reporting the last setup error until a retry succeeds [observed: `prepare` in
 These are in-process actions under the usual `/exec-ws` token and Origin policy, so
 values never reach a child process's arguments, and the event log does not record
 them. The preview config (`/api` and the inlined page config) has `keychain: true`
-unless the middleware runs with `keychain: false` (`--disable keychain`) or the
-keychain library is not built; a client shows keychain controls only then. A key that failed sets a nonzero `exitCode` and keeps the per-key results in
+unless the middleware runs with `keychain: false` (`--disable keychain`),
+`capabilities.set` turned keychain off for the device, the keychain library is
+not built, or, in a stream helper (`"unmanaged"`), no session set keychain up on the device; a client shows keychain controls only then. A key that failed sets a nonzero `exitCode` and keeps the per-key results in
 `stdout`; other errors return a nonzero `exitCode` and `stderr` [observed:
 `runKeychainAction` in `src/host-actions.ts`]. See
 [LLP 0020](0020-serve-sim-keychain.explainer.md).
+
+### Capability actions
+
+The middleware sets up the `clipboard` and `keychain` capabilities on each device it opens
+([LLP 0010](0010-serve-sim-clipboard.explainer.md), [LLP 0020](0020-serve-sim-keychain.explainer.md)).
+`capabilities.set` takes `{udid, name, enabled}`, where `name` is `clipboard` or `keychain`.
+It switches that capability on one device the middleware opened. The choice lasts until the
+server stops and survives setup checks and a Simulator reboot. A setup owned by another running
+process stays in place. Devices opened at standalone startup can be switched on the first
+Controls request. Each successful change updates the preview config on open `/api/events` streams.
+If a change for that device and capability is already running, the next request returns an error
+and asks the client to retry. A failed change leaves the previous choice in effect. Disabling
+withdraws the capability and retains the loader for the session in one launch-state update.
+For a shut-down device, disable saves the withdrawal in launch state. A Network Capture reboot
+rearms the loader for devices tracked by this process before resuming the preview. Starting a
+device from the preview grid reruns capability setup after boot. A boot outside serve-sim leaves
+loader setup to a later serve-sim operation that arms it [observed: `withdrawLaunchState` in
+`src/launch-manager.ts`, `rebootWithCapture` in `src/capture/reboot.ts`, and the grid start route
+in `src/middleware.ts`].
+
+Disabling closes admission and waits for admitted Keychain calls or clipboard app reads before
+acknowledging. During the wait, a concurrent list or config read shows the new choice. With
+Clipboard off, ordinary reads use only `simctl pbpaste`. Copy still uses its own helper.
+With Keychain off, new Keychain calls are refused. Published mailbox requests remain until their
+normal expiry ([LLP 0020](0020-serve-sim-keychain.explainer.md)).
+
+`capabilities.list` takes `{udid}`. Both actions return `{capabilities: [{name, enabled}]}`.
+`enabled` requires both permission from this server and setup in the device launch state.
+A capability disabled at startup stays off. An unmanaged capability is omitted. Attempts to
+enable a startup-disabled capability or change an unmanaged one return a nonzero `exitCode`
+and `stderr` [observed: `createCapabilityController` in `src/capability-session.ts`,
+`capabilityReply` in `src/host-actions.ts`].
 
 ### Action catalog
 

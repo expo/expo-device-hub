@@ -2,6 +2,7 @@ import { messageToString, requestHost, type SseRequestHandler } from "./control-
 import { isWebOrigin, originMatches } from "../middleware-utils";
 import type { UpgradeHandlerWebSocket } from "./types";
 import type { StreamSettings } from "../stream-settings";
+import type { CapabilityController } from "../capability-session";
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
 import { screenshotMetadataFromHeaders } from "../screenshot-metadata";
 import {
@@ -89,7 +90,8 @@ interface ExecChannelOptions {
   streamSettings?: StreamSettings;
   /** Owning middleware policy/setup, awaited before Keychain actions. */
   prepareKeychain?: (udid: string) => Promise<void>;
-  appClipboardReader?: boolean;
+  /** The owning middleware's capability sessions, for `capabilities.*`. */
+  capabilities?: CapabilityController;
 }
 
 function wireExecSocket(
@@ -342,7 +344,7 @@ function wireExecSocket(
       opts.streamSettings,
       opts.deviceName,
       opts.prepareKeychain,
-      opts.appClipboardReader,
+      opts.capabilities,
     )
       .then((result) => {
         try {

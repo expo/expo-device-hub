@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import { join } from "path";
 import { setTimeout as sleep } from "timers/promises";
+import type { CapabilityController } from "./capability-session";
 import type { CapabilityDefinition } from "./capabilities";
 import { debugPasteboard } from "./debug";
 import { frontmostAppOf } from "./foreground-tracker";
@@ -54,11 +55,14 @@ const readsInFlight = new Map<string, Promise<PasteboardReadResult>>();
 /** `appReader: false` keeps to `simctl pbpaste`, for a server that turned the clipboard off. */
 export function readSimPasteboardResult(
   udid: string,
-  { appReader = true }: { appReader?: boolean } = {},
+  {
+    appReader = true,
+    capabilities,
+  }: { appReader?: boolean; capabilities?: CapabilityController } = {},
 ): Promise<PasteboardReadResult> {
   const queued = (readsInFlight.get(udid) ?? Promise.resolve())
     .catch(() => {})
-    .then(() => readPasteboardOnce(udid, appReader));
+    .then(() => readPasteboardOnce(udid, appReader, capabilities));
   readsInFlight.set(udid, queued);
   void queued
     .catch(() => {})
@@ -68,7 +72,11 @@ export function readSimPasteboardResult(
   return queued;
 }
 
-async function readPasteboardOnce(udid: string, appReader: boolean): Promise<PasteboardReadResult> {
+async function readPasteboardOnce(
+  udid: string,
+  appReader: boolean,
+  capabilities?: CapabilityController,
+): Promise<PasteboardReadResult> {
   if (process.env.SERVE_SIM_SKIP_PBPASTE !== "1") {
     try {
       return await readPasteboardViaSimctl(udid);
@@ -78,13 +86,15 @@ async function readPasteboardOnce(udid: string, appReader: boolean): Promise<Pas
     }
   }
   // @ref LLP 0010#the-pasteboard-grant-stays — another process's reader can still be in place.
-  if (!appReader) {
+  if (!appReader || capabilities?.allows(udid, CLIPBOARD_CAPABILITY) === false) {
     throw new PasteboardUnavailableError(
-      "Clipboard reader is off on this server, by --disable clipboard.",
+      "Clipboard reader is off on this server, by --disable clipboard or capabilities.set.",
     );
   }
   try {
-    return await readViaInjectedReader(udid);
+    return capabilities
+      ? await capabilities.run(udid, CLIPBOARD_CAPABILITY, () => readViaInjectedReader(udid))
+      : await readViaInjectedReader(udid);
   } catch (error) {
     if (error instanceof PasteboardTooLargeError || error instanceof PasteboardUnavailableError)
       throw error;

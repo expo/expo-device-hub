@@ -2,10 +2,14 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { spawn } from "child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
-import { createCapabilitySession } from "../capability-session";
+import { createCapabilityController, createCapabilitySession } from "../capability-session";
+import { rebootWithCapture } from "../capture/reboot";
+import { createCaptureRuntime } from "../capture/runtime";
 import { keychainCapability } from "../sim-keychain";
 import {
   capabilityConfigPath,
+  capabilityLoaderPath,
+  devicesArmedHere,
   enableCapabilities,
   isCapabilityEnabled,
   readLaunchState,
@@ -42,7 +46,7 @@ beforeEach(() => {
   delete process.env.TEST_CLIPBOARD_OFF_DEVICE;
   shims = installShims({
     xcrun: `#!/usr/bin/env bun
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "fs";
+import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 const args = process.argv.slice(2);
 appendFileSync(process.env.TEST_CLIPBOARD_CALLS, args.join(" ") + "\\n");
@@ -54,6 +58,15 @@ if (args[2] === process.env.TEST_CLIPBOARD_OFF_DEVICE) {
 if (args[3] === "launchctl") {
   const file = join(dirname(process.env.TEST_CLIPBOARD_CALLS), args[2] + ".env");
   const env = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  const failAfterWithdrawal = join(dirname(file), "fail-after-withdrawal");
+  if (args[4] === "getenv" && args[5] === "DYLD_INSERT_LIBRARIES" && existsSync(failAfterWithdrawal)) {
+    const config = readFileSync(failAfterWithdrawal, "utf8");
+    if (readFileSync(config, "utf8") === "") {
+      unlinkSync(failAfterWithdrawal);
+      console.error("could not update launchd after withdrawal");
+      process.exit(1);
+    }
+  }
   if (args[4] === "getenv") console.log(env[args[5]] ?? "");
   else {
     if (args[4] === "setenv") env[args[5]] = args[6];
@@ -175,6 +188,169 @@ describe("capability session, through the clipboard capability", () => {
     await clipboard.initialize(UDID);
     expect(getenvCalls()).toBeGreaterThan(afterSetup);
     expect(prepare).toHaveBeenCalledTimes(1);
+    await clipboard.dispose();
+  });
+
+  test("keeps a per-device choice through the 30 s re-check until it changes again", async () => {
+    let time = 0;
+    const clipboard = createCapabilitySession(clipboardCapability, true, { now: () => time });
+    await clipboard.initialize(UDID.toLowerCase());
+    await clipboard.setEnabled(UDID, false);
+    expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
+    expect(clipboard.allows(UDID.toLowerCase())).toBe(false);
+    expect(clipboard.allows(`${UDID}-2`)).toBe(true);
+    time += 30_000;
+    await clipboard.initialize(UDID);
+    expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
+    await clipboard.setEnabled(UDID, true);
+    expect(isCapabilityEnabled(UDID, "clipboard")).toBe(true);
+    await clipboard.dispose();
+    expect(readLaunchState(UDID)).toBeNull();
+  });
+
+  test("disables with one launch update and rolls back if that update fails", async () => {
+    const clipboard = createCapabilitySession(clipboardCapability);
+    try {
+      await clipboard.initialize(UDID);
+      const config = capabilityConfigPath(UDID);
+      const originalConfig = readFileSync(config, "utf8");
+      const originalState = readLaunchState(UDID);
+      const launchEnv = join(state.dir, `${UDID}.env`);
+      const originalEnv = readFileSync(launchEnv, "utf8");
+      writeFileSync(join(state.dir, "fail-after-withdrawal"), config);
+      await expect(clipboard.setEnabled(UDID, false)).rejects.toThrow(
+        "could not update launchd after withdrawal",
+      );
+      expect(clipboard.allows(UDID)).toBe(true);
+      expect(readLaunchState(UDID)).toEqual(originalState);
+      expect(readFileSync(config, "utf8")).toBe(originalConfig);
+      expect(JSON.parse(readFileSync(launchEnv, "utf8"))).toEqual(JSON.parse(originalEnv));
+
+      // The disable hook runs after withdrawal. A second launch update would fail here.
+      prepare.mockImplementationOnce(async () => {
+        process.env.TEST_CLIPBOARD_FAIL_DEVICE = UDID;
+        return null;
+      });
+      await clipboard.setEnabled(UDID, false);
+      expect(clipboard.allows(UDID)).toBe(false);
+      expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
+      expect(readFileSync(config, "utf8")).toBe("");
+      expect(readLaunchState(UDID)?.sessionPids).toContain(process.pid);
+    } finally {
+      delete process.env.TEST_CLIPBOARD_FAIL_DEVICE;
+      await clipboard.dispose();
+    }
+  });
+
+  test("an offline disable registers the loader for a later capture reboot", async () => {
+    const clipboard = createCapabilitySession(clipboardCapability, true, {
+      openedDevices: new Set([UDID]),
+    });
+    try {
+      // The device has saved launch state but this process has not armed it yet.
+      writeLaunchState(UDID, {
+        launchArgs: [],
+        capabilities: { clipboard: { ...reader, ownerPid: null } },
+      });
+      expect(devicesArmedHere()).not.toContain(UDID);
+      process.env.TEST_CLIPBOARD_OFF_DEVICE = UDID;
+      await clipboard.setEnabled(UDID, false);
+      expect(clipboard.allows(UDID)).toBe(false);
+      expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
+      expect(readLaunchState(UDID)?.sessionPids).toContain(process.pid);
+      expect(devicesArmedHere()).toContain(UDID);
+
+      await rebootWithCapture(UDID, false, {
+        runtime: createCaptureRuntime(),
+        closeSession: async () => {},
+        shutdown: async () => {},
+        boot: async () => {
+          delete process.env.TEST_CLIPBOARD_OFF_DEVICE;
+        },
+        resumeSession: async () => {},
+      });
+      const env = JSON.parse(readFileSync(join(state.dir, `${UDID}.env`), "utf8"));
+      expect(env.DYLD_INSERT_LIBRARIES).toBe(capabilityLoaderPath());
+      expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe("");
+      expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
+    } finally {
+      delete process.env.TEST_CLIPBOARD_OFF_DEVICE;
+      await clipboard.dispose();
+    }
+  });
+
+  test("a choice made during setup applies after it", async () => {
+    let proceed!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      proceed = resolve;
+    });
+    prepare.mockImplementationOnce(async () => {
+      await blocked;
+      return { dylib: READER };
+    });
+    const clipboard = createCapabilitySession(clipboardCapability);
+    const setup = clipboard.initialize(UDID);
+    const choice = clipboard.setEnabled(UDID, false);
+    proceed();
+    await Promise.all([setup, choice]);
+    expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
+    await clipboard.dispose();
+  });
+
+  test("turning off and on again leaves a capability that another running process set up", async () => {
+    const other = spawn("sleep", ["30"]);
+    try {
+      await enableCapabilities(UDID, null, [reader], {
+        relaunch: false,
+        ownerPid: other.pid!,
+      });
+      const clipboard = createCapabilitySession(clipboardCapability);
+      await clipboard.initialize(UDID);
+      let changes = 0;
+      const capabilities = createCapabilityController({ clipboard, keychain: null }, () => {
+        changes++;
+      });
+      await capabilities.set(UDID, "clipboard", false);
+      expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPid).toBe(other.pid!);
+      expect(isCapabilityEnabled(UDID, "clipboard")).toBe(true);
+      // Still set up by the other process, but off for this server's actions, so listed as off.
+      expect(capabilities.allows(UDID, "clipboard")).toBe(false);
+      expect(capabilities.list(UDID)).toEqual([{ name: "clipboard", enabled: false }]);
+      // No state file changed, so the controller tells config streams.
+      expect(changes).toBe(1);
+      await capabilities.set(UDID, "clipboard", true);
+      expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPid).toBe(other.pid!);
+      expect(capabilities.list(UDID)).toEqual([{ name: "clipboard", enabled: true }]);
+      expect(changes).toBe(2);
+      await clipboard.dispose();
+    } finally {
+      other.kill();
+    }
+  });
+
+  test("a session that starts disabled does not turn on", async () => {
+    const clipboard = createCapabilitySession(clipboardCapability, false);
+    await expect(clipboard.setEnabled(UDID, true)).rejects.toThrow(
+      "Restart it without --disable clipboard to turn it on.",
+    );
+    expect(prepare).not.toHaveBeenCalled();
+    await clipboard.dispose();
+  });
+
+  test("the controller lists and switches only the sessions it manages", async () => {
+    const clipboard = createCapabilitySession(clipboardCapability);
+    const capabilities = createCapabilityController({ clipboard, keychain: null });
+    await expect(capabilities.set(UDID, "clipboard", false)).rejects.toThrow(
+      `This server has not opened ${UDID}.`,
+    );
+    await clipboard.initialize(UDID);
+    await capabilities.set(UDID, "clipboard", false);
+    expect(capabilities.list(UDID)).toEqual([{ name: "clipboard", enabled: false }]);
+    expect(capabilities.allows(UDID, "clipboard")).toBe(false);
+    expect(capabilities.allows(UDID, "keychain")).toBe(true);
+    await expect(capabilities.set(UDID, "keychain", false)).rejects.toThrow(
+      "This server does not manage keychain.",
+    );
     await clipboard.dispose();
   });
 
@@ -382,7 +558,7 @@ describe("capability session, through the clipboard capability", () => {
   });
 });
 
-describe("clipboard in the preview middleware", () => {
+describe("capabilities in the preview middleware", () => {
   const apiRequest = () => new Request("http://localhost:3200/.sim/api");
 
   test("an explicit Clipboard disable withdraws an existing reader from another process", async () => {
@@ -430,6 +606,21 @@ describe("clipboard in the preview middleware", () => {
       forgetState();
     }
     expect(readLaunchState(UDID)).toBeNull();
+  });
+
+  test("offers keychain controls only where this server can use them", async () => {
+    const forgetState = recordState(UDID, process.pid, 3200);
+    // Off at startup, and a stream helper on a device where no session set keychain up.
+    for (const keychain of [false, "unmanaged"] as const) {
+      const middleware = simMiddleware({ device: UDID, clipboard: "unmanaged", keychain });
+      try {
+        const config = await (await middleware(apiRequest()))!.json();
+        expect(config.keychain).toBeUndefined();
+      } finally {
+        await middleware.dispose();
+      }
+    }
+    forgetState();
   });
 
   test("an unmanaged middleware neither sets up nor removes the session's reader", async () => {
