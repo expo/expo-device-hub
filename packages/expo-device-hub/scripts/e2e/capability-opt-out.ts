@@ -23,42 +23,17 @@ const booted = Object.entries(result.devices)
 if (!pinned) assert.equal(booted.length, 1, "Expected one booted iOS Simulator for the Hub test");
 const device = pinned ? booted.find(({ udid }) => udid === pinned) : booted[0];
 assert(device, "The selected iOS Simulator is not booted");
-const state = await mkdtemp(join(tmpdir(), "hub-capability-opt-out-"));
-const hubStateDir = join(state, "hub");
-const simStateDir = join(state, "serve-sim");
-const hub = Bun.spawn(
-  [
-    "node",
-    resolve(import.meta.dir, "../../dist/server/cli.mjs"),
-    "--host",
-    "127.0.0.1",
-    "--port",
-    "0",
-    "--platform",
-    "ios",
-    "--single-device",
-    device.udid,
-    "--require-token",
-    "--disable",
-    "clipboard",
-    "--disable",
-    "keychain",
-  ],
-  {
-    env: {
-      ...process.env,
-      EXPO_DEVICE_HUB_STATE_DIR: hubStateDir,
-      SERVE_SIM_STATE_DIR: simStateDir,
-      SERVE_SIM_CAPTURE_CA_DIR: join(state, "capture-ca"),
-      // Exercise the fallback decision without relying on pbpaste to fail on a given iOS runtime.
-      SERVE_SIM_SKIP_PBPASTE: "1",
-    },
-    stdout: "ignore", // The CLI prints its session token.
-    stderr: "inherit",
-  },
-);
+const { udid } = device;
 
-async function waitForHub(): Promise<HubState> {
+function loaderConfig(udid: string): string {
+  return execFileSync(
+    "xcrun",
+    ["simctl", "spawn", udid, "launchctl", "getenv", "SERVE_SIM_CAPABILITIES_CONFIG"],
+    { encoding: "utf8", timeout: 15_000 },
+  ).trim();
+}
+
+async function waitForHub(hub: Bun.Subprocess, hubStateDir: string): Promise<HubState> {
   const deadline = Date.now() + 20_000;
   while (hub.exitCode === null && Date.now() < deadline) {
     const files = await readdir(hubStateDir).catch(() => []);
@@ -69,94 +44,149 @@ async function waitForHub(): Promise<HubState> {
   throw new Error(`Hub did not publish its state (exit code: ${hub.exitCode})`);
 }
 
-const clipboardError = "Clipboard reader is off on this server, by --disable clipboard.";
-const keychainError = "The keychain capability is off on this server.";
-type Reply = { id: number; exitCode: number; stderr: string };
-let socket: WebSocket | undefined;
-try {
-  const { url, token } = await waitForHub();
-  assert(token, "The Hub did not publish an authentication token");
-  const preview = new URL("/vendor/serve-sim/", url);
-  const headers = { Authorization: `Bearer ${token}`, Origin: preview.origin };
-  // The device-start route waits for capability setup before it publishes the preview.
-  const start = await fetch(new URL("grid/api/start", preview), {
-    method: "POST",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify({ udid: device.udid }),
-    signal: AbortSignal.timeout(120_000),
-  });
-  assert.deepEqual(await start.json(), { ok: true });
-  const config = await fetch(new URL("api", preview), {
-    headers,
-    signal: AbortSignal.timeout(10_000),
-  });
-  assert.equal(config.status, 200);
-  const { device: previewDevice, keychain } = await config.json();
-  assert.equal(previewDevice, device.udid);
-  assert.equal(keychain, undefined, "The disabled Keychain must be absent from preview config");
-  const launch = await readFile(join(simStateDir, `launch-${device.udid}.json`), "utf8").catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return "{}";
-      throw error;
+async function verifyHub(mode: "default" | "disabled"): Promise<void> {
+  const disabled = mode === "disabled";
+  const state = await mkdtemp(join(tmpdir(), "hub-capability-opt-out-"));
+  const hubStateDir = join(state, "hub");
+  const simStateDir = join(state, "serve-sim");
+  const loaderPath = join(simStateDir, `capabilities-${udid}.conf`);
+  const flags = disabled ? ["--disable", "clipboard", "--disable", "keychain"] : [];
+  const hub = Bun.spawn(
+    [
+      "node",
+      resolve(import.meta.dir, "../../dist/server/cli.mjs"),
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "0",
+      "--platform",
+      "ios",
+      "--single-device",
+      udid,
+      "--require-token",
+      ...flags,
+    ],
+    {
+      env: {
+        ...process.env,
+        EXPO_DEVICE_HUB_STATE_DIR: hubStateDir,
+        SERVE_SIM_STATE_DIR: simStateDir,
+        SERVE_SIM_CAPTURE_CA_DIR: join(state, "capture-ca"),
+        // Exercise the fallback decision without relying on pbpaste to fail on a given runtime.
+        SERVE_SIM_SKIP_PBPASTE: "1",
+      },
+      stdout: "ignore", // The CLI prints its session token.
+      stderr: "inherit",
     },
   );
-  const { capabilities } = JSON.parse(launch);
-  assert.equal(
-    capabilities?.clipboard,
-    undefined,
-    "Preview setup registered the disabled clipboard",
-  );
-  assert.equal(capabilities?.keychain, undefined, "Preview setup registered the disabled Keychain");
-  console.log("Hub opt-outs: opening the preview did not register either helper");
-
-  const http = await fetch(new URL("api/pasteboard", preview), {
-    method: "POST",
-    headers,
-    signal: AbortSignal.timeout(10_000),
-  });
-  assert.equal(http.status, 503);
-  assert.deepEqual(await http.json(), { ok: false, error: clipboardError });
-  console.log("Hub --disable clipboard: HTTP refused the app reader");
-
-  const controls = new URL("exec-ws", preview);
-  controls.protocol = "ws:";
-  const connection = new WebSocket(controls, `serve-sim.token.${token}`);
-  socket = connection;
-  const responses = new Promise<Map<number, Reply>>((resolve, reject) => {
-    const replies = new Map<number, Reply>();
-    connection.once("error", reject);
-    connection.once("close", () => reject(new Error("The Controls socket closed")));
-    connection.on("message", (data) => {
-      const reply = JSON.parse(data.toString()) as Reply;
-      if (reply.id !== 1 && reply.id !== 2) return;
-      replies.set(reply.id, reply);
-      if (replies.size === 2) resolve(replies);
+  try {
+    const { url, token } = await waitForHub(hub, hubStateDir);
+    assert(token, "The Hub did not publish an authentication token");
+    const preview = new URL("/vendor/serve-sim/", url);
+    const headers = { Authorization: `Bearer ${token}`, Origin: preview.origin };
+    // The device-start route waits for capability setup before it publishes the preview.
+    const start = await fetch(new URL("grid/api/start", preview), {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ udid }),
+      signal: AbortSignal.timeout(120_000),
     });
-    connection.once("open", () => {
-      connection.send(JSON.stringify({ id: 1, action: "clipboard.read" }));
-      connection.send(
-        JSON.stringify({
-          id: 2,
-          action: "keychain.list",
-          params: { bundleId: "dev.expo.serve-sim.launch-fixture" },
-        }),
-      );
+    assert.deepEqual(await start.json(), { ok: true });
+    const config = await fetch(new URL("api", preview), {
+      headers,
+      signal: AbortSignal.timeout(10_000),
     });
-  });
-  const replies = await Promise.race([responses, delay(10_000, null, { ref: false })]);
-  assert(replies, "Timed out waiting for the Hub Controls replies");
-  assert.equal(replies.get(1)?.exitCode, 1);
-  assert.equal(replies.get(1)?.stderr, clipboardError);
-  assert.equal(replies.get(2)?.exitCode, 1);
-  assert.equal(replies.get(2)?.stderr, keychainError);
-  console.log("Hub --disable clipboard: Controls refused the app reader");
-  console.log("Hub --disable keychain: Controls refused Keychain listing");
-  console.log(`Passed on ${device.name} (${device.runtime}, ${device.udid})`);
-} finally {
-  socket?.terminate();
-  hub.kill("SIGTERM");
-  await Promise.race([hub.exited, delay(5_000, null, { ref: false })]);
-  if (hub.exitCode === null) hub.kill("SIGKILL");
-  await hub.exited;
-  await rm(state, { recursive: true, force: true });
+    assert.equal(config.status, 200);
+    const { device: previewDevice, keychain } = await config.json();
+    assert.equal(previewDevice, udid);
+    assert.equal(keychain, disabled ? undefined : true, "Unexpected Keychain availability");
+    const launch = await readFile(join(simStateDir, `launch-${udid}.json`), "utf8").catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return "{}";
+        throw error;
+      },
+    );
+    const { capabilities } = JSON.parse(launch) as {
+      capabilities?: Record<string, { ownerPid: number | null }>;
+    };
+    for (const name of ["clipboard", "keychain"]) {
+      if (disabled) assert.equal(capabilities?.[name], undefined, `Registered disabled ${name}`);
+      else
+        assert.equal(capabilities?.[name]?.ownerPid, hub.pid, `Failed to register default ${name}`);
+    }
+    if (disabled) {
+      assert.notEqual(loaderConfig(udid), loaderPath, "Disabled preview armed its loader");
+      console.log("Hub opt-outs: opening the preview did not register either helper");
+      await verifyDisabledRequests(preview, token);
+    } else {
+      assert.equal(loaderConfig(udid), loaderPath, "Default preview did not arm its loader");
+      console.log("Hub defaults: opening the preview registered both helpers");
+    }
+  } finally {
+    hub.kill("SIGTERM");
+    await Promise.race([hub.exited, delay(20_000, null, { ref: false })]);
+    if (hub.exitCode === null) hub.kill("SIGKILL");
+    await hub.exited;
+    await rm(state, { recursive: true, force: true });
+  }
+  assert.equal(hub.exitCode, 0, "Hub did not exit cleanly");
+  assert.notEqual(loaderConfig(udid), loaderPath, "Hub left its loader armed after shutdown");
 }
+
+async function verifyDisabledRequests(preview: URL, token: string): Promise<void> {
+  const headers = { Authorization: `Bearer ${token}`, Origin: preview.origin };
+  const clipboardError = "Clipboard reader is off on this server, by --disable clipboard.";
+  const keychainError = "The keychain capability is off on this server.";
+  type Reply = { id: number; exitCode: number; stderr: string };
+  let socket: WebSocket | undefined;
+  try {
+    const http = await fetch(new URL("api/pasteboard", preview), {
+      method: "POST",
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    });
+    assert.equal(http.status, 503);
+    assert.deepEqual(await http.json(), { ok: false, error: clipboardError });
+    console.log("Hub --disable clipboard: HTTP refused the app reader");
+
+    const controls = new URL("exec-ws", preview);
+    controls.protocol = "ws:";
+    const connection = new WebSocket(controls, `serve-sim.token.${token}`);
+    socket = connection;
+    const responses = new Promise<Map<number, Reply>>((resolve, reject) => {
+      const replies = new Map<number, Reply>();
+      connection.once("error", reject);
+      connection.once("close", () => reject(new Error("The Controls socket closed")));
+      connection.on("message", (data) => {
+        const reply = JSON.parse(data.toString()) as Reply;
+        if (reply.id !== 1 && reply.id !== 2) return;
+        replies.set(reply.id, reply);
+        if (replies.size === 2) resolve(replies);
+      });
+      connection.once("open", () => {
+        connection.send(JSON.stringify({ id: 1, action: "clipboard.read" }));
+        connection.send(
+          JSON.stringify({
+            id: 2,
+            action: "keychain.list",
+            params: { bundleId: "dev.expo.serve-sim.launch-fixture" },
+          }),
+        );
+      });
+    });
+    const replies = await Promise.race([responses, delay(10_000, null, { ref: false })]);
+    assert(replies, "Timed out waiting for the Hub Controls replies");
+    assert.equal(replies.get(1)?.exitCode, 1);
+    assert.equal(replies.get(1)?.stderr, clipboardError);
+    assert.equal(replies.get(2)?.exitCode, 1);
+    assert.equal(replies.get(2)?.stderr, keychainError);
+    console.log("Hub --disable clipboard: Controls refused the app reader");
+    console.log("Hub --disable keychain: Controls refused Keychain listing");
+  } finally {
+    socket?.terminate();
+  }
+}
+
+await verifyHub("default");
+await verifyHub("disabled");
+console.log(`Passed on ${device.name} (${device.runtime}, ${device.udid})`);

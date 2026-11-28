@@ -12,6 +12,9 @@ on:
       - packages/expo-device-hub/src/server/cli/**
       - packages/expo-device-hub/src/server/serve-sim-options.ts
       - packages/expo-device-hub/src/server/serve-sim.ts
+      - packages/expo-device-hub/package.json
+      - packages/expo-device-hub/scripts/build-plugin-server.ts
+      - packages/expo-device-hub/scripts/vendor.ts
       - packages/expo-device-hub/scripts/e2e/capability-opt-out.ts
       - .eas/workflows/sim-test.yml
       - .eas/functions/restore-sim-test-build/**
