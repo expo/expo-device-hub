@@ -789,7 +789,7 @@ SecureStore's `keychainService`, or the item service for `generic-password`, whe
 required. `react-native-keychain` takes no service, because its keys are services.
 
 - `keychain.set` also takes `values` (an object of 1 to 200 string keys and values),
-  `accessible?`, `username?` (`react-native-keychain` only), and `relaunch?`. It returns
+  `accessible?`, `relaunch?`, and `username?` (`react-native-keychain` only). It returns
   `{applied: true, keys: [{key, status, ok, message}]}`, or `{applied: false}` when the app
   did not answer and the request remains queued for the helper to pick up before expiry.
 - `keychain.delete` takes `keys` and `relaunch?`. It returns the same result shape after

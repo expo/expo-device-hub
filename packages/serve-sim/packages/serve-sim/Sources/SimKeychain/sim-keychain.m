@@ -114,9 +114,9 @@ static OSStatus scopeMutation(NSMutableDictionary *query, NSString **error) {
   return errSecSuccess;
 }
 
-static NSDictionary *deleteItem(NSDictionary *operation) {
+static NSDictionary *deleteItem(NSDictionary *operation, BOOL needsAccount) {
   NSString *error = nil;
-  NSMutableDictionary *query = itemQuery(operation, NO, &error);
+  NSMutableDictionary *query = itemQuery(operation, needsAccount, &error);
   if (query == nil) return @{@"status" : @(errSecParam), @"error" : error};
   OSStatus status = scopeMutation(query, &error);
   if (status == errSecSuccess) status = SecItemDelete((__bridge CFDictionaryRef)query);
@@ -133,7 +133,7 @@ static NSDictionary *deleteAliases(NSDictionary *operation) {
   for (id item in items) {
     if (![item isKindOfClass:NSDictionary.class]) return result(errSecParam, @"alias must be an item");
     NSString *error = nil;
-    NSMutableDictionary *query = itemQuery(item, NO, &error);
+    NSMutableDictionary *query = itemQuery(item, YES, &error);
     if (query == nil) return result(errSecParam, error);
     OSStatus status = scopeMutation(query, &error);
     if (status == errSecItemNotFound) continue;
@@ -253,6 +253,23 @@ static NSDictionary *setItem(NSDictionary *operation, BOOL clearFirst) {
   NSMutableArray<NSDictionary *> *scopedClears = [NSMutableArray array];
   OSStatus status = scopeDeletions(clears, scopedClears, &error);
   if (status != errSecSuccess) return result(status, error);
+
+  // @ref LLP 0020#the-mailbox — a new username still belongs to the service's existing group.
+  id groupKey = (__bridge id)kSecAttrAccessGroup;
+  id serviceKey = (__bridge id)kSecAttrService;
+  if (query[groupKey] == nil) {
+    NSString *serviceGroup = nil;
+    for (NSDictionary *clear in scopedClears) {
+      if (clear[(__bridge id)kSecAttrAccount] != nil || ![clear[serviceKey] isEqual:query[serviceKey]])
+        continue;
+      NSString *group = clear[groupKey];
+      if (serviceGroup != nil && ![serviceGroup isEqualToString:group])
+        return result(errSecParam, @"select an accessGroup for this item");
+      serviceGroup = group;
+    }
+    if (serviceGroup != nil) query[groupKey] = serviceGroup;
+  }
+
   NSMutableArray<NSDictionary *> *scopedReplacements = [NSMutableArray array];
   status = scopeDeletions(replacements, scopedReplacements, &error);
   if (status != errSecSuccess) return result(status, error);
@@ -318,7 +335,8 @@ static NSDictionary *run(id operation) {
   NSString *op = operation[@"op"];
   if ([op isEqual:@"set"]) return setItem(operation, NO);
   if ([op isEqual:@"clear-set"]) return setItem(operation, YES);
-  if ([op isEqual:@"delete"]) return deleteItem(operation);
+  if ([op isEqual:@"delete"]) return deleteItem(operation, YES);
+  if ([op isEqual:@"delete-service"]) return deleteItem(operation, NO);
   if ([op isEqual:@"delete-aliases"]) return deleteAliases(operation);
   if ([op isEqual:@"list"]) return listItems(operation);
   return @{@"status" : @(errSecParam), @"error" : @"unknown op"};

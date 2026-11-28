@@ -2,10 +2,10 @@ import {
   runKeychainOperations,
   type KeychainAccessible,
   type KeychainItemAttributes,
-  type KeychainItemQuery,
   type KeychainListedItem,
   type KeychainOperation,
   type KeychainResult,
+  type KeychainService,
 } from "./sim-keychain";
 
 // errSec* values from Security/SecBase.h.
@@ -62,7 +62,7 @@ interface KeychainFormat {
    * Everything `key` covers, in a library whose write first deletes more than the key's own item:
    * `set` deletes it before the write, and `delete` deletes it in place of `places`.
    */
-  clears?(key: string, options: KeychainFormatOptions): KeychainItemQuery[];
+  clearService?(key: string, options: KeychainFormatOptions): KeychainService;
   /** The key a listed item holds, or null when the item is not this format's. */
   keyOf(item: KeychainListedItem, options: KeychainFormatOptions): string | null;
   defaultAccessible: KeychainAccessible;
@@ -73,7 +73,7 @@ const b64 = (text: string) => Buffer.from(text, "utf-8").toString("base64");
 const fromB64 = (value: string) => Buffer.from(value, "base64").toString("utf-8");
 const nonEmpty = (key: string) => (key.length > 0 ? null : "Keys cannot be empty.");
 
-function withGroup<T extends KeychainItemQuery>(attributes: T, options: KeychainFormatOptions): T {
+function withGroup<T extends KeychainService>(attributes: T, options: KeychainFormatOptions): T {
   return options.accessGroup ? { ...attributes, accessGroup: options.accessGroup } : attributes;
 }
 
@@ -131,7 +131,7 @@ const reactNativeKeychain: KeychainFormat = {
   places: (key, options) => [
     withGroup({ service: key, account: b64(options.username ?? "") }, options),
   ],
-  clears: (key, options) => [withGroup({ service: key }, options)],
+  clearService: (key, options) => withGroup({ service: key }, options),
   // A key names a service, so an item without one, such as KeychainSwift's, is not listed.
   keyOf: (item) => item.service || null,
   defaultAccessible: "afterFirstUnlock",
@@ -187,8 +187,8 @@ export function keychainSetOperations(
       accessible: options.accessible ?? definition.defaultAccessible,
     };
     // @ref LLP 0020#the-mailbox — older helpers must refuse a clear they cannot perform.
-    if (definition.clears)
-      return { op: "clear-set", ...item, clears: definition.clears(key, options) };
+    if (definition.clearService)
+      return { op: "clear-set", ...item, clears: [definition.clearService(key, options)] };
     return { op: "set", ...item, ...(others.length > 0 ? { replaces: others } : {}) };
   });
 }
@@ -200,9 +200,11 @@ export function keychainDeleteOperations(
   options: KeychainFormatOptions,
 ): KeychainOperation[] {
   assertKeychainRequest(format, keys, options);
-  const covered = FORMATS[format].clears ?? FORMATS[format].places;
+  const definition = FORMATS[format];
   return keys.map((key) => {
-    const items = covered(key, options);
+    if (definition.clearService)
+      return { op: "delete-service", ...definition.clearService(key, options) };
+    const items = definition.places(key, options);
     if (items.length === 1) return { op: "delete", ...items[0]! };
     return { op: "delete-aliases", items };
   });
@@ -270,8 +272,8 @@ export async function deleteKeychainValues(
   { relaunch = false }: { relaunch?: boolean } = {},
 ): Promise<KeychainWriteSummary> {
   const operations = keychainDeleteOperations(target.format, keys, target.options);
-  // @ref LLP 0020#running-and-closed-apps — a queued alias delete could reach an older helper.
-  const keepQueued = operations.every(({ op }) => op !== "delete-aliases");
+  // @ref LLP 0020#running-and-closed-apps — these delete operations need a helper that can answer.
+  const keepQueued = operations.every(({ op }) => op === "delete");
   const outcome = await runKeychainOperations(target.udid, target.bundleId, operations, {
     keepQueued,
     relaunch,

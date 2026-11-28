@@ -210,8 +210,8 @@ const ACTION_SCHEMAS = {
       ...KeychainTargetParams,
       values: KeychainValues,
       accessible: z.enum(KEYCHAIN_ACCESSIBLE).optional(),
-      username: z.string().max(1024).optional(),
       relaunch: z.boolean().default(false),
+      username: z.string().max(1024).optional(),
     })
     .meta({
       description:

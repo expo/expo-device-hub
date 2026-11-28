@@ -23,6 +23,11 @@ describe("keychain host actions", () => {
   test("are in the action catalog", () => {
     const catalog = describeHostActions();
     expect(catalog["keychain.set"]).toMatchObject({ required: ["udid", "bundleId", "values"] });
+    expect(Object.keys(catalog["keychain.set"]!.properties ?? {}).slice(-3)).toEqual([
+      "accessible",
+      "relaunch",
+      "username",
+    ]);
     expect(catalog["keychain.delete"]).toMatchObject({ required: ["udid", "bundleId", "keys"] });
     expect(catalog["keychain.list"]).toMatchObject({ required: ["udid", "bundleId"] });
   });

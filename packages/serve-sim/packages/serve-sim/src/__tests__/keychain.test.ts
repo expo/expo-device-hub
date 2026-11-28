@@ -164,7 +164,7 @@ describe("react-native-keychain format", () => {
 
   test("delete removes every item in the key's service", () => {
     expect(keychainDeleteOperations("react-native-keychain", ["svc"], {})).toEqual([
-      { op: "delete", service: "svc" },
+      { op: "delete-service", service: "svc" },
     ]);
   });
 
