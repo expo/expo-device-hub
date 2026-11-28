@@ -270,7 +270,7 @@ test("a failed permission read keeps the last rows until a refresh succeeds", as
   expect(view()).not.toContain("permission read failed");
 });
 
-test("a failed write and silent readback stay pending until a poll succeeds", async () => {
+test("failed readbacks keep a write pending until a poll succeeds", async () => {
   const interval = spyOn(globalThis, "setInterval");
   const deadline = new AbortController();
   const timeout = spyOn(AbortSignal, "timeout");
@@ -280,8 +280,13 @@ test("a failed write and silent readback stay pending until a poll succeeds", as
     await reply("denied");
     await click("Allow");
 
-    timeout.mockReturnValueOnce(deadline.signal);
     await fail("grant failed");
+    await fail("list failed", takeRead());
+    expect(button("Allow").props.disabled).toBe(true);
+    expect(view()).toContain("grant failed. Readback: list failed");
+
+    timeout.mockReturnValueOnce(deadline.signal);
+    await act(async () => poll());
     takeRead();
     expect(timeout).toHaveBeenLastCalledWith(135_000);
     await act(async () => poll());
