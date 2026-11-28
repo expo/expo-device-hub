@@ -60,8 +60,30 @@ const MIXED_ACCOUNTS = ["data-account", "string-account"].map((name) => ({
   attributesAsData: name === "data-account",
 }));
 const MIXED_DELETES = MIXED_ACCOUNTS.map((item) => ({ op: "delete" as const, ...item }));
+const GROUP_CLEAR_SERVICE = "group-clear-fixture";
+const GROUP_CLEAR_TARGET = "group-clear-target-fixture";
+const GROUP_CLEAR_ITEMS = GROUP_FIXTURES.map(({ accessGroup }) => ({
+  ...ITEM,
+  service: GROUP_CLEAR_SERVICE,
+  accessGroup,
+}));
+const GROUP_CLEAR_DELETES: KeychainOperation[] = [
+  ...GROUP_CLEAR_ITEMS.map((item) => ({ op: "delete" as const, ...item })),
+  { op: "delete", ...ITEM, service: GROUP_CLEAR_TARGET },
+];
+const RN_SERVICE = " dev.expo.serve-sim.react-native-keychain-fixture ";
+const RN_DELETE = { op: "delete-service", service: RN_SERVICE } as const;
+const RN_SHARED_SERVICE = "dev.expo.serve-sim.react-native-keychain-shared-fixture";
+const RN_SHARED_DELETES = GROUP_FIXTURES.map(({ accessGroup }) => ({
+  op: "delete-service" as const,
+  service: RN_SHARED_SERVICE,
+  accessGroup,
+}));
 const FIXTURE_DELETES: KeychainOperation[] = [
   ...MIXED_DELETES,
+  ...GROUP_CLEAR_DELETES,
+  RN_DELETE,
+  ...RN_SHARED_DELETES,
   ...GROUP_FIXTURES.map(({ accessGroup }) => ({
     op: "delete" as const,
     ...GROUP_ITEM,
@@ -276,6 +298,8 @@ describeOrSkip("keychain round trip", () => {
       { target: ITEM, replacement: { ...ITEM, accessGroup: group } },
       { target: { ...ITEM, accessGroup: group }, replacement: ITEM },
       { target: ITEM, replacement: { ...ITEM, attributesAsData: false } },
+      // A malformed wire request must not broaden a replacement to the whole service.
+      { target: ITEM, replacement: { service: ITEM.service } as typeof ITEM },
     ];
     for (const { target, replacement } of identities) {
       const value = `preserved-${Date.now()}`;
@@ -316,6 +340,32 @@ describeOrSkip("keychain round trip", () => {
     );
     expect(outcome).toEqual({ applied: true, results: [{ status: -34018 }] });
   }, 30_000);
+
+  test("failed or malformed clears leave the target unchanged", async () => {
+    const cases = [
+      { clears: [{ ...ITEM, accessGroup: "serve-sim.not-this-app" }], status: -34018 },
+      { clears: [ITEM, { ...ITEM, account: "not-base64!" }], status: -50 },
+    ];
+    for (const { clears, status } of cases) {
+      const value = `before-clear-${Date.now()}`;
+      expect(await runKeychainOperations(udid!, APP, [set(value)])).toEqual({
+        applied: true,
+        results: [{ status: 0 }],
+      });
+      expect(
+        await runKeychainOperations(udid!, APP, [
+          { ...set("must-not-write"), op: "clear-set", clears },
+        ]),
+      ).toMatchObject({
+        applied: true,
+        results: [{ status }],
+      });
+      terminate();
+      const after = seenValues().length;
+      launch();
+      await waitForLastSeen(`value=${value}`, { after });
+    }
+  }, 60_000);
 
   test("the app drops an expired request unread", async () => {
     const requests = join(dataContainer(), "tmp/serve-sim-keychain/requests");
@@ -470,6 +520,38 @@ describeOrSkip("keychain round trip", () => {
       await runKeychainOperations(udid!, APP, FIXTURE_DELETES);
     }
   }, 60_000);
+
+  test("does not start a set when a service-wide clear matches multiple access groups", async () => {
+    launch();
+    try {
+      for (const item of GROUP_CLEAR_ITEMS) {
+        expect(await runKeychainOperations(udid!, APP, [{ ...set("existing"), ...item }])).toEqual({
+          applied: true,
+          results: [{ status: 0 }],
+        });
+      }
+      expect(
+        await runKeychainOperations(udid!, APP, [
+          {
+            ...set("should-not-be-added"),
+            op: "clear-set",
+            service: GROUP_CLEAR_TARGET,
+            clears: [{ service: GROUP_CLEAR_SERVICE }],
+          },
+        ]),
+      ).toEqual({
+        applied: true,
+        results: [{ status: -50, error: "select an accessGroup for this item" }],
+      });
+      const listed = await runKeychainOperations(udid!, APP, [
+        { op: "list", service: GROUP_CLEAR_SERVICE },
+        { op: "list", service: GROUP_CLEAR_TARGET },
+      ]);
+      expect(listed.applied && listed.results.map(({ items }) => items?.length)).toEqual([2, 0]);
+    } finally {
+      await runKeychainOperations(udid!, APP, GROUP_CLEAR_DELETES, { timeoutMs: 10_000 });
+    }
+  }, 30_000);
 
   const target = (): KeychainTarget => ({
     udid: udid!,
@@ -721,6 +803,104 @@ describeOrSkip("keychain round trip", () => {
       await messages.return?.();
       events.terminate();
       ws.terminate();
+    }
+  }, 60_000);
+
+  test("the built CLI replaces a react-native-keychain credential by service", async () => {
+    terminate();
+    launch("-ServeSimFixtureKeychainGenericService", RN_SERVICE);
+    const format = ["--format", "react-native-keychain"];
+    const accounts = async () => {
+      const outcome = await runKeychainOperations(udid!, APP, [
+        { op: "list", service: RN_SERVICE },
+      ]);
+      return outcome.applied ? outcome.results[0]?.items?.map((item) => item.account) : null;
+    };
+    const ok = {
+      status: 0,
+      output: { applied: true, keys: [{ key: RN_SERVICE, status: 0, ok: true }] },
+    };
+
+    try {
+      const cases = [
+        { username: [], account: "", password: "fixture-password-empty" },
+        { username: ["--username", "alice"], account: "alice", password: "fixture-password-first" },
+        { username: ["--username", " bob "], account: " bob ", password: "fixture-password-final" },
+      ];
+      for (const { username, account, password } of cases) {
+        const after = seenValues().length;
+        expect(
+          keychainCli(
+            ["set", APP, ...format, ...username, "--from-file", "-"],
+            JSON.stringify({ [RN_SERVICE]: password }),
+          ),
+        ).toMatchObject(ok);
+        await waitForLastSeen(`value=${password}`, { after });
+        expect(await accounts()).toEqual([b64(account)]);
+      }
+      expect(keychainCli(["list", APP, ...format])).toMatchObject({
+        status: 0,
+        output: { keys: expect.arrayContaining([RN_SERVICE]) },
+      });
+      const after = seenValues().length;
+      expect(keychainCli(["delete", APP, RN_SERVICE, ...format])).toMatchObject(ok);
+      await waitForLastSeen("status=-25300", { after });
+      expect(await accounts()).toEqual([]);
+    } finally {
+      await runKeychainOperations(udid!, APP, [RN_DELETE], { timeoutMs: 10_000 });
+    }
+  }, 90_000);
+  test("react-native-keychain keeps a renamed account in its original shared group", async () => {
+    const accessGroup = GROUP_FIXTURES[1]!.accessGroup;
+    terminate();
+    launch(
+      "-ServeSimFixtureKeychainGenericService",
+      RN_SHARED_SERVICE,
+      "-ServeSimFixtureKeychainAccessGroup",
+      accessGroup,
+    );
+    try {
+      const seededAfter = seenValues().length;
+      const seeded = await runKeychainOperations(udid!, APP, [
+        {
+          op: "set",
+          service: RN_SHARED_SERVICE,
+          accessGroup,
+          account: b64("alice"),
+          data: b64("fixture-password-before"),
+        },
+      ]);
+      expect(seeded).toEqual({ applied: true, results: [{ status: 0 }] });
+      await waitForLastSeen("value=fixture-password-before", { after: seededAfter });
+
+      const replacedAfter = seenValues().length;
+      expect(
+        keychainCli(
+          [
+            "set",
+            APP,
+            "--format",
+            "react-native-keychain",
+            "--username",
+            "bob",
+            "--from-file",
+            "-",
+          ],
+          JSON.stringify({ [RN_SHARED_SERVICE]: "fixture-password-after" }),
+        ),
+      ).toMatchObject({
+        status: 0,
+        output: { applied: true, keys: [{ key: RN_SHARED_SERVICE, ok: true }] },
+      });
+      await waitForLastSeen("value=fixture-password-after", { after: replacedAfter });
+      const listed = await runKeychainOperations(udid!, APP, [
+        { op: "list", service: RN_SHARED_SERVICE },
+      ]);
+      expect(listed.applied && listed.results[0]?.items).toEqual([
+        { service: RN_SHARED_SERVICE, account: b64("bob"), accountAsData: false, accessGroup },
+      ]);
+    } finally {
+      await runKeychainOperations(udid!, APP, RN_SHARED_DELETES, { timeoutMs: 10_000 });
     }
   }, 60_000);
 });

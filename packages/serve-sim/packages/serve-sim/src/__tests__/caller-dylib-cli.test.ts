@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "fs";
@@ -162,6 +163,108 @@ esac
     state.restore();
   }
 }, 25_000);
+
+test.each([
+  { verb: "set", args: ["auth=synthetic", "--username", "alice"], op: "clear-set" },
+  { verb: "delete", args: ["auth"], op: "delete-service" },
+])(
+  "Keychain CLI reports a legacy helper's refusal to $verb a service",
+  async ({ verb, args, op }) => {
+    const state = useTempStateDir();
+    const bundleId = "dev.example.fixture";
+    const container = join(state.dir, "app");
+    const mailbox = join(container, "tmp", "serve-sim-keychain");
+    const requests = join(mailbox, "requests");
+    try {
+      mkdirSync(container);
+      writeLaunchState(UDID, {
+        launchArgs: [],
+        capabilities: { keychain: keychainCapability },
+      });
+      await withShimsAsync(
+        {
+          xcrun: `#!/bin/sh
+case "$2" in
+  get_app_container) printf '%s\\n' "$SERVE_SIM_TEST_APP_CONTAINER" ;;
+  spawn) printf '123  0  UIKitApplication:${bundleId}\\n' ;;
+  *) exit 1 ;;
+esac
+`,
+        },
+        async () => {
+          const child = Bun.spawn(
+            [
+              "node",
+              entrypoint,
+              "keychain",
+              verb,
+              bundleId,
+              ...args,
+              "-d",
+              UDID,
+              "--format",
+              "react-native-keychain",
+              "--json",
+            ],
+            {
+              env: { ...process.env, SERVE_SIM_TEST_APP_CONTAINER: container },
+              stdout: "pipe",
+              stderr: "pipe",
+              signal: AbortSignal.timeout(10_000),
+            },
+          );
+          try {
+            const deadline = Date.now() + 5_000;
+            let name: string | undefined;
+            while (!name && child.exitCode === null && Date.now() < deadline) {
+              if (existsSync(requests))
+                name = readdirSync(requests).find((entry) => entry.endsWith(".json"));
+              if (!name) await Bun.sleep(20);
+            }
+            if (!name) {
+              if (child.exitCode === null) child.kill();
+              throw new Error(
+                `Keychain request was not published. ${await new Response(child.stderr).text()}`,
+              );
+            }
+            const request = join(requests, name);
+            const claimed = `${request}.claimed`;
+            renameSync(request, claimed);
+            const { nonce, operations } = JSON.parse(readFileSync(claimed, "utf8"));
+            expect(operations).toMatchObject([{ op, service: "auth" }]);
+            writeFileSync(
+              join(mailbox, "responses", `${nonce}.json`),
+              JSON.stringify({ nonce, results: [{ status: -50, error: "unknown op" }] }),
+            );
+            const [exit, output] = await Promise.all([
+              child.exited,
+              new Response(child.stdout).json(),
+            ]);
+            expect(exit).toBe(1);
+            expect(output).toMatchObject({
+              applied: true,
+              keys: [
+                {
+                  key: "auth",
+                  ok: false,
+                  message: expect.stringContaining(
+                    "Update and restart serve-sim, then reopen the app",
+                  ),
+                },
+              ],
+            });
+          } finally {
+            if (child.exitCode === null) child.kill();
+            await child.exited;
+          }
+        },
+      );
+    } finally {
+      state.restore();
+    }
+  },
+  15_000,
+);
 
 test.each(["none", "publish", "stop", "missing-loader", "lock-timeout", "rollback"] as const)(
   "plain default initialization handles %s",

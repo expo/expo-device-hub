@@ -639,7 +639,7 @@ export interface DeviceCapabilities {
  * names as `KEYCHAIN_FORMATS` in serve-sim's `src/keychain.ts`, which this package does not import;
  * a hub-components test compares the two.
  */
-export type KeychainFormat = "expo-secure-store" | "generic-password";
+export type KeychainFormat = "expo-secure-store" | "generic-password" | "react-native-keychain";
 
 /** Where an app's values live: a library's layout, and the service the app passes it. */
 export interface KeychainOptions {
@@ -647,7 +647,7 @@ export interface KeychainOptions {
   format?: KeychainFormat;
   /**
    * expo-secure-store: its `keychainService`, `app` when omitted. generic-password: the item
-   * service, which that format needs.
+   * service, which that format needs. react-native-keychain takes none: its keys are services.
    */
   service?: string;
 }
@@ -655,6 +655,11 @@ export interface KeychainOptions {
 export interface KeychainWriteOptions extends KeychainOptions {
   /** Restart the app and wait for the helper to apply the change. */
   relaunch?: boolean;
+}
+
+export interface KeychainSetOptions extends KeychainWriteOptions {
+  /** react-native-keychain: the username stored with each password; empty when omitted. */
+  username?: string;
 }
 
 /** One key's outcome. `status` is the iOS keychain status, and `message` describes it. */
@@ -1095,7 +1100,7 @@ export interface DeviceClient {
   setKeychainValues?: (
     appId: string,
     values: Readonly<Record<string, string>>,
-    options?: KeychainWriteOptions,
+    options?: KeychainSetOptions,
   ) => Promise<KeychainWriteResult>;
   /** Delete keychain values of an installed app. A key that did not exist counts as deleted. */
   deleteKeychainValues?: (

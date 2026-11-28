@@ -211,6 +211,7 @@ const ACTION_SCHEMAS = {
       values: KeychainValues,
       accessible: z.enum(KEYCHAIN_ACCESSIBLE).optional(),
       relaunch: z.boolean().default(false),
+      username: z.string().max(1024).optional(),
     })
     .meta({
       description:
@@ -855,13 +856,18 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
 }
 
 function keychainTarget(
-  p: ParamsFor<"keychain.list"> & { accessible?: KeychainAccessible },
+  p: ParamsFor<"keychain.list"> & { accessible?: KeychainAccessible; username?: string },
 ): KeychainTarget {
   return {
     udid: p.udid,
     bundleId: p.bundleId,
     format: p.format,
-    options: { service: p.service, accessGroup: p.accessGroup, accessible: p.accessible },
+    options: {
+      service: p.service,
+      username: p.username,
+      accessGroup: p.accessGroup,
+      accessible: p.accessible,
+    },
   };
 }
 

@@ -54,7 +54,7 @@ export function KeychainSection({
   const [format, setFormat] = useState<KeychainFormat>("expo-secure-store");
   // The format's field, such as the service the app passes.
   const [fieldValue, setFieldValue] = useState("");
-  const [servicePasteRejected, setServicePasteRejected] = useState(false);
+  const [fieldPasteRejected, setFieldPasteRejected] = useState(false);
   const [keyPasteRejected, setKeyPasteRejected] = useState(false);
   // The options the keys are listed with, so a Delete goes where they were read. Typing in the
   // field does not change it; a new format, Enter in the field, or a Set does. A new object lists
@@ -95,7 +95,7 @@ export function KeychainSection({
     setValue("");
     setFormat("expo-secure-store");
     setFieldValue("");
-    setServicePasteRejected(false);
+    setFieldPasteRejected(false);
     setKeyPasteRejected(false);
     setQuery({ format: "expo-secure-store" });
     setKeys(null);
@@ -106,10 +106,12 @@ export function KeychainSection({
 
   const missing = missingKeychainField(query);
   const shown = KEYCHAIN_FORMAT_UI[format];
-  const serviceChanged = fieldValue !== (query[shown.field.option] ?? "");
-  const setDisabled = pending !== null || servicePasteRejected || keyPasteRejected;
-  const deleteDisabled = pending !== null || serviceChanged || servicePasteRejected;
-  const requiredFieldError = `Enter the ${shown.field.label.toLowerCase()}.`;
+  const usesService = shown.field.option === "service";
+  const fieldLabel = shown.field.label.toLowerCase();
+  const serviceChanged = usesService && fieldValue !== (query.service ?? "");
+  const setDisabled = pending !== null || fieldPasteRejected || keyPasteRejected;
+  const deleteDisabled = pending !== null || serviceChanged || (usesService && fieldPasteRejected);
+  const requiredFieldError = `Enter the ${fieldLabel}.`;
 
   useEffect(() => {
     setKeys(null);
@@ -125,10 +127,10 @@ export function KeychainSection({
     };
   }, [available, open, appId, query, listKeychainKeys]);
 
-  const typedOptions = (): KeychainOptions => {
-    const text = fieldValue;
-    return { format, ...(text ? { [shown.field.option]: text } : {}) };
-  };
+  const listOptions = (): KeychainOptions => ({
+    format,
+    ...(usesService && fieldValue ? { service: fieldValue } : {}),
+  });
   function listWith(options: KeychainOptions) {
     setKeys(null);
     setListError(null);
@@ -136,7 +138,7 @@ export function KeychainSection({
   }
 
   function listFromInput() {
-    if (!servicePasteRejected) listWith(typedOptions());
+    if (usesService && !fieldPasteRejected) listWith(listOptions());
   }
 
   // The app ID is fixed when the write starts: a relaunch moves the foreground away and back.
@@ -178,7 +180,7 @@ export function KeychainSection({
 
   function set(relaunch: boolean) {
     if (!setKeychainValues || setDisabled) return;
-    const options = typedOptions();
+    const options = listOptions();
     if (missingKeychainField(options)) return refuse(requiredFieldError);
     const draft = parseKeychainDraft(key, value);
     if (!draft.ok) return refuse(draft.error);
@@ -187,7 +189,12 @@ export function KeychainSection({
       relaunch ? "Setting and restarting the app…" : "Setting…",
       relaunch,
       options,
-      (target) => setKeychainValues(target, draft.values, { ...options, relaunch }),
+      (target) =>
+        setKeychainValues(target, draft.values, {
+          ...options,
+          ...(!usesService && fieldValue ? { username: fieldValue } : {}),
+          relaunch,
+        }),
     );
   }
 
@@ -217,14 +224,14 @@ export function KeychainSection({
               ariaLabel="Keychain format"
               value={format}
               options={KEYCHAIN_FORMAT_OPTIONS}
-              width={160}
+              width={188}
               disabled={pending !== null}
               onChange={(next) => {
                 // The field can mean something else in the new format, so it starts empty, and a
                 // note about a write in the old format goes.
                 setFormat(next);
                 setFieldValue("");
-                setServicePasteRejected(false);
+                setFieldPasteRejected(false);
                 listWith({ format: next });
                 setNote(null);
                 setError(null);
@@ -233,27 +240,28 @@ export function KeychainSection({
           </SidebarRow>
           <SidebarRow label={shown.field.label} description={shown.field.description}>
             <SidebarTextInput
-              ariaLabel={`Keychain ${shown.field.label.toLowerCase()}`}
+              ariaLabel={`Keychain ${fieldLabel}`}
               inputMode="text"
               placeholder={shown.field.placeholder}
               value={fieldValue}
               disabled={pending !== null}
-              invalid={servicePasteRejected}
+              invalid={fieldPasteRejected}
               onChange={(next) => {
                 setFieldValue(next);
-                setServicePasteRejected(false);
+                setFieldPasteRejected(false);
                 if (next && error === requiredFieldError) setError(null);
               }}
-              onPasteText={(text) => rejectMultilinePaste(text, setServicePasteRejected)}
+              onPasteText={(text) => rejectMultilinePaste(text, setFieldPasteRejected)}
               onSubmit={listFromInput}
             />
           </SidebarRow>
-          {servicePasteRejected && (
-            <SectionNote role="alert">Enter a service on one line.</SectionNote>
+          {fieldPasteRejected && (
+            <SectionNote role="alert">{`Enter a ${fieldLabel} on one line.`}</SectionNote>
           )}
-          {!missing && (
+          {usesService && !missing && (
             <SectionNote>{`Keys for service ${displayKeychainIdentifier(query.service ?? "app")}.`}</SectionNote>
           )}
+          {shown.note && <SectionNote>{shown.note}</SectionNote>}
           {missing ? (
             <SectionNote>{`Enter the ${missing}, then choose List keys or press Enter.`}</SectionNote>
           ) : keys === null ? (
@@ -323,7 +331,7 @@ export function KeychainSection({
               <Button
                 theme="tertiary"
                 size="xs"
-                disabled={pending !== null || servicePasteRejected}
+                disabled={pending !== null || fieldPasteRejected}
                 onClick={listFromInput}
               >
                 List keys

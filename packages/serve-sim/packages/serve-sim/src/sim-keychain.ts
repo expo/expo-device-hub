@@ -72,15 +72,24 @@ export interface KeychainItemAttributes {
   attributesAsData?: boolean;
 }
 
+/** The items a delete matches. Without an account, every item in the service. */
+export type KeychainItemQuery = Omit<KeychainItemAttributes, "account"> & { account?: string };
+export type KeychainService = Pick<KeychainItemAttributes, "service" | "accessGroup">;
+
+type KeychainValue = KeychainItemAttributes & {
+  data: string;
+  accessible?: KeychainAccessible;
+};
+
 export type KeychainOperation =
   | ({
       op: "set";
-      data: string;
-      accessible?: KeychainAccessible;
       /** Deleted once the set succeeds: other places the same library reads this key. */
       replaces?: KeychainItemAttributes[];
-    } & KeychainItemAttributes)
+    } & KeychainValue)
+  | ({ op: "clear-set"; clears: KeychainItemQuery[] } & KeychainValue)
   | ({ op: "delete" } & KeychainItemAttributes)
+  | ({ op: "delete-service" } & KeychainService)
   | { op: "delete-aliases"; items: KeychainItemAttributes[] }
   | { op: "list"; service?: string; accessGroup?: string };
 

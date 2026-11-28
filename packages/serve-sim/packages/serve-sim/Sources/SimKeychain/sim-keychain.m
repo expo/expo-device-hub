@@ -49,21 +49,28 @@ static id attribute(NSData *bytes, BOOL asData) {
   return asData ? bytes : [[NSString alloc] initWithData:bytes encoding:NSUTF8StringEncoding];
 }
 
-// Service, account, and access group identify a generic password. Generic is an attribute:
-// matching on it would miss an item stored with another value, and the add would then collide.
-static NSMutableDictionary *itemQuery(NSDictionary *operation, NSString **error) {
+// Service, account, and access group identify a generic password. Without an account, a query
+// covers every item in the service, as a library that keeps one item per service deletes them.
+// Generic is an attribute: matching on it would miss an item stored with another value, and the
+// add would then collide.
+static NSMutableDictionary *itemQuery(NSDictionary *operation, BOOL needsAccount, NSString **error) {
   NSString *service = operation[@"service"];
+  BOOL hasAccount = operation[@"account"] != nil;
   NSData *account = base64(operation[@"account"]);
   BOOL asData = [operation[@"attributesAsData"] isEqual:@YES];
-  if (![service isKindOfClass:NSString.class] || account == nil || attribute(account, asData) == nil) {
-    *error = @"needs a service string and a base64 account";
+  if (![service isKindOfClass:NSString.class]) {
+    *error = @"needs a service string";
+    return nil;
+  }
+  if ((hasAccount || needsAccount) && (account == nil || attribute(account, asData) == nil)) {
+    *error = @"needs a base64 account";
     return nil;
   }
   NSMutableDictionary *query = [@{
     (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
     (__bridge id)kSecAttrService : service,
-    (__bridge id)kSecAttrAccount : attribute(account, asData),
   } mutableCopy];
+  if (hasAccount) query[(__bridge id)kSecAttrAccount] = attribute(account, asData);
   if (operation[@"accessGroup"] != nil) {
     if (![operation[@"accessGroup"] isKindOfClass:NSString.class]) {
       *error = @"accessGroup must be a string";
@@ -107,9 +114,9 @@ static OSStatus scopeMutation(NSMutableDictionary *query, NSString **error) {
   return errSecSuccess;
 }
 
-static NSDictionary *deleteItem(NSDictionary *operation) {
+static NSDictionary *deleteItem(NSDictionary *operation, BOOL needsAccount) {
   NSString *error = nil;
-  NSMutableDictionary *query = itemQuery(operation, &error);
+  NSMutableDictionary *query = itemQuery(operation, needsAccount, &error);
   if (query == nil) return @{@"status" : @(errSecParam), @"error" : error};
   OSStatus status = scopeMutation(query, &error);
   if (status == errSecSuccess) status = SecItemDelete((__bridge CFDictionaryRef)query);
@@ -126,7 +133,7 @@ static NSDictionary *deleteAliases(NSDictionary *operation) {
   for (id item in items) {
     if (![item isKindOfClass:NSDictionary.class]) return result(errSecParam, @"alias must be an item");
     NSString *error = nil;
-    NSMutableDictionary *query = itemQuery(item, &error);
+    NSMutableDictionary *query = itemQuery(item, YES, &error);
     if (query == nil) return result(errSecParam, error);
     OSStatus status = scopeMutation(query, &error);
     if (status == errSecItemNotFound) continue;
@@ -147,9 +154,71 @@ static NSDictionary *deleteAliases(NSDictionary *operation) {
   return result(outcome, nil);
 }
 
-static NSDictionary *setItem(NSDictionary *operation) {
+static NSArray<NSMutableDictionary *> *itemQueries(NSDictionary *operation, NSString *field,
+                                           BOOL needsAccount, NSString **error) {
+  id items = operation[field];
+  if (items == nil) return @[];
+  if (![items isKindOfClass:NSArray.class]) {
+    *error = [field stringByAppendingString:@" must be a list"];
+    return nil;
+  }
+  NSMutableArray<NSMutableDictionary *> *queries = [NSMutableArray array];
+  for (id item in items) {
+    if (![item isKindOfClass:NSDictionary.class]) {
+      *error = @"query must be an item";
+      return nil;
+    }
+    NSMutableDictionary *query = itemQuery(item, needsAccount, error);
+    if (query == nil) return nil;
+    [queries addObject:query];
+  }
+  return queries;
+}
+
+static NSData *attributeData(id value) {
+  if ([value isKindOfClass:NSData.class]) return value;
+  if ([value isKindOfClass:NSString.class]) return [value dataUsingEncoding:NSUTF8StringEncoding];
+  return nil;
+}
+
+// Missing filters match any value. Account strings and data can name the same item.
+static BOOL queriesOverlap(NSDictionary *target, NSDictionary *replacement) {
+  for (id field in @[(__bridge id)kSecAttrService, (__bridge id)kSecAttrAccount,
+                      (__bridge id)kSecAttrAccessGroup]) {
+    id left = target[field];
+    id right = replacement[field];
+    if (left == nil || right == nil) continue;
+    if ([field isEqual:(__bridge id)kSecAttrAccount]) {
+      left = attributeData(left);
+      right = attributeData(right);
+    }
+    if (![left isEqual:right]) return NO;
+  }
+  return YES;
+}
+
+static OSStatus scopeDeletions(NSArray<NSMutableDictionary *> *queries,
+                               NSMutableArray<NSDictionary *> *scoped, NSString **error) {
+  for (NSMutableDictionary *query in queries) {
+    OSStatus status = scopeMutation(query, error);
+    if (status == errSecItemNotFound) continue;
+    if (status != errSecSuccess) return status;
+    [scoped addObject:query];
+  }
+  return errSecSuccess;
+}
+
+static OSStatus deleteQueries(NSArray<NSDictionary *> *queries) {
+  for (NSDictionary *query in queries) {
+    OSStatus status = SecItemDelete((__bridge CFDictionaryRef)query);
+    if (status != errSecSuccess && status != errSecItemNotFound) return status;
+  }
+  return errSecSuccess;
+}
+
+static NSDictionary *setItem(NSDictionary *operation, BOOL clearFirst) {
   NSString *error = nil;
-  NSMutableDictionary *query = itemQuery(operation, &error);
+  NSMutableDictionary *query = itemQuery(operation, YES, &error);
   NSData *data = base64(operation[@"data"]);
   if (query == nil || data == nil) return @{@"status" : @(errSecParam), @"error" : error ?: @"data must be base64"};
   NSMutableDictionary *attributes = [@{(__bridge id)kSecValueData : data} mutableCopy];
@@ -165,31 +234,49 @@ static NSDictionary *setItem(NSDictionary *operation) {
     if (accessible == NULL) return @{@"status" : @(errSecParam), @"error" : @"unknown accessible value"};
     attributes[(__bridge id)kSecAttrAccessible] = (__bridge id)accessible;
   }
-  id replaces = operation[@"replaces"];
-  if (replaces != nil && ![replaces isKindOfClass:NSArray.class])
-    return @{@"status" : @(errSecParam), @"error" : @"replaces must be a list"};
-  // Validate before writing: a replacement must never delete the value we are about to set.
-  // Generic is not identity, account bytes can arrive as string or data, and an omitted group
-  // searches all the app's allowed groups. Only two different explicit groups are disjoint.
-  NSMutableArray<NSDictionary *> *replacements = [NSMutableArray array];
-  for (id other in replaces) {
-    if (![other isKindOfClass:NSDictionary.class])
-      return @{@"status" : @(errSecParam), @"error" : @"replacement must be an item"};
-    NSMutableDictionary *replacement = itemQuery(other, &error);
-    if (replacement == nil) return @{@"status" : @(errSecParam), @"error" : error};
-    id group = query[(__bridge id)kSecAttrAccessGroup];
-    id otherGroup = replacement[(__bridge id)kSecAttrAccessGroup];
-    if ([operation[@"service"] isEqual:other[@"service"]]
-        && [base64(operation[@"account"]) isEqual:base64(other[@"account"])]
-        && (group == nil || otherGroup == nil || [group isEqual:otherGroup])) {
+  // Validate every query before a clear can remove anything, then reuse the parsed queries.
+  NSArray<NSMutableDictionary *> *clears = clearFirst ? itemQueries(operation, @"clears", NO, &error) : @[];
+  if (clears == nil || (clearFirst && clears.count == 0))
+    return result(errSecParam, error ?: @"a clear query is required");
+  NSArray<NSMutableDictionary *> *replacements = itemQueries(operation, @"replaces", YES, &error);
+  if (replacements == nil) return @{@"status" : @(errSecParam), @"error" : error};
+  for (NSDictionary *replacement in replacements) {
+    if (queriesOverlap(query, replacement)) {
       return @{@"status" : @(errSecParam), @"error" : @"replacement can match the item being set"};
     }
-    OSStatus status = scopeMutation(replacement, &error);
-    if (status == errSecItemNotFound) continue;
-    if (status != errSecSuccess) return result(status, error);
-    [replacements addObject:replacement];
   }
-  OSStatus status = scopeMutation(query, &error);
+  // Scope all mutations first. A refusal must leave credentials in place, and
+  // a clear must not change the access group used to update or add the target.
+  OSStatus targetStatus = scopeMutation(query, &error);
+  if (targetStatus != errSecSuccess && targetStatus != errSecItemNotFound)
+    return result(targetStatus, error);
+  NSMutableArray<NSDictionary *> *scopedClears = [NSMutableArray array];
+  OSStatus status = scopeDeletions(clears, scopedClears, &error);
+  if (status != errSecSuccess) return result(status, error);
+
+  // @ref LLP 0020#the-mailbox — a new username still belongs to the service's existing group.
+  id groupKey = (__bridge id)kSecAttrAccessGroup;
+  id serviceKey = (__bridge id)kSecAttrService;
+  if (query[groupKey] == nil) {
+    NSString *serviceGroup = nil;
+    for (NSDictionary *clear in scopedClears) {
+      if (clear[(__bridge id)kSecAttrAccount] != nil || ![clear[serviceKey] isEqual:query[serviceKey]])
+        continue;
+      NSString *group = clear[groupKey];
+      if (serviceGroup != nil && ![serviceGroup isEqualToString:group])
+        return result(errSecParam, @"select an accessGroup for this item");
+      serviceGroup = group;
+    }
+    if (serviceGroup != nil) query[groupKey] = serviceGroup;
+  }
+
+  NSMutableArray<NSDictionary *> *scopedReplacements = [NSMutableArray array];
+  status = scopeDeletions(replacements, scopedReplacements, &error);
+  if (status != errSecSuccess) return result(status, error);
+
+  status = deleteQueries(scopedClears);
+  if (status != errSecSuccess) return result(status, error);
+  status = targetStatus;
   if (status == errSecSuccess) {
     status = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)attributes);
   }
@@ -199,20 +286,13 @@ static NSDictionary *setItem(NSDictionary *operation) {
   }
   // Other places a library reads the same key, removed only once the new value is in place. A copy
   // that stays fails the set, as the app could still read the old value there.
-  for (NSDictionary *replacement in replacements) {
-    if (status != errSecSuccess) break;
-    OSStatus removed = SecItemDelete((__bridge CFDictionaryRef)replacement);
-    if (removed != errSecItemNotFound) status = removed;
-  }
+  if (status == errSecSuccess) status = deleteQueries(scopedReplacements);
   return result(status, error);
 }
 
 
 static NSString *attributeBase64(id value) {
-  if ([value isKindOfClass:NSData.class]) return [value base64EncodedStringWithOptions:0];
-  if ([value isKindOfClass:NSString.class])
-    return [[value dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
-  return nil;
+  return [attributeData(value) base64EncodedStringWithOptions:0];
 }
 
 // Attributes only. Values never leave the app through this channel.
@@ -253,8 +333,10 @@ static NSDictionary *listItems(NSDictionary *operation) {
 static NSDictionary *run(id operation) {
   if (![operation isKindOfClass:NSDictionary.class]) return @{@"status" : @(errSecParam), @"error" : @"not an object"};
   NSString *op = operation[@"op"];
-  if ([op isEqual:@"set"]) return setItem(operation);
-  if ([op isEqual:@"delete"]) return deleteItem(operation);
+  if ([op isEqual:@"set"]) return setItem(operation, NO);
+  if ([op isEqual:@"clear-set"]) return setItem(operation, YES);
+  if ([op isEqual:@"delete"]) return deleteItem(operation, YES);
+  if ([op isEqual:@"delete-service"]) return deleteItem(operation, NO);
   if ([op isEqual:@"delete-aliases"]) return deleteAliases(operation);
   if ([op isEqual:@"list"]) return listItems(operation);
   return @{@"status" : @(errSecParam), @"error" : @"unknown op"};
