@@ -2,10 +2,10 @@
 
 **Type:** Explainer
 **Status:** Draft
-**Systems:** HubClient, HubComponents, Hub
+**Systems:** HubClient, HubComponents, Hub, ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich), 2026-11-09 (single-device sessions keep the left sidebar and show no device lifecycle controls; Claude Code, directed by Krystof Woldrich), 2026-11-09 (observed ordinary-device pose, Codex directed by Gabe Debes), 2026-11-10 (an unknown observed pose keeps the legacy orientation controls; Claude Code, directed by Gabe Debes), 2026-11-11 (a recording that follows folds leaves fold commands free; Claude Code, directed by Krystof Woldrich), 2026-11-17 (the dashboard keeps the Orientation row and locks it; Claude Code, directed by Krystof Woldrich), 2026-11-18 (optional screenshot image controls; Codex directed by Gabe Debes)
+**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich), 2026-11-09 (single-device sessions keep the left sidebar and show no device lifecycle controls; Claude Code, directed by Krystof Woldrich), 2026-11-09 (observed ordinary-device pose, Codex directed by Gabe Debes), 2026-11-10 (an unknown observed pose keeps the legacy orientation controls; Claude Code, directed by Gabe Debes), 2026-11-11 (a recording that follows folds leaves fold commands free; Claude Code, directed by Krystof Woldrich), 2026-11-17 (the dashboard keeps the Orientation row and locks it; Claude Code, directed by Krystof Woldrich), 2026-11-18 (optional screenshot image controls; Codex directed by Gabe Debes), 2026-11-27 (permission readback)
 **Related:** LLP 0000, LLP 0003, LLP 0004
 
 ## Summary
@@ -226,6 +226,31 @@ The lock is temporary. The team plans to record the screen in a way that survive
 - On `SIGINT` and `SIGTERM`, the `expo-device-hub` CLI stops Android recording and calls serve-sim's `dispose()` at the same time. It exits after both, within its 60 s shutdown deadline [observed: `shutdownServeSim` in `packages/expo-device-hub/src/server/serve-sim.ts`, `packages/expo-device-hub/src/server/cli.ts`].
 - `dispose()` first waits for a clipboard setup that is still running, then releases what the preview set up. So a device does not keep the capability loader after the CLI stops. A failed release is logged and does not change the exit code: serve-sim's own `exit` listener tries again (LLP 0010), and a deleted simulator also fails here with nothing left to release. Only a failed Android stop exits 1.
 - Under `expo start`, the host owns the signals and exits at once, so nothing calls `dispose()`. Only serve-sim's `exit` listener runs, and a setup that is still running at that moment is not released.
+
+## App permissions
+
+The standalone preview reads `permissions.list` when its permission section opens,
+after a write, on focus and every five seconds while open. It reads services again
+after reload instead of treating the command acknowledgement as state. A poll or
+focus event skips a read already in progress for the current view. Reopening the
+section discards replies from the previous view and requests a fresh read when
+no write is active. Mutation failures stay visible across collapse and reopen.
+A target change or a new write clears them. A successful refresh clears read
+errors. A failed read keeps the last confirmed rows for that target and shows
+its error alongside any mutation error. A pending write clears only after a
+successful readback.
+The preview waits up to 135 seconds per request so a silent socket cannot prevent
+later recovery reads.
+Location Always has a separate selection, including Reset for undetermined state.
+[observed: serve-sim `client/components/app-permissions-tool.tsx`;
+serve-sim `__tests__/fixtures/permissions-ui.child.ts`]
+
+Closing the whole Tools panel unmounts the section and discards its local state.
+Expanding the permission section after reopening reads behind any earlier server-queued write. [observed: serve-sim
+`client/components/tools-panel.tsx`, `host-actions.ts`]
+
+Native services, caching and notification initialization limits are described in
+[LLP 0003.000](0003.000-simulator-permissions.explainer.md).
 
 ## Open questions
 

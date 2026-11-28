@@ -15,4 +15,4 @@ export const PERMISSION_SERVICES: { key: string; label: string }[] = [
 ];
 
 export type PermAction = "grant" | "revoke" | "reset";
-export type PermState = Record<string, PermAction | undefined>;
+export type PermState = Record<string, PermAction | "limited" | undefined>;
