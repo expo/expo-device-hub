@@ -7,7 +7,7 @@ import { type SelectOption } from "../primitives";
 
 /** The field beside the key: an option of the format, such as the service the app passes. */
 interface KeychainField {
-  option: Exclude<keyof KeychainOptions, "format">;
+  option: "service" | "username";
   label: string;
   description: string;
   placeholder: string;
@@ -55,7 +55,7 @@ export const KEYCHAIN_FORMAT_UI: Record<
       required: false,
     },
     empty: "This app has no generic-password services.",
-    note: "Each key is a service. Set replaces, and Delete removes, every item in it, including other libraries' items.",
+    note: "Each key is a service. Set and Delete clear its local items in the app’s access group, including items from other libraries.",
   },
 };
 
@@ -66,7 +66,7 @@ export const KEYCHAIN_FORMAT_OPTIONS: SelectOption<KeychainFormat>[] = Object.en
 /** The required field's name, lowercase, when `options` leave it empty. */
 export function missingKeychainField(options: KeychainOptions): string | null {
   const { field } = KEYCHAIN_FORMAT_UI[options.format ?? "expo-secure-store"];
-  return field.required && !options[field.option] ? field.label.toLowerCase() : null;
+  return field.option === "service" && field.required && !options.service ? "service" : null;
 }
 
 export type KeychainDraft =

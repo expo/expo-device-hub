@@ -216,7 +216,7 @@ static OSStatus deleteQueries(NSArray<NSDictionary *> *queries) {
   return errSecSuccess;
 }
 
-static NSDictionary *setItem(NSDictionary *operation) {
+static NSDictionary *setItem(NSDictionary *operation, BOOL clearFirst) {
   NSString *error = nil;
   NSMutableDictionary *query = itemQuery(operation, YES, &error);
   NSData *data = base64(operation[@"data"]);
@@ -235,8 +235,9 @@ static NSDictionary *setItem(NSDictionary *operation) {
     attributes[(__bridge id)kSecAttrAccessible] = (__bridge id)accessible;
   }
   // Validate every query before a clear can remove anything, then reuse the parsed queries.
-  NSArray<NSMutableDictionary *> *clears = itemQueries(operation, @"clears", NO, &error);
-  if (clears == nil) return @{@"status" : @(errSecParam), @"error" : error};
+  NSArray<NSMutableDictionary *> *clears = clearFirst ? itemQueries(operation, @"clears", NO, &error) : @[];
+  if (clears == nil || (clearFirst && clears.count == 0))
+    return result(errSecParam, error ?: @"a clear query is required");
   NSArray<NSMutableDictionary *> *replacements = itemQueries(operation, @"replaces", YES, &error);
   if (replacements == nil) return @{@"status" : @(errSecParam), @"error" : error};
   for (NSDictionary *replacement in replacements) {
@@ -315,7 +316,8 @@ static NSDictionary *listItems(NSDictionary *operation) {
 static NSDictionary *run(id operation) {
   if (![operation isKindOfClass:NSDictionary.class]) return @{@"status" : @(errSecParam), @"error" : @"not an object"};
   NSString *op = operation[@"op"];
-  if ([op isEqual:@"set"]) return setItem(operation);
+  if ([op isEqual:@"set"]) return setItem(operation, NO);
+  if ([op isEqual:@"clear-set"]) return setItem(operation, YES);
   if ([op isEqual:@"delete"]) return deleteItem(operation);
   if ([op isEqual:@"delete-aliases"]) return deleteAliases(operation);
   if ([op isEqual:@"list"]) return listItems(operation);

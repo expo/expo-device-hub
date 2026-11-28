@@ -139,6 +139,7 @@ import {
   type HidKeyEvent,
   type KeyboardInput,
   type KeychainOptions,
+  type KeychainSetOptions,
   type KeychainWriteOptions,
   type MultiTouchSample,
   type RunningDevice,
@@ -2650,7 +2651,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             setKeychainValues: (
               appId: string,
               values: Readonly<Record<string, string>>,
-              options?: KeychainWriteOptions,
+              options?: KeychainSetOptions,
             ) => setIosKeychainValues(runAction, deviceUdid, appId, values, options),
             deleteKeychainValues: (
               appId: string,

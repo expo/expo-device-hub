@@ -325,21 +325,41 @@ test("a format that needs a service asks for one before it lists or sets", async
   });
 });
 
-test("react-native-keychain sets a service's password with a username", async () => {
+test("react-native-keychain uses Username only when setting a service's password", async () => {
   const { client, calls } = keychainClient({}, ["com.example.app"]);
   const s = await setup(client);
   await s.choose("react-native-keychain");
+  const options = { format: "react-native-keychain" };
   expect(s.text()).toContain("Username");
+  expect(s.text()).not.toContain("Keys for service");
+  expect(s.text()).toContain("Set and Delete clear its local items");
   await s.type("Keychain key", "com.example.app");
   await s.type("Keychain value", "pw");
-  // A username is stored as typed, unlike a service name.
+
+  expect(await s.paste("Keychain username", "al\nice")).toBe(true);
+  expect(s.text()).toContain("Enter a username on one line.");
+  expect(s.button("Set")!.props.disabled).toBe(true);
+  expect(s.button("Delete")!.props.disabled).toBe(false);
+
   await s.type("Keychain username", " alice ");
+  const before = calls.length;
+  await act(async () => s.field("Keychain username").props.onKeyDown({ key: "Enter" }));
+  expect(calls).toHaveLength(before);
+  expect(s.button("List keys")).toBeUndefined();
+  expect(s.button("Delete")!.props.disabled).toBe(false);
   await s.click("Set");
   expect(calls.find((call) => call.fn === "set")).toMatchObject({
     arg: { "com.example.app": "pw" },
-    options: { format: "react-native-keychain", username: " alice ", relaunch: false },
+    options: { ...options, username: " alice ", relaunch: false },
   });
-  expect(s.text()).toContain("Set replaces, and Delete removes, every item in it");
+  expect(calls.at(-1)).toEqual({ fn: "list", appId: APP, options });
+  await s.click("Delete");
+  expect(calls.find((call) => call.fn === "delete")).toEqual({
+    fn: "delete",
+    appId: APP,
+    arg: ["com.example.app"],
+    options,
+  });
 });
 
 test("sets every key of a pasted JSON object", async () => {

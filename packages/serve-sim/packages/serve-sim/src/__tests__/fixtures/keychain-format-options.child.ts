@@ -27,6 +27,7 @@ test("valid credentials preserve service and username after an option refusal", 
     username: " alice ",
   });
   expect(operation).toMatchObject({
+    op: "clear-set",
     service: " auth ",
     account: Buffer.from(" alice ").toString("base64"),
     data: Buffer.from("synthetic").toString("base64"),

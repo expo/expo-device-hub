@@ -143,7 +143,7 @@ describe("react-native-keychain format", () => {
       }),
     ).toEqual([
       {
-        op: "set",
+        op: "clear-set",
         clears: [{ service: "com.example.app" }],
         service: "com.example.app",
         account: b64("alice"),

@@ -181,14 +181,15 @@ export function keychainSetOperations(
   );
   return entries.map(([key, value]) => {
     const [target, ...others] = definition.places(key, options);
-    return {
-      op: "set",
-      ...(definition.clears ? { clears: definition.clears(key, options) } : {}),
+    const item = {
       ...target!,
       data: b64(value),
       accessible: options.accessible ?? definition.defaultAccessible,
-      ...(others.length > 0 ? { replaces: others } : {}),
     };
+    // @ref LLP 0020#the-mailbox — older helpers must refuse a clear they cannot perform.
+    if (definition.clears)
+      return { op: "clear-set", ...item, clears: definition.clears(key, options) };
+    return { op: "set", ...item, ...(others.length > 0 ? { replaces: others } : {}) };
   });
 }
 

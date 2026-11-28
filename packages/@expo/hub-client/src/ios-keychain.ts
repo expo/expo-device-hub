@@ -8,6 +8,7 @@ import {
 import {
   type KeychainKeyResult,
   type KeychainOptions,
+  type KeychainSetOptions,
   type KeychainWriteOptions,
   type KeychainWriteResult,
 } from "./types";
@@ -76,8 +77,8 @@ async function request(
 }
 
 function target(udid: string, appId: string, options?: KeychainOptions): HostActionParams {
-  const { format, service, username } = options ?? {};
-  return { udid, bundleId: appId, format, service, username };
+  const { format, service } = options ?? {};
+  return { udid, bundleId: appId, format, service };
 }
 
 export async function listIosKeychainKeys(
@@ -128,12 +129,12 @@ export function setIosKeychainValues(
   udid: string,
   appId: string,
   values: Readonly<Record<string, string>>,
-  options?: KeychainWriteOptions,
+  options?: KeychainSetOptions,
 ): Promise<KeychainWriteResult> {
   return write(
     run,
     "keychain.set",
-    { ...target(udid, appId, options), values: { ...values } },
+    { ...target(udid, appId, options), username: options?.username, values: { ...values } },
     options,
     "Could not set the keychain values.",
   );

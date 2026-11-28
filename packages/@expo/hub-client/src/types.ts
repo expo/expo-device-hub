@@ -650,13 +650,16 @@ export interface KeychainOptions {
    * service, which that format needs. react-native-keychain takes none: its keys are services.
    */
   service?: string;
-  /** react-native-keychain: the username a set stores with each password; empty when omitted. */
-  username?: string;
 }
 
 export interface KeychainWriteOptions extends KeychainOptions {
   /** Restart the app and wait for the helper to apply the change. */
   relaunch?: boolean;
+}
+
+export interface KeychainSetOptions extends KeychainWriteOptions {
+  /** react-native-keychain: the username stored with each password; empty when omitted. */
+  username?: string;
 }
 
 /** One key's outcome. `status` is the iOS keychain status, and `message` describes it. */
@@ -1097,7 +1100,7 @@ export interface DeviceClient {
   setKeychainValues?: (
     appId: string,
     values: Readonly<Record<string, string>>,
-    options?: KeychainWriteOptions,
+    options?: KeychainSetOptions,
   ) => Promise<KeychainWriteResult>;
   /** Delete keychain values of an installed app. A key that did not exist counts as deleted. */
   deleteKeychainValues?: (

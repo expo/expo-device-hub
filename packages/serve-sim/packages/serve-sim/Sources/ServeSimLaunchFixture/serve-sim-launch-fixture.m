@@ -58,16 +58,18 @@ static void RequestIfAsked(void) {
 
 // -ServeSimFixtureKeychain <key> reads the key the way expo-secure-store does and records each
 // value the app sees, so a test can tell what the app itself reads after serve-sim writes it.
-static NSString *ReadSecureStoreKey(NSString *key, NSString *service, NSString *accessGroup) {
-  NSData *account = [key dataUsingEncoding:NSUTF8StringEncoding];
+static NSString *ReadKeychainValue(NSString *key, NSString *service, NSString *accessGroup) {
   NSMutableDictionary *query = [@{
     (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
     (__bridge id)kSecAttrService : service,
-    (__bridge id)kSecAttrGeneric : account,
-    (__bridge id)kSecAttrAccount : account,
     (__bridge id)kSecMatchLimit : (__bridge id)kSecMatchLimitOne,
     (__bridge id)kSecReturnData : @YES,
   } mutableCopy];
+  if (key != nil) {
+    NSData *account = [key dataUsingEncoding:NSUTF8StringEncoding];
+    query[(__bridge id)kSecAttrGeneric] = account;
+    query[(__bridge id)kSecAttrAccount] = account;
+  }
   if (accessGroup != nil) query[(__bridge id)kSecAttrAccessGroup] = accessGroup;
   CFTypeRef found = NULL;
   OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &found);
@@ -84,12 +86,14 @@ static NSString *LaunchArgument(NSString *name) {
 
 static void WatchKeychainIfAsked(void) {
   NSString *key = LaunchArgument(@"-ServeSimFixtureKeychain");
-  if (key == nil) return;
-  NSString *service = LaunchArgument(@"-ServeSimFixtureKeychainService") ?: @"app:no-auth";
+  // react-native-keychain looks up a generic password by service alone.
+  NSString *genericService = LaunchArgument(@"-ServeSimFixtureKeychainGenericService");
+  if (key == nil && genericService == nil) return;
+  NSString *service = genericService ?: LaunchArgument(@"-ServeSimFixtureKeychainService") ?: @"app:no-auth";
   NSString *accessGroup = LaunchArgument(@"-ServeSimFixtureKeychainAccessGroup");
   __block NSString *last = nil;
   void (^check)(void) = ^{
-    NSString *seen = ReadSecureStoreKey(key, service, accessGroup);
+    NSString *seen = ReadKeychainValue(genericService != nil ? nil : key, service, accessGroup);
     if ([seen isEqualToString:last]) return;
     last = seen;
     Record(@"keychain", seen);
