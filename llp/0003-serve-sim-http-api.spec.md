@@ -829,7 +829,12 @@ Controls request. Each successful change updates the preview config on open `/ap
 If a change for that device and capability is already running, the next request returns an error
 and asks the client to retry. A failed change leaves the previous choice in effect. Disabling
 withdraws the capability and retains the loader for the session in one launch-state update.
-If the device is shut down, the update saves that state for the next boot.
+For a shut-down device, disable saves the withdrawal in launch state. A Network Capture reboot
+rearms the loader for devices tracked by this process before resuming the preview. Starting a
+device from the preview grid reruns capability setup after boot. A boot outside serve-sim leaves
+loader setup to a later serve-sim operation that arms it [observed: `withdrawLaunchState` in
+`src/launch-manager.ts`, `rebootWithCapture` in `src/capture/reboot.ts`, and the grid start route
+in `src/middleware.ts`].
 
 Disabling closes admission and waits for admitted Keychain calls or clipboard app reads before
 acknowledging. During the wait, a concurrent list or config read shows the new choice. With
