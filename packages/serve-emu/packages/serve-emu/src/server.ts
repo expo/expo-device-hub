@@ -10,7 +10,7 @@ import {
   readCameraWiring,
 } from "./camera.ts";
 import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
-import { getExecSnapshot } from "./exec.ts";
+import { ExecError, getExecSnapshot } from "./exec.ts";
 import { applyFoldRequest, getFoldStatus } from "./fold.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
 import {
@@ -895,6 +895,12 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       } as const;
       status = mapped[err.code].status;
       code = mapped[err.code].code;
+    } else if (
+      err instanceof ExecError &&
+      (err.code === "deadline-exceeded" || err.code === "queue-full")
+    ) {
+      status = err.code === "queue-full" ? 429 : 504;
+      code = err.code;
     } else if (err instanceof AppManagementError) {
       status = err.code === "adb-timeout" ? 504 : 502;
       code = err.code;
@@ -2699,18 +2705,21 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
 
       if (url.pathname === "/api/apps/grant") {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-        return appJsonEndpoint(requestContext, req, (payload) =>
-          grantPermission(
+        return appJsonEndpoint(requestContext, req, (payload) => {
+          // @ref LLP 0013#app-permissions — keep the socket open for the queue and ADB after parsing
+          srv.timeout(req, 0);
+          return grantPermission(
             requestContext.serial,
             String(payload.packageName ?? ""),
             String(payload.permission ?? ""),
-          ),
-        );
+          );
+        });
       }
 
       if (url.pathname === "/api/apps/permissions") {
         if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
         try {
+          srv.timeout(req, 0);
           return Response.json(
             await runForContext(requestContext, (context) =>
               listPermissions(context.serial, url.searchParams.get("packageName") ?? ""),
@@ -2723,20 +2732,22 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
 
       if (url.pathname === "/api/apps/revoke") {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-        return appJsonEndpoint(requestContext, req, (payload) =>
-          revokePermission(
+        return appJsonEndpoint(requestContext, req, (payload) => {
+          srv.timeout(req, 0);
+          return revokePermission(
             requestContext.serial,
             String(payload.packageName ?? ""),
             String(payload.permission ?? ""),
-          ),
-        );
+          );
+        });
       }
 
       if (url.pathname === "/api/apps/reset-permissions") {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-        return appJsonEndpoint(requestContext, req, (payload) =>
-          resetPermissions(requestContext.serial, String(payload.packageName ?? "")),
-        );
+        return appJsonEndpoint(requestContext, req, (payload) => {
+          srv.timeout(req, 0);
+          return resetPermissions(requestContext.serial, String(payload.packageName ?? ""));
+        });
       }
 
       if (url.pathname === "/api/apps/icon") {

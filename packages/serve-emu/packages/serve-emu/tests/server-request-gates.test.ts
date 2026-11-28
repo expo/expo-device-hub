@@ -1,7 +1,10 @@
+import { DEFAULT_EXEC_MAX_QUEUED } from "../src/exec.ts";
+import * as executor from "../src/exec.ts";
+import { runPermissionRequest } from "../src/permission-requests.ts";
 import { EventEmitter } from "node:events";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import type { RecoveryWatchdogClock } from "../src/session-recovery-watchdog.ts";
 import { parseFramePacket } from "../src/shared/frame-meta.ts";
 import { ScrcpyStreamError, type ScrcpySession, type VideoPacket } from "../src/scrcpy.ts";
@@ -158,6 +161,7 @@ type CapturedServer = {
   upgrades: UpgradeData[];
   stopArguments: boolean[];
   upgrade(request: Request, options: { data: UpgradeData }): boolean;
+  timeout(request: Request, seconds: number): void;
   stop(closeActiveConnections?: boolean): void;
 };
 
@@ -235,6 +239,7 @@ async function createHarness(
       this.upgrades.push(upgradeOptions.data);
       return this.upgradeResult;
     },
+    timeout() {},
     stop(closeActiveConnections = false) {
       this.stopArguments.push(closeActiveConnections);
     },
@@ -958,4 +963,97 @@ describe("server shutdown and errors", () => {
       lastErrorMeta: { expected: 128, received: 64 },
     });
   });
+});
+
+describe("permission queue HTTP errors", () => {
+  test("returns overload from the real grant route without dispatching ADB", async () => {
+    const harness = await createHarness();
+    const blocked = deferred<void>();
+    const requests = Array.from({ length: DEFAULT_EXEC_MAX_QUEUED }, () =>
+      runPermissionRequest("http-queue-test", "com.example.test", () => blocked.promise),
+    );
+    try {
+      const res = await response(
+        harness.request("/api/apps/grant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            packageName: "com.example.test",
+            permission: "android.permission.CAMERA",
+          }),
+        }),
+      );
+      expect(res.status).toBe(429);
+      expect(await res.json()).toMatchObject({ ok: false, code: "queue-full" });
+    } finally {
+      blocked.resolve();
+      await Promise.all(requests);
+    }
+  });
+
+  test("ordered permission replies survive the Bun socket idle timeout", async () => {
+    const serial = "permission-idle-test";
+    const packageName = "com.example.test";
+    const permission = "android.permission.CAMERA";
+    const session = fakeScrcpy(serial);
+    const started = await startServer(
+      { serial, port: 0 },
+      {
+        readOrientation: readNoOrientation,
+        openScrcpy: async () => session,
+        recoveryClock: INERT_RECOVERY_CLOCK,
+        serve: (options) => Bun.serve(Object.assign(options, { idleTimeout: 1 })),
+      },
+    );
+    let granted = false;
+    const adb = spyOn(executor, "execText").mockImplementation(async () => ({
+      status: 0,
+      signal: null,
+      stdout: `runtime permissions:\n  ${permission}: granted=${granted}`,
+      stderr: "",
+      timedOut: false,
+      error: null,
+    }));
+    const blocked = deferred<void>();
+    const active = runPermissionRequest(serial, packageName, async () => {
+      await blocked.promise;
+      granted = true;
+    });
+    try {
+      const signal = AbortSignal.timeout(18_000);
+      const writes = Promise.allSettled(
+        ["grant", "revoke", "reset-permissions"].map((action) =>
+          fetch(new URL(`/api/apps/${action}`, started.server.url), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ packageName, permission }),
+            signal,
+          }),
+        ),
+      ).finally(() => blocked.resolve());
+      const [expired, read] = await Promise.all([
+        writes,
+        fetch(new URL(`/api/apps/permissions?packageName=${packageName}`, started.server.url), {
+          signal,
+        }),
+      ]);
+      for (const result of expired) {
+        if (result.status === "rejected") throw result.reason;
+        expect(result.value.status).toBe(504);
+        expect(await result.value.json()).toMatchObject({ ok: false, code: "deadline-exceeded" });
+      }
+      expect(read.status).toBe(200);
+      expect(await read.json()).toMatchObject({
+        permissions: [{ name: permission, granted: true }],
+      });
+      expect(adb.mock.calls.map(([, args]) => args)).toEqual([
+        ["-s", serial, "shell", "dumpsys", "package", packageName],
+      ]);
+    } finally {
+      blocked.resolve();
+      await active;
+      await started.stop();
+      adb.mockRestore();
+    }
+  }, 20_000);
 });
